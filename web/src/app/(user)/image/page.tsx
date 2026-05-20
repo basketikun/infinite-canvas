@@ -266,6 +266,15 @@ function ImagePageInner() {
   const previewGenerationLog = async (log: GenerationRecord) => {
     setPreviewLog(log);
     setLogsOpen(false);
+
+    // 回填这条记录的工作台参数，让左侧表单同步显示。
+    // GenerationRecord 不保存参考图原文件，所以无法恢复参考图列表。
+    setPrompt(log.prompt);
+    setReferences([]);
+    updateConfig("count", String(log.count || 1));
+    if (log.size) updateConfig("size", log.size);
+    if (log.quality) updateConfig("quality", log.quality);
+
     const images = await Promise.all(log.thumbnails.map(async (storageKey, index) => {
       const url = await resolveImageUrl(storageKey, "");
       if (!url) return { id: `${log.id}-${index}`, dataUrl: "", storageKey, durationMs: log.durationMs, width: 0, height: 0, bytes: 0 };
@@ -276,7 +285,17 @@ function ImagePageInner() {
         return { id: `${log.id}-${index}`, dataUrl: url, storageKey, durationMs: log.durationMs, width: 0, height: 0, bytes: 0 };
       }
     }));
-    setResults(images.map((image) => ({ id: image.id, status: "success", image })));
+
+    // 成功的图片正常渲染；失败的位置补 failed 占位卡片，让用户感知这条记录有失败。
+    const successResults = images.map((image) => ({ id: image.id, status: "success" as const, image }));
+    const totalSlots = Math.max(log.count || 0, successResults.length + (log.failCount || 0));
+    const failedCount = Math.max(0, totalSlots - successResults.length);
+    const failedResults = Array.from({ length: failedCount }, (_, index) => ({
+      id: `${log.id}-fail-${index}`,
+      status: "failed" as const,
+      error: "生成失败",
+    }));
+    setResults([...successResults, ...failedResults]);
   };
 
   const buildRequestSnapshot = () => {
