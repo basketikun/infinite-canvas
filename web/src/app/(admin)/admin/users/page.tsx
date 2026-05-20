@@ -82,7 +82,7 @@ export default function AdminUsersPage() {
       title: "操作",
       key: "actions",
       width: 96,
-      align: "right",
+      fixed: "right",
       render: (_, item) => (
         <Space size={4}>
           <Tooltip title="编辑"><Button type="text" size="small" icon={<EditOutlined />} onClick={() => setEditingUser(item)} /></Tooltip>
@@ -121,7 +121,7 @@ export default function AdminUsersPage() {
           loading={isLoading}
           search={false}
           defaultSize="middle"
-          tableLayout="fixed"
+          scroll={{ x: 880 }}
           cardProps={{ variant: "borderless" }}
           headerTitle={<Space><Typography.Text strong>用户列表</Typography.Text><Tag>{total} 个</Tag></Space>}
           options={{ density: true, setting: true, reload: () => void refreshUsers() }}

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.0.5 - 2026-05-20
+
 + [新增] 管理后台增加「用户管理」菜单，支持账号 CRUD、设置普通/管理员角色和生图额度。
 + [新增] 管理后台增加「模型配置」菜单，支持多套 Base URL/API Key/图像与文本模型，可启用其中一个并提供连通测试。
 + [调整] AI 调用改为后端反代 `/api/v1/images/generations`、`/api/v1/images/edits`、`/api/v1/chat/completions`，API Key 不再下发到前端，前台配置弹窗下线。

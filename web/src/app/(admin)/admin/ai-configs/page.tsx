@@ -138,8 +138,8 @@ export default function AdminAIConfigsPage() {
     {
       title: "操作",
       key: "actions",
-      width: 152,
-      align: "right",
+      width: 120,
+      fixed: "right",
       render: (_, item) => (
         <Space size={4}>
           <Tooltip title="测试连通"><Button type="text" size="small" icon={<ThunderboltOutlined />} loading={isTesting && testingId === item.id} onClick={() => void onTest(item)} /></Tooltip>
@@ -165,7 +165,7 @@ export default function AdminAIConfigsPage() {
           loading={isLoading}
           search={false}
           defaultSize="middle"
-          tableLayout="fixed"
+          scroll={{ x: 1200 }}
           cardProps={{ variant: "borderless" }}
           headerTitle={<Space><Typography.Text strong>模型配置</Typography.Text><Tag>{total} 个</Tag></Space>}
           options={{ density: true, setting: true, reload: () => void refreshConfigs() }}
