@@ -2,13 +2,17 @@
 
 import { Check, Download, Pencil, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Button, Input } from "antd";
+import { App, Button, Input } from "antd";
 
+import { fetchCanvas, saveCanvas } from "@/services/api/canvases";
+import { useUserStore } from "@/stores/use-user-store";
 import { useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
 import { useCanvasUiStore } from "../stores/use-canvas-ui-store";
 
 export function CanvasProjectCard({ project }: { project: CanvasProject }) {
+  const { message } = App.useApp();
   const router = useRouter();
+  const token = useUserStore((state) => state.token);
   const renameProject = useCanvasStore((state) => state.renameProject);
   const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
   const editingId = useCanvasUiStore((state) => state.editingProjectId);
@@ -21,9 +25,17 @@ export function CanvasProjectCard({ project }: { project: CanvasProject }) {
   const editing = editingId === project.id;
   const selected = selectedIds.includes(project.id);
   const open = () => router.push(`/canvas/${project.id}`);
-  const saveTitle = () => {
-    renameProject(project.id, editingTitle);
+  const saveTitle = async () => {
+    const nextTitle = editingTitle.trim() || project.title;
+    renameProject(project.id, nextTitle);
     stopEditing();
+    if (!token || nextTitle === project.title) return;
+    try {
+      const record = await fetchCanvas(token, project.id);
+      await saveCanvas(token, { id: project.id, title: nextTitle, coverUrl: record.coverUrl, data: record.data });
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "重命名保存失败");
+    }
   };
 
   return (

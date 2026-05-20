@@ -1,126 +1,126 @@
 "use client";
 
 import { Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { App, Button, Card, Drawer, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
 import copy from "copy-to-clipboard";
 
-import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
+import { RequireAuth } from "@/components/require-auth";
+import { readFileAsDataUrl } from "@/lib/image-utils";
 import { uploadImage } from "@/services/image-storage";
 import { cn } from "@/lib/utils";
-import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
+import { useMyAssets } from "./hooks/use-my-assets";
+import type { MyAsset, MyAssetType } from "@/services/api/my-assets";
 
 type AssetFormValues = {
-  kind: AssetKind;
+  type: MyAssetType;
   title: string;
   coverUrl: string;
   tags: string[];
-  source?: string;
-  note?: string;
+  category?: string;
+  description?: string;
   content?: string;
+  url?: string;
 };
 
-type ImageDraft = ImageAsset["data"] | null;
-
 const kindOptions = [
-  { label: "全部", value: "all" },
+  { label: "全部", value: "" },
   { label: "文本", value: "text" },
   { label: "图片", value: "image" },
 ];
 
 export default function AssetsPage() {
+  return (
+    <RequireAuth>
+      <MyAssetsPage />
+    </RequireAuth>
+  );
+}
+
+function MyAssetsPage() {
   const { message } = App.useApp();
   const [form] = Form.useForm<AssetFormValues>();
   const coverInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const assets = useAssetStore((state) => state.assets);
-  const addAsset = useAssetStore((state) => state.addAsset);
-  const updateAsset = useAssetStore((state) => state.updateAsset);
-  const removeAsset = useAssetStore((state) => state.removeAsset);
-  const [keyword, setKeyword] = useState("");
-  const [kindFilter, setKindFilter] = useState<AssetKind | "all">("all");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
+
+  const {
+    assets,
+    total,
+    keyword,
+    type,
+    page,
+    pageSize,
+    searchAssets,
+    changeType,
+    changePage,
+    changePageSize,
+    saveAsset,
+    deleteAsset,
+  } = useMyAssets();
+
+  const [keywordDraft, setKeywordDraft] = useState(keyword);
+  const [editingAsset, setEditingAsset] = useState<MyAsset | null>(null);
   const [isAssetOpen, setIsAssetOpen] = useState(false);
-  const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
-  const [deletingAsset, setDeletingAsset] = useState<Asset | null>(null);
-  const [formKind, setFormKind] = useState<AssetKind>("text");
-  const [imageDraft, setImageDraft] = useState<ImageDraft>(null);
+  const [previewAsset, setPreviewAsset] = useState<MyAsset | null>(null);
+  const [deletingAsset, setDeletingAsset] = useState<MyAsset | null>(null);
+  const [formKind, setFormKind] = useState<MyAssetType>("text");
   const coverUrl = Form.useWatch("coverUrl", form) || "";
   const title = Form.useWatch("title", form) || "";
   const tags = Form.useWatch("tags", form) || [];
   const content = Form.useWatch("content", form) || "";
-  const validAssets = useMemo(() => assets.filter((asset) => asset.kind === "text" || asset.kind === "image"), [assets]);
-
-  const filteredAssets = useMemo(() => {
-    const query = keyword.trim().toLowerCase();
-    return validAssets.filter((asset) => {
-      if (kindFilter !== "all" && asset.kind !== kindFilter) return false;
-      if (!query) return true;
-      return assetSearchText(asset).includes(query);
-    });
-  }, [validAssets, keyword, kindFilter]);
-
-  const visibleAssets = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredAssets.slice(start, start + pageSize);
-  }, [filteredAssets, page, pageSize]);
 
   useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
-    setPage((value) => Math.min(value, maxPage));
-  }, [filteredAssets.length, pageSize]);
+    setKeywordDraft(keyword);
+  }, [keyword]);
 
   const openCreate = () => {
     setEditingAsset(null);
-    setImageDraft(null);
     setFormKind("text");
-    form.setFieldsValue({ kind: "text", title: "", coverUrl: "", tags: [], source: "手动添加", note: "", content: "" });
+    form.setFieldsValue({ type: "text", title: "", coverUrl: "", tags: [], category: "手动添加", description: "", content: "", url: "" });
     setIsAssetOpen(true);
   };
 
-  const openEdit = (asset: Asset) => {
+  const openEdit = (asset: MyAsset) => {
     setEditingAsset(asset);
-    setFormKind(asset.kind);
-    setImageDraft(asset.kind === "image" ? asset.data : null);
+    setFormKind(asset.type === "video" ? "image" : asset.type);
     form.setFieldsValue({
-      kind: asset.kind,
+      type: asset.type === "video" ? "image" : asset.type,
       title: asset.title,
       coverUrl: asset.coverUrl,
       tags: asset.tags || [],
-      source: asset.source,
-      note: asset.note,
-      content: asset.kind === "text" ? asset.data.content : "",
+      category: asset.category,
+      description: asset.description,
+      content: asset.type === "text" ? asset.content : "",
+      url: asset.type === "image" ? asset.url : "",
     });
     setIsAssetOpen(true);
   };
 
-  const saveAsset = async () => {
+  const handleSave = async () => {
     const values = await form.validateFields();
-    const base = {
+    const payload: Partial<MyAsset> = {
+      ...(editingAsset?.id ? { id: editingAsset.id } : {}),
       title: values.title.trim(),
-      coverUrl: values.coverUrl?.trim() || (values.kind === "image" && imageDraft ? imageDraft.dataUrl : ""),
+      type: values.type,
+      coverUrl: values.coverUrl?.trim() || "",
       tags: values.tags || [],
-      source: values.source?.trim(),
-      note: values.note?.trim(),
-      metadata: editingAsset?.metadata || { source: "manual" },
+      category: values.category?.trim() || "",
+      description: values.description?.trim() || "",
+      content: values.type === "text" ? (values.content || "").trim() : "",
+      url: values.type === "image" ? (values.url || values.coverUrl || "").trim() : "",
     };
 
-    if (values.kind === "text") {
-      const asset = { ...base, kind: "text" as const, data: { content: (values.content || "").trim() } };
-      editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
-    } else {
-      if (!imageDraft) {
-        message.error("请选择图片文件");
-        return;
-      }
-      const asset = { ...base, kind: "image" as const, data: imageDraft };
-      editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
+    if (payload.type === "image" && !payload.url && !payload.coverUrl) {
+      message.error("请选择图片文件或填写图片 URL");
+      return;
     }
 
-    message.success(editingAsset ? "素材已更新" : "素材已保存");
-    setIsAssetOpen(false);
+    try {
+      await saveAsset(payload);
+      setIsAssetOpen(false);
+    } catch {
+      // hook handles error message
+    }
   };
 
   const readCoverFile = async (file?: File) => {
@@ -132,31 +132,32 @@ export default function AssetsPage() {
   const readImageFile = async (file?: File) => {
     if (!file || !file.type.startsWith("image/")) return;
     const image = await uploadImage(file);
-    const draft = { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
-    setImageDraft(draft);
-    if (!form.getFieldValue("coverUrl")) form.setFieldValue("coverUrl", draft.dataUrl);
+    form.setFieldValue("url", image.url);
+    if (!form.getFieldValue("coverUrl")) form.setFieldValue("coverUrl", image.url);
     if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
   };
 
-  const copyText = async (asset: Asset) => {
-    if (asset.kind !== "text") return;
-    copy(asset.data.content);
+  const copyText = async (asset: MyAsset) => {
+    if (asset.type !== "text") return;
+    copy(asset.content);
     message.success("文本已复制");
   };
 
-  const downloadImage = (asset: Asset) => {
-    if (asset.kind !== "image") return;
+  const downloadImage = (asset: MyAsset) => {
+    if (asset.type !== "image") return;
     const link = document.createElement("a");
-    link.href = asset.data.dataUrl;
-    link.download = `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "png"}`;
+    link.href = asset.url || asset.coverUrl;
+    link.download = `${asset.title || "asset"}.png`;
     link.click();
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deletingAsset) return;
-    removeAsset(deletingAsset.id);
-    message.success("素材已删除");
-    setDeletingAsset(null);
+    try {
+      await deleteAsset(deletingAsset.id);
+    } finally {
+      setDeletingAsset(null);
+    }
   };
 
   return (
@@ -169,7 +170,16 @@ export default function AssetsPage() {
           </div>
 
           <div className="mx-auto mt-8 w-full max-w-2xl">
-            <Input.Search className="w-full" size="large" allowClear prefix={<Search className="size-4 text-stone-400" />} value={keyword} placeholder="搜索标题、内容、标签或来源" onChange={(event) => { setPage(1); setKeyword(event.target.value); }} onSearch={(value) => { setPage(1); setKeyword(value); }} />
+            <Input.Search
+              className="w-full"
+              size="large"
+              allowClear
+              prefix={<Search className="size-4 text-stone-400" />}
+              value={keywordDraft}
+              placeholder="搜索标题、内容、标签或来源"
+              onChange={(event) => setKeywordDraft(event.target.value)}
+              onSearch={(value) => searchAssets(value)}
+            />
           </div>
 
           <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">
@@ -178,7 +188,7 @@ export default function AssetsPage() {
                 <div className="text-xs font-medium text-stone-500 dark:text-stone-400">类型</div>
                 <div className="flex flex-wrap gap-2">
                   {kindOptions.map((option) => (
-                    <Tag.CheckableTag key={option.value} checked={kindFilter === option.value} className={cn("prompt-filter-tag", kindFilter === option.value && "is-active")} onChange={() => { setPage(1); setKindFilter(option.value as AssetKind | "all"); }}>
+                    <Tag.CheckableTag key={option.value || "all"} checked={type === option.value} className={cn("prompt-filter-tag", type === option.value && "is-active")} onChange={() => changeType(option.value)}>
                       {option.label}
                     </Tag.CheckableTag>
                   ))}
@@ -193,7 +203,7 @@ export default function AssetsPage() {
 
         <div className="mx-auto flex max-w-7xl flex-col gap-5">
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {visibleAssets.map((asset) => (
+            {assets.map((asset) => (
               <AssetCard
                 key={asset.id}
                 asset={asset}
@@ -206,28 +216,28 @@ export default function AssetsPage() {
             ))}
           </div>
 
-          {!visibleAssets.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到素材" className="py-20" /> : null}
+          {!assets.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到素材" className="py-20" /> : null}
 
           <div className="flex justify-center">
             <Pagination
               current={page}
               pageSize={pageSize}
-              total={filteredAssets.length}
+              total={total}
               showSizeChanger
               pageSizeOptions={[10, 20, 50, 100]}
               onChange={(nextPage, nextPageSize) => {
-                setPage(nextPage);
-                setPageSize(nextPageSize);
+                if (nextPageSize !== pageSize) changePageSize(nextPageSize);
+                else changePage(nextPage);
               }}
             />
           </div>
         </div>
       </main>
 
-      <Modal title={editingAsset ? "编辑素材" : "新增素材"} open={isAssetOpen} width={980} onCancel={() => setIsAssetOpen(false)} onOk={() => void saveAsset()} okText="保存" cancelText="取消" destroyOnHidden>
+      <Modal title={editingAsset ? "编辑素材" : "新增素材"} open={isAssetOpen} width={980} onCancel={() => setIsAssetOpen(false)} onOk={() => void handleSave()} okText="保存" cancelText="取消" destroyOnHidden>
         <div className="grid gap-6 pt-1 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Form form={form} layout="vertical" requiredMark={false} initialValues={{ kind: "text", tags: [] }}>
-            <Form.Item name="kind" label="类型">
+          <Form form={form} layout="vertical" requiredMark={false} initialValues={{ type: "text", tags: [] }}>
+            <Form.Item name="type" label="类型">
               <Select options={[{ label: "文本", value: "text" }, { label: "图片", value: "image" }]} onChange={(value) => setFormKind(value)} />
             </Form.Item>
             <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}>
@@ -243,10 +253,10 @@ export default function AssetsPage() {
               <Select mode="tags" tokenSeparators={[",", "，"]} placeholder="输入标签后回车" />
             </Form.Item>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Form.Item name="source" label="来源">
+              <Form.Item name="category" label="来源">
                 <Input placeholder="手动添加 / 画布 / 提示词库" />
               </Form.Item>
-              <Form.Item name="note" label="备注">
+              <Form.Item name="description" label="备注">
                 <Input placeholder="可选" />
               </Form.Item>
             </div>
@@ -255,18 +265,18 @@ export default function AssetsPage() {
                 <Input.TextArea rows={8} placeholder="保存提示词、说明文案、参考描述等文本素材" />
               </Form.Item>
             ) : (
-              <Form.Item label="图片内容" required>
-                <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
-                  <Button icon={<Upload className="size-4" />} onClick={() => imageInputRef.current?.click()}>选择图片文件</Button>
-                  {imageDraft ? <Typography.Text type="secondary" className="ml-3 text-xs">{imageDraft.width}x{imageDraft.height} · {formatBytes(imageDraft.bytes)}</Typography.Text> : <Typography.Text type="secondary" className="ml-3 text-xs">未选择图片</Typography.Text>}
-                </div>
+              <Form.Item name="url" label="图片内容" required>
+                <Space.Compact className="w-full">
+                  <Input placeholder="可粘贴图片 URL 或上传本地图片" />
+                  <Button icon={<Upload className="size-3.5" />} onClick={() => imageInputRef.current?.click()}>上传</Button>
+                </Space.Compact>
               </Form.Item>
             )}
           </Form>
           <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 dark:border-stone-800 dark:bg-stone-950">
             <Typography.Text strong>预览</Typography.Text>
             <div className="mt-3 overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
-              {coverUrl || imageDraft?.dataUrl ? <img src={coverUrl || imageDraft?.dataUrl} alt="" className="aspect-[4/3] w-full object-cover" /> : <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm text-stone-500 dark:bg-stone-900">{content || "暂无封面"}</div>}
+              {coverUrl ? <img src={coverUrl} alt="" className="aspect-[4/3] w-full object-cover" /> : <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm text-stone-500 dark:bg-stone-900">{content || "暂无封面"}</div>}
               <div className="p-4">
                 <Typography.Text strong ellipsis className="block">{title || "未命名素材"}</Typography.Text>
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -288,15 +298,15 @@ export default function AssetsPage() {
 
       <AssetDrawer asset={previewAsset} onClose={() => setPreviewAsset(null)} onCopy={copyText} onDownload={downloadImage} />
 
-      <Modal title="删除素材" open={Boolean(deletingAsset)} onCancel={() => setDeletingAsset(null)} onOk={confirmDelete} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
+      <Modal title="删除素材" open={Boolean(deletingAsset)} onCancel={() => setDeletingAsset(null)} onOk={() => void confirmDelete()} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
         确定删除「{deletingAsset?.title}」吗？删除后会从我的素材中移除。
       </Modal>
     </div>
   );
 }
 
-function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
-  const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
+function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: MyAsset; onOpen: () => void; onEdit: () => void; onCopy: (asset: MyAsset) => void; onDownload: (asset: MyAsset) => void; onDelete: () => void }) {
+  const cover = asset.coverUrl || (asset.type === "image" ? asset.url : "");
   const summary = assetSummary(asset);
   return (
     <Card
@@ -305,7 +315,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
       styles={{ body: { padding: 0 } }}
       cover={
         <button type="button" className="block w-full text-left" onClick={onOpen}>
-          {cover ? <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" /> : <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm leading-6 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>}
+          {cover ? <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" /> : <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm leading-6 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{asset.type === "text" ? asset.content : "暂无封面"}</div>}
         </button>
       }
     >
@@ -314,9 +324,9 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="line-clamp-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{asset.title}</h2>
-              <Typography.Text type="secondary" className="mt-1 block text-xs">{asset.source || "未标注来源"}</Typography.Text>
+              <Typography.Text type="secondary" className="mt-1 block text-xs">{asset.category || "未标注来源"}</Typography.Text>
             </div>
-            <Tag className="m-0 shrink-0 text-[11px]">{asset.kind === "image" ? "图片" : "文本"}</Tag>
+            <Tag className="m-0 shrink-0 text-[11px]">{asset.type === "image" ? "图片" : "文本"}</Tag>
           </div>
           <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} className="!mb-0 !mt-2 !text-xs !leading-5">
             {summary}
@@ -330,36 +340,36 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
       <div className="flex items-center gap-2 px-4 pb-4">
         <Button size="small" onClick={onOpen}>查看</Button>
         <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>编辑</Button>
-        {asset.kind === "text" ? <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void onCopy(asset)}>复制</Button> : null}
-        {asset.kind === "image" ? <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(asset)}>下载</Button> : null}
+        {asset.type === "text" ? <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void onCopy(asset)}>复制</Button> : null}
+        {asset.type === "image" ? <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(asset)}>下载</Button> : null}
         <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onDelete}>删除</Button>
       </div>
     </Card>
   );
 }
 
-function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | null; onClose: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void }) {
-  const cover = asset ? asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "") : "";
+function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: MyAsset | null; onClose: () => void; onCopy: (asset: MyAsset) => void; onDownload: (asset: MyAsset) => void }) {
+  const cover = asset ? asset.coverUrl || (asset.type === "image" ? asset.url : "") : "";
   return (
     <Drawer title="素材详情" open={Boolean(asset)} size="large" onClose={onClose}>
       {asset ? (
         <div className="space-y-5">
-          {cover ? <Image src={cover} alt={asset.title} className="rounded-lg" /> : <div className="rounded-lg border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>}
+          {cover ? <Image src={cover} alt={asset.title} className="rounded-lg" /> : <div className="rounded-lg border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">{asset.type === "text" ? asset.content : "暂无封面"}</div>}
           <div>
             <Typography.Title level={4} className="!mb-2">{asset.title}</Typography.Title>
             <Space size={[4, 4]} wrap>
-              <Tag>{asset.kind === "image" ? "图片" : "文本"}</Tag>
+              <Tag>{asset.type === "image" ? "图片" : "文本"}</Tag>
               {(asset.tags || []).map((tag) => <Tag key={tag}>{tag}</Tag>)}
             </Space>
           </div>
           <div className="rounded-lg border border-stone-200 p-4 dark:border-stone-800">
             <Typography.Text type="secondary" className="block text-xs">内容</Typography.Text>
-            {asset.kind === "text" ? <Typography.Paragraph className="mt-2 whitespace-pre-wrap">{asset.data.content}</Typography.Paragraph> : <Typography.Text className="mt-2 block">{asset.data.width}x{asset.data.height} · {formatBytes(asset.data.bytes)} · {asset.data.mimeType}</Typography.Text>}
+            {asset.type === "text" ? <Typography.Paragraph className="mt-2 whitespace-pre-wrap">{asset.content}</Typography.Paragraph> : <Typography.Text className="mt-2 block">{asset.url}</Typography.Text>}
           </div>
-          {asset.note ? <div><Typography.Text type="secondary">备注</Typography.Text><Typography.Paragraph className="mt-1">{asset.note}</Typography.Paragraph></div> : null}
+          {asset.description ? <div><Typography.Text type="secondary">备注</Typography.Text><Typography.Paragraph className="mt-1">{asset.description}</Typography.Paragraph></div> : null}
           <Space>
-            {asset.kind === "text" ? <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(asset)}>复制文本</Button> : null}
-            {asset.kind === "image" ? <Button type="primary" icon={<Download className="size-4" />} onClick={() => onDownload(asset)}>下载图片</Button> : null}
+            {asset.type === "text" ? <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(asset)}>复制文本</Button> : null}
+            {asset.type === "image" ? <Button type="primary" icon={<Download className="size-4" />} onClick={() => onDownload(asset)}>下载图片</Button> : null}
           </Space>
         </div>
       ) : null}
@@ -367,17 +377,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
   );
 }
 
-function assetSummary(asset: Asset) {
-  if (asset.kind === "text") return asset.data.content;
-  return `${asset.data.width}x${asset.data.height} · ${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}`;
-}
-
-function assetSearchText(asset: Asset) {
-  return [
-    asset.title,
-    asset.source || "",
-    asset.note || "",
-    (asset.tags || []).join(" "),
-    asset.kind === "text" ? asset.data.content : asset.data.mimeType,
-  ].join(" ").toLowerCase();
+function assetSummary(asset: MyAsset) {
+  if (asset.type === "text") return asset.content;
+  return asset.url || asset.coverUrl;
 }

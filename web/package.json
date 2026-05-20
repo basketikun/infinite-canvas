@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --webpack -H 0.0.0.0 -p 3000",
+    "dev:turbo": "next dev --turbopack -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start"
   },

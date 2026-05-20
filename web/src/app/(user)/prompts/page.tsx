@@ -9,7 +9,8 @@ import { PromptCard } from "@/components/prompts/prompt-card";
 import { PromptDetailDialog } from "@/components/prompts/prompt-detail-dialog";
 import { usePromptList } from "@/components/prompts/use-prompt-list";
 import { cn } from "@/lib/utils";
-import { useAssetStore } from "@/stores/use-asset-store";
+import { saveMyAsset } from "@/services/api/my-assets";
+import { useUserStore } from "@/stores/use-user-store";
 import { ALL_PROMPTS_OPTION, type Prompt } from "@/services/api/prompts";
 
 export default function PromptsPage() {
@@ -18,7 +19,7 @@ export default function PromptsPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState(ALL_PROMPTS_OPTION);
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
-  const addAsset = useAssetStore((state) => state.addAsset);
+  const token = useUserStore((state) => state.token);
   const { query, items: promptItems, tags: promptTags, categories: promptCategoryOptions, total: totalPrompts } = usePromptList({ keyword: titleKeyword, tags: selectedTags, category: selectedCategory });
 
   useEffect(() => {
@@ -37,9 +38,24 @@ export default function PromptsPage() {
     message.success("提示词已复制");
   };
 
-  const savePromptAsset = (item: Prompt) => {
-    addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.category, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl } });
-    message.success("已加入我的素材");
+  const savePromptAsset = async (item: Prompt) => {
+    if (!token) {
+      message.error("请先登录");
+      return;
+    }
+    try {
+      await saveMyAsset(token, {
+        title: item.title,
+        type: "text",
+        coverUrl: item.coverUrl,
+        tags: item.tags,
+        category: item.category,
+        content: item.prompt,
+      });
+      message.success("已加入我的素材");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "加入失败");
+    }
   };
 
   const handleListScroll = (event: UIEvent<HTMLDivElement>) => {

@@ -13,6 +13,7 @@ type UserStore = {
   setSession: (token: string, user: AuthUser) => void;
   clearSession: () => void;
   hydrateUser: () => Promise<void>;
+  setCredits: (credits: number) => void;
   login: (payload: AuthPayload) => Promise<AuthUser>;
   register: (payload: AuthPayload) => Promise<AuthUser>;
 };
@@ -26,6 +27,8 @@ export const useUserStore = create<UserStore>()(
       isLoading: false,
       setSession: (token, user) => set({ token, user, isReady: true }),
       clearSession: () => set({ token: "", user: null, isReady: true }),
+      setCredits: (credits) =>
+        set((state) => (state.user ? { user: { ...state.user, credits } } : state)),
       hydrateUser: async () => {
         const token = get().token;
         if (!token) {

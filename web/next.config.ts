@@ -21,7 +21,22 @@ export default function nextConfig(phase: string): NextConfig {
       NEXT_PUBLIC_APP_VERSION: version,
     },
     async rewrites() {
-      return [{ source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` }];
+      const passthrough = { source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` };
+      if (isDev) {
+        // dev 模式：长请求让 src/app/api/v1/images/* 的 Route Handler 处理，
+        // 绕过 next dev rewrites 的 30 秒代理超时；其它接口走 rewrites 直转。
+        return [passthrough];
+      }
+      // 生产模式：next start 的 rewrites 没有 30s 限制，把长请求放到 beforeFiles
+      // 优先匹配，跳过 Route Handler 这层 Node 中转，少一跳延迟。
+      return {
+        beforeFiles: [
+          { source: "/api/v1/images/generations", destination: `${apiBaseUrl}/api/v1/images/generations` },
+          { source: "/api/v1/images/edits", destination: `${apiBaseUrl}/api/v1/images/edits` },
+        ],
+        afterFiles: [passthrough],
+        fallback: [],
+      };
     },
   };
 }

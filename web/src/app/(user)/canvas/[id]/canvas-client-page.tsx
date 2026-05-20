@@ -2,22 +2,25 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Home, ImageIcon, Images, Keyboard, List, LogOut, Menu, MessageSquare, Plus, Redo2, Settings2, Trash2, Undo2, Upload } from "lucide-react";
+import { Coins, Home, ImageIcon, Images, Keyboard, List, LogOut, Menu, MessageSquare, Plus, Redo2, Settings2, Trash2, Undo2, Upload } from "lucide-react";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { createId } from "@/lib/id";
-import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
+import { readImageMeta } from "@/lib/image-utils";
 import { useAiConfigStore } from "@/stores/use-ai-config-store";
-import { useConfigDialogStore } from "@/stores/use-config-dialog-store";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { useAssetStore } from "@/stores/use-asset-store";
+import { saveMyAsset } from "@/services/api/my-assets";
 import { useUserStore } from "@/stores/use-user-store";
 import { UserStatusActions } from "@/components/user-status-actions";
+import { RequireAuth } from "@/components/require-auth";
+import { useCanvasDetailSync } from "../hooks/use-canvas-cloud-sync";
+import { deleteCanvas, saveCanvas } from "@/services/api/canvases";
 import { cropDataUrl } from "../utils/canvas-image-data";
-import { App, Button, Dropdown, Modal } from "antd";
+import { App, Button, Dropdown, Modal, Tag, Tooltip } from "antd";
 import { defaultConfig, type AiConfig } from "@/lib/ai-config";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
@@ -86,7 +89,11 @@ export default function CanvasPage() {
 
   if (!mounted) return <CanvasRefreshShell />;
 
-  return <InfiniteCanvasPage />;
+  return (
+    <RequireAuth fallback={<CanvasRefreshShell />}>
+      <InfiniteCanvasPage />
+    </RequireAuth>
+  );
 }
 
 function CanvasRefreshShell() {
@@ -233,17 +240,14 @@ function InfiniteCanvasPage() {
   });
 
   const config = useAiConfigStore((state) => state.config);
-  const openConfigDialog = useConfigDialogStore((state) => state.openConfigDialog);
-  const addAsset = useAssetStore((state) => state.addAsset);
-  const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
-  const hydrated = useCanvasStore((state) => state.hydrated);
-  const createProject = useCanvasStore((state) => state.createProject);
+  const { status: syncStatus, saveStatus } = useCanvasDetailSync(projectId);
   const openProject = useCanvasStore((state) => state.openProject);
   const updateProject = useCanvasStore((state) => state.updateProject);
   const renameProject = useCanvasStore((state) => state.renameProject);
   const deleteProjects = useCanvasStore((state) => state.deleteProjects);
   const currentProject = useCanvasStore((state) => state.projects.find((project) => project.id === projectId));
   const user = useUserStore((state) => state.user);
+  const token = useUserStore((state) => state.token);
   const logout = useUserStore((state) => state.clearSession);
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const [nodes, setNodes] = useState<CanvasNodeData[]>([]);
@@ -302,7 +306,7 @@ function InfiniteCanvasPage() {
   }), [activeChatId, backgroundMode, chatSessions]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (syncStatus !== "ready") return;
     setProjectLoaded(false);
     const project = openProject(projectId);
     if (!project) {
@@ -335,7 +339,7 @@ function InfiniteCanvasPage() {
       setProjectLoaded(true);
     };
     void restore();
-  }, [hydrated, openProject, projectId, router]);
+  }, [openProject, projectId, router, syncStatus]);
 
   useEffect(() => {
     if (!projectLoaded || applyingHistoryRef.current || historyPausedRef.current) return;
@@ -479,7 +483,7 @@ function InfiniteCanvasPage() {
   }, [message]);
 
   const createConnectedNode = useCallback((type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config, pending: PendingConnectionCreate) => {
-    const metadata = type === CanvasNodeType.Config ? { model: config.imageModel || config.model, size: config.size, count: 3 } : undefined;
+    const metadata = type === CanvasNodeType.Config ? { size: config.size, count: 3 } : undefined;
     const newNode = createCanvasNode(type, pending.position, metadata);
     const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
     if (!connection) {
@@ -493,7 +497,7 @@ function InfiniteCanvasPage() {
     setDialogNodeId(newNode.id);
     setPendingConnectionCreate(null);
     setConnecting(null);
-  }, [config.imageModel, config.model, config.size, message, setConnecting]);
+  }, [config.size, message, setConnecting]);
 
   const cancelPendingConnectionCreate = useCallback(() => {
     setPendingConnectionCreate(null);
@@ -591,7 +595,6 @@ function InfiniteCanvasPage() {
     (type: CanvasNodeType, position?: Position) => {
       const targetPosition = position || getCanvasCenter();
       const configMetadata = type === CanvasNodeType.Config ? {
-        model: config.imageModel || config.model,
         size: config.size,
         count: 3,
       } : undefined;
@@ -602,7 +605,7 @@ function InfiniteCanvasPage() {
       setSelectedConnectionId(null);
       setDialogNodeId(newNode.id);
     },
-    [config.imageModel, config.model, config.size, getCanvasCenter],
+    [config.size, getCanvasCenter],
   );
 
   const deleteNodes = useCallback((ids: Set<string>) => {
@@ -633,8 +636,7 @@ function InfiniteCanvasPage() {
     setAngleNodeId((current) => current && allIds.has(current) ? null : current);
     setRunningNodeId((current) => current && allIds.has(current) ? null : current);
     setContextMenu((current) => current && allIds.has(current.nodeId) ? null : current);
-    cleanupAssetImages({ projectId, nodes: nodesRef.current.filter((node) => !allIds.has(node.id)), chatSessions });
-  }, [chatSessions, cleanupAssetImages, projectId]);
+  }, [chatSessions, projectId]);
 
   const deselectCanvas = useCallback(() => {
     cancelPendingConnectionCreate();
@@ -657,8 +659,7 @@ function InfiniteCanvasPage() {
     setRunningNodeId(null);
     deselectCanvas();
     setClearConfirmOpen(false);
-    cleanupAssetImages({ projectId, nodes: [], chatSessions: [] });
-  }, [cleanupAssetImages, deselectCanvas, projectId]);
+  }, [deselectCanvas, projectId]);
 
   const duplicateNode = useCallback((nodeId: string) => {
     const source = nodesRef.current.find((node) => node.id === nodeId);
@@ -805,16 +806,34 @@ function InfiniteCanvasPage() {
     applyHistory(next);
   }, [applyHistory]);
 
-  const createAndOpenProject = useCallback(() => {
-    const id = createProject(`无限画布 ${useCanvasStore.getState().projects.length + 1}`);
+  const createAndOpenProject = useCallback(async () => {
+    if (!token) {
+      message.error("请先登录");
+      return;
+    }
+    const title = `无限画布 ${useCanvasStore.getState().projects.length + 1}`;
+    const id = createId();
+    try {
+      await saveCanvas(token, { id, title, data: {} });
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "新建画布失败");
+      return;
+    }
     router.push(`/canvas/${id}`);
-  }, [createProject, router]);
+  }, [message, router, token]);
 
-  const deleteCurrentProject = useCallback(() => {
+  const deleteCurrentProject = useCallback(async () => {
+    if (token) {
+      try {
+        await deleteCanvas(token, projectId);
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : "删除画布失败");
+        return;
+      }
+    }
     deleteProjects([projectId]);
-    cleanupAssetImages();
     router.push("/canvas");
-  }, [cleanupAssetImages, deleteProjects, projectId, router]);
+  }, [deleteProjects, message, projectId, router, token]);
 
   const handleCanvasMouseDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1270,18 +1289,44 @@ function InfiniteCanvasPage() {
   }, []);
 
   const saveNodeAsset = useCallback(async (node: CanvasNodeData) => {
+    if (!token) {
+      message.error("请先登录");
+      return;
+    }
     if (node.type === CanvasNodeType.Text) {
       const content = node.metadata?.content?.trim();
       if (!content) return message.error("没有可保存的文本");
-      addAsset({ kind: "text", title: node.metadata?.prompt?.slice(0, 24) || "画布文本", coverUrl: "", tags: [], source: "Canvas", data: { content }, metadata: { source: "canvas", nodeId: node.id } });
-      message.success("已加入我的素材");
+      try {
+        await saveMyAsset(token, {
+          title: node.metadata?.prompt?.slice(0, 24) || "画布文本",
+          type: "text",
+          coverUrl: "",
+          tags: [],
+          category: "Canvas",
+          content,
+        });
+        message.success("已加入我的素材");
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : "保存失败");
+      }
       return;
     }
     if (!node.metadata?.content) return message.error("没有可保存的图片");
-    const dataUrl = node.metadata.storageKey ? "" : node.metadata.content;
-    addAsset({ kind: "image", title: node.metadata?.prompt?.slice(0, 24) || "画布图片", coverUrl: node.metadata.content, tags: [], source: "Canvas", data: { dataUrl, storageKey: node.metadata.storageKey, width: node.metadata.naturalWidth || node.width, height: node.metadata.naturalHeight || node.height, bytes: node.metadata.bytes || getDataUrlByteSize(dataUrl), mimeType: node.metadata.mimeType || "image/png" }, metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt } });
-    message.success("已加入我的素材");
-  }, [addAsset, message]);
+    try {
+      await saveMyAsset(token, {
+        title: node.metadata?.prompt?.slice(0, 24) || "画布图片",
+        type: "image",
+        coverUrl: node.metadata.content,
+        tags: [],
+        category: "Canvas",
+        description: node.metadata?.prompt,
+        url: node.metadata.content,
+      });
+      message.success("已加入我的素材");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "保存失败");
+    }
+  }, [message, token]);
 
   const cropImageNode = useCallback(async (node: CanvasNodeData, crop: CanvasImageCropRect) => {
     if (!node.metadata?.content) return;
@@ -1310,11 +1355,11 @@ function InfiniteCanvasPage() {
 
   const generateAngleNode = useCallback(async (node: CanvasNodeData, params: CanvasImageAngleParams) => {
     if (!node.metadata?.content) return;
-    const generationConfig = { ...buildGenerationConfig(config, node, "image"), count: "1" };
-    if (!generationConfig.baseUrl.trim() || !generationConfig.model.trim() || !generationConfig.apiKey.trim()) {
-      openConfigDialog(true);
+    if (!token) {
+      message.error("请先登录");
       return;
     }
+    const generationConfig = { ...buildGenerationConfig(config, node, "image"), count: "1" };
     const childId = createId();
     const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
     const title = buildAngleLabel(params);
@@ -1334,7 +1379,8 @@ function InfiniteCanvasPage() {
     setSelectedNodeIds(new Set([childId]));
     setDialogNodeId(childId);
     try {
-      const image = await requestEdit(generationConfig, prompt, [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey }]).then((items) => items[0]);
+      const { images } = await requestEdit(token, generationConfig, prompt, [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey }]);
+      const image = images[0];
       const uploaded = await uploadImage(image.dataUrl);
       const size = fitImageNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
       setNodes((prev) => prev.map((item) => item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...imageMetadata(uploaded), prompt } } : item));
@@ -1344,7 +1390,7 @@ function InfiniteCanvasPage() {
     } finally {
       setRunningNodeId(null);
     }
-  }, [config, openConfigDialog]);
+  }, [config, message, token]);
 
   const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
     setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, fontSize } } : node)));
@@ -1433,12 +1479,12 @@ function InfiniteCanvasPage() {
 
   const handleGenerateNode = useCallback(
     async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
-      const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
-      const generationConfig = buildGenerationConfig(config, sourceNode, mode);
-      if (!generationConfig.baseUrl.trim() || !generationConfig.model.trim() || !generationConfig.apiKey.trim()) {
-        openConfigDialog(true);
+      if (!token) {
+        message.error("请先登录");
         return;
       }
+      const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
+      const generationConfig = buildGenerationConfig(config, sourceNode, mode);
 
       setRunningNodeId(nodeId);
       const sourceTextContent = sourceNode?.type === CanvasNodeType.Text ? sourceNode.metadata?.content?.trim() || "" : "";
@@ -1527,9 +1573,10 @@ function InfiniteCanvasPage() {
           let hasSuccess = false;
           await Promise.all(targetIds.map(async (targetId) => {
             try {
-              const image = referenceImages.length
-                ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages).then((items) => items[0])
-                : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt).then((items) => items[0]);
+              const { images } = referenceImages.length
+                ? await requestEdit(token, { ...generationConfig, count: "1" }, effectivePrompt, referenceImages)
+                : await requestGeneration(token, { ...generationConfig, count: "1" }, effectivePrompt);
+              const image = images[0];
               const uploaded = await uploadImage(image.dataUrl);
               const imageSize = fitImageNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
               setNodes((prev) => {
@@ -1587,7 +1634,7 @@ function InfiniteCanvasPage() {
         const answers = await Promise.all(
           (childIds.length ? childIds : [nodeId]).map((targetNodeId) => {
             let localStreamed = "";
-            return requestImageQuestion(generationConfig, buildNodeChatMessages({ ...generationContext, prompt: effectivePrompt }), (text) => {
+            return requestImageQuestion(token, buildNodeChatMessages({ ...generationContext, prompt: effectivePrompt }), (text) => {
               localStreamed = text;
               streamed = text;
               if (isConfigNode) return;
@@ -1617,17 +1664,17 @@ function InfiniteCanvasPage() {
         setRunningNodeId(null);
       }
     },
-    [config, openConfigDialog],
+    [config, message, token],
   );
 
   const handleRetryNode = useCallback(
     async (node: CanvasNodeData) => {
-      const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
-      const generationConfig = { ...buildGenerationConfig(config, sourceNode, node.type === CanvasNodeType.Text ? "text" : "image"), count: "1" };
-      if (!generationConfig.baseUrl.trim() || !generationConfig.model.trim() || !generationConfig.apiKey.trim()) {
-        openConfigDialog(true);
+      if (!token) {
+        message.error("请先登录");
         return;
       }
+      const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
+      const generationConfig = { ...buildGenerationConfig(config, sourceNode, node.type === CanvasNodeType.Text ? "text" : "image"), count: "1" };
 
       const context = await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourceNode.metadata?.prompt || node.metadata?.prompt || ""));
       const prompt = context.prompt.trim();
@@ -1642,7 +1689,7 @@ function InfiniteCanvasPage() {
       try {
         if (node.type === CanvasNodeType.Text) {
           let streamed = "";
-          const answer = await requestImageQuestion(generationConfig, buildNodeChatMessages({ ...context, prompt }), (text) => {
+          const answer = await requestImageQuestion(token, buildNodeChatMessages({ ...context, prompt }), (text) => {
             streamed = text;
             setNodes((prev) => prev.map((item) => item.id === node.id ? { ...item, type: CanvasNodeType.Text, metadata: { ...item.metadata, content: text, status: NODE_STATUS_LOADING } } : item));
           });
@@ -1650,9 +1697,10 @@ function InfiniteCanvasPage() {
           return;
         }
 
-        const image = context.referenceImages.length
-          ? await requestEdit(generationConfig, prompt, context.referenceImages).then((items) => items[0])
-          : await requestGeneration(generationConfig, prompt).then((items) => items[0]);
+        const { images } = context.referenceImages.length
+          ? await requestEdit(token, generationConfig, prompt, context.referenceImages)
+          : await requestGeneration(token, generationConfig, prompt);
+        const image = images[0];
         const uploadedImage = await uploadImage(image.dataUrl);
         const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
         const imageSize = fitImageNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
@@ -1670,7 +1718,7 @@ function InfiniteCanvasPage() {
         setRunningNodeId(null);
       }
     },
-    [config, message, openConfigDialog],
+    [config, message, token],
   );
 
   const generateImageFromTextNode = useCallback((node: CanvasNodeData) => {
@@ -1687,7 +1735,6 @@ function InfiniteCanvasPage() {
       y: sourceNode.position.y + sourceNode.height / 2,
     }, {
       prompt: "",
-      model: config.imageModel || config.model,
       size: config.size,
       count: 3,
     });
@@ -1701,7 +1748,7 @@ function InfiniteCanvasPage() {
     setSelectedNodeIds(new Set([configNode.id]));
     setSelectedConnectionId(null);
     setDialogNodeId(configNode.id);
-  }, [config.imageModel, config.model, config.size, message]);
+  }, [config.size, message]);
 
   const insertAssistantImage = useCallback(async (image: CanvasAssistantImage) => {
     const storedImage = image.storageKey
@@ -1755,7 +1802,17 @@ function InfiniteCanvasPage() {
     setAssetPickerOpen(false);
   }, [insertAssistantImage, insertAssistantText]);
 
-  if (!projectLoaded) return <CanvasRefreshShell />;
+  if (syncStatus === "error") {
+    return (
+      <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">
+        <div className="flex flex-col items-center gap-3">
+          <span>画布加载失败</span>
+          <Button onClick={() => router.push("/canvas")}>返回画布库</Button>
+        </div>
+      </main>
+    );
+  }
+  if (syncStatus === "loading" || !projectLoaded) return <CanvasRefreshShell />;
 
   return (
     <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
@@ -1765,6 +1822,9 @@ function InfiniteCanvasPage() {
           titleDraft={titleDraft}
           isTitleEditing={titleEditing}
           userName={user?.username || "访客"}
+          credits={user?.credits ?? 0}
+          role={user?.role || "user"}
+          saveStatus={saveStatus}
           onTitleDraftChange={setTitleDraft}
           onStartTitleEditing={startTitleEditing}
           onFinishTitleEditing={finishTitleEditing}
@@ -1774,11 +1834,10 @@ function InfiniteCanvasPage() {
           onHome={() => router.push("/")}
           onProjects={() => router.push("/canvas")}
           onCreateProject={createAndOpenProject}
-          onDeleteProject={deleteCurrentProject}
+          onDeleteProject={() => void deleteCurrentProject()}
           onImportImage={() => handleUploadRequest()}
           onUndo={undoCanvas}
           onRedo={redoCanvas}
-          onOpenConfig={() => openConfigDialog(false)}
           onLogout={logout}
           assistantCollapsed={assistantCollapsed}
           onExpandAssistant={() => {
@@ -2052,6 +2111,9 @@ function CanvasTopBar({
   titleDraft,
   isTitleEditing,
   userName,
+  credits,
+  role,
+  saveStatus,
   onTitleDraftChange,
   onStartTitleEditing,
   onFinishTitleEditing,
@@ -2065,7 +2127,6 @@ function CanvasTopBar({
   onImportImage,
   onUndo,
   onRedo,
-  onOpenConfig,
   onLogout,
   assistantCollapsed,
   onExpandAssistant,
@@ -2074,6 +2135,9 @@ function CanvasTopBar({
   titleDraft: string;
   isTitleEditing: boolean;
   userName: string;
+  credits: number;
+  role: string;
+  saveStatus: "idle" | "saving" | "saved" | "error";
   onTitleDraftChange: (value: string) => void;
   onStartTitleEditing: () => void;
   onFinishTitleEditing: () => void;
@@ -2087,7 +2151,6 @@ function CanvasTopBar({
   onImportImage: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onOpenConfig: () => void;
   onLogout: () => void;
   assistantCollapsed: boolean;
   onExpandAssistant: () => void;
@@ -2170,15 +2233,28 @@ function CanvasTopBar({
               {title}
             </button>
           )}
+          <span className="text-xs opacity-60" style={{ color: theme.node.muted }}>
+            {saveStatus === "saving" ? "保存中…" : saveStatus === "saved" ? "已保存" : saveStatus === "error" ? "保存失败" : ""}
+          </span>
         </div>
       </div>
 
       <div className="pointer-events-auto flex items-center gap-1.5">
+        <Tooltip title="点击查看积分流水">
+          <Link href="/profile" className="inline-flex shrink-0">
+            <Tag
+              icon={<Coins className="size-3" />}
+              color={role === "admin" ? "gold" : "blue"}
+              className="!m-0 !flex !cursor-pointer !items-center !gap-1 !text-xs"
+            >
+              {role === "admin" ? "∞" : `${credits ?? 0} 积分`}
+            </Tag>
+          </Link>
+        </Tooltip>
         <UserStatusActions
           version={appVersion}
           theme={colorTheme}
           onThemeChange={setTheme}
-          onOpenConfig={onOpenConfig}
           userName={userName}
           initial={initial}
           accountOpen={accountOpen}
@@ -2330,11 +2406,8 @@ function getInputSummary(inputs: NodeGenerationInput[]) {
   };
 }
 
-function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefined, mode: CanvasNodeGenerationMode): AiConfig {
-  const defaultModel = mode === "image" ? config.imageModel : config.textModel;
+function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefined, _mode: CanvasNodeGenerationMode): AiConfig {
   return {
-    ...config,
-    model: node?.metadata?.model || defaultModel || config.model || defaultConfig.model,
     quality: config.quality || defaultConfig.quality,
     size: node?.metadata?.size || config.size || defaultConfig.size,
     count: String(node?.metadata?.count || config.count || defaultConfig.count),

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextOutlined, HomeOutlined, LogoutOutlined, PictureOutlined } from "@ant-design/icons";
+import { ApiOutlined, FileTextOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, TeamOutlined } from "@ant-design/icons";
 import { Button, Flex, Layout, Menu, Typography } from "antd";
 import { LogOut } from "lucide-react";
 import Link from "next/link";
@@ -21,8 +21,15 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const logout = useUserStore((state) => state.clearSession);
   const colorTheme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
-  const activeKey = pathname.startsWith("/admin/assets") ? "/admin/assets" : pathname.startsWith("/admin/prompts") ? "/admin/prompts" : "";
-  const pageTitle = pathname.startsWith("/admin/assets") ? "素材库管理" : "提示词管理";
+  const adminMenuItems = [
+    { key: "/admin/users", icon: <TeamOutlined />, label: <Link href="/admin/users" style={{ color: "inherit" }}>用户管理</Link>, title: "用户管理" },
+    { key: "/admin/ai-configs", icon: <ApiOutlined />, label: <Link href="/admin/ai-configs" style={{ color: "inherit" }}>模型配置</Link>, title: "模型配置" },
+    { key: "/admin/prompts", icon: <FileTextOutlined />, label: <Link href="/admin/prompts" style={{ color: "inherit" }}>提示词管理</Link>, title: "提示词管理" },
+    { key: "/admin/assets", icon: <PictureOutlined />, label: <Link href="/admin/assets" style={{ color: "inherit" }}>素材库</Link>, title: "素材库管理" },
+  ];
+  const activeMenu = adminMenuItems.find((item) => pathname.startsWith(item.key));
+  const activeKey = activeMenu?.key || "";
+  const pageTitle = activeMenu?.title || "管理后台";
   const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "dev";
 
   useEffect(() => {
@@ -55,10 +62,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             mode="inline"
             selectedKeys={[activeKey]}
             style={{ borderInlineEnd: 0, padding: "12px 8px" }}
-            items={[
-              { key: "/admin/prompts", icon: <FileTextOutlined />, label: <Link href="/admin/prompts" style={{ color: "inherit" }}>提示词管理</Link> },
-              { key: "/admin/assets", icon: <PictureOutlined />, label: <Link href="/admin/assets" style={{ color: "inherit" }}>素材库</Link> },
-            ]}
+            items={adminMenuItems.map(({ key, icon, label }) => ({ key, icon, label }))}
           />
           <Flex vertical gap={8} style={{ position: "absolute", bottom: 0, insetInline: 0, padding: 12 }}>
             <Button block icon={<HomeOutlined />} href="/canvas" target="_blank" rel="noreferrer">前往画布</Button>
@@ -73,7 +77,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 version={appVersion}
                 theme={colorTheme}
                 onThemeChange={setTheme}
-                showConfig={false}
                 userName={user.username}
                 menuItems={[{ key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: logout }]}
               />

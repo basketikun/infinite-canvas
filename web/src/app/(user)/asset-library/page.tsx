@@ -8,7 +8,8 @@ import axios from "axios";
 import copy from "copy-to-clipboard";
 
 import { cn } from "@/lib/utils";
-import { useAssetStore } from "@/stores/use-asset-store";
+import { saveMyAsset } from "@/services/api/my-assets";
+import { useUserStore } from "@/stores/use-user-store";
 import { fetchAssetLibrary, type AssetLibraryItem } from "@/services/api/assets";
 import { uploadImage } from "@/services/image-storage";
 
@@ -21,7 +22,7 @@ export default function AssetLibraryPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [selectedAsset, setSelectedAsset] = useState<AssetLibraryItem | null>(null);
-  const addAsset = useAssetStore((state) => state.addAsset);
+  const token = useUserStore((state) => state.token);
 
   const query = useQuery({
     queryKey: ["asset-library", keyword, selectedType, selectedTags, page],
@@ -45,35 +46,37 @@ export default function AssetLibraryPage() {
   };
 
   const saveToMyAssets = async (asset: AssetLibraryItem) => {
+    if (!token) {
+      message.error("请先登录");
+      return;
+    }
     try {
       if (asset.type === "image") {
         const dataUrl = await remoteImageToDataUrl(asset.url);
         const image = await uploadImage(dataUrl);
-        addAsset({
-          kind: "image",
+        await saveMyAsset(token, {
           title: asset.title,
-          coverUrl: asset.coverUrl,
+          type: "image",
+          coverUrl: asset.coverUrl || image.url,
           tags: asset.tags,
-          source: asset.category,
-          note: asset.description,
-          data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType },
-          metadata: { source: "asset-library", assetId: asset.id },
+          category: asset.category,
+          description: asset.description,
+          url: image.url,
         });
       } else {
-        addAsset({
-          kind: "text",
+        await saveMyAsset(token, {
           title: asset.title,
+          type: "text",
           coverUrl: asset.coverUrl,
           tags: asset.tags,
-          source: asset.category,
-          note: asset.description,
-          data: { content: asset.content },
-          metadata: { source: "asset-library", assetId: asset.id },
+          category: asset.category,
+          description: asset.description,
+          content: asset.content,
         });
       }
       message.success("已加入我的素材");
-    } catch {
-      message.error("加入失败");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "加入失败");
     }
   };
 

@@ -9,7 +9,7 @@ import (
 )
 
 func Assets(w http.ResponseWriter, r *http.Request) {
-	result, err := service.ListAssets(parseQuery(r))
+	result, err := service.ListPublicAssets(parseQuery(r))
 	if err != nil {
 		Fail(w, err.Error())
 		return
@@ -18,7 +18,7 @@ func Assets(w http.ResponseWriter, r *http.Request) {
 }
 
 func AdminAssets(w http.ResponseWriter, r *http.Request) {
-	result, err := service.ListAssets(parseQuery(r))
+	result, err := service.ListPublicAssets(parseQuery(r))
 	if err != nil {
 		Fail(w, err.Error())
 		return
@@ -29,7 +29,7 @@ func AdminAssets(w http.ResponseWriter, r *http.Request) {
 func AdminSaveAsset(w http.ResponseWriter, r *http.Request) {
 	var item model.Asset
 	_ = json.NewDecoder(r.Body).Decode(&item)
-	result, err := service.SaveAsset(item)
+	result, err := service.SavePublicAsset(item)
 	if err != nil {
 		Fail(w, err.Error())
 		return
@@ -38,7 +38,47 @@ func AdminSaveAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func AdminDeleteAsset(w http.ResponseWriter, r *http.Request, id string) {
-	if err := service.DeleteAsset(id); err != nil {
+	if err := service.DeletePublicAsset(id); err != nil {
+		Fail(w, err.Error())
+		return
+	}
+	OK(w, true)
+}
+
+func MyAssets(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	result, err := service.ListMyAssets(user.ID, parseQuery(r))
+	if err != nil {
+		Fail(w, err.Error())
+		return
+	}
+	OK(w, result)
+}
+
+func SaveMyAsset(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	var item model.Asset
+	_ = json.NewDecoder(r.Body).Decode(&item)
+	result, err := service.SaveMyAsset(user.ID, item)
+	if err != nil {
+		Fail(w, err.Error())
+		return
+	}
+	OK(w, result)
+}
+
+func DeleteMyAsset(w http.ResponseWriter, r *http.Request, id string) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if err := service.DeleteMyAsset(user.ID, id); err != nil {
 		Fail(w, err.Error())
 		return
 	}

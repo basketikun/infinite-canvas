@@ -48,6 +48,10 @@ func DB() (*gorm.DB, error) {
 			&model.User{},
 			&model.Prompt{},
 			&model.Asset{},
+			&model.AIConfig{},
+			&model.Canvas{},
+			&model.Generation{},
+			&model.CreditLog{},
 		)
 	})
 	return db, dbErr

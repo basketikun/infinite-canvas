@@ -2,7 +2,6 @@
 
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import { Dropdown } from "antd";
-import { Settings2 } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
 
 import { GitHubLink } from "@/components/github-link";
@@ -14,8 +13,6 @@ type UserStatusActionsProps = {
   version: string;
   theme: ThemeName;
   onThemeChange: (theme: ThemeName) => void;
-  onOpenConfig?: () => void;
-  showConfig?: boolean;
   userName?: string;
   initial?: string;
   menuItems: ItemType[];
@@ -35,8 +32,6 @@ export function UserStatusActions({
   version,
   theme,
   onThemeChange,
-  onOpenConfig,
-  showConfig = true,
   userName,
   initial,
   menuItems,
@@ -56,18 +51,6 @@ export function UserStatusActions({
 
   return (
     <div className="inline-flex shrink-0 items-center gap-1.5">
-      {showConfig ? (
-        <button
-          type="button"
-          className={naturalIconClass}
-          style={iconStyle}
-          onClick={onOpenConfig}
-          aria-label="配置"
-          title="配置"
-        >
-          <Settings2 className="size-4" />
-        </button>
-      ) : null}
       <AnimatedThemeToggler
         theme={theme}
         onThemeChange={onThemeChange}

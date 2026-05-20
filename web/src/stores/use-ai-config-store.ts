@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { CONFIG_STORE_KEY, defaultConfig, type AiConfig } from "@/lib/ai-config";
+import { CONFIG_STORE_KEY, CONFIG_STORE_VERSION, defaultConfig, type AiConfig } from "@/lib/ai-config";
 
 type AiConfigStore = {
   config: AiConfig;
@@ -22,9 +22,11 @@ export const useAiConfigStore = create<AiConfigStore>()(
     }),
     {
       name: CONFIG_STORE_KEY,
+      version: CONFIG_STORE_VERSION,
+      migrate: () => ({ config: defaultConfig }),
       merge: (persisted, current) => {
-        const config = { ...defaultConfig, ...((persisted as Partial<AiConfigStore>).config || {}) };
-        return { ...current, config: { ...config, imageModel: config.imageModel || config.model, textModel: config.textModel || config.model } };
+        const persistedConfig = (persisted as Partial<AiConfigStore>).config || {};
+        return { ...current, config: { ...defaultConfig, ...persistedConfig } };
       },
     },
   ),

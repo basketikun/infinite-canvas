@@ -17,6 +17,10 @@
 - `users`
 - `prompts`
 - `assets`
+- `ai_configs`
+- `canvases`
+- `generations`
+- `credit_logs`
 
 后续新增表时，优先保持表数量少，能用字段或 JSON 表达的配置、状态、统计和扩展信息先不拆表。
 
@@ -33,7 +37,7 @@
 | `display_name`  | string | 昵称                       |
 | `avatar_url`    | string | 头像地址                     |
 | `role`          | string | 角色：`user`、`admin`        |
-| `credits`       | number | 算力点余额，规划字段               |
+| `credits`       | number | 生图剩余额度，注册默认 4，管理员账号不消耗   |
 | `aff_code`      | string | 用户自己的邀请码，唯一索引，规划字段       |
 | `aff_count`     | number | 已邀请用户数量，冗余统计字段，规划字段      |
 | `inviter_id`    | string | 邀请人用户 ID，规划字段            |
@@ -68,15 +72,15 @@
 
 ### assets
 
-素材表。当前用于素材库；后续通过 `user_id`、`visibility`、`type` 区分系统公开素材和用户私有素材。
+素材表。`visibility=public` 由管理员通过后台维护（前台 `/asset-library` 展示）；`visibility=private` 由用户在画布/工作台保存到「我的素材」，通过 `/api/assets/me` 端点管理。
 
 | 字段               | 类型     | 说明                            |
 |------------------|--------|-------------------------------|
 | `id`             | string | 主键                            |
-| `user_id`        | string | 所属用户，为空或系统用户表示公开素材，规划字段       |
+| `user_id`        | string | 所属用户，为空表示公开素材                 |
 | `title`          | string | 标题                            |
 | `type`           | string | 素材类型：`text`、`image`、`video` 等 |
-| `visibility`     | string | 可见性：公开、私有，规划字段                |
+| `visibility`     | string | 可见性：`public`、`private`         |
 | `cover_url`      | string | 封面图                           |
 | `tags`           | json   | 标签列表                          |
 | `category`       | string | 分类标识                          |
@@ -89,6 +93,76 @@
 | `extra`          | json   | 扩展信息，规划字段                     |
 | `created_at`     | string | 创建时间                          |
 | `updated_at`     | string | 更新时间                          |
+
+### ai_configs
+
+OpenAI 兼容接口的连接配置。同一时间最多一条记录的 `enabled=true`，所有反代请求都使用启用的那条配置。
+
+| 字段            | 类型      | 说明                              |
+|---------------|---------|---------------------------------|
+| `id`          | string  | 主键                              |
+| `name`        | string  | 配置名称                            |
+| `base_url`    | string  | OpenAI 兼容接口的根地址，可省略 `/v1` 后缀    |
+| `api_key`     | string  | 调用密钥，仅后端持有；列表接口返回前会脱敏           |
+| `image_model` | string  | 图像模型 ID，反代生图时强制使用，覆盖前端请求体中的 `model` |
+| `text_model`  | string  | 文本模型 ID，反代 chat 时强制使用             |
+| `enabled`     | bool    | 是否启用；启用某条时其他记录会自动置为 false       |
+| `created_at`  | string  | 创建时间                            |
+| `updated_at`  | string  | 更新时间                            |
+
+### canvases
+
+用户私有画布。`data` 字段保存前端 `CanvasProject` 整体的 JSON 序列化结果（包含 nodes、connections、chatSessions、viewport 等）。同一用户多个画布通过 `user_id` 索引区分。
+
+| 字段           | 类型     | 说明                       |
+|--------------|--------|--------------------------|
+| `id`         | string | 主键，前端可生成传入               |
+| `user_id`    | string | 所属用户，索引                  |
+| `title`      | string | 画布名称                     |
+| `cover_url`  | string | 列表展示用封面，可选               |
+| `data`       | json   | 完整画布 JSON               |
+| `created_at` | string | 创建时间                     |
+| `updated_at` | string | 更新时间                     |
+
+注：画布中图片节点引用的 Blob 仍存于用户浏览器 localForage（按 user id 分桶），跨设备暂不同步图片本体。
+
+### generations
+
+生图工作台历史，按用户隔离。**缩略图本体不入库**，只保存浏览器 localForage 中的 `storageKey`，因此跨设备只能查看文字与统计。
+
+| 字段              | 类型     | 说明                                       |
+|-----------------|--------|------------------------------------------|
+| `id`            | string | 主键                                       |
+| `user_id`       | string | 所属用户，索引                                  |
+| `prompt`        | string | 提示词                                      |
+| `mode`          | string | `image`（文生图）或 `edit`（图生图）                |
+| `model`         | string | 调用时启用配置中的 imageModel                     |
+| `size`          | string | 请求尺寸                                     |
+| `quality`       | string | 请求质量                                     |
+| `count`         | number | 请求数量                                     |
+| `success_count` | number | 成功张数                                     |
+| `fail_count`    | number | 失败张数                                     |
+| `duration_ms`   | number | 耗时（毫秒）                                  |
+| `status`        | string | `success` / `partial` / `failed`         |
+| `thumbnails`    | json   | localForage 中的 storageKey 列表（最多 6 张）     |
+| `created_at`    | string | 创建时间                                     |
+
+### credit_logs
+
+用户积分流水。仅追加，无更新与删除。
+
+| 字段            | 类型     | 说明                                       |
+|---------------|--------|------------------------------------------|
+| `id`          | string | 主键                                       |
+| `user_id`     | string | 所属用户，索引                                  |
+| `type`        | string | `consume` / `admin_adjust` / `signup_bonus` |
+| `amount`      | number | 变动量，扣减为负、增加为正                            |
+| `balance`     | number | 变动后剩余积分                                  |
+| `model`       | string | `consume` 时记录使用的模型                       |
+| `related_id`  | string | 关联业务 ID（如 generation.id），可空              |
+| `operator_id` | string | `admin_adjust` 时记录操作管理员 ID               |
+| `remark`      | string | 备注                                       |
+| `created_at`  | string | 创建时间                                     |
 
 ### settings
 

@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { App, Empty, Input, Modal, Pagination, Spin, Tabs, Tag } from "antd";
 import { Search } from "lucide-react";
 import axios from "axios";
 
 import { cn } from "@/lib/utils";
-import { useAssetStore, type Asset } from "@/stores/use-asset-store";
+import { fetchMyAssets, type MyAsset } from "@/services/api/my-assets";
+import { useUserStore } from "@/stores/use-user-store";
 import { fetchAssetLibrary, type AssetLibraryItem } from "@/services/api/assets";
 
 export type AssetPickerTab = "my-assets" | "library";
@@ -55,7 +56,7 @@ export function AssetPickerModal({ open, defaultTab = "my-assets", onInsert, onC
 const PAGE_SIZE = 8;
 
 const kindOptions = [
-  { label: "全部", value: "all" },
+  { label: "全部", value: "" },
   { label: "文本", value: "text" },
   { label: "图片", value: "image" },
 ];
@@ -191,31 +192,26 @@ async function remoteImageToDataUrl(url: string) {
 }
 
 function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => void }) {
-  const assets = useAssetStore((state) => state.assets);
+  const token = useUserStore((state) => state.token);
   const [keyword, setKeyword] = useState("");
-  const [kindFilter, setKindFilter] = useState("all");
+  const [kindFilter, setKindFilter] = useState("");
   const [page, setPage] = useState(1);
 
-  const filtered = useMemo(() => {
-    const query = keyword.trim().toLowerCase();
-    return assets
-      .filter((a) => a.kind === "text" || a.kind === "image")
-      .filter((a) => kindFilter === "all" || a.kind === kindFilter)
-      .filter((a) => !query || [a.title, ...(a.tags || [])].join(" ").toLowerCase().includes(query));
-  }, [assets, keyword, kindFilter]);
+  const query = useQuery({
+    queryKey: ["my-assets-picker", token, keyword, kindFilter, page],
+    queryFn: () => fetchMyAssets(token, { keyword, type: kindFilter, page, pageSize: PAGE_SIZE }),
+    enabled: Boolean(token),
+    retry: false,
+  });
 
-  const visible = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
+  const items = query.data?.items || [];
+  const total = query.data?.total || 0;
 
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-    setPage((v) => Math.min(v, maxPage));
-  }, [filtered.length]);
-
-  const handleInsert = (asset: Asset) => {
-    if (asset.kind === "text") {
-      onInsert({ kind: "text", content: asset.data.content, title: asset.title });
+  const handleInsert = (asset: MyAsset) => {
+    if (asset.type === "text") {
+      onInsert({ kind: "text", content: asset.content, title: asset.title });
     } else {
-      onInsert({ kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title });
+      onInsert({ kind: "image", dataUrl: asset.url || asset.coverUrl, title: asset.title });
     }
   };
 
@@ -234,7 +230,7 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
         <div className="flex gap-1.5">
           {kindOptions.map((opt) => (
             <Tag.CheckableTag
-              key={opt.value}
+              key={opt.value || "all"}
               checked={kindFilter === opt.value}
               className={cn("prompt-filter-tag", kindFilter === opt.value && "is-active")}
               onChange={() => { setPage(1); setKindFilter(opt.value); }}
@@ -245,19 +241,21 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
         </div>
       </div>
 
-      {visible.length ? (
+      {query.isLoading ? (
+        <div className="flex justify-center py-16"><Spin /></div>
+      ) : items.length ? (
         <div className="grid grid-cols-4 gap-3">
-          {visible.map((asset) => (
-            <PickerCard key={asset.id} title={asset.title} kind={asset.kind} cover={asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "")} onClick={() => handleInsert(asset)} />
+          {items.map((asset) => (
+            <PickerCard key={asset.id} title={asset.title} kind={asset.type} cover={asset.coverUrl || (asset.type === "image" ? asset.url : "")} onClick={() => handleInsert(asset)} />
           ))}
         </div>
       ) : (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有素材" className="py-12" />
       )}
 
-      {filtered.length > PAGE_SIZE && (
+      {total > PAGE_SIZE && (
         <div className="flex justify-center">
-          <Pagination size="small" current={page} pageSize={PAGE_SIZE} total={filtered.length} onChange={setPage} showSizeChanger={false} />
+          <Pagination size="small" current={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} showSizeChanger={false} />
         </div>
       )}
     </div>

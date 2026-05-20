@@ -23,6 +23,7 @@ type saveUserRequest struct {
 	Username string         `json:"username"`
 	Password string         `json:"password"`
 	Role     model.UserRole `json:"role"`
+	Credits  int            `json:"credits"`
 }
 
 func Register(w http.ResponseWriter, r *http.Request) {
@@ -42,25 +43,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	session, err := service.Login(request.Username, request.Password)
 	if err != nil {
 		Fail(w, err.Error())
-		return
-	}
-	if session.User.Role != model.UserRoleAdmin {
-		Fail(w, "需要管理员权限")
-		return
-	}
-	OK(w, session)
-}
-
-func AdminLogin(w http.ResponseWriter, r *http.Request) {
-	var request loginRequest
-	_ = json.NewDecoder(r.Body).Decode(&request)
-	session, err := service.Login(request.Username, request.Password)
-	if err != nil {
-		Fail(w, err.Error())
-		return
-	}
-	if session.User.Role != model.UserRoleAdmin {
-		Fail(w, "需要管理员权限")
 		return
 	}
 	OK(w, session)
@@ -86,11 +68,16 @@ func AdminUsers(w http.ResponseWriter, r *http.Request) {
 func AdminSaveUser(w http.ResponseWriter, r *http.Request) {
 	var request saveUserRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
+	operatorID := ""
+	if op, ok := service.UserFromContext(r.Context()); ok {
+		operatorID = op.ID
+	}
 	user, err := service.SaveUser(model.User{
 		ID:       request.ID,
 		Username: request.Username,
 		Role:     request.Role,
-	}, request.Password)
+		Credits:  request.Credits,
+	}, request.Password, operatorID)
 	if err != nil {
 		Fail(w, err.Error())
 		return

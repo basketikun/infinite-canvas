@@ -4,11 +4,9 @@ import { useEffect, useState } from "react";
 import { ArrowUp, LoaderCircle } from "lucide-react";
 import { Button, InputNumber } from "antd";
 
-import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, type AiConfig } from "@/lib/ai-config";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAiConfigStore } from "@/stores/use-ai-config-store";
-import { useConfigDialogStore } from "@/stores/use-config-dialog-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import { CanvasSizePicker } from "./canvas-size-picker";
@@ -26,7 +24,6 @@ type CanvasNodePromptPanelProps = {
 
 export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate }: CanvasNodePromptPanelProps) {
   const globalConfig = useAiConfigStore((state) => state.config);
-  const openConfigDialog = useConfigDialogStore((state) => state.openConfigDialog);
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const mode = defaultMode(node.type);
   const config = buildNodeConfig(globalConfig, node, mode);
@@ -75,7 +72,6 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
       <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <CanvasPromptLibrary onSelect={updatePrompt} />
-          <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} />
           {mode === "image" ? (
             <CanvasSizePicker className="h-10 w-[92px] shrink-0" value={config.size} onChange={(value) => onConfigChange(node.id, { size: value })} />
           ) : null}
@@ -102,10 +98,7 @@ function defaultMode(type: CanvasNodeData["type"]): CanvasNodeGenerationMode {
 }
 
 function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: CanvasNodeGenerationMode): AiConfig {
-  const defaultModel = mode === "image" ? globalConfig.imageModel : globalConfig.textModel;
   return {
-    ...globalConfig,
-    model: node.metadata?.model || defaultModel || globalConfig.model || defaultConfig.model,
     quality: globalConfig.quality || defaultConfig.quality,
     size: node.metadata?.size || globalConfig.size || defaultConfig.size,
     count: String(node.metadata?.count || (mode === "image" ? 3 : globalConfig.count) || defaultConfig.count),

@@ -46,7 +46,6 @@ func EnsureDefaultAdmin() error {
 }
 
 func Register(username string, password string) (model.AuthSession, error) {
-	return model.AuthSession{}, errors.New("注册功能暂时关闭")
 	username = strings.TrimSpace(username)
 	if strings.ContainsAny(username, " \t\r\n") {
 		return model.AuthSession{}, errors.New("用户名不能包含空格")
@@ -69,11 +68,21 @@ func Register(username string, password string) (model.AuthSession, error) {
 		Username:  username,
 		Password:  hash,
 		Role:      model.UserRoleUser,
+		Credits:   model.DefaultUserCredits,
 		CreatedAt: now(),
 		UpdatedAt: now(),
 	})
 	if err != nil {
 		return model.AuthSession{}, err
+	}
+	if err := LogCreditChange(model.CreditLog{
+		UserID:  user.ID,
+		Type:    model.CreditLogTypeSignupBonus,
+		Amount:  model.DefaultUserCredits,
+		Balance: user.Credits,
+		Remark:  "注册赠送",
+	}); err != nil {
+		log.Printf("write signup credit log failed user=%s err=%v", user.ID, err)
 	}
 	return newSession(user)
 }
@@ -123,7 +132,7 @@ func ListUsers(q model.Query) (model.UserList, error) {
 	return model.UserList{Items: users, Total: int(total)}, nil
 }
 
-func SaveUser(user model.User, password string) (model.User, error) {
+func SaveUser(user model.User, password string, operatorID string) (model.User, error) {
 	user.Username = strings.TrimSpace(user.Username)
 	if strings.ContainsAny(user.Username, " \t\r\n") {
 		return user, errors.New("用户名不能包含空格")
@@ -134,17 +143,23 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	if user.Role == "" || user.Role == model.UserRoleGuest {
 		user.Role = model.UserRoleUser
 	}
+	if user.Credits < 0 {
+		user.Credits = 0
+	}
 	if saved, ok, err := repository.GetUserByUsername(user.Username); err != nil {
 		return user, err
 	} else if ok && saved.ID != user.ID {
 		return user, errors.New("用户名已存在")
 	}
-	if user.ID == "" {
+	previousCredits := 0
+	isNew := user.ID == ""
+	if isNew {
 		user.ID = newID("user")
 		user.CreatedAt = now()
 	} else if saved, ok, err := repository.GetUserByID(user.ID); err != nil {
 		return user, err
 	} else if ok {
+		previousCredits = saved.Credits
 		user.CreatedAt = saved.CreatedAt
 		user.Password = saved.Password
 	}
@@ -159,13 +174,47 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		return user, errors.New("密码不能为空")
 	}
 	user.UpdatedAt = now()
-	user, err := repository.SaveUser(user)
-	user.Password = ""
-	return user, err
+	saved, err := repository.SaveUser(user)
+	if err != nil {
+		return saved, err
+	}
+	diff := saved.Credits - previousCredits
+	if diff != 0 {
+		if err := LogCreditChange(model.CreditLog{
+			UserID:     saved.ID,
+			Type:       model.CreditLogTypeAdminAdjust,
+			Amount:     diff,
+			Balance:    saved.Credits,
+			OperatorID: operatorID,
+			Remark:     adminAdjustRemark(isNew, diff),
+		}); err != nil {
+			log.Printf("write admin adjust credit log failed user=%s err=%v", saved.ID, err)
+		}
+	}
+	saved.Password = ""
+	return saved, nil
+}
+
+func adminAdjustRemark(isNew bool, diff int) string {
+	if isNew {
+		return "管理员创建账号"
+	}
+	if diff > 0 {
+		return "管理员调增额度"
+	}
+	return "管理员调减额度"
 }
 
 func DeleteUser(id string) error {
 	return repository.DeleteUser(id)
+}
+
+// ConsumeCredits 原子扣减用户额度，余额不足时返回 false。
+func ConsumeCredits(userID string, amount int) (int, bool, error) {
+	if amount <= 0 {
+		return 0, true, nil
+	}
+	return repository.ConsumeUserCredits(userID, amount)
 }
 
 func GuestUser() model.AuthUser {

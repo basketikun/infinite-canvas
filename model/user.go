@@ -8,12 +8,15 @@ const (
 	UserRoleAdmin UserRole = "admin"
 )
 
+const DefaultUserCredits = 4
+
 // User 系统用户。
 type User struct {
-	ID       string   `json:"id" gorm:"primaryKey"`
-	Username string   `json:"username" gorm:"uniqueIndex"`
-	Password string   `json:"password,omitempty"`
-	Role     UserRole `json:"role"`
+	ID        string   `json:"id" gorm:"primaryKey"`
+	Username  string   `json:"username" gorm:"uniqueIndex"`
+	Password  string   `json:"password,omitempty"`
+	Role      UserRole `json:"role"`
+	Credits   int      `json:"credits"`
 	CreatedAt string   `json:"createdAt"`
 	UpdatedAt string   `json:"updatedAt"`
 }
@@ -29,6 +32,7 @@ type AuthUser struct {
 	ID        string   `json:"id"`
 	Username  string   `json:"username"`
 	Role      UserRole `json:"role"`
+	Credits   int      `json:"credits"`
 	CreatedAt string   `json:"createdAt"`
 	UpdatedAt string   `json:"updatedAt"`
 }
@@ -44,6 +48,7 @@ func PublicUser(user User) AuthUser {
 		ID:        user.ID,
 		Username:  user.Username,
 		Role:      user.Role,
+		Credits:   user.Credits,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 	}

@@ -2,11 +2,10 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowUp, History, ImageIcon, LoaderCircle, MessageSquare, PanelRightClose, Plus, RotateCcw, Settings2, Sparkles, Trash2, X } from "lucide-react";
-import { Button, ConfigProvider, Input, InputNumber, Modal, Popover, Segmented, Tooltip } from "antd";
+import { App, Button, ConfigProvider, Input, InputNumber, Modal, Popover, Segmented, Tooltip } from "antd";
 import { motion } from "motion/react";
 
 import { ImageGenerationPending } from "@/components/image-generation-pending";
-import { ModelPicker } from "@/components/model-picker";
 import type { AiConfig } from "@/lib/ai-config";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { createId } from "@/lib/id";
@@ -14,9 +13,8 @@ import { cn } from "@/lib/utils";
 import { requestEdit, requestGeneration, requestImageQuestion, type ChatCompletionMessage } from "@/services/api/image";
 import { imageToDataUrl, uploadImage } from "@/services/image-storage";
 import { useAiConfigStore } from "@/stores/use-ai-config-store";
-import { useAssetStore } from "@/stores/use-asset-store";
-import { useConfigDialogStore } from "@/stores/use-config-dialog-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import { DiaTextReveal } from "@/components/ui/dia-text-reveal";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
@@ -41,11 +39,11 @@ type CanvasAssistantPanelProps = {
 };
 
 export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeSessionId, onSelectNodeIds, onSessionsChange, onInsertImage, onInsertText, onPasteImage, onCollapseStart, onCollapse }: CanvasAssistantPanelProps) {
+  const { message } = App.useApp();
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const config = useAiConfigStore((state) => state.config);
-  const cleanupImages = useAssetStore((state) => state.cleanupImages);
   const updateConfig = useAiConfigStore((state) => state.updateConfig);
-  const openConfigDialog = useConfigDialogStore((state) => state.openConfigDialog);
+  const token = useUserStore((state) => state.token);
   const [width, setWidth] = useState(390);
   const [view, setView] = useState<"chat" | "history">("chat");
   const [mode, setMode] = useState<AssistantMode>("image");
@@ -124,7 +122,6 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
       setLocalSessions(next);
       setLocalActiveSessionId(localActiveSessionId && ids.includes(localActiveSessionId) ? next[0].id : localActiveSessionId);
     }
-    cleanupImages({ sessions: next });
     setCheckedChatIds((prev) => prev.filter((id) => !ids.includes(id)));
   };
 
@@ -133,13 +130,11 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     setLocalSessions([session]);
     setLocalActiveSessionId(session.id);
     setCheckedChatIds([]);
-    cleanupImages({ sessions: [session] });
   };
 
   const sendMessage = async (text: string, nextMode: AssistantMode, history: CanvasAssistantMessage[], savedReferences?: CanvasAssistantReference[]) => {
-    const requestConfig = { ...config, model: nextMode === "image" ? config.imageModel || config.model : config.textModel || config.model };
-    if (!requestConfig.baseUrl.trim() || !requestConfig.model.trim() || !requestConfig.apiKey.trim()) {
-      openConfigDialog(true);
+    if (!token) {
+      message.error("请先登录");
       return;
     }
 
@@ -160,7 +155,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     try {
       if (nextMode === "image") {
         const referenceImages: ReferenceImage[] = await Promise.all(refs.filter((item) => item.dataUrl).map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })));
-        const images = referenceImages.length ? await requestEdit(requestConfig, text, referenceImages) : await requestGeneration(requestConfig, text);
+        const { images } = referenceImages.length ? await requestEdit(token, config, text, referenceImages) : await requestGeneration(token, config, text);
         const storedImages = await Promise.all(images.map((image) => uploadImage(image.dataUrl)));
         updateMessage(session.id, assistantId, {
           text: `生成了 ${storedImages.length} 张图片`,
@@ -170,7 +165,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
         return;
       }
 
-      const answer = await requestImageQuestion(requestConfig, await buildChatMessages([...history, userMessage]), (streamed) => {
+      const answer = await requestImageQuestion(token, await buildChatMessages([...history, userMessage]), (streamed) => {
         updateMessage(session.id, assistantId, { text: streamed, isLoading: false });
       });
       updateMessage(session.id, assistantId, { text: answer, isLoading: false });
@@ -245,9 +240,6 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
             <Tooltip title="新对话">
               <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<Plus className="size-4" />} disabled={!hasMessages} onClick={() => { startChatSession(); setView("chat"); }} />
             </Tooltip>
-            <Tooltip title="配置">
-              <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<Settings2 className="size-4" />} onClick={() => openConfigDialog(false)} />
-            </Tooltip>
             <Tooltip title="收起对话">
               <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<PanelRightClose className="size-4" />} onClick={collapse} />
             </Tooltip>
@@ -295,7 +287,6 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
             onPromptChange={setPrompt}
             onSubmit={submit}
             onConfigChange={updateConfig}
-            onMissingConfig={() => openConfigDialog(true)}
             onRemoveReference={(id) => {
               setRemovedReferenceIds((prev) => new Set(prev).add(id));
               if (selectedNodeIds.has(id)) onSelectNodeIds(new Set(Array.from(selectedNodeIds).filter((nodeId) => nodeId !== id)));
@@ -340,7 +331,6 @@ function AssistantComposer({
   onPromptChange,
   onSubmit,
   onConfigChange,
-  onMissingConfig,
   onRemoveReference,
   onPasteImage,
 }: {
@@ -353,7 +343,6 @@ function AssistantComposer({
   onPromptChange: (prompt: string) => void;
   onSubmit: () => void;
   onConfigChange: (key: keyof AiConfig, value: string) => void;
-  onMissingConfig: () => void;
   onRemoveReference: (id: string) => void;
   onPasteImage: (file: File) => void;
 }) {
@@ -401,10 +390,8 @@ function AssistantComposer({
               />
             </CanvasThemeProvider>
             {mode === "image" ? (
-              <ImageSettingsPopover config={config} onConfigChange={onConfigChange} onMissingConfig={onMissingConfig} />
-            ) : (
-              <ModelPicker config={config} value={config.textModel || config.model} onChange={(model) => onConfigChange("textModel", model)} onMissingConfig={onMissingConfig} />
-            )}
+              <ImageSettingsPopover config={config} onConfigChange={onConfigChange} />
+            ) : null}
           </div>
           <Button type="primary" shape="circle" className="!h-10 !w-10 !min-w-10 shrink-0" icon={isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />} disabled={isRunning || !prompt.trim()} onClick={() => void onSubmit()} aria-label="发送" />
         </div>
@@ -413,7 +400,7 @@ function AssistantComposer({
   );
 }
 
-function ImageSettingsPopover({ config, onConfigChange, onMissingConfig }: { config: AiConfig; onConfigChange: (key: keyof AiConfig, value: string) => void; onMissingConfig: () => void }) {
+function ImageSettingsPopover({ config, onConfigChange }: { config: AiConfig; onConfigChange: (key: keyof AiConfig, value: string) => void }) {
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const quality = config.quality || "auto";
   const count = String(Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1))));
@@ -430,10 +417,6 @@ function ImageSettingsPopover({ config, onConfigChange, onMissingConfig }: { con
         <CanvasThemeProvider theme={theme}>
           <div className="w-[330px] space-y-4" style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
             <div className="text-base font-semibold">图像设置</div>
-            <div className="space-y-1.5">
-              <SettingTitle color={theme.node.muted}>模型</SettingTitle>
-              <ModelPicker className="!h-9 !w-full !max-w-none" config={config} value={config.imageModel || config.model} onChange={(model) => onConfigChange("imageModel", model)} onMissingConfig={onMissingConfig} fullWidth />
-            </div>
             <div className="space-y-1.5">
               <SettingTitle color={theme.node.muted}>质量</SettingTitle>
               <Segmented block value={quality} onChange={(value) => onConfigChange("quality", String(value))} options={[{ value: "auto", label: "自动" }, { value: "high", label: "高" }, { value: "medium", label: "中" }, { value: "low", label: "低" }]} />

@@ -5,11 +5,9 @@ import { useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Edit3, Eye, Image as ImageIcon, LoaderCircle, MessageSquare, Play } from "lucide-react";
 import { App, Button, Empty, Input, InputNumber, Modal, Segmented } from "antd";
 
-import { ModelPicker } from "@/components/model-picker";
-import { defaultConfig, type AiConfig } from "@/lib/ai-config";
+import { defaultConfig } from "@/lib/ai-config";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAiConfigStore } from "@/stores/use-ai-config-store";
-import { useConfigDialogStore } from "@/stores/use-config-dialog-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasSizePicker } from "./canvas-size-picker";
 import type { NodeGenerationInput } from "./canvas-node-generation";
@@ -31,10 +29,8 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, o
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   const globalConfig = useAiConfigStore((state) => state.config);
-  const openConfigDialog = useConfigDialogStore((state) => state.openConfigDialog);
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const mode = node.metadata?.generationMode || "image";
-  const config = buildNodeConfig(globalConfig, node, mode);
   const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(node.metadata?.count || 3)) || 1)));
   const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
   const textInputs = inputs.filter((input) => input.type === "text");
@@ -96,10 +92,9 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, o
         </button>
       </div>
 
-      <div className="mb-2 grid min-w-0 cursor-default grid-cols-[minmax(0,1fr)_92px_64px] items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
-        <ModelPicker className="canvas-compact-control h-10" config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} fullWidth />
-        {mode === "image" ? <CanvasSizePicker className="h-10 min-w-0" value={node.metadata?.size || globalConfig.size || defaultConfig.size} onChange={(value) => onConfigChange(node.id, { size: value })} /> : null}
-        <InputNumber min={1} max={15} className="canvas-compact-control canvas-control-number h-10 !w-full" value={count} onChange={(value) => onConfigChange(node.id, { count: Number(value) || 1 })} />
+      <div className="mb-2 flex min-w-0 cursor-default items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
+        {mode === "image" ? <CanvasSizePicker className="h-10 min-w-0 flex-1" value={node.metadata?.size || globalConfig.size || defaultConfig.size} onChange={(value) => onConfigChange(node.id, { size: value })} /> : <div className="flex-1" />}
+        <InputNumber min={1} max={15} className="canvas-compact-control canvas-control-number h-10 !w-[64px]" value={count} onChange={(value) => onConfigChange(node.id, { count: Number(value) || 1 })} />
       </div>
 
       <Button
@@ -244,13 +239,3 @@ function InputChip({ label, value, style }: { label: string; value: string; styl
   );
 }
 
-function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: CanvasGenerationMode): AiConfig {
-  const defaultModel = mode === "image" ? globalConfig.imageModel : globalConfig.textModel;
-  return {
-    ...globalConfig,
-    model: node.metadata?.model || defaultModel || globalConfig.model || defaultConfig.model,
-    quality: globalConfig.quality || defaultConfig.quality,
-    size: node.metadata?.size || globalConfig.size || defaultConfig.size,
-    count: String(node.metadata?.count || (mode === "image" ? 3 : globalConfig.count) || defaultConfig.count),
-  };
-}

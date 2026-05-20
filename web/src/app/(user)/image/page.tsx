@@ -1,26 +1,28 @@
 "use client";
 
 import { BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, AutoComplete, Button, Checkbox, Drawer, Empty, Image, Input, InputNumber, Modal, Select, Tag, Typography } from "antd";
-import localforage from "localforage";
 
-import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
+import { RequireAuth } from "@/components/require-auth";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import type { AiConfig } from "@/lib/ai-config";
 import { createId } from "@/lib/id";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
-import { uploadImage } from "@/services/image-storage";
-import { useAssetStore } from "@/stores/use-asset-store";
+import { resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { deleteGeneration, fetchGenerations, saveGeneration, type GenerationRecord } from "@/services/api/generations";
+import { saveMyAsset } from "@/services/api/my-assets";
 import { useAiConfigStore } from "@/stores/use-ai-config-store";
-import { useConfigDialogStore } from "@/stores/use-config-dialog-store";
+import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 
 type GeneratedImage = {
   id: string;
   dataUrl: string;
+  storageKey?: string;
   durationMs: number;
   width: number;
   height: number;
@@ -34,41 +36,29 @@ type GenerationResult = {
   error?: string;
 };
 
-type GenerationLog = {
-  id: string;
-  createdAt: number;
-  title: string;
-  time: string;
-  model: string;
-  durationMs: number;
-  successCount: number;
-  failCount: number;
-  imageCount: number;
-  size: string;
-  quality: string;
-  status: "成功" | "失败";
-  thumbnails: string[];
-};
-
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
 const sizeOptions = ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"].map((value) => ({ label: value, value }));
 const qualityOptions = ["auto", "low", "medium", "high"].map((value) => ({ label: value, value }));
-const LOG_STORE_KEY = "infinite-canvas:image_generation_logs";
-const LOG_STORE_PREFIX = `${LOG_STORE_KEY}:`;
-const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
 
 export default function ImagePage() {
+  return (
+    <RequireAuth>
+      <ImagePageInner />
+    </RequireAuth>
+  );
+}
+
+function ImagePageInner() {
   const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const config = useAiConfigStore((state) => state.config);
   const updateConfig = useAiConfigStore((state) => state.updateConfig);
-  const openConfigDialog = useConfigDialogStore((state) => state.openConfigDialog);
-  const addAsset = useAssetStore((state) => state.addAsset);
+  const token = useUserStore((state) => state.token);
   const [prompt, setPrompt] = useState("");
   const [references, setReferences] = useState<ReferenceImage[]>([]);
   const [results, setResults] = useState<GenerationResult[]>([]);
-  const [logs, setLogs] = useState<GenerationLog[]>([]);
   const [running, setRunning] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -77,22 +67,49 @@ export default function ImagePage() {
   const [startedAt, setStartedAt] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
-  const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
+  const [previewLog, setPreviewLog] = useState<GenerationRecord | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  const model = config.imageModel || config.model;
   const canGenerate = Boolean(prompt.trim());
   const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
+
+  const logsQuery = useQuery({
+    queryKey: ["my-generations", token],
+    queryFn: () => fetchGenerations(token, { page: 1, pageSize: 100 }),
+    enabled: Boolean(token),
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (logsQuery.isError) {
+      message.error(logsQuery.error instanceof Error ? logsQuery.error.message : "读取生成记录失败");
+    }
+  }, [logsQuery.error, logsQuery.isError, message]);
+
+  const saveLogMutation = useMutation({
+    mutationFn: (payload: Parameters<typeof saveGeneration>[1]) => saveGeneration(token, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["my-generations"] });
+    },
+  });
+
+  const deleteLogMutation = useMutation({
+    mutationFn: (id: string) => deleteGeneration(token, id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["my-generations"] });
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : "删除失败");
+    },
+  });
+
+  const logs = logsQuery.data?.items || [];
 
   useEffect(() => {
     if (!running || !startedAt) return;
     const timer = window.setInterval(() => setElapsedMs(performance.now() - startedAt), 1000);
     return () => window.clearInterval(timer);
   }, [running, startedAt]);
-
-  useEffect(() => {
-    void refreshLogs();
-  }, []);
 
   const addReferences = async (files?: FileList | null) => {
     const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
@@ -128,9 +145,8 @@ export default function ImagePage() {
       message.error("请输入生图提示词");
       return;
     }
-    if (!config.baseUrl.trim() || !config.apiKey.trim() || !model) {
-      message.warning("请先完成配置");
-      openConfigDialog(true);
+    if (!token) {
+      message.error("请先登录");
       return;
     }
 
@@ -153,9 +169,23 @@ export default function ImagePage() {
     const successCount = successImages.length;
     const failCount = generationCount - successCount;
     const failed = result.find((item): item is PromiseRejectedResult => item.status === "rejected");
+    const status = successCount === generationCount ? "success" : successCount ? "partial" : "failed";
+    const durationMs = performance.now() - batchStartedAt;
 
     try {
-      saveLog(buildLog({ prompt: text, model, config: { ...snapshot.config, count: String(generationCount) }, durationMs: performance.now() - batchStartedAt, successCount, failCount, status: successCount ? "成功" : "失败", thumbnails: successImages.map((image) => image.dataUrl) }));
+      await saveLogMutation.mutateAsync({
+        prompt: text,
+        mode: snapshot.references.length ? "edit" : "image",
+        model: "",
+        size: snapshot.config.size || "",
+        quality: snapshot.config.quality || "",
+        count: generationCount,
+        successCount,
+        failCount,
+        durationMs,
+        status,
+        thumbnails: successImages.map((image) => image.storageKey || "").filter(Boolean),
+      });
       successCount ? message.success("图片已生成") : message.error(failed?.reason instanceof Error ? failed.reason.message : "生成失败");
     } finally {
       setRunning(false);
@@ -176,17 +206,25 @@ export default function ImagePage() {
   };
 
   const saveResultToAssets = async (image: GeneratedImage, index: number) => {
-    const stored = await uploadImage(image.dataUrl);
-    addAsset({
-      kind: "image",
-      title: `生成结果 ${index + 1}`,
-      coverUrl: stored.url,
-      tags: [],
-      source: "生图工作台",
-      data: { dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType },
-      metadata: { source: "image-page", prompt },
-    });
-    message.success("已加入我的素材");
+    if (!token) {
+      message.error("请先登录");
+      return;
+    }
+    try {
+      const url = image.dataUrl || (await uploadImage(image.dataUrl)).url;
+      await saveMyAsset(token, {
+        title: `生成结果 ${index + 1}`,
+        type: "image",
+        coverUrl: url,
+        tags: [],
+        category: "生图工作台",
+        description: prompt,
+        url,
+      });
+      message.success("已加入我的素材");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "保存失败");
+    }
   };
 
   const insertPickedAsset = async (payload: InsertAssetPayload) => {
@@ -209,8 +247,14 @@ export default function ImagePage() {
     setPreviewLog(null);
   };
 
-  const deleteSelectedLogs = () => {
-    void Promise.all(selectedLogIds.map((id) => logStore.removeItem(id))).then(refreshLogs);
+  const deleteSelectedLogs = async () => {
+    for (const id of selectedLogIds) {
+      try {
+        await deleteLogMutation.mutateAsync(id);
+      } catch {
+        // mutation onError handles message
+      }
+    }
     if (previewLog && selectedLogIds.includes(previewLog.id)) {
       setPreviewLog(null);
       setResults([]);
@@ -219,18 +263,18 @@ export default function ImagePage() {
     setDeleteConfirmOpen(false);
   };
 
-  const saveLog = (log: GenerationLog) => {
-    void logStore.setItem(log.id, log).then(refreshLogs);
-  };
-
-  const refreshLogs = async () => setLogs(await readStoredLogs());
-
-  const previewGenerationLog = async (log: GenerationLog) => {
+  const previewGenerationLog = async (log: GenerationRecord) => {
     setPreviewLog(log);
     setLogsOpen(false);
-    const images = await Promise.all(log.thumbnails.map(async (dataUrl, index) => {
-      const meta = await readImageMeta(dataUrl);
-      return { id: `${log.id}-${index}`, dataUrl, durationMs: log.durationMs, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(dataUrl) };
+    const images = await Promise.all(log.thumbnails.map(async (storageKey, index) => {
+      const url = await resolveImageUrl(storageKey, "");
+      if (!url) return { id: `${log.id}-${index}`, dataUrl: "", storageKey, durationMs: log.durationMs, width: 0, height: 0, bytes: 0 };
+      try {
+        const meta = await readImageMeta(url);
+        return { id: `${log.id}-${index}`, dataUrl: url, storageKey, durationMs: log.durationMs, width: meta.width, height: meta.height, bytes: 0 };
+      } catch {
+        return { id: `${log.id}-${index}`, dataUrl: url, storageKey, durationMs: log.durationMs, width: 0, height: 0, bytes: 0 };
+      }
     }));
     setResults(images.map((image) => ({ id: image.id, status: "success", image })));
   };
@@ -241,22 +285,22 @@ export default function ImagePage() {
       message.error("请输入生图提示词");
       return null;
     }
-    if (!config.baseUrl.trim() || !config.apiKey.trim() || !model) {
-      message.warning("请先完成配置");
-      openConfigDialog(true);
+    if (!token) {
+      message.error("请先登录");
       return null;
     }
-    return { text, config: { ...config, model, count: "1" }, references: [...references] };
+    return { text, config: { ...config, count: "1" }, references: [...references] };
   };
 
   const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
     const itemStartedAt = performance.now();
     try {
-      const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
-      const image = result[0];
+      const { images } = snapshot.references.length ? await requestEdit(token, snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(token, snapshot.config, snapshot.text);
+      const image = images[0];
       if (!image) throw new Error("接口没有返回图片");
-      const meta = await readImageMeta(image.dataUrl);
-      const nextImage = { id: image.id, dataUrl: image.dataUrl, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl) };
+      const stored = await uploadImage(image.dataUrl);
+      const meta = await readImageMeta(stored.url);
+      const nextImage: GeneratedImage = { id: image.id, dataUrl: stored.url, storageKey: stored.storageKey, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl) };
       setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
       return nextImage;
     } catch (error) {
@@ -337,12 +381,12 @@ export default function ImagePage() {
                 </div>
 
                 <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
-                  <span className="truncate text-stone-500 dark:text-stone-400">{model} · {config.size} · {config.quality}</span>
+                  <span className="truncate text-stone-500 dark:text-stone-400">{config.size} · {config.quality}</span>
                   <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>调整</Button>
                 </div>
 
                 <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                  <GenerationSettings config={config} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                  <GenerationSettings config={config} updateConfig={updateConfig} />
                 </div>
               </div>
 
@@ -390,25 +434,21 @@ export default function ImagePage() {
       </Drawer>
       <Drawer title="参数" placement="bottom" size="default" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
         <div className="grid grid-cols-2 gap-3">
-          <GenerationSettings config={config} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+          <GenerationSettings config={config} updateConfig={updateConfig} />
         </div>
       </Drawer>
       <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
       <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
-      <Modal title="删除生成记录" open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
+      <Modal title="删除生成记录" open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={() => void deleteSelectedLogs()} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
         确定删除选中的 {selectedLogIds.length} 条生成记录吗？
       </Modal>
     </div>
   );
 }
 
-function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
+function GenerationSettings({ config, updateConfig }: { config: AiConfig; updateConfig: UpdateAiConfig }) {
   return (
     <>
-      <label className="col-span-2 block min-w-0 sm:col-span-1">
-        <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
-        <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} fullWidth onMissingConfig={() => openConfigDialog(false)} />
-      </label>
       <label className="block">
         <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">生成次数</span>
         <InputNumber className="canvas-control-number !w-full" min={1} max={10} value={Number(config.count) || 1} onChange={(value) => updateConfig("count", String(value || 1))} />
@@ -431,9 +471,9 @@ function ResultImageCard({ image, index, onEdit, onDownload, onSaveAsset }: { im
       <Image src={image.dataUrl} alt={`生成结果 ${index + 1}`} className="aspect-square object-cover" />
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
         <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
-          <span>{image.width}x{image.height}</span>
-          <span>{formatBytes(image.bytes)}</span>
-          <span>{formatDuration(image.durationMs)}</span>
+          {image.width && image.height ? <span>{image.width}x{image.height}</span> : null}
+          {image.bytes ? <span>{formatBytes(image.bytes)}</span> : null}
+          {image.durationMs ? <span>{formatDuration(image.durationMs)}</span> : null}
         </div>
         <div className="flex shrink-0 gap-1">
           <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>添加到素材</Button>
@@ -483,7 +523,7 @@ function updateResultAt(results: GenerationResult[], index: number, next: Partia
   return results.map((item, itemIndex) => itemIndex === index ? { ...item, ...next } : item);
 }
 
-function LogPanel({ logs, selectedLogIds, activeLogId, onSelectedLogIdsChange, onCreateSession, onDeleteSelected, onPreviewLog }: { logs: GenerationLog[]; selectedLogIds: string[]; activeLogId?: string; onSelectedLogIdsChange: (ids: string[]) => void; onCreateSession: () => void; onDeleteSelected: () => void; onPreviewLog: (log: GenerationLog) => void }) {
+function LogPanel({ logs, selectedLogIds, activeLogId, onSelectedLogIdsChange, onCreateSession, onDeleteSelected, onPreviewLog }: { logs: GenerationRecord[]; selectedLogIds: string[]; activeLogId?: string; onSelectedLogIdsChange: (ids: string[]) => void; onCreateSession: () => void; onDeleteSelected: () => void; onPreviewLog: (log: GenerationRecord) => void }) {
   const allSelected = Boolean(logs.length) && selectedLogIds.length === logs.length;
   const toggleAll = () => onSelectedLogIdsChange(allSelected ? [] : logs.map((log) => log.id));
 
@@ -521,99 +561,50 @@ function LogPanel({ logs, selectedLogIds, activeLogId, onSelectedLogIdsChange, o
   );
 }
 
-function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: GenerationLog; selected: boolean; active: boolean; onSelectedChange: (checked: boolean) => void; onClick: () => void }) {
+function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: GenerationRecord; selected: boolean; active: boolean; onSelectedChange: (checked: boolean) => void; onClick: () => void }) {
+  const title = log.prompt?.slice(0, 24) || "未命名";
+  const time = useMemo(() => log.createdAt ? new Date(log.createdAt).toLocaleString("zh-CN", { hour12: false }) : "", [log.createdAt]);
+  const [thumbUrls, setThumbUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all((log.thumbnails || []).slice(0, 4).map((key) => resolveImageUrl(key, "")))
+      .then((urls) => {
+        if (!cancelled) setThumbUrls(urls.filter(Boolean));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [log.thumbnails]);
+
   return (
     <button type="button" className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`} onClick={onClick}>
       <div className="grid grid-cols-[minmax(128px,1fr)_auto] gap-2">
         <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
           <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold leading-5">{log.title}</div>
-            {log.thumbnails?.length ? (
+            <div className="truncate text-sm font-semibold leading-5">{title}</div>
+            {thumbUrls.length ? (
               <div className="mt-2 flex gap-1 overflow-hidden">
-                {log.thumbnails.slice(0, 4).map((image, index) => <img key={`${log.id}-${index}`} src={image} alt="" className="size-8 shrink-0 rounded-md object-cover" />)}
+                {thumbUrls.map((image, index) => <img key={`${log.id}-${index}`} src={image} alt="" className="size-8 shrink-0 rounded-md object-cover" />)}
               </div>
             ) : null}
           </div>
         </div>
         <div className="grid justify-items-end gap-2">
           <div className="flex gap-1">
-            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">成功 {log.successCount ?? log.imageCount}</Tag>
+            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">成功 {log.successCount}</Tag>
             {log.failCount ? <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="red">失败 {log.failCount}</Tag> : null}
           </div>
           <div className="flex flex-wrap justify-end gap-1">
-            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.imageCount} 张</Tag>
+            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.count} 张</Tag>
             <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">{formatDuration(log.durationMs)}</Tag>
           </div>
           <div className="flex justify-end">
-            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.time}</Tag>
+            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{time}</Tag>
           </div>
         </div>
       </div>
     </button>
   );
-}
-
-async function readStoredLogs() {
-  if (typeof window === "undefined") return [];
-  try {
-    const legacyValue = window.localStorage.getItem(LOG_STORE_KEY);
-    if (legacyValue) {
-      await Promise.all((JSON.parse(legacyValue) as GenerationLog[]).map((log) => logStore.setItem(log.id, normalizeLog(log))));
-      window.localStorage.removeItem(LOG_STORE_KEY);
-    }
-    const legacyKeys = Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index)).filter((key): key is string => Boolean(key?.startsWith(LOG_STORE_PREFIX)));
-    await Promise.all(legacyKeys.map(async (key) => {
-      try {
-        const log = normalizeLog(JSON.parse(window.localStorage.getItem(key) || ""));
-        await logStore.setItem(log.id, log);
-        window.localStorage.removeItem(key);
-      } catch {}
-    }));
-
-    const logs: GenerationLog[] = [];
-    await logStore.iterate<GenerationLog, void>((value) => {
-      logs.push(normalizeLog(value));
-    });
-    return logs
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  } catch {
-    return [];
-  }
-}
-
-function normalizeLog(log: Partial<GenerationLog>): GenerationLog {
-  return {
-    id: log.id || createId(),
-    createdAt: log.createdAt || Date.now(),
-    title: log.title || log.model || "未命名",
-    time: log.time || new Date().toLocaleString("zh-CN", { hour12: false }),
-    model: log.model || "",
-    durationMs: log.durationMs || 0,
-    successCount: log.successCount ?? log.imageCount ?? 0,
-    failCount: log.failCount || 0,
-    imageCount: log.imageCount || log.successCount || 0,
-    size: log.size || "",
-    quality: log.quality || "",
-    status: log.status || "成功",
-    thumbnails: log.thumbnails || [],
-  };
-}
-
-function buildLog({ prompt, model, config, durationMs, successCount, failCount, status, thumbnails }: { prompt: string; model: string; config: { size: string; quality: string; count?: string }; durationMs: number; successCount: number; failCount: number; status: GenerationLog["status"]; thumbnails: string[] }): GenerationLog {
-  return {
-    id: createId(),
-    createdAt: Date.now(),
-    title: prompt.slice(0, 12) || "未命名",
-    time: new Date().toLocaleString("zh-CN", { hour12: false }),
-    model,
-    durationMs,
-    successCount,
-    failCount,
-    imageCount: Number(config.count) || successCount,
-    size: config.size,
-    quality: config.quality,
-    status,
-    thumbnails,
-  };
 }

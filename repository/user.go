@@ -83,6 +83,36 @@ func DeleteUser(id string) error {
 	return db.Delete(&model.User{}, "id = ?", id).Error
 }
 
+// ConsumeUserCredits 原子扣减指定用户的额度，返回扣减后的余额；
+// 当余额不足时不扣减并返回 false。
+func ConsumeUserCredits(id string, amount int) (int, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, false, err
+	}
+	if amount <= 0 {
+		user, ok, err := GetUserByID(id)
+		if err != nil || !ok {
+			return 0, false, err
+		}
+		return user.Credits, true, nil
+	}
+	result := db.Model(&model.User{}).
+		Where("id = ? AND credits >= ?", id, amount).
+		UpdateColumn("credits", gorm.Expr("credits - ?", amount))
+	if result.Error != nil {
+		return 0, false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return 0, false, nil
+	}
+	user, ok, err := GetUserByID(id)
+	if err != nil || !ok {
+		return 0, true, err
+	}
+	return user.Credits, true, nil
+}
+
 // findUser 查询单个用户，并将未命中转换为 ok=false。
 func findUser(db *gorm.DB, query string, args ...any) (model.User, bool, error) {
 	user := model.User{}

@@ -43,6 +43,15 @@ func ListAssetTags(q model.Query) ([]string, error) {
 	return assetTagsFromItems(items), nil
 }
 
+// GetAssetByID 按 ID 查询素材。
+func GetAssetByID(id string) (model.Asset, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.Asset{}, false, err
+	}
+	return findAsset(db, id)
+}
+
 // SaveAsset 保存素材，并在更新时保留原创建时间。
 func SaveAsset(item model.Asset) (model.Asset, error) {
 	db, err := DB()
@@ -74,6 +83,12 @@ func applyAssetFilters(tx *gorm.DB, q model.Query) *gorm.DB {
 	}
 	if isActiveAssetOption(q.Type) {
 		tx = tx.Where("type = ?", q.Type)
+	}
+	if q.Visibility != "" {
+		tx = tx.Where("visibility = ?", q.Visibility)
+	}
+	if q.UserID != "" {
+		tx = tx.Where("user_id = ?", q.UserID)
 	}
 	return applyAssetTagsFilter(tx, q.Tags)
 }

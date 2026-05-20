@@ -21,7 +21,34 @@ func New() *gin.Engine {
 	api.GET("/auth/me", middleware.OptionalAuth, gin.WrapF(handler.CurrentUser))
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
-	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
+
+	v1 := api.Group("/v1", middleware.OptionalAuth)
+	v1.POST("/images/generations", gin.WrapF(handler.AIImageGenerations))
+	v1.POST("/images/edits", gin.WrapF(handler.AIImageEdits))
+	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))
+	v1.GET("/models", gin.WrapF(handler.AIModels))
+
+	me := api.Group("", middleware.OptionalAuth)
+	me.GET("/user/profile", gin.WrapF(handler.MyProfile))
+	me.GET("/user/credit-logs", gin.WrapF(handler.MyCreditLogs))
+	me.GET("/canvases", gin.WrapF(handler.MyCanvases))
+	me.POST("/canvases", gin.WrapF(handler.SaveMyCanvas))
+	me.GET("/canvases/:id", func(c *gin.Context) {
+		handler.GetMyCanvas(c.Writer, c.Request, c.Param("id"))
+	})
+	me.DELETE("/canvases/:id", func(c *gin.Context) {
+		handler.DeleteMyCanvas(c.Writer, c.Request, c.Param("id"))
+	})
+	me.GET("/generations", gin.WrapF(handler.MyGenerations))
+	me.POST("/generations", gin.WrapF(handler.SaveMyGeneration))
+	me.DELETE("/generations/:id", func(c *gin.Context) {
+		handler.DeleteMyGeneration(c.Writer, c.Request, c.Param("id"))
+	})
+	me.GET("/assets/me", gin.WrapF(handler.MyAssets))
+	me.POST("/assets/me", gin.WrapF(handler.SaveMyAsset))
+	me.DELETE("/assets/me/:id", func(c *gin.Context) {
+		handler.DeleteMyAsset(c.Writer, c.Request, c.Param("id"))
+	})
 
 	admin := api.Group("/admin", middleware.AdminAuth)
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
@@ -40,6 +67,18 @@ func New() *gin.Engine {
 	admin.POST("/assets", gin.WrapF(handler.AdminSaveAsset))
 	admin.DELETE("/assets/:id", func(c *gin.Context) {
 		handler.AdminDeleteAsset(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/ai-configs", gin.WrapF(handler.AdminAIConfigs))
+	admin.POST("/ai-configs", gin.WrapF(handler.AdminSaveAIConfig))
+	admin.POST("/ai-configs/probe-models", gin.WrapF(handler.AdminProbeAIModels))
+	admin.DELETE("/ai-configs/:id", func(c *gin.Context) {
+		handler.AdminDeleteAIConfig(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.POST("/ai-configs/:id/enable", func(c *gin.Context) {
+		handler.AdminEnableAIConfig(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.POST("/ai-configs/:id/test", func(c *gin.Context) {
+		handler.AdminTestAIConfig(c.Writer, c.Request, c.Param("id"))
 	})
 
 	router.NoRoute(middleware.NotFoundJSON)
