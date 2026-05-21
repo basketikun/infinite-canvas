@@ -1,5 +1,5 @@
 # 构建 Next.js 前端产物。
-FROM oven/bun:1 AS web-build
+FROM oven/bun:1.3.13 AS web-build
 
 WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
@@ -25,7 +25,7 @@ COPY main.go ./
 RUN go build -o /server .
 
 # 运行镜像：Next.js 对外监听 3000，Go 只在容器内部监听 8080。
-FROM oven/bun:1
+FROM oven/bun:1.3.13
 
 WORKDIR /app
 COPY VERSION /app/VERSION

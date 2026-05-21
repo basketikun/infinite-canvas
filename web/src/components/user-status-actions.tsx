@@ -8,6 +8,7 @@ import Link from "next/link";
 
 import { GitHubLink } from "@/components/github-link";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { VersionReleaseModal } from "@/components/version-release-modal";
 import { cn } from "@/lib/utils";
 import type { ThemeName } from "@/stores/use-theme-store";
 
@@ -26,6 +27,7 @@ type UserStatusActionsProps = {
   avatarStyle?: CSSProperties;
   gitHubClassName?: string;
   gitHubStyle?: CSSProperties;
+  versionStyle?: CSSProperties;
   userLabel?: ReactNode;
   iconStyle?: CSSProperties;
 };
@@ -45,6 +47,7 @@ export function UserStatusActions({
   avatarStyle,
   gitHubClassName,
   gitHubStyle,
+  versionStyle,
   userLabel,
   iconStyle,
 }: UserStatusActionsProps) {
@@ -68,6 +71,7 @@ export function UserStatusActions({
       >
         {version}
       </Link>
+      <VersionReleaseModal currentVersion={version} style={versionStyle} />
       <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
       <div ref={accountRef}>
         <Dropdown

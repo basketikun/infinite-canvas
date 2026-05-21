@@ -8,6 +8,7 @@ import { Drawer, Tag, Tooltip } from "antd";
 import { GitHubLink } from "@/components/github-link";
 import { UserStatusActions } from "@/components/user-status-actions";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { VersionReleaseModal } from "@/components/version-release-modal";
 import { navigationTools, type NavigationToolSlug } from "@/lib/navigation-tools";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -124,6 +125,7 @@ export function AppTopNav({ activeToolSlug, hideHeader = false }: AppTopNavProps
                   >
                     {appVersion}
                   </Link>
+                  <VersionReleaseModal currentVersion={appVersion} />
                   <GitHubLink />
                   <Link href="/login" className="text-sm font-medium text-stone-600 underline-offset-4 transition hover:text-stone-950 hover:underline dark:text-stone-300 dark:hover:text-stone-100">
                     登录
@@ -166,6 +168,7 @@ export function AppTopNav({ activeToolSlug, hideHeader = false }: AppTopNavProps
           })}
         </div>
       </Drawer>
+
     </>
   );
 }

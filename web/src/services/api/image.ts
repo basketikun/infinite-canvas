@@ -8,7 +8,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 
 export type ChatCompletionMessage = {
-  role: "user" | "assistant";
+  role: "system" | "user" | "assistant";
   content: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
 };
 

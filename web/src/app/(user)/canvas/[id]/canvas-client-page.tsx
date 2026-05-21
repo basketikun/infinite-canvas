@@ -2286,6 +2286,7 @@ function CanvasTopBar({
           iconStyle={{ color: theme.node.text }}
           gitHubClassName="size-11 text-base"
           gitHubStyle={{ color: theme.node.text }}
+          versionStyle={{ color: theme.node.text }}
           avatarStyle={{ borderColor: theme.toolbar.border, color: theme.node.text }}
           userLabel={initial}
           menuItems={[
