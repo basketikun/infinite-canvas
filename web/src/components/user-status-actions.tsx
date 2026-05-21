@@ -8,7 +8,6 @@ import Link from "next/link";
 
 import { GitHubLink } from "@/components/github-link";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
-import { VersionReleaseModal } from "@/components/version-release-modal";
 import { cn } from "@/lib/utils";
 import type { ThemeName } from "@/stores/use-theme-store";
 
@@ -68,10 +67,10 @@ export function UserStatusActions({
         href="/changelog"
         title="查看更新日志"
         className="shrink-0 text-xs font-medium text-stone-500 underline-offset-4 transition hover:text-stone-900 hover:underline dark:text-stone-400 dark:hover:text-stone-100"
+        style={versionStyle}
       >
         {version}
       </Link>
-      <VersionReleaseModal currentVersion={version} style={versionStyle} />
       <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
       <div ref={accountRef}>
         <Dropdown

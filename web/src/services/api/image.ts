@@ -136,6 +136,36 @@ export async function requestGeneration(token: string, config: AiConfig, prompt:
 
 export async function requestEdit(token: string, config: AiConfig, prompt: string, references: ReferenceImage[]): Promise<GenerationResult> {
   const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+
+  // 优先路径：所有参考图都已经在服务器图床（有 storageKey）→ 走 JSON，
+  // 请求体只有几百字节，后端按 owner 校验后直接读磁盘转 multipart 上送。
+  const allOnServer = references.length > 0 && references.every((ref) => Boolean(ref.storageKey));
+  if (allOnServer) {
+    try {
+      const response = await axios.post<ApiEnvelope<ImageProxyResult>>(
+        "/api/v1/images/edits",
+        {
+          prompt,
+          n,
+          quality: config.quality || undefined,
+          size: config.size || undefined,
+          references: references.map((ref) => ref.storageKey),
+        },
+        {
+          headers: authHeaders(token, { "Content-Type": "application/json" }),
+          validateStatus: () => true,
+        },
+      );
+      if (response.data?.code !== 0) {
+        throw new Error(readEnvelopeError(response.data, "请求失败", response.status));
+      }
+      return parseImageResult(response.data.data);
+    } catch (error) {
+      throw new Error(readAxiosError(error, "请求失败"));
+    }
+  }
+
+  // 兜底路径：有 reference 还没上传过（画布瞬时截屏 / 裁剪结果），走传统 multipart。
   const formData = new FormData();
   formData.set("prompt", prompt);
   formData.set("n", String(n));

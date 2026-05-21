@@ -73,6 +73,25 @@ func ImageAbsPath(image model.Image) string {
 	return filepath.Join(config.Cfg.ImageDir, filepath.FromSlash(image.Path))
 }
 
+// GetImageForOwner 取图片元信息并校验 owner，常用于"按 storageKey 引用别人图"
+// 的鉴权场景（例如图生图把参考图按 id 传给后端时）。id 不存在或 owner 不匹配都报错。
+func GetImageForOwner(userID string, id string) (model.Image, error) {
+	if userID == "" {
+		return model.Image{}, errors.New("请先登录")
+	}
+	image, ok, err := repository.GetImageByID(id)
+	if err != nil {
+		return model.Image{}, err
+	}
+	if !ok {
+		return model.Image{}, errors.New("参考图不存在")
+	}
+	if image.UserID != userID {
+		return model.Image{}, errors.New("参考图无权访问")
+	}
+	return image, nil
+}
+
 // DeleteImage 必须是 owner 才能删；同步删磁盘文件。
 func DeleteImage(userID string, id string) error {
 	image, ok, err := repository.GetImageByID(id)

@@ -8,6 +8,9 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +81,12 @@ func AIImageGenerations(w http.ResponseWriter, r *http.Request) {
 }
 
 // AIImageEdits 反代 /v1/images/edits（multipart），按返回图片张数扣额度。
+//
+// 同时支持两种入参方式：
+//   - application/json：{ prompt, n, size?, quality?, references: ["img-xxx", ...] }
+//     references 是已经上传过的 images.id；后端按 owner 校验后从磁盘读取，
+//     再自己拼 multipart 转发到上游。请求体只有 KB 级。
+//   - multipart/form-data：保留原始路径，兼容画布里截屏/裁剪后还没存盘的瞬时图。
 func AIImageEdits(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -92,44 +101,21 @@ func AIImageEdits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(64 << 20); err != nil {
-		Fail(w, "请求体解析失败")
-		return
-	}
-
 	bodyBuf := &bytes.Buffer{}
 	writer := multipart.NewWriter(bodyBuf)
-	for key, values := range r.MultipartForm.Value {
-		if key == "model" || key == "response_format" {
-			continue
+
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		if !writeEditsFromJSON(w, r, user, writer) {
+			return
 		}
-		for _, v := range values {
-			_ = writer.WriteField(key, v)
+	} else {
+		if !writeEditsFromMultipart(w, r, writer) {
+			return
 		}
 	}
+
 	_ = writer.WriteField("model", cfg.ImageModel)
 	_ = writer.WriteField("response_format", "b64_json")
-
-	for key, files := range r.MultipartForm.File {
-		for _, fh := range files {
-			part, err := writer.CreateFormFile(key, fh.Filename)
-			if err != nil {
-				Fail(w, "请求构造失败")
-				return
-			}
-			f, err := fh.Open()
-			if err != nil {
-				Fail(w, "请求文件读取失败")
-				return
-			}
-			_, copyErr := io.Copy(part, f)
-			_ = f.Close()
-			if copyErr != nil {
-				Fail(w, "请求文件读取失败")
-				return
-			}
-		}
-	}
 	if err := writer.Close(); err != nil {
 		Fail(w, "请求构造失败")
 		return
@@ -437,9 +423,181 @@ func parseUpstreamMessage(raw []byte, status int) string {
 	if err := json.Unmarshal(raw, &payload); err == nil && payload.Error.Message != "" {
 		return payload.Error.Message
 	}
+	// 网关层（nginx/cloudflare 等）返回的 HTML 错误页千万别透传给前端，
+	// 否则浏览器会看到一整段 <html><head><title>504...</title> 整段文本。
+	// 优先按 HTTP 状态码给中文可读提示，HTML 都压成"上游响应异常"。
+	if msg := friendlyStatusMessage(status); msg != "" {
+		return msg
+	}
 	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) > 0 && len(trimmed) < 500 {
+	if len(trimmed) > 0 && len(trimmed) < 500 && !looksLikeHTML(trimmed) {
 		return string(trimmed)
 	}
 	return fmt.Sprintf("上游响应异常：%d", status)
+}
+
+// friendlyStatusMessage 把常见网关/上游错误码翻译成中文，配合 503/504 等场景。
+func friendlyStatusMessage(status int) string {
+	switch status {
+	case http.StatusBadGateway:
+		return "上游服务异常（502 Bad Gateway），请稍后再试"
+	case http.StatusServiceUnavailable:
+		return "上游服务暂不可用（503），请稍后再试"
+	case http.StatusGatewayTimeout:
+		return "上游服务响应超时（504），请稍后再试"
+	}
+	return ""
+}
+
+func looksLikeHTML(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+	if body[0] == '<' {
+		return true
+	}
+	head := body
+	if len(head) > 128 {
+		head = head[:128]
+	}
+	lower := bytes.ToLower(head)
+	return bytes.Contains(lower, []byte("<html")) || bytes.Contains(lower, []byte("<!doctype html"))
+}
+
+// editsJSONReferenceLimit 限制图生图最多带几张参考图，防止有人发巨量 id 让后端
+// 一次性把 N 张大图从磁盘读进内存。8 张对正常使用足够。
+const editsJSONReferenceLimit = 8
+
+// writeEditsFromJSON 处理 application/json 入参的 /v1/images/edits 调用：
+// 把 prompt/n/size/quality 写入 multipart 文本字段，把 references 按 storageKey 从磁盘
+// 读出来当 "image" 文件字段塞进去。失败时已经 Fail，返回 false 告知上层立即返回。
+func writeEditsFromJSON(w http.ResponseWriter, r *http.Request, user model.AuthUser, writer *multipart.Writer) bool {
+	var payload struct {
+		Prompt     string   `json:"prompt"`
+		N          any      `json:"n"`
+		Size       string   `json:"size"`
+		Quality    string   `json:"quality"`
+		References []string `json:"references"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		Fail(w, "请求体格式错误")
+		return false
+	}
+	prompt := strings.TrimSpace(payload.Prompt)
+	if prompt == "" {
+		Fail(w, "提示词不能为空")
+		return false
+	}
+	if len(payload.References) == 0 {
+		Fail(w, "请至少提供一张参考图")
+		return false
+	}
+	if len(payload.References) > editsJSONReferenceLimit {
+		Fail(w, fmt.Sprintf("参考图数量超过上限（最多 %d 张）", editsJSONReferenceLimit))
+		return false
+	}
+
+	_ = writer.WriteField("prompt", prompt)
+	if n := normalizeEditsN(payload.N); n != "" {
+		_ = writer.WriteField("n", n)
+	}
+	if payload.Size != "" {
+		_ = writer.WriteField("size", payload.Size)
+	}
+	if payload.Quality != "" {
+		_ = writer.WriteField("quality", payload.Quality)
+	}
+
+	for _, storageKey := range payload.References {
+		storageKey = strings.TrimSpace(storageKey)
+		if storageKey == "" {
+			continue
+		}
+		image, err := service.GetImageForOwner(user.ID, storageKey)
+		if err != nil {
+			Fail(w, err.Error())
+			return false
+		}
+		file, err := os.Open(service.ImageAbsPath(image))
+		if err != nil {
+			Fail(w, "参考图文件丢失")
+			return false
+		}
+		filename := filepath.Base(image.Path)
+		part, err := writer.CreateFormFile("image", filename)
+		if err != nil {
+			_ = file.Close()
+			Fail(w, "请求构造失败")
+			return false
+		}
+		_, copyErr := io.Copy(part, file)
+		_ = file.Close()
+		if copyErr != nil {
+			Fail(w, "参考图读取失败")
+			return false
+		}
+	}
+	return true
+}
+
+// writeEditsFromMultipart 处理 multipart/form-data 入参（旧路径，画布里截屏/裁剪后
+// 还没上传到服务器的瞬时图仍走这里）。把 r.MultipartForm 的所有字段透传到 writer，
+// 过滤掉 model/response_format 防止客户端覆盖管理后台启用配置。
+func writeEditsFromMultipart(w http.ResponseWriter, r *http.Request, writer *multipart.Writer) bool {
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		Fail(w, "请求体解析失败")
+		return false
+	}
+	for key, values := range r.MultipartForm.Value {
+		if key == "model" || key == "response_format" {
+			continue
+		}
+		for _, v := range values {
+			_ = writer.WriteField(key, v)
+		}
+	}
+	for key, files := range r.MultipartForm.File {
+		for _, fh := range files {
+			part, err := writer.CreateFormFile(key, fh.Filename)
+			if err != nil {
+				Fail(w, "请求构造失败")
+				return false
+			}
+			f, err := fh.Open()
+			if err != nil {
+				Fail(w, "请求文件读取失败")
+				return false
+			}
+			_, copyErr := io.Copy(part, f)
+			_ = f.Close()
+			if copyErr != nil {
+				Fail(w, "请求文件读取失败")
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// normalizeEditsN 把 client 传的 n（可能是 number / 数字字符串）规范化成 multipart 字段
+// 期望的字符串；空 / 0 / 非数字都返回 "" 表示不带这个字段（上游 OpenAI 兼容接口会用默认值 1）。
+func normalizeEditsN(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case float64:
+		n := int(v)
+		if n <= 0 {
+			return ""
+		}
+		return strconv.Itoa(n)
+	case int:
+		if v <= 0 {
+			return ""
+		}
+		return strconv.Itoa(v)
+	}
+	return ""
 }

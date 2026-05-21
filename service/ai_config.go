@@ -229,8 +229,18 @@ func parseUpstreamError(body []byte, status int) string {
 	if err := json.Unmarshal(body, &payload); err == nil && payload.Error.Message != "" {
 		return payload.Error.Message
 	}
-	if len(body) > 0 && len(body) < 500 {
-		return string(bytes.TrimSpace(body))
+	switch status {
+	case http.StatusBadGateway:
+		return "上游服务异常（502 Bad Gateway）"
+	case http.StatusServiceUnavailable:
+		return "上游服务暂不可用（503）"
+	case http.StatusGatewayTimeout:
+		return "上游服务响应超时（504）"
+	}
+	trimmed := bytes.TrimSpace(body)
+	// 网关 HTML 错误页不直接透传到管理员页面，避免 admin 看到一大段 <html>。
+	if len(trimmed) > 0 && len(trimmed) < 500 && trimmed[0] != '<' {
+		return string(trimmed)
 	}
 	return http.StatusText(status)
 }

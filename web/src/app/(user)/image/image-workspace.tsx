@@ -71,6 +71,13 @@ export function ImageWorkspace({ initialLogId }: ImageWorkspaceProps) {
   const [previewLog, setPreviewLog] = useState<GenerationRecord | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const autoPreviewedIdRef = useRef<string | null>(null);
+  // 用 ref 跟踪 generate() 是否还在跑：useEffect/previewGenerationLog 的 closure
+  // 可能拿到 stale 的 running state（先于 setRunning(true) commit 触发），
+  // ref 永远是最新值，比 useState 更稳。同时记录本会话发起的 placeholder.id，
+  // 即便 task 跑完 setRunning(false) 后，previewGenerationLog 仍能识别这条 running
+  // 占位是自己发的，避免被刷成"被中断"。
+  const isGeneratingRef = useRef(false);
+  const activeGenerationIdRef = useRef<string | null>(null);
 
   const canGenerate = Boolean(prompt.trim());
   const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
@@ -186,6 +193,7 @@ export function ImageWorkspace({ initialLogId }: ImageWorkspaceProps) {
 
     setElapsedMs(0);
     setRunning(true);
+    isGeneratingRef.current = true;
     setPreviewLog(null);
     setResults(Array.from({ length: generationCount }, () => ({ id: createId(), status: "pending" })));
     const batchStartedAt = performance.now();
@@ -228,10 +236,12 @@ export function ImageWorkspace({ initialLogId }: ImageWorkspaceProps) {
     } catch {
       // mutation onError 已弹 message；首阶段都没入库，干脆中止避免空转。
       setRunning(false);
+      isGeneratingRef.current = false;
       return;
     }
     setPreviewLog(placeholder);
     autoPreviewedIdRef.current = placeholder.id;
+    activeGenerationIdRef.current = placeholder.id;
     router.replace(`/image/${placeholder.id}`);
 
     // 第二阶段：跑全部 task，结束后用 placeholder.id upsert 最终状态。
@@ -274,6 +284,9 @@ export function ImageWorkspace({ initialLogId }: ImageWorkspaceProps) {
       successCount ? message.success("图片已生成") : message.error(failed?.reason instanceof Error ? failed.reason.message : "生成失败");
     } finally {
       setRunning(false);
+      isGeneratingRef.current = false;
+      // 即使 task 跑完，本会话发起的这条 placeholder 仍在 activeGenerationIdRef 里，
+      // 防止 useEffect 后续重新触发时把这条记录的 results 刷成"被中断"。
     }
   };
 
@@ -331,6 +344,7 @@ export function ImageWorkspace({ initialLogId }: ImageWorkspaceProps) {
     setSelectedLogIds([]);
     setPreviewLog(null);
     autoPreviewedIdRef.current = null;
+    activeGenerationIdRef.current = null;
     router.replace("/image");
   };
 
@@ -356,10 +370,12 @@ export function ImageWorkspace({ initialLogId }: ImageWorkspaceProps) {
     setPreviewLog(log);
     setLogsOpen(false);
 
-    // 如果是当前会话正在跑的 running 记录，generate() 自己维护 results（pending → success/failed），
-    // 这里千万别去重写 results，否则 task 还没跑完 UI 就会被刷成「生成被中断」误导用户。
-    // 此时仅回填参数 / 切 URL，不动 results / references。
-    if (log.status === "running" && running) {
+    // 如果是当前会话正在跑、或者就是本会话刚发起的那条 placeholder（task 跑完仍可能
+    // 走到 react 重新渲染调到 previewGenerationLog），千万别去重写 results，
+    // 否则 task 还没跑完 / 刚跑完的成功图都会被刷成「生成被中断」误导用户。
+    // 用 ref 而不是 useState 的 running，避免 closure 拿到 stale=false 的 race。
+    const isOwnActiveLog = activeGenerationIdRef.current === log.id;
+    if (log.status === "running" && (isGeneratingRef.current || isOwnActiveLog)) {
       if (!options.skipNavigate) {
         autoPreviewedIdRef.current = log.id;
         router.replace(`/image/${log.id}`);

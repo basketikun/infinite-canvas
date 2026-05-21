@@ -22,6 +22,17 @@
 
 `/api/v1/images/generations`、`/api/v1/images/edits`、`/api/v1/models` 由后端反代 OpenAI 兼容接口，仍走 `{code, data, msg}` 包装。
 
+`/api/v1/images/edits` 接受**两种**入参（按请求头 `Content-Type` 分流）：
+
+| Content-Type | body | 适用场景 |
+|---|---|---|
+| `application/json` | `{ prompt, n?, size?, quality?, references: ["img-xxx", ...] }` | 参考图都已经在 `images` 表里（前端先调过 `POST /api/images` 拿到 id）。后端按 owner 校验后从磁盘读取，自己拼 multipart 上送。请求体 KB 级，**首选** |
+| `multipart/form-data` | 传统 multipart：`file=...`（多张就多个 file 字段）+ `prompt` / `n` / `size` / `quality` | 画布里截屏 / 裁剪后还没存盘的瞬时图。请求体 MB 级 |
+
+JSON 路径限制：
+- references 最多 **8** 张
+- 每条 references[i] 必须能在 `images` 表查到，且 `user_id` 等于当前请求用户；否则返回 `参考图不存在` 或 `参考图无权访问`
+
 生图接口成功时 `data` 形如：
 
 ```json

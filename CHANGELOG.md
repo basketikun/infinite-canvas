@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v0.0.14 - 2026-05-21
+
++ [调整] 顶栏 `VersionReleaseModal` 版本弹窗按钮先彻底隐藏：组件实现改为 `return null`，文件保留备用。当前所有版本号显示统一走头像左侧的 `<Link href="/changelog">vX.X.X</Link>`（在 `UserStatusActions` 内部，未登录态也在 `app-top-nav` 里单独有一份链接形态），保留画布详情页那个；之前生产页面残留的 `v0.0.13 v0.0.13` 双显示问题，部署本次构建后强刷浏览器即可消失。
++ [调整] 图生图接口 `/api/v1/images/edits` 同时支持 JSON 请求：`{ prompt, n, size?, quality?, references: ["img-xxx", ...] }`，references 是图片在服务器图床的 storageKey（`images.id`）。后端校验 owner（必须当前用户拥有）后从磁盘读图，再自己拼 multipart 转发到上游。请求体从 MB 级降到 KB 级，省一次"前端转 base64 → 上传 → 服务器再读请求体"的来回。最多 8 张参考图。原 multipart 路径保留，画布里截屏/裁剪还没存盘的瞬时图仍可用。前端 `requestEdit` 自动识别：所有 reference 都有 storageKey 时走 JSON，否则回落到 multipart。
++ [修复] v0.0.13 加的「running guard」仍有漏洞：用 useState 的 `running` 做 closure 判断，React 18 自动 batching + Next.js 路由切换 + 多次 setQueryData 触发的 commit 之间可能让 `previewGenerationLog` 闭包拿到 stale `running===false`，导致 task 跑成功后页面被刷成「生成失败 / 生成被中断」、生成结果图片消失（服务器 gin 日志显示 edits 46s 200、image 上传 25s 200、generations upsert 3ms 200，前后端状态出现分裂）。改用 `isGeneratingRef` + `activeGenerationIdRef` 两个 ref：ref 永远是最新值不受 closure 影响；本会话发起的 placeholder.id 也记下来，即便 setRunning(false) 之后再触发 previewGenerationLog 也认得出这条 running 是自己的，不刷成「被中断」。
++ [修复] 顶栏右上角同时渲染了「`/changelog` 版本号链接」和「VersionReleaseModal 版本弹窗按钮」，两者都显示同一个版本号文字（如 `v0.0.13 v0.0.13`）。保留前者跳转专门的更新日志页 `/changelog`，移除 `VersionReleaseModal` 渲染调用（组件文件保留备用）。原本传给 modal 的 `versionStyle`（画布详情页主题色）改而应用到 `<Link>` 上，画布详情页版本号配色不变。
+
+## v0.0.13 - 2026-05-21
+
++ [修复] 上游网关返回 HTML 错误页（最常见的 nginx 504/502/503）时，前端会原样显示一整段 `<html><head><title>504 Gateway Time-out</title>...`，普通用户看不懂。后端 `handler.parseUpstreamMessage` 和 `service.parseUpstreamError` 现在识别 HTML body 不再直接透传，按 502/503/504 给出中文友好提示（如「上游服务响应超时（504），请稍后再试」），其他状态码兜底「上游响应异常：{status}」。同时给 `chatgpt2api.lijiwang.top` 那段 nginx 加上 `proxy_read_timeout 600s` + 关闭 buffering，跟 infinite-canvas 这边对齐避免上游链路过早 504。
 + [修复] 生图工作台点开始生成后，UI 立刻把所有 slot 渲染成"生成被中断，请点击重试"。根因是 v0.0.12 引入两阶段入库后，左侧记录列表立刻插入了 status=running 的 placeholder，用户/列表点击或自动联动到这条 placeholder 时 `previewGenerationLog` 看到 `status=running` 就按"中断"占位刷成 failed 卡片，把当前会话还在跑的 task 进度盖掉了。`previewGenerationLog` 现在判断「`status=running` 且本会话正在跑（running===true）」时仅切 URL 不重写 results，把 pending → success/failed 的控制权交还 generate() 自身。`/admin/generations` 上游响应区已能看到上游 chatgpt2api 真实报错信息（如 `/backend-api/conversation/... failed: status=500`），便于排查上游故障。
 
 + [修复] 上传图片接口 `/api/images` 偶发"一直在待处理"：multipart 大文件经 Next.js `rewrites` 默认转发时，会被 buffer 整个请求体再转给后端，加上生产模式下 rewrites 自身的 30/60s 响应超时，前端 fetch 容易长时间挂起。新增 `src/app/api/images/route.ts`（POST 上传）与 `src/app/api/images/[id]/route.ts`（GET 下载 / DELETE 删除）两个 Route Handler，沿用 `/api/v1/images/*` 已经验证过的 `duplex: "half"` streaming + `maxDuration = 5min` 模式直转后端，绕过 rewrites 卡顿。
