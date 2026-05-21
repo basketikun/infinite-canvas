@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Edit3, Eye, Image as ImageIcon, LoaderCircle, MessageSquare, Play } from "lucide-react";
-import { App, Button, Empty, Input, InputNumber, Modal, Segmented } from "antd";
+import { App, Button, Empty, Image, Input, InputNumber, Modal, Segmented } from "antd";
 
 import { defaultConfig } from "@/lib/ai-config";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -31,7 +31,8 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, o
   const globalConfig = useAiConfigStore((state) => state.config);
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const mode = node.metadata?.generationMode || "image";
-  const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(node.metadata?.count || 3)) || 1)));
+  const fallbackCount = Number(globalConfig.count) || Number(defaultConfig.count) || 1;
+  const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(node.metadata?.count) || fallbackCount) || 1)));
   const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
   const textInputs = inputs.filter((input) => input.type === "text");
   const imageInputs = inputs.filter((input) => input.type === "image");
@@ -203,9 +204,16 @@ function ImageSortCard({ input, imageIndex, imageTotal, inputs, theme, onMove }:
   if (!input.image) return null;
   return (
     <div className="w-24 shrink-0 overflow-hidden rounded-lg border" style={{ background: theme.node.fill, borderColor: theme.node.stroke }}>
-      <div className="relative">
-        <img src={input.image.dataUrl} alt={input.title} className="aspect-square w-full object-cover" />
-        <span className="absolute left-1 top-1 rounded bg-black/50 px-1 py-0.5 text-[9px] font-medium text-white">{imageIndex + 1}</span>
+      <div className="relative" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+        <Image
+          src={input.image.dataUrl}
+          alt={input.title}
+          width="100%"
+          style={{ aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
+          wrapperStyle={{ display: "block" }}
+          preview={{ mask: "查看大图" }}
+        />
+        <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/50 px-1 py-0.5 text-[9px] font-medium text-white">{imageIndex + 1}</span>
         <HorizontalOrderButtons index={imageIndex} total={imageTotal} onMove={(offset) => onMove(input, offset)} />
       </div>
     </div>

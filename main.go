@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/router"
@@ -10,6 +11,9 @@ import (
 
 func main() {
 	if err := config.Load(); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.MkdirAll(config.Cfg.ImageDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 	if err := service.EnsureDefaultAdmin(); err != nil {

@@ -52,6 +52,7 @@ func DB() (*gorm.DB, error) {
 			&model.Canvas{},
 			&model.Generation{},
 			&model.CreditLog{},
+			&model.Image{},
 		)
 	})
 	return db, dbErr

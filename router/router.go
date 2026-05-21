@@ -31,6 +31,7 @@ func New() *gin.Engine {
 	me := api.Group("", middleware.OptionalAuth)
 	me.GET("/user/profile", gin.WrapF(handler.MyProfile))
 	me.GET("/user/credit-logs", gin.WrapF(handler.MyCreditLogs))
+	me.PUT("/user/preferences", gin.WrapF(handler.UpdateMyPreferences))
 	me.GET("/canvases", gin.WrapF(handler.MyCanvases))
 	me.POST("/canvases", gin.WrapF(handler.SaveMyCanvas))
 	me.GET("/canvases/:id", func(c *gin.Context) {
@@ -48,6 +49,13 @@ func New() *gin.Engine {
 	me.POST("/assets/me", gin.WrapF(handler.SaveMyAsset))
 	me.DELETE("/assets/me/:id", func(c *gin.Context) {
 		handler.DeleteMyAsset(c.Writer, c.Request, c.Param("id"))
+	})
+	me.POST("/images", gin.WrapF(handler.UploadImage))
+	me.GET("/images/:id", func(c *gin.Context) {
+		handler.GetImage(c.Writer, c.Request, c.Param("id"))
+	})
+	me.DELETE("/images/:id", func(c *gin.Context) {
+		handler.DeleteImage(c.Writer, c.Request, c.Param("id"))
 	})
 
 	admin := api.Group("/admin", middleware.AdminAuth)
@@ -80,6 +88,8 @@ func New() *gin.Engine {
 	admin.POST("/ai-configs/:id/test", func(c *gin.Context) {
 		handler.AdminTestAIConfig(c.Writer, c.Request, c.Param("id"))
 	})
+	admin.GET("/generations", gin.WrapF(handler.AdminGenerations))
+	admin.GET("/credit-logs", gin.WrapF(handler.AdminCreditLogs))
 
 	router.NoRoute(middleware.NotFoundJSON)
 

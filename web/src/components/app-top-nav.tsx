@@ -117,7 +117,13 @@ export function AppTopNav({ activeToolSlug, hideHeader = false }: AppTopNavProps
                     aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
                     title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
                   />
-                  <span className="shrink-0 text-xs font-medium text-stone-500 dark:text-stone-400">{appVersion}</span>
+                  <Link
+                    href="/changelog"
+                    title="查看更新日志"
+                    className="shrink-0 text-xs font-medium text-stone-500 underline-offset-4 transition hover:text-stone-900 hover:underline dark:text-stone-400 dark:hover:text-stone-100"
+                  >
+                    {appVersion}
+                  </Link>
                   <GitHubLink />
                   <Link href="/login" className="text-sm font-medium text-stone-600 underline-offset-4 transition hover:text-stone-950 hover:underline dark:text-stone-300 dark:hover:text-stone-100">
                     登录

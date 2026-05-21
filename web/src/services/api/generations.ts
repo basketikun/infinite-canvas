@@ -1,7 +1,7 @@
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 
 export type GenerationMode = "image" | "edit";
-export type GenerationStatus = "success" | "partial" | "failed";
+export type GenerationStatus = "running" | "success" | "partial" | "failed";
 
 export type GenerationRecord = {
   id: string;
@@ -17,6 +17,13 @@ export type GenerationRecord = {
   durationMs: number;
   status: GenerationStatus;
   thumbnails: string[];
+  references: string[];
+  // 失败 slot 的错误信息列表（每个失败一条）
+  errors?: string[];
+  // 调用反代时实际带的请求参数（mode、size、quality、n、references 数量等），仅供 admin 审计
+  requestParams?: Record<string, unknown>;
+  // 最近一次反代上游响应 raw JSON 字符串（去掉 b64_json 后），仅供 admin 审计
+  upstreamMeta?: string;
   createdAt: string;
 };
 
@@ -43,6 +50,10 @@ export type SaveGenerationPayload = {
   durationMs: number;
   status: GenerationStatus;
   thumbnails: string[];
+  references: string[];
+  errors?: string[];
+  requestParams?: Record<string, unknown>;
+  upstreamMeta?: string;
 };
 
 export async function fetchGenerations(token: string, query: GenerationQuery = {}) {

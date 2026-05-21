@@ -28,6 +28,19 @@ type CreditLogList struct {
 	Total int         `json:"total"`
 }
 
+// AdminCreditLogItem 管理后台展示用，附带 username 和 operatorUsername。
+type AdminCreditLogItem struct {
+	CreditLog
+	Username         string `json:"username"`
+	OperatorUsername string `json:"operatorUsername"`
+}
+
+// AdminCreditLogList 管理后台流水分页结果。
+type AdminCreditLogList struct {
+	Items []AdminCreditLogItem `json:"items"`
+	Total int                  `json:"total"`
+}
+
 // CreditProfile 个人中心聚合数据。
 type CreditProfile struct {
 	User           AuthUser `json:"user"`

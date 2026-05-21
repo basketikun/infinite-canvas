@@ -4,6 +4,8 @@ import type { CSSProperties, ReactNode, RefObject } from "react";
 import { Dropdown } from "antd";
 import type { ItemType } from "antd/es/menu/interface";
 
+import Link from "next/link";
+
 import { GitHubLink } from "@/components/github-link";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { cn } from "@/lib/utils";
@@ -59,7 +61,13 @@ export function UserStatusActions({
         aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
         title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
       />
-      <span className="shrink-0 text-xs font-medium text-stone-500 dark:text-stone-400">{version}</span>
+      <Link
+        href="/changelog"
+        title="查看更新日志"
+        className="shrink-0 text-xs font-medium text-stone-500 underline-offset-4 transition hover:text-stone-900 hover:underline dark:text-stone-400 dark:hover:text-stone-100"
+      >
+        {version}
+      </Link>
       <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
       <div ref={accountRef}>
         <Dropdown

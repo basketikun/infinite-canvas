@@ -6,6 +6,7 @@ import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Modal, Row, Sel
 import { useEffect, useState } from "react";
 
 import { type AdminUser, type AdminUserPayload, type AdminUserRole } from "@/services/api/users";
+import { formatLocalDateTime } from "@/lib/format-datetime";
 
 import { useAdminUsers } from "../hooks/use-admin-users";
 
@@ -77,7 +78,7 @@ export default function AdminUsersPage() {
       width: 140,
       render: (_, item) => (item.role === "admin" ? <Typography.Text type="secondary">无限制</Typography.Text> : <Typography.Text>{item.credits ?? 0}</Typography.Text>),
     },
-    { title: "创建时间", dataIndex: "createdAt", width: 200, render: (_, item) => <Typography.Text type="secondary">{item.createdAt}</Typography.Text> },
+    { title: "创建时间", dataIndex: "createdAt", width: 200, render: (_, item) => <Typography.Text type="secondary">{formatLocalDateTime(item.createdAt)}</Typography.Text> },
     {
       title: "操作",
       key: "actions",

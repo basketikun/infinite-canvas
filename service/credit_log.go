@@ -24,6 +24,36 @@ func LogCreditChange(item model.CreditLog) error {
 	return repository.AppendCreditLog(item)
 }
 
+// ListAllCreditLogsForAdmin 管理后台用，给每条流水附上 username 和 operatorUsername。
+func ListAllCreditLogsForAdmin(q model.Query) (model.AdminCreditLogList, error) {
+	items, total, err := repository.ListAllCreditLogs(q)
+	if err != nil {
+		return model.AdminCreditLogList{}, err
+	}
+	ids := make([]string, 0, 2*len(items))
+	for _, item := range items {
+		if item.UserID != "" {
+			ids = append(ids, item.UserID)
+		}
+		if item.OperatorID != "" {
+			ids = append(ids, item.OperatorID)
+		}
+	}
+	users, err := repository.GetUsersByIDs(ids)
+	if err != nil {
+		return model.AdminCreditLogList{}, err
+	}
+	out := make([]model.AdminCreditLogItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, model.AdminCreditLogItem{
+			CreditLog:        item,
+			Username:         users[item.UserID].Username,
+			OperatorUsername: users[item.OperatorID].Username,
+		})
+	}
+	return model.AdminCreditLogList{Items: out, Total: int(total)}, nil
+}
+
 // CreditProfile 聚合用户当前积分、累计消耗、累计赠送/调整、生图次数。
 func CreditProfile(user model.AuthUser) (model.CreditProfile, error) {
 	consumed, err := repository.SumCreditByType(user.ID, model.CreditLogTypeConsume)

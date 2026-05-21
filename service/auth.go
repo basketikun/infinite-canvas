@@ -209,6 +209,30 @@ func DeleteUser(id string) error {
 	return repository.DeleteUser(id)
 }
 
+// UpdateUserPreferences 更新用户的跨设备偏好配置。
+func UpdateUserPreferences(userID string, prefs model.UserPreferences) (model.UserPreferences, error) {
+	if userID == "" {
+		return model.UserPreferences{}, errors.New("请先登录")
+	}
+	prefs.Quality = strings.TrimSpace(prefs.Quality)
+	prefs.Size = strings.TrimSpace(prefs.Size)
+	prefs.Count = strings.TrimSpace(prefs.Count)
+	user, ok, err := repository.GetUserByID(userID)
+	if err != nil {
+		return model.UserPreferences{}, err
+	}
+	if !ok {
+		return model.UserPreferences{}, errors.New("用户不存在")
+	}
+	user.Preferences = prefs
+	user.UpdatedAt = now()
+	saved, err := repository.SaveUser(user)
+	if err != nil {
+		return model.UserPreferences{}, err
+	}
+	return saved.Preferences, nil
+}
+
 // ConsumeCredits 原子扣减用户额度，余额不足时返回 false。
 func ConsumeCredits(userID string, amount int) (int, bool, error) {
 	if amount <= 0 {

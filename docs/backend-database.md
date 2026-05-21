@@ -21,6 +21,7 @@
 - `canvases`
 - `generations`
 - `credit_logs`
+- `images`
 
 后续新增表时，优先保持表数量少，能用字段或 JSON 表达的配置、状态、统计和扩展信息先不拆表。
 
@@ -38,6 +39,7 @@
 | `avatar_url`    | string | 头像地址                     |
 | `role`          | string | 角色：`user`、`admin`        |
 | `credits`       | number | 生图剩余额度，注册默认 4，管理员账号不消耗   |
+| `preferences`   | json   | 跨设备偏好（生图默认 `quality`、`size`、`count` 等） |
 | `aff_code`      | string | 用户自己的邀请码，唯一索引，规划字段       |
 | `aff_count`     | number | 已邀请用户数量，冗余统计字段，规划字段      |
 | `inviter_id`    | string | 邀请人用户 ID，规划字段            |
@@ -124,11 +126,11 @@ OpenAI 兼容接口的连接配置。同一时间最多一条记录的 `enabled=
 | `created_at` | string | 创建时间                     |
 | `updated_at` | string | 更新时间                     |
 
-注：画布中图片节点引用的 Blob 仍存于用户浏览器 localForage（按 user id 分桶），跨设备暂不同步图片本体。
+注：画布中图片节点的 Blob 已上云到 `images` 表（按 `user_id` 隔离）；`data` 中保存的 `storageKey` 是 `images.id`，跨设备可恢复。迁移前用 `image:` 前缀的 storageKey 仍保留浏览器 IndexedDB 兜底读取，新写入一律走服务器。
 
 ### generations
 
-生图工作台历史，按用户隔离。**缩略图本体不入库**，只保存浏览器 localForage 中的 `storageKey`，因此跨设备只能查看文字与统计。
+生图工作台历史，按用户隔离。`thumbnails` 中保存的是 `images.id` 列表，跨设备可恢复原图；早期的 `image:` 前缀仍能在原浏览器 IndexedDB 中兜底读取，丢了会显示"图片缓存丢失"。
 
 | 字段              | 类型     | 说明                                       |
 |-----------------|--------|------------------------------------------|
@@ -143,9 +145,28 @@ OpenAI 兼容接口的连接配置。同一时间最多一条记录的 `enabled=
 | `success_count` | number | 成功张数                                     |
 | `fail_count`    | number | 失败张数                                     |
 | `duration_ms`   | number | 耗时（毫秒）                                  |
-| `status`        | string | `success` / `partial` / `failed`         |
-| `thumbnails`    | json   | localForage 中的 storageKey 列表（最多 6 张）     |
+| `status`        | string | `running` / `success` / `partial` / `failed`（`running` 是点击"开始生成"立即写入的占位状态，task 跑完会被 upsert 为后三种之一） |
+| `thumbnails`    | json   | `images.id` 列表（最多 6 张）                   |
+| `references`    | json   | 参考图 `images.id` 列表，便于切换记录时恢复参考图   |
+| `errors`        | json   | 失败 slot 的 error.message 列表，供 admin 排查    |
+| `request_params`| json   | 最近一次反代调用的请求参数（mode/n/size/quality/referenceCount） |
+| `upstream_meta` | text   | 最近一次成功反代上游响应 raw JSON 字符串（已脱敏：b64_json 替换为 `<N bytes redacted>`） |
 | `created_at`    | string | 创建时间                                     |
+
+### images
+
+用户上传 / 生成图片的元信息表。二进制本身**落到磁盘**（`IMAGE_DIR`，默认 `data/uploads`），DB 只保留路径引用，避免数据库膨胀；画布节点、参考图、生图结果、素材都通过 `storageKey = images.id` 引用。`GET /api/images/:id` **公开访问**（id 是不可枚举的 UUID），方便 `<img src>` 直接渲染；上传仍需登录，删除仅 owner。
+
+| 字段           | 类型     | 说明                              |
+|--------------|--------|---------------------------------|
+| `id`         | string | 主键，前端通过 `POST /api/images` 获得   |
+| `user_id`    | string | 所属用户，索引                         |
+| `mime_type`  | string | MIME 类型，例如 `image/png`           |
+| `size`       | number | 字节数                             |
+| `path`       | string | 相对 `IMAGE_DIR` 的文件路径，例如 `userId/img-xxx.png` |
+| `created_at` | string | 创建时间                             |
+
+文件结构按 `{IMAGE_DIR}/{userId 安全化}/{id}.{ext}` 组织；扩展名根据 MIME 推导，未知类型落到 `.bin`。删除一条记录会同步 `os.Remove` 对应文件。
 
 ### credit_logs
 

@@ -7,7 +7,7 @@ import copy from "copy-to-clipboard";
 
 import { RequireAuth } from "@/components/require-auth";
 import { readFileAsDataUrl } from "@/lib/image-utils";
-import { uploadImage } from "@/services/image-storage";
+import { useImageUploader } from "@/lib/use-image-uploader";
 import { cn } from "@/lib/utils";
 import { useMyAssets } from "./hooks/use-my-assets";
 import type { MyAsset, MyAssetType } from "@/services/api/my-assets";
@@ -39,6 +39,7 @@ export default function AssetsPage() {
 
 function MyAssetsPage() {
   const { message } = App.useApp();
+  const uploadWithToast = useImageUploader();
   const [form] = Form.useForm<AssetFormValues>();
   const coverInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -131,7 +132,7 @@ function MyAssetsPage() {
 
   const readImageFile = async (file?: File) => {
     if (!file || !file.type.startsWith("image/")) return;
-    const image = await uploadImage(file);
+    const image = await uploadWithToast(file, { label: "素材图片" });
     form.setFieldValue("url", image.url);
     if (!form.getFieldValue("coverUrl")) form.setFieldValue("coverUrl", image.url);
     if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);

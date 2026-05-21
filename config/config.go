@@ -13,6 +13,7 @@ type Config struct {
 	JWTExpireHours int    `env:"JWT_EXPIRE_HOURS" envDefault:"168"`
 	StorageDriver  string `env:"STORAGE_DRIVER" envDefault:"sqlite"`
 	DatabaseDSN    string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
+	ImageDir       string `env:"IMAGE_DIR" envDefault:"data/uploads"`
 }
 
 var Cfg Config

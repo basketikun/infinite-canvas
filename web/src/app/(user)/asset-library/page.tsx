@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { saveMyAsset } from "@/services/api/my-assets";
 import { useUserStore } from "@/stores/use-user-store";
 import { fetchAssetLibrary, type AssetLibraryItem } from "@/services/api/assets";
-import { uploadImage } from "@/services/image-storage";
+import { useImageUploader } from "@/lib/use-image-uploader";
 
 const PAGE_SIZE = 12;
 
@@ -23,6 +23,7 @@ export default function AssetLibraryPage() {
   const [page, setPage] = useState(1);
   const [selectedAsset, setSelectedAsset] = useState<AssetLibraryItem | null>(null);
   const token = useUserStore((state) => state.token);
+  const uploadWithToast = useImageUploader();
 
   const query = useQuery({
     queryKey: ["asset-library", keyword, selectedType, selectedTags, page],
@@ -53,7 +54,7 @@ export default function AssetLibraryPage() {
     try {
       if (asset.type === "image") {
         const dataUrl = await remoteImageToDataUrl(asset.url);
-        const image = await uploadImage(dataUrl);
+        const image = await uploadWithToast(dataUrl, { label: "素材图片" });
         await saveMyAsset(token, {
           title: asset.title,
           type: "image",

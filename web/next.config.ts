@@ -21,22 +21,11 @@ export default function nextConfig(phase: string): NextConfig {
       NEXT_PUBLIC_APP_VERSION: version,
     },
     async rewrites() {
-      const passthrough = { source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` };
-      if (isDev) {
-        // dev 模式：长请求让 src/app/api/v1/images/* 的 Route Handler 处理，
-        // 绕过 next dev rewrites 的 30 秒代理超时；其它接口走 rewrites 直转。
-        return [passthrough];
-      }
-      // 生产模式：next start 的 rewrites 没有 30s 限制，把长请求放到 beforeFiles
-      // 优先匹配，跳过 Route Handler 这层 Node 中转，少一跳延迟。
-      return {
-        beforeFiles: [
-          { source: "/api/v1/images/generations", destination: `${apiBaseUrl}/api/v1/images/generations` },
-          { source: "/api/v1/images/edits", destination: `${apiBaseUrl}/api/v1/images/edits` },
-        ],
-        afterFiles: [passthrough],
-        fallback: [],
-      };
+      // dev 和 production 都让长请求接口走 src/app/api/{v1/images/*, images} 的 Route Handler，
+      // 因为实测 next dev 和 next start 的 rewrites 都会在 ~30/60s 切断响应；同时 multipart
+      // 大文件上传经 rewrites 转发会 buffer 卡顿，常表现为前端 fetch 一直 pending。
+      // Route Handler 走 streaming + maxDuration 5 分钟，行为可控。其它接口仍由 rewrites 直转。
+      return [{ source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` }];
     },
   };
 }

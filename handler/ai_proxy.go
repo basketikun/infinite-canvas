@@ -366,16 +366,46 @@ func logImageConsume(userID string, count int, balance int, modelName string, re
 	}
 }
 
-// wrapImageResult 把上游 JSON 包装成 {data, credits} 结构，供前端区分余额。
+// wrapImageResult 把上游 JSON 包装成 {upstream, remaining, upstreamMeta} 结构。
+// upstream 是完整 JSON（含 b64_json，前端用于落盘）；
+// upstreamMeta 是脱敏后的 raw 字符串（去掉 b64_json 大字段），前端会回写到 generations 表供 admin 审计用。
 func wrapImageResult(raw []byte, remaining int) map[string]any {
 	var payload any
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		payload = nil
 	}
 	return map[string]any{
-		"upstream":  payload,
-		"remaining": remaining,
+		"upstream":     payload,
+		"remaining":    remaining,
+		"upstreamMeta": redactUpstreamMeta(raw),
 	}
+}
+
+// redactUpstreamMeta 把 OpenAI 兼容生图响应里的 b64_json 字段抹掉再序列化回 JSON 字符串，
+// 保留 created / data[].revised_prompt / data[].url 等可读元信息。
+// 解析失败时退化为原始字符串（截断到 4KB 以防极端情况）。
+func redactUpstreamMeta(raw []byte) string {
+	var parsed map[string]any
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		if len(raw) > 4096 {
+			return string(raw[:4096]) + "...(truncated)"
+		}
+		return string(raw)
+	}
+	if list, ok := parsed["data"].([]any); ok {
+		for _, item := range list {
+			if itemMap, ok := item.(map[string]any); ok {
+				if v, ok := itemMap["b64_json"].(string); ok && v != "" {
+					itemMap["b64_json"] = fmt.Sprintf("<%d bytes redacted>", len(v))
+				}
+			}
+		}
+	}
+	out, err := json.Marshal(parsed)
+	if err != nil {
+		return ""
+	}
+	return string(out)
 }
 
 func countImagePayload(raw []byte) int {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiOutlined, FileTextOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, TeamOutlined } from "@ant-design/icons";
+import { ApiOutlined, DollarOutlined, FileTextOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, ScheduleOutlined, TeamOutlined } from "@ant-design/icons";
 import { Button, Flex, Layout, Menu, Typography } from "antd";
 import { LogOut } from "lucide-react";
 import Link from "next/link";
@@ -24,6 +24,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const adminMenuItems = [
     { key: "/admin/users", icon: <TeamOutlined />, label: <Link href="/admin/users" style={{ color: "inherit" }}>用户管理</Link>, title: "用户管理" },
     { key: "/admin/ai-configs", icon: <ApiOutlined />, label: <Link href="/admin/ai-configs" style={{ color: "inherit" }}>模型配置</Link>, title: "模型配置" },
+    { key: "/admin/generations", icon: <ScheduleOutlined />, label: <Link href="/admin/generations" style={{ color: "inherit" }}>生图记录</Link>, title: "生图记录" },
+    { key: "/admin/credit-logs", icon: <DollarOutlined />, label: <Link href="/admin/credit-logs" style={{ color: "inherit" }}>积分流水</Link>, title: "积分流水" },
     { key: "/admin/prompts", icon: <FileTextOutlined />, label: <Link href="/admin/prompts" style={{ color: "inherit" }}>提示词管理</Link>, title: "提示词管理" },
     { key: "/admin/assets", icon: <PictureOutlined />, label: <Link href="/admin/assets" style={{ color: "inherit" }}>素材库</Link>, title: "素材库管理" },
   ];

@@ -60,3 +60,18 @@
 - `GET /api/assets/me`、`POST /api/assets/me`、`DELETE /api/assets/me/:id`：当前用户的私有素材
 
 公开素材库仍走 `GET /api/assets`（按 `visibility=public` 过滤）。
+
+## 管理后台 — 全局统计
+
+仅 `role=admin` 可调，命中 `AdminAuth` 中间件，未登录 / 非管理员都会返回 `未登录或权限不足`。
+
+- `GET /api/admin/generations?keyword=&status=&page=&pageSize=` → `{ items, total }`，items 每项是 `Generation` 加 `username`；`keyword` 同时匹配 `prompt` 和 `username`；`status` 可选 `success` / `partial` / `failed`。
+- `GET /api/admin/credit-logs?keyword=&type=&page=&pageSize=` → `{ items, total }`，items 每项是 `CreditLog` 加 `username` 和 `operatorUsername`（管理员调整时）；`keyword` 匹配 `username` / `remark` / `model`；`type` 可选 `consume` / `admin_adjust` / `signup_bonus`。
+
+## 图片接口
+
+- `POST /api/images`（需登录，multipart `file` 字段）→ `{ id, url, mimeType, size }`，`url` 是相对路径 `/api/images/{id}` 可直接喂 `<img src>`
+- `GET /api/images/:id`（**公开**，无需 token）→ 流式返回图片二进制，附 `Cache-Control: public, max-age=86400, immutable`
+- `DELETE /api/images/:id`（需登录且必须为 owner）→ 同步删 DB 行和磁盘文件
+
+二进制本身落盘到 `IMAGE_DIR`（默认 `data/uploads`），DB 只保留 path。开放公开读是因为 `id` 是 UUID 不可枚举，等价于 imgur 式的"难以猜中"链接。

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 
 import { RequireAuth } from "@/components/require-auth";
 import { fetchCreditLogs, fetchProfile, type CreditLog, type CreditLogType } from "@/services/api/user";
+import { formatLocalDateTime } from "@/lib/format-datetime";
 import { useUserStore } from "@/stores/use-user-store";
 
 const typeLabels: Record<CreditLogType, { label: string; color: string }> = {
@@ -68,7 +69,7 @@ function ProfileContent() {
   const isAdmin = user?.role === "admin";
 
   const columns: ProColumns<CreditLog>[] = [
-    { title: "时间", dataIndex: "createdAt", width: 200, render: (_, item) => <Typography.Text type="secondary">{item.createdAt}</Typography.Text> },
+    { title: "时间", dataIndex: "createdAt", width: 200, render: (_, item) => <Typography.Text type="secondary">{formatLocalDateTime(item.createdAt)}</Typography.Text> },
     {
       title: "类型",
       dataIndex: "type",
@@ -106,7 +107,7 @@ function ProfileContent() {
                 <Typography.Title level={4} style={{ margin: 0 }}>{user?.username || "..."}</Typography.Title>
                 {isAdmin ? <Tag color="gold">管理员</Tag> : <Tag>普通用户</Tag>}
               </Space>
-              <Typography.Text type="secondary">注册时间：{user?.createdAt || "-"}</Typography.Text>
+              <Typography.Text type="secondary">注册时间：{formatLocalDateTime(user?.createdAt)}</Typography.Text>
             </Flex>
             <div style={{ flex: 1 }} />
             <Flex vertical align="end" gap={4}>

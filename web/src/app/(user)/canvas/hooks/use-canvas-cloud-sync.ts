@@ -57,11 +57,19 @@ function projectToData(project: CanvasProject): Record<string, unknown> {
 export function useCanvasListSync(): void {
   const { message } = App.useApp();
   const token = useUserStore((state) => state.token);
+  const userId = useUserStore((state) => state.user?.id || "");
   const replaceProjects = useCanvasStore((state) => state.replaceProjects);
   const markHydrated = useCanvasStore((state) => state.markHydrated);
 
+  // 切换账号 / 退出登录时，立即清掉上一个用户残留的画布列表并切回 loading 状态，
+  // 否则新账号的 React Query 还在 pending，UI 会先短暂展示上一个用户的画布。
+  useEffect(() => {
+    replaceProjects([]);
+    markHydrated(false);
+  }, [markHydrated, replaceProjects, userId]);
+
   const query = useQuery({
-    queryKey: ["canvases", "list", token],
+    queryKey: ["canvases", "list", userId],
     queryFn: () => fetchCanvases(token),
     enabled: Boolean(token),
     retry: false,

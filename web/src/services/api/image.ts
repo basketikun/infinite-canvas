@@ -21,6 +21,7 @@ type UpstreamImageResponse = {
 type ImageProxyResult = {
   upstream: UpstreamImageResponse | null;
   remaining: number;
+  upstreamMeta?: string;
 };
 
 type ApiEnvelope<T> = {
@@ -34,6 +35,8 @@ export type GeneratedImage = { id: string; dataUrl: string };
 export type GenerationResult = {
   images: GeneratedImage[];
   remaining: number;
+  // 后端反代返回的上游响应 raw JSON 字符串（已去除 b64_json 大字段），供 admin 审计落库使用。
+  upstreamMeta?: string;
 };
 
 function resolveImageDataUrl(item: UpstreamImageItem) {
@@ -61,21 +64,32 @@ function parseImageResult(result: ImageProxyResult): GenerationResult {
     useUserStore.getState().setCredits(result.remaining);
   }
 
-  return { images, remaining: result.remaining };
+  return { images, remaining: result.remaining, upstreamMeta: result.upstreamMeta };
 }
 
-function readEnvelopeError<T>(envelope: ApiEnvelope<T> | undefined, fallback: string) {
+// 413 是 nginx 在请求体过大时直接拒绝；此时返回的不是项目自定义 envelope，
+// 需要单独识别并给出中文提示，否则用户只能看到"请求失败：413"这种无意义信息。
+const OVERSIZE_REQUEST_TIP = "请求体过大（超过 50MB），请压缩参考图或减少同时上传的图片数量";
+
+function describeStatus(status?: number, fallback = "请求失败") {
+  if (status === 413) return OVERSIZE_REQUEST_TIP;
+  if (status === 401) return "请先登录或重新登录";
+  if (status === 504) return "服务器响应超时，请稍后再试";
+  return status ? `${fallback}：${status}` : fallback;
+}
+
+function readEnvelopeError<T>(envelope: ApiEnvelope<T> | undefined, fallback: string, status?: number) {
   if (envelope && envelope.code !== 0 && envelope.msg) return envelope.msg;
-  return fallback;
+  return describeStatus(status, fallback);
 }
 
 function readAxiosError(error: unknown, fallback: string) {
   if (axios.isAxiosError<ApiEnvelope<unknown>>(error)) {
     const envelope = error.response?.data;
     if (envelope && typeof envelope === "object" && "msg" in envelope && envelope.code !== 0) {
-      return envelope.msg || fallback;
+      return envelope.msg || describeStatus(error.response?.status, fallback);
     }
-    return error.response?.status ? `${fallback}：${error.response.status}` : fallback;
+    return describeStatus(error.response?.status, fallback);
   }
   return error instanceof Error ? error.message : fallback;
 }
@@ -112,7 +126,7 @@ export async function requestGeneration(token: string, config: AiConfig, prompt:
       },
     );
     if (response.data?.code !== 0) {
-      throw new Error(readEnvelopeError(response.data, "请求失败"));
+      throw new Error(readEnvelopeError(response.data, "请求失败", response.status));
     }
     return parseImageResult(response.data.data);
   } catch (error) {
@@ -140,7 +154,7 @@ export async function requestEdit(token: string, config: AiConfig, prompt: strin
       validateStatus: () => true,
     });
     if (response.data?.code !== 0) {
-      throw new Error(readEnvelopeError(response.data, "请求失败"));
+      throw new Error(readEnvelopeError(response.data, "请求失败", response.status));
     }
     return parseImageResult(response.data.data);
   } catch (error) {

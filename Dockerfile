@@ -5,6 +5,7 @@ WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --registry=https://registry.npmmirror.com --cache-dir=/root/.bun/install/cache
 COPY VERSION /app/VERSION
+COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
 RUN bun run build
 
@@ -28,11 +29,13 @@ FROM oven/bun:1
 
 WORKDIR /app
 COPY VERSION /app/VERSION
+COPY CHANGELOG.md /app/CHANGELOG.md
 COPY --from=api-build /server /app/server
 COPY --from=web-build /app/web /app/web
 ENV PROMPT_DATA_DIR=/app/data/prompts
+ENV IMAGE_DIR=/app/data/uploads
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /app/data/prompts
+RUN mkdir -p /app/data/prompts /app/data/uploads
 
 EXPOSE 3000
 # 先启动内部 Go API，再由 Next.js 提供页面并代理 /api/*。

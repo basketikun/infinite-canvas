@@ -8,6 +8,7 @@ import { Coins, Home, ImageIcon, Images, Keyboard, List, LogOut, Menu, MessageSq
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
+import { useImageUploader } from "@/lib/use-image-uploader";
 import { createId } from "@/lib/id";
 import { readImageMeta } from "@/lib/image-utils";
 import { useAiConfigStore } from "@/stores/use-ai-config-store";
@@ -20,7 +21,7 @@ import { RequireAuth } from "@/components/require-auth";
 import { useCanvasDetailSync } from "../hooks/use-canvas-cloud-sync";
 import { deleteCanvas, saveCanvas } from "@/services/api/canvases";
 import { cropDataUrl } from "../utils/canvas-image-data";
-import { App, Button, Dropdown, Modal, Tag, Tooltip } from "antd";
+import { App, Button, Dropdown, Image, Modal, Tag, Tooltip } from "antd";
 import { defaultConfig, type AiConfig } from "@/lib/ai-config";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
@@ -208,6 +209,7 @@ function ConnectionCreateOption({
 
 function InfiniteCanvasPage() {
   const { message } = App.useApp();
+  const uploadWithToast = useImageUploader();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const projectId = params.id;
@@ -279,6 +281,7 @@ function InfiniteCanvasPage() {
   const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
   const [cropNodeId, setCropNodeId] = useState<string | null>(null);
   const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
+  const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null);
   const [assistantCollapsed, setAssistantCollapsed] = useState(true);
   const [assistantMounted, setAssistantMounted] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
@@ -483,7 +486,7 @@ function InfiniteCanvasPage() {
   }, [message]);
 
   const createConnectedNode = useCallback((type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config, pending: PendingConnectionCreate) => {
-    const metadata = type === CanvasNodeType.Config ? { size: config.size, count: 3 } : undefined;
+    const metadata = type === CanvasNodeType.Config ? { size: config.size, count: Number(config.count) || 1 } : undefined;
     const newNode = createCanvasNode(type, pending.position, metadata);
     const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
     if (!connection) {
@@ -596,7 +599,7 @@ function InfiniteCanvasPage() {
       const targetPosition = position || getCanvasCenter();
       const configMetadata = type === CanvasNodeType.Config ? {
         size: config.size,
-        count: 3,
+        count: Number(config.count) || 1,
       } : undefined;
       const newNode = createCanvasNode(type, targetPosition, configMetadata);
 
@@ -1062,7 +1065,7 @@ function InfiniteCanvasPage() {
   }, [finishNodeDrag, handleGlobalMouseMove, handleGlobalMouseUp, handleGlobalPointerMove]);
 
   const createImageFileNode = useCallback(async (file: File, position: Position) => {
-    const image = await uploadImage(file);
+    const image = await uploadWithToast(file, { label: "图片" });
     const size = fitImageNodeSize(image.width, image.height);
     const id = `image-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newNode: CanvasNodeData = {
@@ -1331,7 +1334,7 @@ function InfiniteCanvasPage() {
   const cropImageNode = useCallback(async (node: CanvasNodeData, crop: CanvasImageCropRect) => {
     if (!node.metadata?.content) return;
     const cropped = await cropDataUrl(node.metadata.content, crop);
-    const image = await uploadImage(cropped);
+    const image = await uploadWithToast(cropped, { label: "裁剪图片" });
     const width = Math.min(node.width, Math.max(220, image.width));
     const childId = createId();
     const child: CanvasNodeData = {
@@ -1408,7 +1411,7 @@ function InfiniteCanvasPage() {
       if (!file || !file.type.startsWith("image/")) return;
 
       if (target?.nodeId) {
-        const image = await uploadImage(file);
+        const image = await uploadWithToast(file, { label: "图片" });
         const size = fitImageNodeSize(image.width, image.height);
         setNodes((prev) =>
           prev.map((node) =>
@@ -1736,7 +1739,7 @@ function InfiniteCanvasPage() {
     }, {
       prompt: "",
       size: config.size,
-      count: 3,
+      count: Number(config.count) || 1,
     });
     const connection = { id: createId(), fromNodeId: sourceNode.id, toNodeId: configNode.id };
     const nextNodes = nodesRef.current.map((item) => item.id === sourceNode.id ? { ...item, metadata: { ...item.metadata, content: prompt, prompt, status: NODE_STATUS_SUCCESS } } : item).concat(configNode);
@@ -1991,6 +1994,9 @@ function InfiniteCanvasPage() {
           onGenerateImage={generateImageFromTextNode}
           onUpload={(node) => handleUploadRequest(node.id)}
           onDownload={downloadNodeImage}
+          onPreviewImage={(node) => {
+            if (node.metadata?.content) setPreviewImageSrc(node.metadata.content);
+          }}
           onSaveAsset={(node) => void saveNodeAsset(node)}
           onCrop={(node) => setCropNodeId(node.id)}
           onAngle={(node) => setAngleNodeId(node.id)}
@@ -2046,6 +2052,22 @@ function InfiniteCanvasPage() {
         <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageInputChange} />
 
         <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
+
+        {/* 隐藏的图片预览容器：hover 工具栏的「放大查看」会把 dataUrl 写到 previewImageSrc，
+            antd Image 的 preview 浮层就会弹出，关闭后清掉 state。 */}
+        {previewImageSrc ? (
+          <Image
+            wrapperStyle={{ display: "none" }}
+            src={previewImageSrc}
+            preview={{
+              visible: true,
+              src: previewImageSrc,
+              onVisibleChange: (visible) => {
+                if (!visible) setPreviewImageSrc(null);
+              },
+            }}
+          />
+        ) : null}
 
         {cropNode?.metadata?.content ? (
           <CanvasNodeCropDialog

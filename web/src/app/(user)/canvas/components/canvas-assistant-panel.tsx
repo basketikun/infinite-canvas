@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowUp, History, ImageIcon, LoaderCircle, MessageSquare, PanelRightClose, Plus, RotateCcw, Settings2, Sparkles, Trash2, X } from "lucide-react";
-import { App, Button, ConfigProvider, Input, InputNumber, Modal, Popover, Segmented, Tooltip } from "antd";
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
+import { ArrowUp, History, ImageIcon, ImagePlus, LoaderCircle, MessageSquare, PanelRightClose, Plus, RotateCcw, Settings2, Sparkles, Trash2, X } from "lucide-react";
+import { App, Button, ConfigProvider, Image, Input, InputNumber, Modal, Popover, Segmented, Tooltip } from "antd";
 import { motion } from "motion/react";
 
 import { ImageGenerationPending } from "@/components/image-generation-pending";
@@ -222,7 +222,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
       <motion.aside className="relative flex shrink-0 flex-col border-l" initial={{ x: 48 }} animate={{ x: closing ? 28 : 0 }} transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }} style={{ width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
         <button type="button" className="absolute inset-y-0 left-0 z-40 w-4 -translate-x-1/2 cursor-col-resize" onMouseDown={startResize} aria-label="调整右侧面板宽度" />
         <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: theme.node.stroke }}>
-          <div className="flex items-center gap-2 text-sm font-medium"><Sparkles className="size-4" />{view === "history" ? "历史记录" : "画布助手(未开发)"}</div>
+          <div className="flex items-center gap-2 text-sm font-medium"><Sparkles className="size-4" />{view === "history" ? "历史记录" : "画布助手"}</div>
           <div className="flex items-center gap-1">
             {view === "history" ? (
               <>
@@ -347,6 +347,36 @@ function AssistantComposer({
   onPasteImage: (file: File) => void;
 }) {
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // 把 FileList 中的图片依次喂给 onPasteImage，复用粘贴入口同一处理逻辑。
+  const intakeFiles = (files: FileList | File[] | null | undefined) => {
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith("image/")) onPasteImage(file);
+    });
+  };
+
+  const handleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.files.length) return;
+    event.preventDefault();
+    setDragging(false);
+    intakeFiles(event.dataTransfer.files);
+  };
+
+  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
+    const hasFile = Array.from(event.dataTransfer.items || []).some((item) => item.kind === "file");
+    if (!hasFile) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    if (!dragging) setDragging(true);
+  };
+
+  const handleDragLeave = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDragging(false);
+  };
 
   return (
     <div className="px-2 pb-2" onWheelCapture={(event) => event.stopPropagation()}>
@@ -355,7 +385,32 @@ function AssistantComposer({
           {references.map((item) => <AssistantReferenceChip key={item.id} item={item} onRemove={() => onRemoveReference(item.id)} />)}
         </div>
       ) : null}
-      <div className="rounded-[28px] border px-3 pb-3 pt-3 shadow-lg" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }}>
+      <div
+        className={cn(
+          "relative rounded-[28px] border px-3 pb-3 pt-3 shadow-lg transition",
+          dragging && "ring-2 ring-blue-400/70 ring-offset-2",
+        )}
+        style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
+        {dragging ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[28px] bg-blue-50/85 text-sm font-medium text-blue-700 dark:bg-blue-950/70 dark:text-blue-200">
+            松开以添加图片
+          </div>
+        ) : null}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            intakeFiles(event.target.files);
+            event.target.value = "";
+          }}
+        />
         <textarea
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
@@ -372,10 +427,20 @@ function AssistantComposer({
           }}
           className="thin-scrollbar h-20 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-stone-400"
           style={{ color: theme.node.text }}
-          placeholder={mode === "image" ? "描述你想生成或修改的图片" : "输入你想问的问题"}
+          placeholder={mode === "image" ? "描述你想生成或修改的图片，支持粘贴 / 拖拽 / 上传图片作为参考" : "输入你想问的问题"}
         />
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <Tooltip title="上传图片">
+              <Button
+                type="text"
+                shape="circle"
+                className="!h-8 !w-8 !min-w-8"
+                icon={<ImagePlus className="size-4" />}
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="上传图片"
+              />
+            </Tooltip>
             <CanvasPromptLibrary onSelect={onPromptChange} />
             <CanvasThemeProvider theme={theme}>
               <Segmented
@@ -497,7 +562,14 @@ function AssistantMessages({
           ) : null}
           {message.images?.map((image) => (
             <div key={image.id} className="w-[250px] overflow-hidden rounded-2xl border" style={{ background: theme.node.panel, borderColor: theme.node.stroke }}>
-              <img src={image.dataUrl} alt="" className="aspect-square w-full object-cover" />
+              <Image
+                src={image.dataUrl}
+                alt=""
+                width="100%"
+                wrapperStyle={{ display: "block" }}
+                style={{ aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
+                preview={{ mask: "查看大图" }}
+              />
               <Button type="text" className="!h-8 !w-full !rounded-none" style={{ borderTop: `1px solid ${theme.node.stroke}`, color: theme.node.text }} icon={<Plus className="size-3.5" />} onClick={() => onInsertImage(image)} title="插入画布" />
             </div>
           ))}
@@ -553,7 +625,19 @@ function AssistantReferenceChip({ item, onRemove }: { item: CanvasAssistantRefer
   const text = (item.text || item.title).replace(/\s+/g, " ").trim().slice(0, 1) || "文";
   return (
     <div className="group/chip relative inline-flex h-8 max-w-[150px] shrink-0 items-center gap-1.5 rounded-lg text-sm" style={{ color: theme.node.text }}>
-      {item.dataUrl ? <img src={item.dataUrl} alt="" className="size-8 rounded-lg object-cover" /> : <span className="grid size-8 place-items-center rounded-lg border text-sm font-medium" style={{ background: theme.node.panel, borderColor: theme.node.activeStroke }}>{text}</span>}
+      {item.dataUrl ? (
+        <Image
+          src={item.dataUrl}
+          alt=""
+          width={32}
+          height={32}
+          style={{ objectFit: "cover", borderRadius: 8, display: "block" }}
+          wrapperStyle={{ display: "inline-flex", lineHeight: 0 }}
+          preview={{ mask: null }}
+        />
+      ) : (
+        <span className="grid size-8 place-items-center rounded-lg border text-sm font-medium" style={{ background: theme.node.panel, borderColor: theme.node.activeStroke }}>{text}</span>
+      )}
       {onRemove ? (
         <button type="button" className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full border opacity-0 shadow-sm transition group-hover/chip:opacity-100" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }} onClick={onRemove} aria-label="移除引用">
           <X className="size-3" />
