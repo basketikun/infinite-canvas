@@ -1,20 +1,6 @@
-"use client";
-
-import { use } from "react";
-
-import { RequireAuth } from "@/components/require-auth";
-import { ImageWorkspace } from "../image-workspace";
-
-type Props = {
-  params: Promise<{ id: string }>;
-};
-
-export default function ImageDetailPage({ params }: Props) {
-  // Next.js 16 的 dynamic route params 是 Promise，使用 React.use() 解包。
-  const { id } = use(params);
-  return (
-    <RequireAuth>
-      <ImageWorkspace initialLogId={id} />
-    </RequireAuth>
-  );
+// /image/[id] 的工作台主体由 ../layout.tsx 渲染。layout 通过 useParams() 拿到
+// 当前 id，传给同一个 ImageWorkspace 实例；这里 page 只返回 null，让 Next.js
+// 把 /image/{id} 识别为合法 dynamic 路径。
+export default function ImageDetailPage() {
+  return null;
 }

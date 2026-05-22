@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.0.15 - 2026-05-22
+
++ [修复] 生图工作台点「开始生成」后页面立刻显示「生成失败 / 生成被中断，请点击重试」（即便后端 `/api/v1/images/generations` 200、`/api/images` 200，task 实际跑成功了 UI 仍然中断）。**真正根因**：`/image/page.tsx` 和 `/image/[id]/page.tsx` 是两个独立的 page 组件，generate() 走到 `router.replace('/image/{id}')` 时整个 `<ImageWorkspace>` 被 React 卸载并在新路由下重挂载——所有 `useRef`（包括 v0.0.13 加的 `isGeneratingRef` / `activeGenerationIdRef`）全部重置成初始值，旧实例的 closure 里 generate 还在跑，新实例完全没有 generate 的状态，看到 logs 缓存里 status=running 的 placeholder 就当成"中断"。前两轮 closure 修复在跨实例 race 下完全失效。**这次的修复**：新增 `app/(user)/image/layout.tsx`，把 `<ImageWorkspace>` 抬到 layout 层渲染，跨 `/image` 与 `/image/[id]` 共享同一个组件实例（Next.js App Router 的 layout 在子路由切换时不会卸载）；两个 `page.tsx` 改为 `return null`，仅作路由占位。从此 `router.replace` 只触发 props 变化不再 remount，generate 全程跑在同一个实例上，ref / state / setResults 都生效。
+
 ## v0.0.14 - 2026-05-21
 
 + [调整] 顶栏 `VersionReleaseModal` 版本弹窗按钮先彻底隐藏：组件实现改为 `return null`，文件保留备用。当前所有版本号显示统一走头像左侧的 `<Link href="/changelog">vX.X.X</Link>`（在 `UserStatusActions` 内部，未登录态也在 `app-top-nav` 里单独有一份链接形态），保留画布详情页那个；之前生产页面残留的 `v0.0.13 v0.0.13` 双显示问题，部署本次构建后强刷浏览器即可消失。
