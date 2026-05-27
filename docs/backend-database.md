@@ -19,6 +19,7 @@
 - `prompts`
 - `assets`
 - `settings`
+- `announcements`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
 
@@ -83,6 +84,22 @@
 | `url`            | string | 图片、视频等媒体地址                    |
 | `created_at`     | string | 创建时间                          |
 | `updated_at`     | string | 更新时间                          |
+
+### announcements
+
+公告表。用于保存首页公告标题、内容、展示期限、展示顺序和启用状态。
+
+| 字段           | 类型     | 说明                         |
+|--------------|--------|----------------------------|
+| `id`         | string | 主键                         |
+| `title`      | string | 公告标题                       |
+| `content`    | text   | 公告内容，可为 Markdown、HTML 或纯文本 |
+| `date_from`  | string | 展示开始日期，格式 `YYYY-MM-DD`，为空表示不限 |
+| `date_to`    | string | 展示结束日期，格式 `YYYY-MM-DD`，为空表示不限 |
+| `sort_order` | number | 展示顺序，数字越小越靠前              |
+| `enabled`    | bool   | 是否启用                       |
+| `created_at` | string | 创建时间                       |
+| `updated_at` | string | 更新时间                       |
 
 ### settings
 

@@ -120,6 +120,29 @@ export type AdminAssetListResponse = {
     total: number;
 };
 
+export type Announcement = {
+    id: string;
+    title: string;
+    content: string;
+    dateFrom: string;
+    dateTo: string;
+    sortOrder: number;
+    enabled: boolean;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminAnnouncementListResponse = {
+    items: Announcement[];
+    total: number;
+};
+
+export type AdminAnnouncementQuery = {
+    keyword?: string;
+    page?: number;
+    pageSize?: number;
+};
+
 export async function fetchAdminPrompts(token: string, query: AdminPromptQuery = {}) {
     const data = await apiGet<PromptListResponse>("/api/admin/prompts", compactApiParams(query), token);
     return { ...data, items: data.items.map(normalizePrompt) };
@@ -155,6 +178,18 @@ export async function saveAdminAsset(token: string, asset: Partial<AdminAsset>) 
 
 export async function deleteAdminAsset(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/assets/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminAnnouncements(token: string, query: AdminAnnouncementQuery = {}) {
+    return apiGet<AdminAnnouncementListResponse>("/api/admin/announcements", compactApiParams(query), token);
+}
+
+export async function saveAdminAnnouncement(token: string, announcement: Partial<Announcement>) {
+    return apiPost<Announcement>("/api/admin/announcements", announcement, token);
+}
+
+export async function deleteAdminAnnouncement(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/announcements/${encodeURIComponent(id)}`, token);
 }
 
 export type AdminModelChannel = {
