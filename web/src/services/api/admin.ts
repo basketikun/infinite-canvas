@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
-import type { Prompt, PromptListResponse } from "@/services/api/prompts";
+import { normalizePrompt, type Prompt, type PromptListResponse } from "@/services/api/prompts";
 
 export type AdminPromptCategory = {
     category: string;
@@ -121,11 +121,12 @@ export type AdminAssetListResponse = {
 };
 
 export async function fetchAdminPrompts(token: string, query: AdminPromptQuery = {}) {
-    return apiGet<PromptListResponse>("/api/admin/prompts", compactApiParams(query), token);
+    const data = await apiGet<PromptListResponse>("/api/admin/prompts", compactApiParams(query), token);
+    return { ...data, items: data.items.map(normalizePrompt) };
 }
 
 export async function saveAdminPrompt(token: string, prompt: Partial<Prompt>) {
-    return apiPost<Prompt>("/api/admin/prompts", prompt, token);
+    return normalizePrompt(await apiPost<Prompt>("/api/admin/prompts", prompt, token));
 }
 
 export async function deleteAdminPrompt(token: string, id: string) {

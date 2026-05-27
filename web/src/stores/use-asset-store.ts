@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { cleanupUnusedImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
+import { toPromptImageServerUrl } from "@/lib/prompt-images";
 
 export type AssetKind = "text" | "image" | "video";
 export type TextAsset = AssetBase<"text"> & { data: { content: string } };
@@ -44,15 +45,15 @@ const assetStorage: PersistStorage<AssetStore> = {
         const parsed = JSON.parse(value) as StorageValue<AssetStore>;
         parsed.state.assets = await Promise.all(
             parsed.state.assets.map(async (asset) => {
-                if (asset.kind === "video" && asset.data.storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
-                if (asset.kind !== "image") return asset;
+                if (asset.kind === "video" && asset.data.storageKey) return { ...asset, coverUrl: toPromptImageServerUrl(asset.coverUrl), data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
+                if (asset.kind !== "image") return { ...asset, coverUrl: toPromptImageServerUrl(asset.coverUrl) };
                 if (asset.data.storageKey)
                     return {
                         ...asset,
-                        coverUrl: asset.coverUrl.startsWith("blob:") ? await resolveImageUrl(asset.data.storageKey, asset.coverUrl) : asset.coverUrl,
+                        coverUrl: asset.coverUrl.startsWith("blob:") ? await resolveImageUrl(asset.data.storageKey, asset.coverUrl) : toPromptImageServerUrl(asset.coverUrl),
                         data: { ...asset.data, dataUrl: await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl) },
                     };
-                if (!asset.data.dataUrl.startsWith("data:image/")) return asset;
+                if (!asset.data.dataUrl.startsWith("data:image/")) return { ...asset, coverUrl: toPromptImageServerUrl(asset.coverUrl) };
                 const image = await uploadImage(asset.data.dataUrl);
                 return { ...asset, coverUrl: asset.coverUrl.startsWith("data:image/") ? image.url : asset.coverUrl, data: { ...asset.data, dataUrl: image.url, storageKey: image.storageKey, bytes: image.bytes, mimeType: image.mimeType } };
             }),
@@ -70,12 +71,12 @@ export const useAssetStore = create<AssetStore>()(
             addAsset: (asset) => {
                 const now = new Date().toISOString();
                 const id = nanoid();
-                set((state) => ({ assets: [{ ...asset, id, createdAt: now, updatedAt: now } as Asset, ...state.assets] }));
+                set((state) => ({ assets: [{ ...asset, coverUrl: toPromptImageServerUrl(asset.coverUrl), id, createdAt: now, updatedAt: now } as Asset, ...state.assets] }));
                 return id;
             },
             updateAsset: (id, patch) =>
                 set((state) => ({
-                    assets: state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset)),
+                    assets: state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, coverUrl: patch.coverUrl === undefined ? asset.coverUrl : toPromptImageServerUrl(patch.coverUrl), updatedAt: new Date().toISOString() } as Asset) : asset)),
                 })),
             removeAsset: (id) =>
                 set((state) => {

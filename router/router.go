@@ -34,6 +34,9 @@ func New() *gin.Engine {
 		handler.AIVideoContent(c.Writer, c.Request, c.Param("id"))
 	})
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
+	api.GET("/prompt-images/:source", func(c *gin.Context) {
+		handler.PromptImage(c.Writer, c.Request, c.Param("source"))
+	})
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
 

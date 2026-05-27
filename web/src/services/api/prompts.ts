@@ -1,3 +1,4 @@
+import { rewritePromptImageLinks, toPromptImageServerUrl } from "@/lib/prompt-images";
 import { apiGet, compactApiParams } from "@/services/api/request";
 
 export type Prompt = {
@@ -23,7 +24,7 @@ export type PromptListResponse = {
 };
 
 export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, page, pageSize }: { keyword?: string; tag?: string[]; category?: string; page?: number; pageSize?: number } = {}) {
-    return apiGet<PromptListResponse>(
+    const data = await apiGet<PromptListResponse>(
         "/api/prompts",
         compactApiParams({
             ...(keyword ? { keyword } : {}),
@@ -33,6 +34,11 @@ export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROM
             ...(pageSize ? { pageSize } : {}),
         }),
     );
+    return { ...data, items: data.items.map(normalizePrompt) };
+}
+
+export function normalizePrompt(item: Prompt): Prompt {
+    return { ...item, coverUrl: toPromptImageServerUrl(item.coverUrl), preview: rewritePromptImageLinks(item.preview) };
 }
 
 export function formatPromptDate(value: string) {

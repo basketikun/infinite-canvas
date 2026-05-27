@@ -32,9 +32,9 @@ COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY --from=api-build /server /app/server
 COPY --from=web-build /app/web /app/web
-ENV PROMPT_DATA_DIR=/app/data/prompts
+ENV PROMPT_IMAGE_CACHE_DIR=/app/data/prompt-images
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /app/data/prompts
+RUN mkdir -p /app/data/prompt-images
 
 EXPOSE 3000
 # 先启动内部 Go API，再由 Next.js 提供页面并代理 /api/*。

@@ -16,6 +16,7 @@ func ListPrompts(q model.Query) (model.PromptList, error) {
 	if err != nil {
 		return model.PromptList{}, err
 	}
+	normalizePromptImageList(items)
 	categories := promptCategoryCodes(ListPromptCategories())
 	return model.PromptList{Items: items, Tags: tags, Categories: categories, Total: int(total)}, nil
 }
@@ -41,6 +42,7 @@ func SavePrompt(item model.Prompt) (model.Prompt, error) {
 		item.Category = category.Category
 	}
 	item.GithubURL = ""
+	normalizePromptImages(&item)
 	return repository.SavePrompt(item)
 }
 

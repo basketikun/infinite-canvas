@@ -119,3 +119,9 @@
 | --- | --- | --- |
 | `enabled` | boolean | 是否开启定时同步，默认开启 |
 | `cron` | string | Cron 表达式，默认每 5 分钟 |
+
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PROMPT_IMAGE_CACHE_DIR` | `data/prompt-images` | 提示词图片动态缓存目录；前端访问 `/api/prompt-images/*` 时，后端首次拉取远程图片并写入该目录，后续直接返回缓存文件。 |
