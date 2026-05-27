@@ -1,8 +1,10 @@
 const promptImageRoute = "/api/prompt-images/";
-const promptImageUrlPattern = /https?:\/\/[^\s"'<>）)]+/g;
+const promptImageMarkdownPattern = /!\[[^\]]*]\(([^)]*)\)/g;
+const promptImageHtmlDoubleSrcPattern = /(<img[^>]*\bsrc=")([^"]+)(")/gi;
+const promptImageHtmlSingleSrcPattern = /(<img[^>]*\bsrc=')([^']+)(')/gi;
 
 export function toPromptImageServerUrl(source: string) {
-    source = source.trim();
+    source = normalizePromptImageSource(source);
     if (!source || isPromptImageServerUrl(source) || source.startsWith("data:") || source.startsWith("blob:")) return source;
     const normalized = normalizeGitHubBlobImageUrl(source);
     if (!isRemotePromptImageUrl(normalized)) return source;
@@ -10,7 +12,10 @@ export function toPromptImageServerUrl(source: string) {
 }
 
 export function rewritePromptImageLinks(value: string) {
-    return value.replace(promptImageUrlPattern, toPromptImageServerUrl);
+    return value
+        .replace(promptImageMarkdownPattern, (match, target: string) => match.replace(target, rewritePromptImageMarkdownTarget(target)))
+        .replace(promptImageHtmlDoubleSrcPattern, (_, prefix: string, src: string, suffix: string) => `${prefix}${toPromptImageServerUrl(src)}${suffix}`)
+        .replace(promptImageHtmlSingleSrcPattern, (_, prefix: string, src: string, suffix: string) => `${prefix}${toPromptImageServerUrl(src)}${suffix}`);
 }
 
 function isPromptImageServerUrl(value: string) {
@@ -24,13 +29,34 @@ function isPromptImageServerUrl(value: string) {
 
 function isRemotePromptImageUrl(source: string) {
     try {
-        const url = new URL(source);
-        if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-        const host = url.hostname.toLowerCase();
-        return host === "github.com" || host === "raw.githubusercontent.com" || host.endsWith(".githubusercontent.com");
+        const url = new URL(normalizePromptImageSource(source));
+        return url.protocol === "http:" || url.protocol === "https:";
     } catch {
         return false;
     }
+}
+
+function normalizePromptImageSource(source: string) {
+    return source.startsWith("//") ? `https:${source}` : source;
+}
+
+function rewritePromptImageMarkdownTarget(target: string) {
+    const trimmed = target.trim();
+    if (!trimmed) return target;
+    const { url, suffix, angled } = splitPromptImageTarget(trimmed);
+    const rewritten = toPromptImageServerUrl(url);
+    if (rewritten === url) return target;
+    return angled ? `<${rewritten}>${suffix}` : `${rewritten}${suffix}`;
+}
+
+function splitPromptImageTarget(value: string) {
+    if (value.startsWith("<")) {
+        const end = value.indexOf(">");
+        if (end > 0) return { url: value.slice(1, end).trim(), suffix: value.slice(end + 1), angled: true };
+    }
+    const index = value.search(/\s/);
+    if (index < 0) return { url: value, suffix: "", angled: false };
+    return { url: value.slice(0, index).trim(), suffix: value.slice(index), angled: false };
 }
 
 function normalizeGitHubBlobImageUrl(source: string) {

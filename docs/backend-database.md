@@ -64,7 +64,7 @@
 | `created_at` | string | 创建时间                         |
 | `updated_at` | string | 更新时间                         |
 
-`github_url` 仅用于接口返回，不写入数据库。远程提示词图片不新增数据表，接口返回前会把 GitHub 图片地址改写为 `/api/prompt-images/*`，图片文件按 `PROMPT_IMAGE_CACHE_DIR` 写入服务器本地缓存。
+`github_url` 仅用于接口返回，不写入数据库。远程提示词图片不新增数据表，接口返回前会把远程图片地址改写为 `/api/prompt-images/*`，图片文件按 `PROMPT_IMAGE_CACHE_DIR` 写入服务器本地缓存。
 
 ### assets
 

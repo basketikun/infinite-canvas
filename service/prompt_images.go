@@ -28,17 +28,18 @@ const (
 )
 
 var (
-	promptImageClient = http.Client{Timeout: 45 * time.Second}
-	promptImageLocks  sync.Map
-	promptImageURLRe  = regexp.MustCompile(`https?://[^\s"'<>）)]+`)
+	promptImageClient          = http.Client{Timeout: 45 * time.Second}
+	promptImageLocks           sync.Map
+	promptImageMarkdownImageRe = regexp.MustCompile(`!\[[^\]]*]\(([^)]*)\)`)
+	promptImageHTMLDoubleSrcRe = regexp.MustCompile(`(?i)(<img[^>]*\bsrc=")([^"]+)(")`)
+	promptImageHTMLSingleSrcRe = regexp.MustCompile(`(?i)(<img[^>]*\bsrc=')([^']+)(')`)
 )
 
 func PromptImageURL(source string) string {
-	source = strings.TrimSpace(source)
+	source = normalizePromptImageSource(source)
 	if source == "" || isPromptImageServerURL(source) || strings.HasPrefix(source, "data:") || strings.HasPrefix(source, "blob:") {
 		return source
 	}
-	source = normalizeGithubBlobImageURL(source)
 	if !isRemotePromptImageURL(source) {
 		return source
 	}
@@ -50,7 +51,7 @@ func PromptImageFile(ctx context.Context, encoded string) (string, string, error
 	if err != nil {
 		return "", "", errors.New("无效提示词图片")
 	}
-	source := normalizeGithubBlobImageURL(string(raw))
+	source := normalizePromptImageSource(string(raw))
 	if !isRemotePromptImageURL(source) {
 		return "", "", errors.New("无效提示词图片来源")
 	}
@@ -86,7 +87,68 @@ func normalizePromptImageList(items []model.Prompt) {
 }
 
 func rewritePromptImageLinks(value string) string {
-	return promptImageURLRe.ReplaceAllStringFunc(value, PromptImageURL)
+	value = promptImageMarkdownImageRe.ReplaceAllStringFunc(value, rewritePromptImageMarkdownLink)
+	value = promptImageHTMLDoubleSrcRe.ReplaceAllStringFunc(value, rewritePromptImageHTMLLink)
+	value = promptImageHTMLSingleSrcRe.ReplaceAllStringFunc(value, rewritePromptImageHTMLLink)
+	return value
+}
+
+func rewritePromptImageMarkdownLink(match string) string {
+	submatch := promptImageMarkdownImageRe.FindStringSubmatch(match)
+	if len(submatch) < 2 {
+		return match
+	}
+	target := rewritePromptImageMarkdownTarget(submatch[1])
+	if target == submatch[1] {
+		return match
+	}
+	return strings.Replace(match, submatch[1], target, 1)
+}
+
+func rewritePromptImageMarkdownTarget(target string) string {
+	trimmed := strings.TrimSpace(target)
+	if trimmed == "" {
+		return target
+	}
+	urlPart, suffix, angled := splitPromptImageTarget(trimmed)
+	rewritten := PromptImageURL(urlPart)
+	if rewritten == urlPart {
+		return target
+	}
+	if angled {
+		return "<" + rewritten + ">" + suffix
+	}
+	return rewritten + suffix
+}
+
+func rewritePromptImageHTMLLink(match string) string {
+	indexes := promptImageHTMLDoubleSrcRe.FindStringSubmatchIndex(match)
+	if len(indexes) == 0 {
+		indexes = promptImageHTMLSingleSrcRe.FindStringSubmatchIndex(match)
+	}
+	if len(indexes) < 6 {
+		return match
+	}
+	urlValue := match[indexes[4]:indexes[5]]
+	rewritten := PromptImageURL(strings.TrimSpace(urlValue))
+	if rewritten == urlValue {
+		return match
+	}
+	return match[:indexes[4]] + rewritten + match[indexes[5]:]
+}
+
+func splitPromptImageTarget(value string) (string, string, bool) {
+	if strings.HasPrefix(value, "<") {
+		if end := strings.Index(value, ">"); end > 0 {
+			return strings.TrimSpace(value[1:end]), value[end+1:], true
+		}
+	}
+	for i, r := range value {
+		if strings.ContainsRune(" \t\n\r", r) {
+			return strings.TrimSpace(value[:i]), value[i:], false
+		}
+	}
+	return value, "", false
 }
 
 func isPromptImageServerURL(value string) bool {
@@ -98,12 +160,25 @@ func isPromptImageServerURL(value string) bool {
 }
 
 func isRemotePromptImageURL(source string) bool {
-	parsed, err := url.Parse(source)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	parsed, err := url.Parse(strings.TrimSpace(source))
+	if err != nil {
 		return false
 	}
-	host := strings.ToLower(parsed.Hostname())
-	return host == "github.com" || host == "raw.githubusercontent.com" || strings.HasSuffix(host, ".githubusercontent.com")
+	if parsed.Scheme == "http" || parsed.Scheme == "https" {
+		return true
+	}
+	return parsed.Scheme == "" && parsed.Host != ""
+}
+
+func normalizePromptImageSource(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return ""
+	}
+	if strings.HasPrefix(source, "//") {
+		return "https:" + source
+	}
+	return normalizeGithubBlobImageURL(source)
 }
 
 func normalizeGithubBlobImageURL(source string) string {
