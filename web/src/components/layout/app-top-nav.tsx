@@ -7,7 +7,6 @@ import { usePathname } from "next/navigation";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { AppConfigModal } from "@/components/layout/app-config-modal";
-import { GitHubLink } from "@/components/layout/github-link";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
@@ -101,7 +100,6 @@ export function AppTopNav() {
                                         title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
                                     />
                                     <VersionReleaseModal />
-                                    <GitHubLink />
                                     <Link href="/login" className="text-sm font-medium text-stone-600 underline-offset-4 transition hover:text-stone-950 hover:underline dark:text-stone-300 dark:hover:text-stone-100">
                                         登录
                                     </Link>
