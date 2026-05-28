@@ -435,6 +435,14 @@
         top: 21px;
     }
 
+    .canvas-config-preview-modal-root .ant-modal-mask,
+    .canvas-config-preview-modal-root .ant-modal-wrap,
+    .canvas-config-preview-modal-root .ant-modal,
+    .canvas-config-preview-modal-root .ant-modal-content,
+    .canvas-config-preview-modal-root .ant-modal-close {
+        pointer-events: auto !important;
+    }
+
     @keyframes canvas-batch-child-in {
         from {
             opacity: 0;
