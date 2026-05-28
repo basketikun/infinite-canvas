@@ -402,7 +402,6 @@ function TextContent({ node, theme, isEditingContent, textareaRef, onContentChan
                 <div
                     className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono leading-relaxed"
                     style={{ fontSize: `${node.metadata?.fontSize || 14}px`, color: theme.node.text }}
-                    onWheel={(event) => event.stopPropagation()}
                 >
                     {node.metadata?.content || <span style={{ color: theme.node.placeholder }}>双击编辑文字</span>}
                 </div>
