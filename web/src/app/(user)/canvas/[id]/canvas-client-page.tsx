@@ -868,6 +868,7 @@ function InfiniteCanvasPage() {
             }
 
             setSelectedConnectionId(null);
+            setDialogNodeId(null);
         },
         [cancelPendingConnectionCreate, screenToCanvas],
     );
