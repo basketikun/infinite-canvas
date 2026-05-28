@@ -365,8 +365,19 @@ function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "
 }
 
 function TextContent({ node, theme, isEditingContent, textareaRef, onContentChange, onStopEditing, onGenerateImage }: NodeContentRendererProps) {
+    const textClassName = "thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-4 pt-14 pb-4 m-0 font-mono leading-relaxed";
+    const textStyle: React.CSSProperties = {
+        fontSize: `${node.metadata?.fontSize || 14}px`,
+        lineHeight: 1.625,
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+        letterSpacing: 0,
+        tabSize: 4,
+        textAlign: "left",
+        color: theme.node.text,
+    };
+
     return (
-        <div className="flex h-full w-full flex-col overflow-hidden pt-8">
+        <div className="flex h-full w-full flex-col overflow-hidden">
             <button
                 type="button"
                 className="absolute right-3 top-3 z-20 inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-medium opacity-85 backdrop-blur-md transition hover:scale-[1.02] hover:opacity-100"
@@ -386,8 +397,8 @@ function TextContent({ node, theme, isEditingContent, textareaRef, onContentChan
             {isEditingContent ? (
                 <textarea
                     ref={textareaRef}
-                    className="thin-scrollbar block h-full w-full resize-none overflow-y-auto whitespace-pre-wrap break-words border-none bg-transparent pl-4 pr-14 pt-0 pb-4 m-0 font-mono leading-relaxed outline-none select-text appearance-none"
-                    style={{ fontSize: `${node.metadata?.fontSize || 14}px`, color: theme.node.text }}
+                    className={`${textClassName} resize-none border-none outline-none select-text appearance-none`}
+                    style={textStyle}
                     value={node.metadata?.content || ""}
                     onChange={(event) => onContentChange(node.id, event.target.value)}
                     onBlur={onStopEditing}
@@ -400,8 +411,8 @@ function TextContent({ node, theme, isEditingContent, textareaRef, onContentChan
                 />
             ) : (
                 <div
-                    className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono leading-relaxed"
-                    style={{ fontSize: `${node.metadata?.fontSize || 14}px`, color: theme.node.text }}
+                    className={textClassName}
+                    style={textStyle}
                 >
                     {node.metadata?.content || <span style={{ color: theme.node.placeholder }}>双击编辑文字</span>}
                 </div>
