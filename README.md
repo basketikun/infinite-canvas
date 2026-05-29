@@ -1,15 +1,9 @@
-<p align="center">
-  <img src="web/public/logo.svg" width="96" alt="infinite-canvas logo">
-</p>
-
-<h1 align="center">无限画布 (infinite-canvas)</h1>
 
 无限画布是一款面向图片创作的开源工作台。它把画布编排、AI 图片生成、参考图编辑、对话助手、提示词库和素材沉淀放在同一个界面里，适合用来探索视觉方案并连续迭代图片结果。
 
 > [!CAUTION]
 > 项目目前处于开发阶段，不保证历史数据兼容。各种数据库结构和存储格式都可能直接调整，欢迎关注后续更新，当前更适合个人/本地部署，不建议直接公网多人共用。
 >
-> 如果你需要稳定维护自己的分支，建议自行 fork 后独立开发。二次开发与 PR 请保留原作者信息和前端页面标识。
 
 ## 核心功能
 
@@ -20,7 +14,6 @@
 
 完整功能说明见 [docs/features.md](docs/features.md)。
 
-如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
 
 ## 技术栈
 
@@ -78,12 +71,6 @@ docker compose -f docker-compose.local.yml up -d --build
 - [后端数据库说明](docs/backend-database.md)
 - [系统配置数据结构](docs/system-settings.md)
 - [接口响应约定](docs/api-response.md)
-
-## 社区支持
-
-学 AI，上 L 站：[LinuxDO](https://linux.do/)
-
-点击链接加入群聊【AI开源交流】：https://qm.qq.com/q/DFnKzZ807u
 
 ## 开源协议
 
