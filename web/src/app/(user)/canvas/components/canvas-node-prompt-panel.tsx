@@ -39,8 +39,10 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? config.count : 1 });
 
     useEffect(() => {
-        setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
-    }, [isEditingExistingContent, node.id]);
+        // 只在节点 ID 变化时更新提示词，不要在 isEditingExistingContent 变化时更新
+        // 这样可以保留用户输入的提示词，即使生成完成后节点有了内容
+        setPrompt(node.metadata?.prompt || "");
+    }, [node.id]);
 
     const updatePrompt = (value: string) => {
         setPrompt(value);
