@@ -183,6 +183,45 @@ function ConnectionCreateOption({ theme, icon, title, description, onClick }: { 
     );
 }
 
+function CanvasCreateMenu({ menu, onCreate, onClose }: { menu: { x: number; y: number; worldX: number; worldY: number }; onCreate: (type: CanvasNodeType, position: Position) => void; onClose: () => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+
+    useEffect(() => {
+        const close = (event: PointerEvent) => {
+            const target = event.target;
+            if (target instanceof Element && target.closest("[data-canvas-create-menu]")) return;
+            onClose();
+        };
+        window.addEventListener("pointerdown", close);
+        return () => window.removeEventListener("pointerdown", close);
+    }, [onClose]);
+
+    return (
+        <div
+            className="fixed z-[120] w-[300px] rounded-[18px] border p-3 shadow-2xl backdrop-blur"
+            data-canvas-create-menu
+            style={{ left: menu.x, top: menu.y, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+        >
+            <div className="mb-2 flex items-center justify-between px-1">
+                <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
+                    创建新节点
+                </span>
+                <button type="button" className="grid size-7 place-items-center rounded-lg text-base opacity-55 transition hover:bg-white/10 hover:opacity-100" onClick={onClose} aria-label="关闭">
+                    ×
+                </button>
+            </div>
+            <div className="grid gap-1">
+                <ConnectionCreateOption theme={theme} icon={<List className="size-5" />} title="文本生成" description="脚本、广告词、品牌文案" onClick={() => onCreate(CanvasNodeType.Text, { x: menu.worldX, y: menu.worldY })} />
+                <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-5" />} title="图片生成" onClick={() => onCreate(CanvasNodeType.Image, { x: menu.worldX, y: menu.worldY })} />
+                <ConnectionCreateOption theme={theme} icon={<Video className="size-5" />} title="视频生成" onClick={() => onCreate(CanvasNodeType.Video, { x: menu.worldX, y: menu.worldY })} />
+                <ConnectionCreateOption theme={theme} icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config, { x: menu.worldX, y: menu.worldY })} />
+            </div>
+        </div>
+    );
+}
+
 function InfiniteCanvasPage() {
     const { message } = App.useApp();
     const params = useParams<{ id: string }>();
@@ -245,6 +284,7 @@ function InfiniteCanvasPage() {
     const [mouseWorld, setMouseWorld] = useState<Position>({ x: 0, y: 0 });
     const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [canvasCreateMenu, setCanvasCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null);
     const [runningNodeId, setRunningNodeId] = useState<string | null>(null);
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
@@ -849,6 +889,7 @@ function InfiniteCanvasPage() {
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {
             setContextMenu(null);
+            setCanvasCreateMenu(null);
             if (pendingConnectionCreateRef.current) cancelPendingConnectionCreate();
             if (event.button !== 0) return;
 
@@ -1555,7 +1596,17 @@ function InfiniteCanvasPage() {
         if ((event.target as HTMLElement).closest("[data-node-id]")) return;
         event.preventDefault();
         setContextMenu(null);
-    }, []);
+        // 在空白画布右键时显示创建节点菜单
+        const worldPos = screenToCanvas(event.clientX, event.clientY);
+        setCanvasCreateMenu({ x: event.clientX, y: event.clientY, worldX: worldPos.x, worldY: worldPos.y });
+    }, [screenToCanvas]);
+
+    const handleCanvasDoubleClick = useCallback((event: ReactMouseEvent) => {
+        if ((event.target as HTMLElement).closest("[data-node-id]")) return;
+        // 在空白画布双击时显示创建节点菜单
+        const worldPos = screenToCanvas(event.clientX, event.clientY);
+        setCanvasCreateMenu({ x: event.clientX, y: event.clientY, worldX: worldPos.x, worldY: worldPos.y });
+    }, [screenToCanvas]);
 
     const handleGenerateNode = useCallback(
         async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
@@ -2042,10 +2093,12 @@ function InfiniteCanvasPage() {
                     onViewportChange={(next) => {
                         setViewport(next);
                         setContextMenu(null);
+                        setCanvasCreateMenu(null);
                     }}
                     onCanvasMouseDown={handleCanvasMouseDown}
                     onCanvasDeselect={deselectCanvas}
                     onContextMenu={preventCanvasContextMenu}
+                    onDoubleClick={handleCanvasDoubleClick}
                     onDrop={handleDrop}
                 >
                     <svg className="absolute left-0 top-0 h-[10000px] w-[10000px] overflow-visible" style={{ pointerEvents: "none", transform: "translateZ(0)", zIndex: 0 }}>
@@ -2231,6 +2284,17 @@ function InfiniteCanvasPage() {
                             deleteNodes(new Set([contextMenu.nodeId]));
                             setContextMenu(null);
                         }}
+                    />
+                ) : null}
+
+                {canvasCreateMenu ? (
+                    <CanvasCreateMenu
+                        menu={canvasCreateMenu}
+                        onCreate={(type, position) => {
+                            createNode(type, position);
+                            setCanvasCreateMenu(null);
+                        }}
+                        onClose={() => setCanvasCreateMenu(null)}
                     />
                 ) : null}
 

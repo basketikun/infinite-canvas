@@ -51,7 +51,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         const text = prompt.trim();
         if (!text || isRunning) return;
         onGenerate(node.id, mode, text);
-        setPrompt("");
+        // 不清空提示词，保留用户输入以便查看和修改
+        // setPrompt("");
     };
 
     return (
