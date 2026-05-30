@@ -543,11 +543,23 @@ func decodeState(state string) string {
 	if err != nil {
 		return "/"
 	}
-	redirect := string(data)
-	if !strings.HasPrefix(redirect, "/") {
+	return safeRedirectPath(string(data))
+}
+
+// safeRedirectPath 仅放行站内相对路径，拦截开放重定向。浏览器会忽略 URL 中的
+// Tab/换行/回车，并把 //host 或 /\host 解析为协议相对的跨站地址，因此先剥离这些
+// 控制字符，再拒绝 // 与 /\ 前缀。
+func safeRedirectPath(redirect string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r == '\t' || r == '\n' || r == '\r' {
+			return -1
+		}
+		return r
+	}, redirect)
+	if !strings.HasPrefix(cleaned, "/") || strings.HasPrefix(cleaned, "//") || strings.HasPrefix(cleaned, "/\\") {
 		return "/"
 	}
-	return redirect
+	return cleaned
 }
 
 func RequestOrigin(r *http.Request) string {
