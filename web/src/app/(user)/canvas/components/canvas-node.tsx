@@ -8,6 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
+import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 const selectionBlue = "#2f80ff";
@@ -23,6 +24,7 @@ type CanvasNodeProps = {
     editRequestNonce?: number;
     showPanel: boolean;
     showImageInfo: boolean;
+    resourceLabel?: CanvasResourceReference;
     renderPanel?: (node: CanvasNodeData) => ReactNode;
     renderNodeContent?: (node: CanvasNodeData) => ReactNode;
     batchCount?: number;
@@ -74,6 +76,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     editRequestNonce = 0,
     showPanel,
     showImageInfo,
+    resourceLabel,
     renderPanel,
     renderNodeContent,
     batchCount = 0,
@@ -301,6 +304,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 </div>
 
                 {showImageInfo && hasImageContent ? <ImageInfoBar node={data} /> : null}
+                {resourceLabel ? <ResourceLabelBadge reference={resourceLabel} /> : null}
 
                 {!hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
 
@@ -573,6 +577,14 @@ function ImageInfoBar({ node }: { node: CanvasNodeData }) {
                 {width} x {height}
                 {size ? ` · ${size}` : ""}
             </span>
+        </div>
+    );
+}
+
+function ResourceLabelBadge({ reference }: { reference: CanvasResourceReference }) {
+    return (
+        <div className={`pointer-events-none absolute left-3 top-3 z-40 rounded-md px-2 py-1 text-[11px] font-semibold leading-none text-white shadow-sm backdrop-blur-sm ${reference.active ? "bg-black/65" : "bg-black/30 opacity-70"}`}>
+            {reference.label}
         </div>
     );
 }

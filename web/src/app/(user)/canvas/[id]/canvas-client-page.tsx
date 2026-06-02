@@ -37,6 +37,7 @@ import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type AssetPickerTab, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { useCanvasStore } from "../stores/use-canvas-store";
+import { buildCanvasResourceReferences, buildInputMentionReferences, buildNodeMentionReferences } from "../utils/canvas-resource-references";
 import {
     CanvasNodeType,
     type CanvasAssistantImage,
@@ -523,7 +524,8 @@ function InfiniteCanvasPage() {
             const padding = CONNECTION_NODE_HIT_PADDING / scale;
             const handleRadius = CONNECTION_HANDLE_HIT_RADIUS / scale;
             let isNearNode = false;
-            let best: { nodeId: string; priority: number } | null = null;
+            let bestNodeId: string | null = null;
+            let bestPriority = Number.POSITIVE_INFINITY;
 
             [...nodesRef.current]
                 .filter((node) => !isHiddenBatchChild(node, nodesRef.current))
@@ -541,10 +543,13 @@ function InfiniteCanvasPage() {
                     if (node.id === current.nodeId || !normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType)) return;
 
                     const priority = hitsInside ? 0 : hitsHandle ? 1 : 2;
-                    if (!best || priority < best.priority) best = { nodeId: node.id, priority };
+                    if (priority < bestPriority) {
+                        bestNodeId = node.id;
+                        bestPriority = priority;
+                    }
                 });
 
-            return { nodeId: best?.nodeId || null, isNearNode };
+            return { nodeId: bestNodeId, isNearNode };
         },
         [screenToCanvas],
     );
@@ -615,6 +620,19 @@ function InfiniteCanvasPage() {
         });
         return map;
     }, [connections, nodes]);
+    const resourceContextNodeId = dialogNodeId || activeNodeId;
+    const canvasResourceReferences = useMemo(() => buildCanvasResourceReferences(nodes, connections, resourceContextNodeId), [connections, nodes, resourceContextNodeId]);
+    const resourceReferenceByNodeId = useMemo(() => new Map(canvasResourceReferences.map((reference) => [reference.nodeId, reference])), [canvasResourceReferences]);
+    const mentionReferencesByNodeId = useMemo(() => {
+        const map = new Map<string, ReturnType<typeof buildNodeMentionReferences>>();
+        nodes.forEach((node) => map.set(node.id, buildNodeMentionReferences(node, nodes, connections)));
+        return map;
+    }, [connections, nodes]);
+    const configMentionReferencesById = useMemo(() => {
+        const map = new Map<string, ReturnType<typeof buildInputMentionReferences>>();
+        configInputsById.forEach((inputs, nodeId) => map.set(nodeId, buildInputMentionReferences(inputs)));
+        return map;
+    }, [configInputsById]);
 
     const createNode = useCallback(
         (type: CanvasNodeType, position?: Position) => {
@@ -2161,10 +2179,12 @@ function InfiniteCanvasPage() {
                             batchRecovering={collapsingBatchIds.has(node.id)}
                             batchMotion={batchMotionById.get(node.id)}
                             showImageInfo={showImageInfo}
+                            resourceLabel={resourceReferenceByNodeId.get(node.id)}
                             renderPanel={(panelNode) => (
                                 <CanvasNodePromptPanel
                                     node={panelNode}
                                     isRunning={runningNodeId === panelNode.id}
+                                    mentionReferences={mentionReferencesByNodeId.get(panelNode.id) || []}
                                     onPromptChange={handleNodePromptChange}
                                     onConfigChange={handleConfigNodeChange}
                                     onGenerate={handleGenerateNode}
@@ -2180,6 +2200,7 @@ function InfiniteCanvasPage() {
                                     isRunning={runningNodeId === contentNode.id}
                                     inputSummary={getInputSummary(configInputsById.get(contentNode.id) || [])}
                                     inputs={configInputsById.get(contentNode.id) || []}
+                                    mentionReferences={configMentionReferencesById.get(contentNode.id) || []}
                                     onConfigChange={handleConfigNodeChange}
                                     onTextInputChange={handleNodeContentChange}
                                     onGenerate={(nodeId) => {

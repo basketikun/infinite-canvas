@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Edit3, Eye, Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Video } from "lucide-react";
-import { App, Button, Empty, Input, Modal, Segmented } from "antd";
+import { App, Button, Empty, Modal, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -13,21 +13,24 @@ import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
+import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import type { NodeGenerationInput } from "./canvas-node-generation";
 import type { CanvasGenerationMode, CanvasNodeData, CanvasNodeMetadata } from "../types";
+import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
 type CanvasConfigNodePanelProps = {
     node: CanvasNodeData;
     isRunning: boolean;
     inputSummary: { textCount: number; imageCount: number; videoCount: number; audioCount: number };
     inputs: NodeGenerationInput[];
+    mentionReferences?: CanvasResourceReference[];
     onConfigChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
     onTextInputChange: (nodeId: string, content: string) => void;
     onGenerate: (nodeId: string) => void;
 };
 
-export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, onConfigChange, onTextInputChange, onGenerate }: CanvasConfigNodePanelProps) {
+export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, mentionReferences = [], onConfigChange, onTextInputChange, onGenerate }: CanvasConfigNodePanelProps) {
     const { message } = App.useApp();
     const [previewOpen, setPreviewOpen] = useState(false);
     const [editingTextId, setEditingTextId] = useState<string | null>(null);
@@ -214,7 +217,13 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, o
                                                     收起
                                                 </Button>
                                             </div>
-                                            <Input.TextArea className="thin-scrollbar !flex-1 !resize-none !text-xs !leading-5" value={editingText} onChange={(event) => setEditingText(event.target.value)} />
+                                            <CanvasResourceMentionTextarea
+                                                className="thin-scrollbar min-h-0 flex-1 resize-none rounded-md border px-2 py-1 text-xs leading-5 outline-none"
+                                                style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                                                value={editingText}
+                                                references={mentionReferences}
+                                                onChange={setEditingText}
+                                            />
                                             <div className="mt-2 flex justify-end gap-2">
                                                 <Button size="small" onClick={() => setEditingTextId(null)}>
                                                     取消
