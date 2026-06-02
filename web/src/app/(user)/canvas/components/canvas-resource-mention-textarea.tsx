@@ -129,6 +129,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
 });
 
 function MentionMenu({ textarea, references, activeIndex, theme, onSelect }: { textarea: HTMLTextAreaElement; references: CanvasResourceReference[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (reference: CanvasResourceReference) => void }) {
+    const selectedRef = useRef(false);
     const rect = textarea.getBoundingClientRect();
     const boundary = textarea.closest(".ant-modal-content")?.getBoundingClientRect() || { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
     const menuWidth = 256;
@@ -143,13 +144,20 @@ function MentionMenu({ textarea, references, activeIndex, theme, onSelect }: { t
         event.stopPropagation();
     };
 
+    const selectReference = (reference: CanvasResourceReference) => {
+        if (selectedRef.current) return;
+        selectedRef.current = true;
+        onSelect(reference);
+    };
+
     return createPortal(
         <div
             data-canvas-resource-mention-menu="true"
             className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md"
             style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
-            onPointerDownCapture={preventCanvasInteraction}
-            onMouseDownCapture={preventCanvasInteraction}
+            onPointerDown={preventCanvasInteraction}
+            onMouseDown={preventCanvasInteraction}
+            onClick={(event) => event.stopPropagation()}
         >
             {references.map((reference, index) => (
                 <button
@@ -160,7 +168,12 @@ function MentionMenu({ textarea, references, activeIndex, theme, onSelect }: { t
                     onPointerDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        onSelect(reference);
+                        selectReference(reference);
+                    }}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        selectReference(reference);
                     }}
                 >
                     <ReferencePreview reference={reference} />
