@@ -48,6 +48,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, m
     const imageInputs = inputs.filter((input) => input.type === "image");
     const videoInputs = inputs.filter((input) => input.type === "video");
     const audioInputs = inputs.filter((input) => input.type === "audio");
+    const editingMentionReferences = editingTextId ? mentionReferences.filter((reference) => reference.nodeId !== editingTextId) : mentionReferences;
 
     const moveInput = (input: NodeGenerationInput, offset: number) => {
         const sameTypeInputs = inputs.filter((item) => item.type === input.type);
@@ -221,7 +222,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, m
                                                 className="thin-scrollbar min-h-0 flex-1 resize-none rounded-md border px-2 py-1 text-xs leading-5 outline-none"
                                                 style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
                                                 value={editingText}
-                                                references={mentionReferences}
+                                                references={editingMentionReferences}
                                                 onChange={setEditingText}
                                             />
                                             <div className="mt-2 flex justify-end gap-2">

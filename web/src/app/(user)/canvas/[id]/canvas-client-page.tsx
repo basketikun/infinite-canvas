@@ -2180,6 +2180,7 @@ function InfiniteCanvasPage() {
                             batchMotion={batchMotionById.get(node.id)}
                             showImageInfo={showImageInfo}
                             resourceLabel={resourceReferenceByNodeId.get(node.id)}
+                            mentionReferences={mentionReferencesByNodeId.get(node.id) || []}
                             renderPanel={(panelNode) => (
                                 <CanvasNodePromptPanel
                                     node={panelNode}

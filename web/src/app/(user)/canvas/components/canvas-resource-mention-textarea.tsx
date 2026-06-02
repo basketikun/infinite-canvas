@@ -130,11 +130,16 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
 
 function MentionMenu({ textarea, references, activeIndex, theme, onSelect }: { textarea: HTMLTextAreaElement; references: CanvasResourceReference[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (reference: CanvasResourceReference) => void }) {
     const rect = textarea.getBoundingClientRect();
-    const left = Math.min(rect.left, window.innerWidth - 280);
-    const top = Math.min(rect.bottom + 6, window.innerHeight - 240);
+    const boundary = textarea.closest(".ant-modal-content")?.getBoundingClientRect() || { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
+    const menuWidth = 256;
+    const maxMenuHeight = 224;
+    const gap = 6;
+    const left = clamp(rect.left, boundary.left + 8, boundary.right - menuWidth - 8);
+    const showAbove = rect.bottom + gap + maxMenuHeight > boundary.bottom && rect.top - gap - maxMenuHeight >= boundary.top;
+    const top = clamp(showAbove ? rect.top - gap - maxMenuHeight : rect.bottom + gap, boundary.top + 8, boundary.bottom - maxMenuHeight - 8);
 
     return createPortal(
-        <div className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md" style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }} onMouseDown={(event) => event.preventDefault()}>
+        <div data-canvas-resource-mention-menu="true" className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md" style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }} onMouseDown={(event) => event.preventDefault()}>
             {references.map((reference, index) => (
                 <button
                     key={reference.id}
@@ -156,6 +161,11 @@ function MentionMenu({ textarea, references, activeIndex, theme, onSelect }: { t
         </div>,
         document.body,
     );
+}
+
+function clamp(value: number, min: number, max: number) {
+    if (max < min) return min;
+    return Math.min(Math.max(value, min), max);
 }
 
 function ReferencePreview({ reference }: { reference: CanvasResourceReference }) {

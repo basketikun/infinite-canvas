@@ -47,7 +47,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
 }
 
 export function buildNodeGenerationInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): NodeGenerationInput[] {
-    return getOrderedUpstreamNodes(nodeId, nodes, connections).flatMap((node): NodeGenerationInput[] => {
+    return getGenerationInputNodes(nodeId, nodes, connections).flatMap((node): NodeGenerationInput[] => {
         const image = readReferenceImage(node);
         if (image) return [{ nodeId: node.id, type: "image" as const, title: node.title, image }];
         const video = readReferenceVideo(node);
@@ -129,4 +129,12 @@ function getOrderedUpstreamNodes(nodeId: string, nodes: CanvasNodeData[], connec
         .filter((node): node is CanvasNodeData => Boolean(node));
     const order = target?.metadata?.inputOrder || [];
     return [...order.map((id) => upstreamNodes.find((node) => node.id === id)).filter((node): node is CanvasNodeData => Boolean(node)), ...upstreamNodes.filter((node) => !order.includes(node.id))];
+}
+
+function getGenerationInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    const ownInputs = getOrderedUpstreamNodes(nodeId, nodes, connections);
+    if (ownInputs.length) return ownInputs;
+    const configConnection = connections.find((connection) => connection.fromNodeId === nodeId && nodes.find((node) => node.id === connection.toNodeId)?.type === CanvasNodeType.Config);
+    if (!configConnection) return [];
+    return getOrderedUpstreamNodes(configConnection.toNodeId, nodes, connections).filter((node) => node.id !== nodeId);
 }
