@@ -225,7 +225,7 @@ func resolveAIProxyPath(baseURL string, modelName string, path string) string {
 func isArkSeedanceVideo(baseURL string, modelName string) bool {
 	base := strings.ToLower(baseURL)
 	model := strings.ToLower(modelName)
-	return strings.Contains(model, "seedance") || strings.Contains(model, "doubao-seedance") || strings.Contains(base, "/api/plan/v3")
+	return (strings.Contains(model, "seedance") || strings.Contains(model, "doubao-seedance")) && (strings.Contains(base, "/api/v3") || strings.Contains(base, "/api/plan/v3"))
 }
 
 func aiStatusMessage(statusCode int) string {

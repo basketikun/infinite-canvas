@@ -61,6 +61,14 @@ func TestBuildModelChannelURLNormalizesArkPlanTaskPath(t *testing.T) {
 	}
 }
 
+func TestBuildModelChannelURLKeepsArkAPIBaseURL(t *testing.T) {
+	got := BuildModelChannelURL(model.ModelChannel{BaseURL: "https://ark.cn-beijing.volces.com/api/v3"}, "/contents/generations/tasks")
+	want := "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"
+	if got != want {
+		t.Fatalf("BuildModelChannelURL = %q, want %q", got, want)
+	}
+}
+
 func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *testing.T) {
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{

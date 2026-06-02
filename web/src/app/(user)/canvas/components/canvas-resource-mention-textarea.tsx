@@ -138,16 +138,28 @@ function MentionMenu({ textarea, references, activeIndex, theme, onSelect }: { t
     const showAbove = rect.bottom + gap + maxMenuHeight > boundary.bottom && rect.top - gap - maxMenuHeight >= boundary.top;
     const top = clamp(showAbove ? rect.top - gap - maxMenuHeight : rect.bottom + gap, boundary.top + 8, boundary.bottom - maxMenuHeight - 8);
 
+    const preventCanvasInteraction = (event: React.PointerEvent | React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
     return createPortal(
-        <div data-canvas-resource-mention-menu="true" className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md" style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }} onMouseDown={(event) => event.preventDefault()}>
+        <div
+            data-canvas-resource-mention-menu="true"
+            className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md"
+            style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+            onPointerDownCapture={preventCanvasInteraction}
+            onMouseDownCapture={preventCanvasInteraction}
+        >
             {references.map((reference, index) => (
                 <button
                     key={reference.id}
                     type="button"
                     className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
                     style={{ background: index === activeIndex ? theme.toolbar.activeBg : "transparent", color: index === activeIndex ? theme.toolbar.activeText : theme.node.text }}
-                    onMouseDown={(event) => {
+                    onPointerDown={(event) => {
                         event.preventDefault();
+                        event.stopPropagation();
                         onSelect(reference);
                     }}
                 >
