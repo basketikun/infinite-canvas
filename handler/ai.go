@@ -47,19 +47,19 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if strings.TrimSpace(modelName) == "" {
 		modelName = "grok-imagine-video"
 	}
-	channel, err := service.SelectModelChannel(modelName)
+	resolved, err := service.ResolveModelChannel(modelName)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
-	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
+	path = resolveAIProxyPath(resolved.Channel.BaseURL, resolved.RawModelName, path)
+	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(resolved.Channel, path), nil)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	request.Header.Set("Authorization", "Bearer "+resolved.Channel.APIKey)
 	copyAIResponse(w, request, nil)
 }
 
@@ -82,20 +82,26 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	credits *= readAIRequestCount(body, contentType)
-	channel, err := service.SelectModelChannel(modelName)
+	resolved, err := service.ResolveModelChannel(modelName)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
-	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
+	body, contentType, err = rewriteAIRequestModel(body, contentType, resolved.RawModelName)
 	if err != nil {
-		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
+		log.Printf("AI proxy rewrite model failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	path = resolveAIProxyPath(resolved.Channel.BaseURL, resolved.RawModelName, path)
+	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(resolved.Channel, path), bytes.NewReader(body))
+	if err != nil {
+		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(resolved.Channel, path), err)
+		Fail(w, "AI 接口请求失败")
+		return
+	}
+	request.Header.Set("Authorization", "Bearer "+resolved.Channel.APIKey)
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
@@ -181,6 +187,78 @@ func readMultipartModel(body []byte, contentType string) string {
 		return values[0]
 	}
 	return ""
+}
+
+func rewriteAIRequestModel(body []byte, contentType string, modelName string) ([]byte, string, error) {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return body, contentType, nil
+	}
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		return rewriteMultipartModel(body, contentType, modelName)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, "", err
+	}
+	payload["model"] = modelName
+	nextBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", err
+	}
+	return nextBody, contentType, nil
+}
+
+func rewriteMultipartModel(body []byte, contentType string, modelName string) ([]byte, string, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, "", err
+	}
+	form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
+	if err != nil {
+		return nil, "", err
+	}
+	defer form.RemoveAll()
+
+	var nextBody bytes.Buffer
+	writer := multipart.NewWriter(&nextBody)
+	for key, values := range form.Value {
+		if key == "model" {
+			continue
+		}
+		for _, value := range values {
+			if err := writer.WriteField(key, value); err != nil {
+				return nil, "", err
+			}
+		}
+	}
+	if err := writer.WriteField("model", modelName); err != nil {
+		return nil, "", err
+	}
+	for _, files := range form.File {
+		for _, fileHeader := range files {
+			file, err := fileHeader.Open()
+			if err != nil {
+				return nil, "", err
+			}
+			part, err := writer.CreatePart(fileHeader.Header)
+			if err != nil {
+				_ = file.Close()
+				return nil, "", err
+			}
+			if _, err := io.Copy(part, file); err != nil {
+				_ = file.Close()
+				return nil, "", err
+			}
+			if err := file.Close(); err != nil {
+				return nil, "", err
+			}
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return nextBody.Bytes(), writer.FormDataContentType(), nil
 }
 
 func readAIRequestCount(body []byte, contentType string) int {

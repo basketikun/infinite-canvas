@@ -906,15 +906,30 @@ function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminS
 }
 
 function collectChannelModels(channels: AdminModelChannel[]) {
-    return uniqueModels(channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || []));
+    return buildChannelModelAliases(channels).map((item) => item.publicModel);
 }
 
 function collectKnownModels(settings: AdminSettings) {
-    return uniqueModels([
-        ...(settings.public.modelChannel.availableModels || []),
-        ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model),
-        ...settings.private.channels.flatMap((channel) => channel.models || []),
-    ]);
+    return uniqueModels(settings.private.channels.flatMap((channel) => channel.models || []));
+}
+
+function buildChannelModelAliases(channels: AdminModelChannel[]) {
+    const result: { publicModel: string; rawModel: string }[] = [];
+    const seen = new Map<string, number>();
+    channels.forEach((channel, index) => {
+        if (!channel.enabled) return;
+        const channelName = channel.name.trim() || `渠道${index + 1}`;
+        uniqueModels(channel.models || []).forEach((rawModel) => {
+            const baseName = `${rawModel} - ${channelName}`;
+            const count = seen.get(baseName) || 0;
+            seen.set(baseName, count + 1);
+            result.push({
+                publicModel: count > 0 ? `${baseName} #${count + 1}` : baseName,
+                rawModel,
+            });
+        });
+    });
+    return result;
 }
 
 function buildModelSelectGroups(sourceModels: string[], existingModels: string[]): Record<ModelSelectTabKey, string[]> {

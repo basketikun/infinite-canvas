@@ -18,6 +18,18 @@ import (
 
 var adminModelHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
+type ResolvedModelChannel struct {
+	Channel         model.ModelChannel
+	PublicModelName string
+	RawModelName    string
+}
+
+type channelModelAlias struct {
+	PublicName string
+	RawName    string
+	Channel    model.ModelChannel
+}
+
 func PublicSettings() (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
 	return normalizeSettings(settings).Public, err
@@ -93,11 +105,14 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		enabled := true
 		setting.Auth.AllowRegister = &enabled
 	}
-	enabledModels := enabledChannelModels(channels)
+	aliases := enabledChannelModelAliases(channels)
+	enabledModels := channelAliasNames(aliases)
 	if len(enabledModels) > 0 {
 		setting.ModelChannel.AvailableModels = enabledModels
+		setting.ModelChannel.ModelCosts = normalizeModelCostsForAliases(setting.ModelChannel.ModelCosts, aliases)
 	} else {
 		setting.ModelChannel.AvailableModels = uniqueModelNames(setting.ModelChannel.AvailableModels)
+		setting.ModelChannel.ModelCosts = uniqueModelCosts(setting.ModelChannel.ModelCosts)
 	}
 	setting.ModelChannel.DefaultTextModel = repairDefaultModel(setting.ModelChannel.DefaultTextModel, setting.ModelChannel.AvailableModels, isTextModelName)
 	setting.ModelChannel.DefaultImageModel = repairDefaultModel(setting.ModelChannel.DefaultImageModel, setting.ModelChannel.AvailableModels, isImageModelName)
@@ -112,7 +127,7 @@ func ModelCost(modelName string) (int, error) {
 		return 0, err
 	}
 	modelName = strings.TrimSpace(modelName)
-	for _, item := range normalizePublicSetting(settings.Public).ModelChannel.ModelCosts {
+	for _, item := range normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels).ModelChannel.ModelCosts {
 		if item.Model == modelName {
 			return item.Credits, nil
 		}
@@ -177,14 +192,49 @@ func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, in
 }
 
 func SelectModelChannel(modelName string) (model.ModelChannel, error) {
-	settings, err := repository.GetSettings()
+	resolved, err := ResolveModelChannel(modelName)
 	if err != nil {
 		return model.ModelChannel{}, err
 	}
-	channels := modelChannelsForModel(normalizePrivateSetting(settings.Private).Channels, modelName)
-	if len(channels) == 0 {
-		return model.ModelChannel{}, errors.New("没有可用模型渠道")
+	return resolved.Channel, nil
+}
+
+func ResolveModelChannel(modelName string) (ResolvedModelChannel, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return ResolvedModelChannel{}, err
 	}
+	return resolveModelChannel(normalizePrivateSetting(settings.Private).Channels, modelName)
+}
+
+func resolveModelChannel(channels []model.ModelChannel, modelName string) (ResolvedModelChannel, error) {
+	modelName = strings.TrimSpace(modelName)
+	for _, item := range enabledChannelModelAliases(channels) {
+		if item.PublicName != modelName {
+			continue
+		}
+		if strings.TrimSpace(item.Channel.BaseURL) == "" || strings.TrimSpace(item.Channel.APIKey) == "" {
+			return ResolvedModelChannel{}, errors.New("没有可用模型渠道")
+		}
+		return ResolvedModelChannel{
+			Channel:         item.Channel,
+			PublicModelName: item.PublicName,
+			RawModelName:    item.RawName,
+		}, nil
+	}
+	channels = modelChannelsForModel(channels, modelName)
+	if len(channels) == 0 {
+		return ResolvedModelChannel{}, errors.New("没有可用模型渠道")
+	}
+	channel := selectWeightedModelChannel(channels)
+	return ResolvedModelChannel{
+		Channel:         channel,
+		PublicModelName: modelName,
+		RawModelName:    modelName,
+	}, nil
+}
+
+func selectWeightedModelChannel(channels []model.ModelChannel) model.ModelChannel {
 	total := 0
 	for _, channel := range channels {
 		total += channel.Weight
@@ -193,10 +243,10 @@ func SelectModelChannel(modelName string) (model.ModelChannel, error) {
 	for _, channel := range channels {
 		hit -= channel.Weight
 		if hit < 0 {
-			return channel, nil
+			return channel
 		}
 	}
-	return channels[0], nil
+	return channels[0]
 }
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
@@ -238,17 +288,6 @@ func isSeedanceModelName(modelName string) bool {
 	return strings.Contains(modelName, "seedance") || strings.Contains(modelName, "doubao-seedance")
 }
 
-func enabledChannelModels(channels []model.ModelChannel) []string {
-	models := []string{}
-	for _, channel := range channels {
-		if !channel.Enabled {
-			continue
-		}
-		models = append(models, channel.Models...)
-	}
-	return uniqueModelNames(models)
-}
-
 func uniqueModelNames(models []string) []string {
 	result := []string{}
 	seen := map[string]bool{}
@@ -259,6 +298,81 @@ func uniqueModelNames(models []string) []string {
 		}
 		seen[name] = true
 		result = append(result, name)
+	}
+	return result
+}
+
+func enabledChannelModelAliases(channels []model.ModelChannel) []channelModelAlias {
+	result := []channelModelAlias{}
+	seen := map[string]int{}
+	for index, channel := range channels {
+		channel = normalizeModelChannel(channel)
+		if !channel.Enabled {
+			continue
+		}
+		channelName := channelAliasName(channel, index)
+		for _, rawName := range uniqueModelNames(channel.Models) {
+			baseName := rawName + " - " + channelName
+			publicName := baseName
+			if seen[baseName] > 0 {
+				publicName = fmt.Sprintf("%s #%d", baseName, seen[baseName]+1)
+			}
+			seen[baseName]++
+			result = append(result, channelModelAlias{
+				PublicName: publicName,
+				RawName:    rawName,
+				Channel:    channel,
+			})
+		}
+	}
+	return result
+}
+
+func channelAliasNames(aliases []channelModelAlias) []string {
+	result := make([]string, 0, len(aliases))
+	for _, item := range aliases {
+		result = append(result, item.PublicName)
+	}
+	return result
+}
+
+func channelAliasName(channel model.ModelChannel, index int) string {
+	name := strings.TrimSpace(channel.Name)
+	if name == "" {
+		return fmt.Sprintf("渠道%d", index+1)
+	}
+	return name
+}
+
+func normalizeModelCostsForAliases(costs []model.ModelCost, aliases []channelModelAlias) []model.ModelCost {
+	exactCredits := map[string]int{}
+	for _, item := range uniqueModelCosts(costs) {
+		exactCredits[item.Model] = item.Credits
+	}
+	result := make([]model.ModelCost, 0, len(aliases))
+	for _, item := range aliases {
+		credits, ok := exactCredits[item.PublicName]
+		if !ok {
+			credits = exactCredits[item.RawName]
+		}
+		result = append(result, model.ModelCost{Model: item.PublicName, Credits: credits})
+	}
+	return result
+}
+
+func uniqueModelCosts(costs []model.ModelCost) []model.ModelCost {
+	result := []model.ModelCost{}
+	seen := map[string]bool{}
+	for _, item := range costs {
+		name := strings.TrimSpace(item.Model)
+		if name == "" || seen[name] {
+			continue
+		}
+		if item.Credits < 0 {
+			item.Credits = 0
+		}
+		seen[name] = true
+		result = append(result, model.ModelCost{Model: name, Credits: item.Credits})
 	}
 	return result
 }
