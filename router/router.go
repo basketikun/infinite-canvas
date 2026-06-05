@@ -20,6 +20,8 @@ func New() *gin.Engine {
 	api.POST("/auth/login", gin.WrapF(handler.Login))
 	api.GET("/auth/linux-do/authorize", gin.WrapF(handler.LinuxDoAuthorize))
 	api.GET("/auth/linux-do/callback", gin.WrapF(handler.LinuxDoCallback))
+	api.GET("/auth/oidc/authorize", gin.WrapF(handler.OIDCAuthorize))
+	api.GET("/auth/oidc/callback", gin.WrapF(handler.OIDCCallback))
 	api.GET("/auth/me", middleware.OptionalAuth, gin.WrapF(handler.CurrentUser))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/media/references/:id", func(c *gin.Context) {
@@ -41,9 +43,31 @@ func New() *gin.Engine {
 	v1.GET("/videos/:id/content", func(c *gin.Context) {
 		handler.AIVideoContent(c.Writer, c.Request, c.Param("id"))
 	})
+	v1.GET("/membership/plans", gin.WrapF(handler.MembershipPlans))
+	v1.GET("/membership/me", gin.WrapF(handler.MyMembership))
+	v1.GET("/membership/orders", gin.WrapF(handler.MyMembershipOrders))
+	v1.POST("/membership/orders", gin.WrapF(handler.CreateMembershipOrder))
+	v1.POST("/membership/orders/:id/cancel", func(c *gin.Context) {
+		handler.CancelMembershipOrder(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/membership/orders/:id/mock-pay", func(c *gin.Context) {
+		handler.MockPayMembershipOrder(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/membership/orders/:id/refresh-pay", func(c *gin.Context) {
+		handler.RefreshMembershipOrderPay(c.Writer, c.Request, c.Param("id"))
+	})
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
+
+	api.GET("/leaderboard/images", gin.WrapF(handler.ImageGenerationLeaderboard))
+
+	api.GET("/payments/zpay/notify", gin.WrapF(handler.ZPayNotify))
+	api.POST("/payments/zpay/notify", gin.WrapF(handler.ZPayNotify))
+	api.GET("/payments/zpay/return", gin.WrapF(handler.ZPayReturn))
+	api.POST("/payments/alipay/notify", gin.WrapF(handler.AlipayNotify))
+	api.GET("/payments/alipay/return", gin.WrapF(handler.AlipayReturn))
+	api.POST("/payments/wechat/notify", gin.WrapF(handler.WechatNotify))
 
 	admin := api.Group("/admin", middleware.AdminAuth)
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
@@ -75,6 +99,18 @@ func New() *gin.Engine {
 	admin.POST("/assets", gin.WrapF(handler.AdminSaveAsset))
 	admin.DELETE("/assets/:id", func(c *gin.Context) {
 		handler.AdminDeleteAsset(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/membership-plans", gin.WrapF(handler.AdminMembershipPlans))
+	admin.POST("/membership-plans", gin.WrapF(handler.AdminSaveMembershipPlan))
+	admin.DELETE("/membership-plans/:id", func(c *gin.Context) {
+		handler.AdminDeleteMembershipPlan(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/membership-orders", gin.WrapF(handler.AdminMembershipOrders))
+	admin.POST("/membership-orders/:id/pay", func(c *gin.Context) {
+		handler.AdminMarkOrderPaid(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.DELETE("/membership-orders/:id", func(c *gin.Context) {
+		handler.AdminDeleteMembershipOrder(c.Writer, c.Request, c.Param("id"))
 	})
 
 	router.NoRoute(middleware.NotFoundJSON)

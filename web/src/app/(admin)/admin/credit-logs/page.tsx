@@ -15,6 +15,7 @@ const creditLogTypeLabels: Record<string, string> = {
     admin_adjust: "后台调整",
     ai_consume: "模型消费",
     ai_refund: "失败返还",
+    membership_grant: "会员赠送",
 };
 
 export default function AdminCreditLogsPage() {

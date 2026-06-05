@@ -72,7 +72,18 @@ func normalizePublicSetting(setting model.PublicSetting) model.PublicSetting {
 	return normalizePublicSettingWithChannels(setting, nil)
 }
 
+func normalizePublicSiteSetting(setting model.PublicSiteSetting) model.PublicSiteSetting {
+	if strings.TrimSpace(setting.Name) == "" {
+		setting.Name = "无限画布"
+	}
+	if strings.TrimSpace(setting.Description) == "" {
+		setting.Description = "一个无限画布创作工具"
+	}
+	return setting
+}
+
 func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []model.ModelChannel) model.PublicSetting {
+	setting.Site = normalizePublicSiteSetting(setting.Site)
 	if setting.ModelChannel.AvailableModels == nil {
 		setting.ModelChannel.AvailableModels = []string{}
 	}
@@ -92,6 +103,9 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	if setting.Auth.AllowRegister == nil {
 		enabled := true
 		setting.Auth.AllowRegister = &enabled
+	}
+	if setting.Membership.PaymentMethods == nil {
+		setting.Membership.PaymentMethods = []string{}
 	}
 	enabledModels := enabledChannelModels(channels)
 	if len(enabledModels) > 0 {
@@ -144,6 +158,12 @@ func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 		settings.Private.Channels[i].APIKey = ""
 	}
 	settings.Private.Auth.LinuxDo.ClientSecret = ""
+	settings.Private.Auth.OIDC.ClientSecret = ""
+	settings.Private.Payment.ZPay.Key = ""
+	settings.Private.Payment.Alipay.PrivateKey = ""
+	settings.Private.Payment.Wechat.APIKey = ""
+	settings.Private.Payment.Wechat.APIV3Key = ""
+	settings.Private.Payment.Wechat.MchPrivateKey = ""
 	return settings
 }
 
@@ -156,11 +176,29 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 			settings.Private.Channels[i].APIKey = channel.APIKey
 		}
 	}
+	if strings.TrimSpace(settings.Private.Payment.ZPay.Key) == "" {
+		settings.Private.Payment.ZPay.Key = saved.Private.Payment.ZPay.Key
+	}
+	if strings.TrimSpace(settings.Private.Payment.Alipay.PrivateKey) == "" {
+		settings.Private.Payment.Alipay.PrivateKey = saved.Private.Payment.Alipay.PrivateKey
+	}
+	if strings.TrimSpace(settings.Private.Payment.Wechat.APIKey) == "" {
+		settings.Private.Payment.Wechat.APIKey = saved.Private.Payment.Wechat.APIKey
+	}
+	if strings.TrimSpace(settings.Private.Payment.Wechat.APIV3Key) == "" {
+		settings.Private.Payment.Wechat.APIV3Key = saved.Private.Payment.Wechat.APIV3Key
+	}
+	if strings.TrimSpace(settings.Private.Payment.Wechat.MchPrivateKey) == "" {
+		settings.Private.Payment.Wechat.MchPrivateKey = saved.Private.Payment.Wechat.MchPrivateKey
+	}
 }
 
 func keepPrivateAuthSecrets(settings *model.Settings, saved model.Settings) {
 	if strings.TrimSpace(settings.Private.Auth.LinuxDo.ClientSecret) == "" {
 		settings.Private.Auth.LinuxDo.ClientSecret = saved.Private.Auth.LinuxDo.ClientSecret
+	}
+	if strings.TrimSpace(settings.Private.Auth.OIDC.ClientSecret) == "" {
+		settings.Private.Auth.OIDC.ClientSecret = saved.Private.Auth.OIDC.ClientSecret
 	}
 }
 

@@ -24,6 +24,8 @@ description: 当前后端主要数据表与字段说明
 - `prompts`
 - `assets`
 - `settings`
+- `membership_plans`
+- `membership_orders`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
 
@@ -41,6 +43,8 @@ description: 当前后端主要数据表与字段说明
 | `avatar_url` | string | 头像地址 |
 | `role` | string | 角色：`user`、`admin` |
 | `credits` | number | 算力点余额 |
+| `membership_level` | string | 当前会员等级：空 / `free` / `vip` / `svip` |
+| `membership_expires_at` | string | 会员到期时间，RFC3339 |
 | `aff_code` | string | 用户自己的邀请码，唯一索引 |
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
 | `inviter_id` | string | 邀请人用户 ID |
@@ -198,3 +202,46 @@ description: 当前后端主要数据表与字段说明
 | `admin_adjust` | 后台手动调整 |
 | `ai_consume` | 调用后端模型接口消费 |
 | `ai_refund` | 后端模型接口调用失败返还 |
+| `membership_grant` | 购买会员套餐时赠送 |
+
+### membership_plans
+
+会员套餐表。后台维护可购买套餐与权益配置。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `name` | string | 套餐名称 |
+| `level` | string | 会员等级：`vip`、`svip` |
+| `description` | string | 卖点描述 |
+| `price` | number | 价格，单位：分 |
+| `duration_days` | number | 会员有效天数 |
+| `credits_granted` | number | 购买时赠送算力点 |
+| `unlimited` | bool | 会员期内是否不消耗算力点 |
+| `priority_queue` | bool | 是否优先队列 |
+| `features` | text | 解锁的功能 JSON 文本 |
+| `enabled` | bool | 是否上架 |
+| `sort` | number | 排序，升序 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### membership_orders
+
+会员订单表。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 用户 ID |
+| `plan_id` | string | 套餐 ID |
+| `plan_name` | string | 下单时套餐名称快照 |
+| `plan_level` | string | 下单时套餐等级快照 |
+| `amount` | number | 金额，单位：分 |
+| `status` | string | 订单状态：`pending`、`paid`、`cancelled` |
+| `payment_provider` | string | 支付方式：`wechat`、`alipay`、`mock` |
+| `payment_id` | string | 支付方返回的凭证号 |
+| `pay_url` | string | 跳转支付的地址 |
+| `paid_at` | string | 支付完成时间 |
+| `expires_at` | string | 本单生效后的会员到期时间 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |

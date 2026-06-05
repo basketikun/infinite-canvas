@@ -174,6 +174,15 @@ func GetUserByLinuxDoID(id string) (model.User, bool, error) {
 	return findUser(db, "linux_do_id = ?", id)
 }
 
+// GetUserByOIDCSub 根据 OIDC sub 查询用户。
+func GetUserByOIDCSub(sub string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	return findUser(db, "oidc_sub = ?", sub)
+}
+
 // findUser 查询单个用户，并将未命中转换为 ok=false。
 func findUser(db *gorm.DB, query string, args ...any) (model.User, bool, error) {
 	user := model.User{}

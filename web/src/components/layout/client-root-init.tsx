@@ -28,6 +28,21 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     }, [hydrateUser, isLoginPage]);
 
     useEffect(() => {
+        if (!publicSettings?.site) return;
+        const { name, faviconUrl } = publicSettings.site;
+        if (name) document.title = name;
+        if (faviconUrl) {
+            let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+            if (!link) {
+                link = document.createElement("link");
+                link.rel = "icon";
+                document.head.appendChild(link);
+            }
+            link.href = faviconUrl;
+        }
+    }, [publicSettings?.site]);
+
+    useEffect(() => {
         if (handledConfigParams.current) return;
         const searchParams = new URLSearchParams(window.location.search);
         const baseUrl = searchParams.get("baseUrl") || searchParams.get("baseurl");

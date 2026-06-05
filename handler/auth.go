@@ -74,6 +74,24 @@ func LinuxDoCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, loginRedirect(r, redirect, session.Token, ""), http.StatusFound)
 }
 
+func OIDCAuthorize(w http.ResponseWriter, r *http.Request) {
+	authURL, err := service.OIDCAuthorizeURL(r, r.URL.Query().Get("redirect"))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func OIDCCallback(w http.ResponseWriter, r *http.Request) {
+	session, redirect, err := service.LoginWithOIDC(r, r.URL.Query().Get("code"), r.URL.Query().Get("state"))
+	if err != nil {
+		http.Redirect(w, r, loginRedirect(r, redirect, "", err.Error()), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, loginRedirect(r, redirect, session.Token, ""), http.StatusFound)
+}
+
 func AdminLogin(w http.ResponseWriter, r *http.Request) {
 	var request loginRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)

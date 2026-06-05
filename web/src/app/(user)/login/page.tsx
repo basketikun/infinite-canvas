@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import { fetchCurrentUser } from "@/services/api/auth";
-import { useConfigStore } from "@/stores/use-config-store";
+import { useConfigStore, useSiteInfo } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type LoginFormValues = {
@@ -42,6 +42,10 @@ function LoginContent() {
     const setSession = useUserStore((state) => state.setSession);
     const isLoading = useUserStore((state) => state.isLoading);
     const linuxDoEnabled = useConfigStore((state) => state.publicSettings?.auth?.linuxDo?.enabled === true);
+    const oidcEnabled = useConfigStore((state) => state.publicSettings?.auth?.oidc?.enabled === true);
+    const oidcDisplayName = useConfigStore((state) => state.publicSettings?.auth?.oidc?.displayName || "OIDC");
+    const oidcIconUrl = useConfigStore((state) => state.publicSettings?.auth?.oidc?.iconUrl || "");
+    const site = useSiteInfo();
     const allowRegister = useConfigStore((state) => state.publicSettings?.auth?.allowRegister !== false);
     const [mode, setMode] = useState<"login" | "register">("login");
     const redirect = safeRedirect(searchParams.get("redirect"));
@@ -88,16 +92,20 @@ function LoginContent() {
         <main className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-10 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]">
             <section className="w-full max-w-[420px]">
                 <div className="mb-7 text-center">
-                    <span
-                        className="mx-auto mb-4 block size-12 bg-stone-950 dark:bg-stone-100"
-                        style={{
-                            mask: "url(/logo.svg) center / contain no-repeat",
-                            WebkitMask: "url(/logo.svg) center / contain no-repeat",
-                        }}
-                        aria-label="无限画布"
-                    />
-                    <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">账号登录</h1>
-                    <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">支持账号密码和 Linux.do 登录。</p>
+                    {site.logoUrl ? (
+                        <img src={site.logoUrl} alt={site.name} className="mx-auto mb-4 block size-12 object-contain" />
+                    ) : (
+                        <span
+                            className="mx-auto mb-4 block size-12 bg-stone-950 dark:bg-stone-100"
+                            style={{
+                                mask: "url(/logo.svg) center / contain no-repeat",
+                                WebkitMask: "url(/logo.svg) center / contain no-repeat",
+                            }}
+                            aria-label={site.name}
+                        />
+                    )}
+                    <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">{site.subtitle || `${site.name} 账号登录`}</h1>
+                    <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">支持账号密码{linuxDoEnabled ? "、Linux.do" : ""}{oidcEnabled ? `、${oidcDisplayName}` : ""}登录。</p>
                 </div>
 
                 <Form<LoginFormValues> layout="vertical" size="large" requiredMark={false} onFinish={submit}>
@@ -127,6 +135,15 @@ function LoginContent() {
                         {linuxDoEnabled ? (
                             <Button block href={`/api/auth/linux-do/authorize?redirect=${encodeURIComponent(redirect)}`} icon={<img src="/icons/linuxdo.svg" alt="" width={18} height={18} />}>
                                 使用 Linux.do 登录
+                            </Button>
+                        ) : null}
+                        {oidcEnabled ? (
+                            <Button
+                                block
+                                href={`/api/auth/oidc/authorize?redirect=${encodeURIComponent(redirect)}`}
+                                icon={oidcIconUrl ? <img src={oidcIconUrl} alt="" width={18} height={18} /> : <LockOutlined />}
+                            >
+                                使用 {oidcDisplayName} 登录
                             </Button>
                         ) : null}
                     </Space>

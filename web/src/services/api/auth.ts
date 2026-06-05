@@ -4,6 +4,8 @@ export const AUTH_TOKEN_KEY = "infinite-canvas-auth-token-v1";
 
 export type UserRole = "guest" | "user" | "admin";
 
+export type MembershipLevel = "" | "free" | "vip" | "svip";
+
 export type AuthUser = {
     id: string;
     username: string;
@@ -11,6 +13,8 @@ export type AuthUser = {
     avatarUrl: string;
     role: UserRole;
     credits: number;
+    membershipLevel: MembershipLevel;
+    membershipExpiresAt: string;
     createdAt: string;
     updatedAt: string;
 };
