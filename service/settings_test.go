@@ -61,6 +61,31 @@ func TestBuildModelChannelURLNormalizesArkPlanTaskPath(t *testing.T) {
 	}
 }
 
+func TestBuildModelChannelURLSupportsGenerationsProtocol(t *testing.T) {
+	channel := model.ModelChannel{Protocol: "generations", BaseURL: "https://example.com/api/generations"}
+	if got, want := BuildModelChannelURL(channel, "/videos"), "https://example.com/api/generations"; got != want {
+		t.Fatalf("create URL = %q, want %q", got, want)
+	}
+	if got, want := BuildModelChannelURL(channel, "/videos/task-1"), "https://example.com/api/generations/task-1"; got != want {
+		t.Fatalf("task URL = %q, want %q", got, want)
+	}
+	channel.BaseURL = "https://example.com/api"
+	if got, want := BuildModelChannelURL(channel, "/videos"), "https://example.com/api/generations"; got != want {
+		t.Fatalf("api base create URL = %q, want %q", got, want)
+	}
+}
+
+func TestFetchAdminChannelModelsReturnsGenerationsVideoModels(t *testing.T) {
+	models, err := fetchAdminChannelModels(model.ModelChannel{Protocol: "generations", BaseURL: "https://example.com", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("fetchAdminChannelModels returned error: %v", err)
+	}
+	want := []string{"seedance-2.0", "seedance-2.0-fast", "seedance-api-2.0", "seedance-api-2.0-fast"}
+	if !reflect.DeepEqual(models, want) {
+		t.Fatalf("models = %#v, want %#v", models, want)
+	}
+}
+
 func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *testing.T) {
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{

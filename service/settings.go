@@ -56,6 +56,9 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if err != nil {
 		return "", err
 	}
+	if isGenerationsChannel(resolved) {
+		return testGenerationsChannelModel(resolved, modelName)
+	}
 	if isArkAgentPlanChannel(resolved) || isSeedanceModelName(modelName) {
 		return testArkSeedanceChannelModel(resolved, modelName)
 	}
@@ -201,9 +204,41 @@ func SelectModelChannel(modelName string) (model.ModelChannel, error) {
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
 	baseURL := normalizeModelChannelBaseURL(channel.BaseURL)
+	if isGenerationsChannel(channel) {
+		return buildGenerationsChannelURL(baseURL, path)
+	}
 	lowerBaseURL := strings.ToLower(baseURL)
 	if !strings.HasSuffix(lowerBaseURL, "/v1") && !strings.HasSuffix(lowerBaseURL, "/api/v3") && !strings.HasSuffix(lowerBaseURL, "/api/plan/v3") {
 		baseURL += "/v1"
+	}
+	return baseURL + path
+}
+
+func isGenerationsChannel(channel model.ModelChannel) bool {
+	return strings.EqualFold(strings.TrimSpace(channel.Protocol), "generations")
+}
+
+func buildGenerationsChannelURL(baseURL string, path string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	lowerBaseURL := strings.ToLower(baseURL)
+	if strings.HasSuffix(lowerBaseURL, "/api/generations") {
+		baseURL = baseURL[:len(baseURL)-len("/api/generations")]
+	} else if strings.HasSuffix(lowerBaseURL, "/generations") {
+		baseURL = baseURL[:len(baseURL)-len("/generations")]
+	} else if strings.HasSuffix(lowerBaseURL, "/api") {
+		baseURL = baseURL[:len(baseURL)-len("/api")]
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	if path == "/videos" {
+		return baseURL + "/api/generations"
+	}
+	if strings.HasPrefix(path, "/videos/") {
+		id := strings.TrimPrefix(path, "/videos/")
+		if strings.HasSuffix(id, "/content") {
+			id = strings.TrimSuffix(id, "/content")
+			return baseURL + "/api/generations/" + id + "/content"
+		}
+		return baseURL + "/api/generations/" + id
 	}
 	return baseURL + path
 }
@@ -343,6 +378,9 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
+	if isGenerationsChannel(channel) {
+		return []string{"seedance-2.0", "seedance-2.0-fast", "seedance-api-2.0", "seedance-api-2.0-fast"}, nil
+	}
 	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models"), nil)
 	if err != nil {
 		return nil, err
@@ -430,6 +468,19 @@ func testArkSeedanceChannelModel(channel model.ModelChannel, modelName string) (
 		return "Seedance 视频模型不会发送 /chat/completions 文本测试。已检查 Base URL、API Key 和模型名非空；未调用视频生成接口，因此未验证套餐额度或模型权限。", nil
 	}
 	return "Agent Plan / Seedance 视频模型配置格式已通过。后台测试不会调用视频生成接口，因此未验证 API Key、套餐额度或模型权限；请在画布中使用视频生成验证。", nil
+}
+
+func testGenerationsChannelModel(channel model.ModelChannel, modelName string) (string, error) {
+	if strings.TrimSpace(modelName) == "" {
+		return "", errors.New("缺少模型名称")
+	}
+	if strings.TrimSpace(channel.BaseURL) == "" {
+		return "", safeMessageError{message: "缺少接口地址"}
+	}
+	if strings.TrimSpace(channel.APIKey) == "" {
+		return "", safeMessageError{message: "缺少 API Key"}
+	}
+	return "POST /api/generations 视频模型配置格式已通过。后台测试不会发起视频生成，请在画布中实际生成验证 API Key、积分和模型权限。", nil
 }
 
 func readAdminChannelError(body []byte, statusCode int, fallback string) error {

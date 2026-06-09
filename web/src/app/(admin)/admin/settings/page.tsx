@@ -41,6 +41,10 @@ const emptySettings: AdminSettings = {
     private: { channels: [], promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
 };
 const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "" };
+const channelProtocolOptions = [
+    { label: "OpenAI", value: "openai" },
+    { label: "POST /api/generations", value: "generations" },
+] satisfies Array<{ label: string; value: AdminModelChannel["protocol"] }>;
 
 type SettingsTabKey = "public" | "private";
 type EditorMode = "visual" | "json";
@@ -637,7 +641,7 @@ export default function AdminSettingsPage() {
                             </Col>
                             <Col span={12}>
                                 <Form.Item name="protocol" label="协议">
-                                    <Select options={[{ label: "OpenAI", value: "openai" }]} />
+                                    <Select options={channelProtocolOptions} />
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
@@ -871,7 +875,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
     return {
-        protocol: "openai",
+        protocol: item.protocol || "openai",
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
 )
 
@@ -53,7 +54,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel, modelName, path)
 	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
@@ -88,7 +89,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	body, contentType, path, err = prepareAIProxyRequest(channel, modelName, body, contentType, path)
+	if err != nil {
+		log.Printf("AI proxy prepare request failed: model=%s path=%s err=%v", modelName, path, err)
+		Fail(w, "AI 接口请求失败")
+		return
+	}
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
@@ -213,8 +219,19 @@ func readAIRequestCount(body []byte, contentType string) int {
 
 var errMissingModel = &aiError{"缺少模型名称"}
 
-func resolveAIProxyPath(baseURL string, modelName string, path string) string {
-	if !isArkSeedanceVideo(baseURL, modelName) {
+func prepareAIProxyRequest(channel model.ModelChannel, modelName string, body []byte, contentType string, path string) ([]byte, string, string, error) {
+	if isGenerationsProtocol(channel.Protocol) && path == "/videos" {
+		nextBody, err := buildGenerationsVideoBody(body)
+		return nextBody, "application/json", path, err
+	}
+	return body, contentType, resolveAIProxyPath(channel, modelName, path), nil
+}
+
+func resolveAIProxyPath(channel model.ModelChannel, modelName string, path string) string {
+	if isGenerationsProtocol(channel.Protocol) {
+		return path
+	}
+	if !isArkSeedanceVideo(channel.BaseURL, modelName) {
 		return path
 	}
 	if path == "/videos" {
@@ -224,6 +241,127 @@ func resolveAIProxyPath(baseURL string, modelName string, path string) string {
 		return "/contents/generations/tasks/" + strings.TrimPrefix(path, "/videos/")
 	}
 	return path
+}
+
+func isGenerationsProtocol(protocol string) bool {
+	return strings.EqualFold(strings.TrimSpace(protocol), "generations")
+}
+
+func buildGenerationsVideoBody(body []byte) ([]byte, error) {
+	var source struct {
+		Model      string           `json:"model"`
+		ModelID    string           `json:"model_id"`
+		ModelDBID  string           `json:"model_db_id"`
+		Prompt     string           `json:"prompt"`
+		Content    []map[string]any `json:"content"`
+		Params     map[string]any   `json:"params"`
+		Ratio      any              `json:"ratio"`
+		Duration   any              `json:"duration"`
+		Resolution any              `json:"resolution"`
+		Audio      any              `json:"generate_audio"`
+		Watermark  any              `json:"watermark"`
+	}
+	if err := json.Unmarshal(body, &source); err != nil {
+		return nil, err
+	}
+
+	params := map[string]any{}
+	for key, value := range source.Params {
+		params[key] = value
+	}
+	if source.Ratio != nil {
+		params["aspectRatio"] = source.Ratio
+	}
+	if source.Duration != nil {
+		params["duration"] = source.Duration
+	}
+	if source.Resolution != nil {
+		params["resolution"] = source.Resolution
+	}
+	if source.Audio != nil {
+		params["generateAudio"] = source.Audio
+	}
+	if source.Watermark != nil {
+		params["watermark"] = source.Watermark
+	}
+
+	prompt := strings.TrimSpace(source.Prompt)
+	var imageURLs []string
+	var videoURLs []string
+	var audioURLs []string
+	for _, item := range source.Content {
+		itemType, _ := item["type"].(string)
+		role, _ := item["role"].(string)
+		switch itemType {
+		case "text":
+			if prompt == "" {
+				if text, ok := item["text"].(string); ok {
+					prompt = strings.TrimSpace(text)
+				}
+			}
+		case "image_url":
+			if url := nestedURL(item["image_url"]); url != "" {
+				if role == "first_frame" {
+					params["firstFrameUrl"] = url
+				} else if role == "last_frame" {
+					params["lastFrameUrl"] = url
+				} else {
+					imageURLs = append(imageURLs, url)
+				}
+			}
+		case "video_url":
+			if url := nestedURL(item["video_url"]); url != "" {
+				videoURLs = append(videoURLs, url)
+			}
+		case "audio_url":
+			if url := nestedURL(item["audio_url"]); url != "" {
+				audioURLs = append(audioURLs, url)
+			}
+		}
+	}
+	if len(imageURLs) > 0 {
+		params["imageUrls"] = imageURLs
+	}
+	if len(videoURLs) > 0 {
+		params["videoUrls"] = videoURLs
+	}
+	if len(audioURLs) > 0 {
+		params["audioUrls"] = audioURLs
+	}
+	if len(imageURLs)+len(videoURLs)+len(audioURLs) > 0 {
+		params["mode"] = "references"
+	}
+
+	payload := map[string]any{
+		"type":   "video",
+		"prompt": prompt,
+		"params": params,
+	}
+	if strings.TrimSpace(source.ModelDBID) != "" {
+		payload["model_db_id"] = strings.TrimSpace(source.ModelDBID)
+	} else {
+		modelID := firstNonEmptyString(source.ModelID, source.Model)
+		payload["model_id"] = modelID
+	}
+	return json.Marshal(payload)
+}
+
+func nestedURL(value any) string {
+	if typed, ok := value.(map[string]any); ok {
+		if url, ok := typed["url"].(string); ok {
+			return strings.TrimSpace(url)
+		}
+	}
+	return ""
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func isArkSeedanceVideo(baseURL string, modelName string) bool {
