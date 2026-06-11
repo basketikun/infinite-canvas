@@ -8,3 +8,5 @@ data/
 *.tsbuildinfo
 .DS_Store
 .idea
+.codex/
+openspec/
