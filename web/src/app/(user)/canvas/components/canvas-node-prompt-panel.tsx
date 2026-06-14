@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp, LoaderCircle } from "lucide-react";
 import { Button } from "antd";
 
@@ -39,23 +39,36 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
-    const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
+    const savedPrompt = isEditingExistingContent ? (node.metadata?.promptDraft ?? node.metadata?.prompt ?? "") : node.metadata?.prompt || "";
+    const [prompt, setPrompt] = useState(savedPrompt);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? config.count : 1 });
 
+    const keepCursorAtEnd = (value: string) => {
+        requestAnimationFrame(() => {
+            const textarea = textareaRef.current;
+            if (!textarea) return;
+            textarea.focus();
+            textarea.setSelectionRange(value.length, value.length);
+        });
+    };
+
     useEffect(() => {
-        setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
-    }, [isEditingExistingContent, node.id]);
+        setPrompt(savedPrompt);
+        keepCursorAtEnd(savedPrompt);
+    }, [node.id, savedPrompt]);
 
     const updatePrompt = (value: string) => {
         setPrompt(value);
-        if (!isEditingExistingContent) onPromptChange(node.id, value);
+        if (isEditingExistingContent) onConfigChange(node.id, { promptDraft: value });
+        else onPromptChange(node.id, value);
+        keepCursorAtEnd(value);
     };
 
     const submit = () => {
         const text = prompt.trim();
         if (!text || isRunning) return;
         onGenerate(node.id, mode, text);
-        setPrompt("");
     };
 
     return (
@@ -67,6 +80,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             onWheel={(event) => event.stopPropagation()}
         >
             <CanvasResourceMentionTextarea
+                ref={textareaRef}
                 value={prompt}
                 references={mentionReferences}
                 onChange={updatePrompt}

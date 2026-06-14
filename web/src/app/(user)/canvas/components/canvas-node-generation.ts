@@ -34,6 +34,10 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
         return buildComposerGenerationContext(inputs, prompt);
     }
 
+    return buildDefaultGenerationContext(inputs, prompt);
+}
+
+function buildDefaultGenerationContext(inputs: NodeGenerationInput[], prompt: string): NodeGenerationContext {
     const upstreamText = inputs
         .map((input) => input.text)
         .filter(Boolean)
@@ -89,16 +93,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
     const referenceAudios = selectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     if (!hasToken) {
-        return {
-            prompt,
-            referenceImages: [],
-            referenceVideos: [],
-            referenceAudios: [],
-            textCount: 0,
-            imageCount: 0,
-            videoCount: 0,
-            audioCount: 0,
-        };
+        return buildDefaultGenerationContext(inputs, prompt);
     }
 
     return {

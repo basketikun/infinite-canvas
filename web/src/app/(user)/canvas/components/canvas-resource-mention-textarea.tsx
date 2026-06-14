@@ -55,12 +55,12 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
 
     const syncMention = (nextValue: string, cursor: number) => {
         const prefix = nextValue.slice(0, cursor);
-        const match = /(^|\s)@([^\s@]*)$/.exec(prefix);
+        const match = /@([^\s@]*)$/.exec(prefix);
         if (!match || !references.some((item) => item.active)) {
             closeMention();
             return;
         }
-        setMention({ start: cursor - match[2].length - 1, query: match[2] });
+        setMention({ start: cursor - match[1].length - 1, query: match[1] });
         setActiveIndex(0);
     };
 
@@ -71,7 +71,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         const insertText = `${reference.label} `;
         const next = `${value.slice(0, mention.start)}${insertText}${value.slice(end)}`;
         closeMention();
-        updateValue(next, mention.start + insertText.length);
+        updateValue(next, next.length);
     };
 
     const syncOverlayScroll = () => {
@@ -97,7 +97,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     return (
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
             {showOverlay ? (
-                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
+                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 z-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
                     <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} placeholder={!value} />
                 </div>
             ) : null}
@@ -109,7 +109,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     else if (forwardedRef) forwardedRef.current = node;
                 }}
                 value={value}
-                className={className}
+                className={`${className || ""} relative z-10`}
                 style={mergedStyle}
                 onChange={(event) => {
                     const next = event.target.value;
@@ -185,7 +185,7 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
         <>
             {value.split(pattern).map((part, index) =>
                 labels.includes(part) ? (
-                    <span key={`${part}-${index}`} className="rounded-md bg-[#2f80ff]/16 px-1 py-0.5 font-medium text-[#2f80ff] ring-1 ring-[#2f80ff]/24">
+                    <span key={`${part}-${index}`} className="rounded-sm bg-[#2f80ff]/16 text-[#2f80ff]">
                         {part}
                     </span>
                 ) : (

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/basketikun/infinite-canvas/service"
@@ -85,6 +87,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	channel, err := service.SelectModelChannel(modelName)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
+		Fail(w, "AI 接口请求失败")
+		return
+	}
+	path, body, contentType, err = adaptAIProxyRequest(channel.BaseURL, modelName, path, body, contentType)
+	if err != nil {
+		log.Printf("AI proxy adapt request failed: model=%s path=%s err=%v", modelName, path, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
@@ -213,6 +221,122 @@ func readAIRequestCount(body []byte, contentType string) int {
 
 var errMissingModel = &aiError{"缺少模型名称"}
 
+func adaptAIProxyRequest(baseURL string, modelName string, path string, body []byte, contentType string) (string, []byte, string, error) {
+	if !isArkSeedreamImage(baseURL, modelName) {
+		return path, body, contentType, nil
+	}
+	if path == "/images/edits" {
+		nextBody, err := arkSeedreamEditToGeneration(body, contentType)
+		return "/images/generations", nextBody, "application/json", err
+	}
+	if path == "/images/generations" && strings.HasPrefix(contentType, "application/json") {
+		nextBody, err := normalizeArkSeedreamImageJSON(body)
+		return path, nextBody, contentType, err
+	}
+	return path, body, contentType, nil
+}
+
+func arkSeedreamEditToGeneration(body []byte, contentType string) ([]byte, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, err
+	}
+	form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(64 << 20)
+	if err != nil {
+		return nil, err
+	}
+	defer form.RemoveAll()
+
+	payload := map[string]any{}
+	for key, values := range form.Value {
+		if len(values) == 0 || strings.TrimSpace(values[0]) == "" {
+			continue
+		}
+		switch key {
+		case "n":
+			if value, err := strconv.Atoi(values[0]); err == nil {
+				payload[key] = value
+			}
+		case "size":
+			payload[key] = normalizeArkSeedreamImageSize(values[0])
+		default:
+			payload[key] = values[0]
+		}
+	}
+	images, err := readMultipartImagesAsDataURLs(form.File["image"])
+	if err != nil {
+		return nil, err
+	}
+	if len(images) > 0 {
+		payload["image"] = images
+	}
+	if _, ok := payload["response_format"]; !ok {
+		payload["response_format"] = "b64_json"
+	}
+	if _, ok := payload["watermark"]; !ok {
+		payload["watermark"] = false
+	}
+	return json.Marshal(payload)
+}
+
+func normalizeArkSeedreamImageJSON(body []byte) ([]byte, error) {
+	payload := map[string]any{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if size, ok := payload["size"].(string); ok {
+		payload["size"] = normalizeArkSeedreamImageSize(size)
+	}
+	return json.Marshal(payload)
+}
+
+func readMultipartImagesAsDataURLs(files []*multipart.FileHeader) ([]string, error) {
+	images := make([]string, 0, len(files))
+	for _, header := range files {
+		file, err := header.Open()
+		if err != nil {
+			return nil, err
+		}
+		data, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		contentType := header.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = http.DetectContentType(data)
+		}
+		images = append(images, "data:"+contentType+";base64,"+base64.StdEncoding.EncodeToString(data))
+	}
+	return images, nil
+}
+
+func normalizeArkSeedreamImageSize(size string) string {
+	width, height := 0, 0
+	if _, err := fmt.Sscanf(strings.ToLower(strings.TrimSpace(size)), "%dx%d", &width, &height); err != nil || width <= 0 || height <= 0 {
+		return size
+	}
+	pixels := width * height
+	const minPixels = 3686400
+	if pixels >= minPixels {
+		return size
+	}
+	scale := 1
+	for width*height*scale*scale < minPixels {
+		scale++
+	}
+	width = roundUpToMultiple(width*scale, 16)
+	height = roundUpToMultiple(height*scale, 16)
+	return fmt.Sprintf("%dx%d", width, height)
+}
+
+func roundUpToMultiple(value int, step int) int {
+	return ((value + step - 1) / step) * step
+}
+
 func resolveAIProxyPath(baseURL string, modelName string, path string) string {
 	if !isArkSeedanceVideo(baseURL, modelName) {
 		return path
@@ -230,6 +354,12 @@ func isArkSeedanceVideo(baseURL string, modelName string) bool {
 	base := strings.ToLower(baseURL)
 	model := strings.ToLower(modelName)
 	return strings.Contains(model, "seedance") || strings.Contains(model, "doubao-seedance") || strings.Contains(base, "/api/plan/v3")
+}
+
+func isArkSeedreamImage(baseURL string, modelName string) bool {
+	base := strings.ToLower(baseURL)
+	model := strings.ToLower(modelName)
+	return strings.Contains(base, "/api/plan/v3") && strings.Contains(model, "seedream")
 }
 
 func aiStatusMessage(statusCode int) string {

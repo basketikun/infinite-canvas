@@ -1952,7 +1952,7 @@ function InfiniteCanvasPage() {
                                       : isImageNode
                                         ? {
                                               ...node,
-                                              metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined },
+                                              metadata: { ...node.metadata, prompt: effectivePrompt, promptDraft: undefined, status: NODE_STATUS_SUCCESS, errorDetails: undefined },
                                           }
                                         : {
                                               ...node,
@@ -2079,7 +2079,7 @@ function InfiniteCanvasPage() {
 
                 let streamed = "";
                 const isConfigNode = sourceNode?.type === CanvasNodeType.Config;
-                const textCount = isConfigNode ? getGenerationCount(generationConfig.count) : 1;
+                const textCount = 1;
                 const parentConfig = NODE_DEFAULT_SIZE[isConfigNode ? CanvasNodeType.Config : CanvasNodeType.Text];
                 const textConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
                 const parentPosition = sourceNode?.position || { x: 0, y: 0 };
