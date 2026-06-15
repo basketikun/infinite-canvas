@@ -27,6 +27,7 @@ import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-conne
 import { CanvasConfigComposer } from "../components/canvas-config-composer";
 import { CanvasConfigNodePanel } from "../components/canvas-config-node-panel";
 import { CanvasAssistantPanel } from "../components/canvas-assistant-panel";
+import { CanvasAddNodesMenu } from "../components/canvas-add-nodes-menu";
 import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "../components/canvas-node-crop-dialog";
@@ -70,6 +71,12 @@ type CanvasClipboard = {
 
 type PendingConnectionCreate = {
     connection: ConnectionHandle;
+    position: Position;
+};
+
+type AddNodesMenuState = {
+    x: number;
+    y: number;
     position: Position;
 };
 
@@ -269,6 +276,7 @@ function InfiniteCanvasPage() {
     const [mouseWorld, setMouseWorld] = useState<Position>({ x: 0, y: 0 });
     const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [addNodesMenu, setAddNodesMenu] = useState<AddNodesMenuState | null>(null);
     const [runningNodeId, setRunningNodeId] = useState<string | null>(null);
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
@@ -506,6 +514,7 @@ function InfiniteCanvasPage() {
                 setConnections((prev) => [...prev, { id: `conn-${Date.now()}`, fromNodeId, toNodeId }]);
             }
             setContextMenu(null);
+            setAddNodesMenu(null);
         },
         [message],
     );
@@ -523,6 +532,7 @@ function InfiniteCanvasPage() {
             setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
+            setAddNodesMenu(null);
             if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
             setPendingConnectionCreate(null);
             setConnecting(null);
@@ -671,6 +681,7 @@ function InfiniteCanvasPage() {
             setNodes((prev) => [...prev, newNode]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
+            setAddNodesMenu(null);
             if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
         },
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
@@ -733,6 +744,7 @@ function InfiniteCanvasPage() {
         setSelectedNodeIds(new Set());
         setSelectedConnectionId(null);
         setContextMenu(null);
+        setAddNodesMenu(null);
         setSelectionBox(null);
         setHoveredNodeId(null);
         setToolbarNodeId(null);
@@ -769,6 +781,7 @@ function InfiniteCanvasPage() {
         setNodes((prev) => [...prev, next]);
         setSelectedNodeIds(new Set([id]));
         setSelectedConnectionId(null);
+        setAddNodesMenu(null);
         setDialogNodeId(id);
     }, []);
 
@@ -843,6 +856,7 @@ function InfiniteCanvasPage() {
         setSelectedNodeIds(new Set(nextNodes.map((node) => node.id)));
         setSelectedConnectionId(null);
         setContextMenu(null);
+        setAddNodesMenu(null);
         setDialogNodeId(nextNodes[0]?.id || null);
         return true;
     }, [getCanvasCenter]);
@@ -850,6 +864,7 @@ function InfiniteCanvasPage() {
     const resetViewport = useCallback(() => {
         setViewport({ x: size.width / 2, y: size.height / 2, k: 1 });
         setContextMenu(null);
+        setAddNodesMenu(null);
     }, [size.height, size.width]);
 
     const setZoomScale = useCallback(
@@ -861,6 +876,7 @@ function InfiniteCanvasPage() {
                 k: nextScale,
             }));
             setContextMenu(null);
+            setAddNodesMenu(null);
         },
         [size.height, size.width],
     );
@@ -917,6 +933,7 @@ function InfiniteCanvasPage() {
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {
             setContextMenu(null);
+            setAddNodesMenu(null);
             if (pendingConnectionCreateRef.current) cancelPendingConnectionCreate();
             if (event.button !== 0) return;
 
@@ -1114,6 +1131,7 @@ function InfiniteCanvasPage() {
                     setConnecting(null);
                 } else {
                     setMouseWorld(screenToCanvas(event.clientX, event.clientY));
+                    setAddNodesMenu(null);
                     setPendingConnectionCreate({ connection: currentConnection, position: screenToCanvas(event.clientX, event.clientY) });
                 }
             }
@@ -1831,7 +1849,27 @@ function InfiniteCanvasPage() {
         if ((event.target as HTMLElement).closest("[data-node-id]")) return;
         event.preventDefault();
         setContextMenu(null);
+        setAddNodesMenu(null);
     }, []);
+
+    const handleCanvasDoubleClick = useCallback(
+        (event: ReactMouseEvent<HTMLDivElement>) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target) return;
+            if (target.closest("[data-node-id],[data-connection-id],[data-canvas-no-zoom],[data-connection-create-menu],[data-canvas-add-nodes-menu],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
+
+            event.preventDefault();
+            setContextMenu(null);
+            cancelPendingConnectionCreate();
+            setSelectedConnectionId(null);
+            setAddNodesMenu({
+                x: event.clientX,
+                y: event.clientY,
+                position: screenToCanvas(event.clientX, event.clientY),
+            });
+        },
+        [cancelPendingConnectionCreate, screenToCanvas],
+    );
 
     const handleGenerateNode = useCallback(
         async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
@@ -2347,8 +2385,10 @@ function InfiniteCanvasPage() {
                     onViewportChange={(next) => {
                         setViewport(next);
                         setContextMenu(null);
+                        setAddNodesMenu(null);
                     }}
                     onCanvasMouseDown={handleCanvasMouseDown}
+                    onCanvasDoubleClick={handleCanvasDoubleClick}
                     onCanvasDeselect={deselectCanvas}
                     onContextMenu={preventCanvasContextMenu}
                     onDrop={handleDrop}
@@ -2376,10 +2416,12 @@ function InfiniteCanvasPage() {
                                             setSelectedConnectionId(connection.id);
                                             setSelectedNodeIds(new Set());
                                             setContextMenu(null);
+                                            setAddNodesMenu(null);
                                         }}
                                         onContextMenu={(event) => {
                                             setSelectedConnectionId(connection.id);
                                             setSelectedNodeIds(new Set());
+                                            setAddNodesMenu(null);
                                             setContextMenu({ type: "connection", x: event.clientX, y: event.clientY, connectionId: connection.id });
                                         }}
                                     />
@@ -2470,6 +2512,7 @@ function InfiniteCanvasPage() {
                             onContextMenu={(event, id) => {
                                 event.preventDefault();
                                 event.stopPropagation();
+                                setAddNodesMenu(null);
                                 setContextMenu({ type: "node", x: event.clientX, y: event.clientY, nodeId: id });
                             }}
                         />
@@ -2490,6 +2533,17 @@ function InfiniteCanvasPage() {
                     ) : null}
                     {pendingConnectionCreate ? <ConnectionCreateMenu pending={pendingConnectionCreate} onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)} onClose={cancelPendingConnectionCreate} /> : null}
                 </InfiniteCanvas>
+
+                {addNodesMenu ? (
+                    <CanvasAddNodesMenu
+                        menu={addNodesMenu}
+                        onClose={() => setAddNodesMenu(null)}
+                        onCreate={(type) => {
+                            createNode(type, addNodesMenu.position);
+                            setAddNodesMenu(null);
+                        }}
+                    />
+                ) : null}
 
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || nodeImageSettingsOpen ? null : toolbarNode}
@@ -2570,7 +2624,18 @@ function InfiniteCanvasPage() {
                     }}
                 />
 
-                {isMiniMapOpen ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}
+                {isMiniMapOpen ? (
+                    <Minimap
+                        nodes={nodes}
+                        viewport={viewport}
+                        viewportSize={size}
+                        onViewportChange={(next) => {
+                            setViewport(next);
+                            setContextMenu(null);
+                            setAddNodesMenu(null);
+                        }}
+                    />
+                ) : null}
 
                 <CanvasZoomControls scale={viewport.k} onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
 
