@@ -90,16 +90,11 @@ export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest("[data-canvas-no-zoom]")) return;
         if (target?.closest("[data-connection-create-menu]")) return;
-        const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id]");
+        const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id],[data-selection-bounding-box]");
 
-        if (event.button === 0 && (event.ctrlKey || event.metaKey) && isBackgroundClick) {
-            event.preventDefault();
-            event.currentTarget.setPointerCapture(event.pointerId);
-            onCanvasMouseDown?.(event);
-            return;
-        }
+        if (!isBackgroundClick) return;
 
-        if (event.button === 1 || (event.button === 0 && !isSpacePressed && isBackgroundClick)) {
+        if (event.button === 1 || (event.button === 0 && isSpacePressed)) {
             event.preventDefault();
             event.currentTarget.setPointerCapture(event.pointerId);
             panState.current = {
@@ -114,8 +109,10 @@ export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines
             return;
         }
 
-        if (event.button === 0 && isSpacePressed && isBackgroundClick) {
+        if (event.button === 0) {
             event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onCanvasMouseDown?.(event);
         }
     };
 

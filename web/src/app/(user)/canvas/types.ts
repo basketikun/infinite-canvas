@@ -15,13 +15,13 @@ export enum CanvasNodeType {
     Config = "config",
     Video = "video",
     Audio = "audio",
-    ImageEditor = 'image-editor',
-    VideoEditor = 'video-editor',
-    Storyboard = 'storyboard',
-    CameraAngle = 'camera-angle',
+    ImageEditor = "image-editor",
+    VideoEditor = "video-editor",
+    Storyboard = "storyboard",
+    CameraAngle = "camera-angle",
     // Local open-source model nodes
-    LocalImageModel = 'local-image-model',
-    LocalVideoModel = 'local-video-model'
+    LocalImageModel = "local-image-model",
+    LocalVideoModel = "local-video-model",
 }
 
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
@@ -76,6 +76,7 @@ export type CanvasNodeData = {
     width: number;
     height: number;
     metadata?: CanvasNodeMetadata;
+    groupId?: string;
 };
 
 export type CanvasConnection = {
@@ -130,6 +131,13 @@ export type SelectionBox = {
     currentWorldY: number;
     additive: boolean;
     initialSelectedNodeIds: string[];
+};
+
+export type CanvasNodeGroup = {
+    id: string;
+    nodeIds: string[];
+    label: string;
+    storyContext?: unknown;
 };
 
 export type ContextMenuState =
