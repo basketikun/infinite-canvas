@@ -29,7 +29,7 @@ function responseHeaders(response: Response) {
 
 async function proxy(request: NextRequest, context: RouteContext) {
     const { path } = await context.params;
-    const apiBaseUrl = process.env.API_BASE_URL || "http://127.0.0.1:8080";
+    const apiBaseUrl = process.env.API_BASE_URL || "http://localhost:3000";
     const relayApiBaseUrl = process.env.MANGE_BACKEND_API_URL || apiBaseUrl;
     const encodedPath = path.map(encodeURIComponent).join("/");
     const isCanvasRelay = path[0] === "canvas";

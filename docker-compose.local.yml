@@ -1,13 +1,11 @@
 services:
-  app:
+  web:
     image: infinite-canvas:local
     build:
       context: .
       dockerfile: Dockerfile
     env_file:
       - .env
-    volumes:
-      - ./data:/app/data
     ports:
       - "3002:3000"
     restart: unless-stopped
