@@ -65,7 +65,7 @@ export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines
 
     const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
+        if (target?.closest("textarea,[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
 
         const delta = -event.deltaY;
         const factor = Math.pow(1.1, delta / 100);
@@ -162,7 +162,19 @@ export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines
         const container = containerRef.current;
         if (!container) return;
 
-        const preventWheelScroll = (event: WheelEvent) => event.preventDefault();
+        const preventWheelScroll = (event: WheelEvent) => {
+            const target = event.target;
+            // Allow native scrolling for textareas and elements with overflow scroll
+            if (target instanceof Element) {
+                if (target.tagName === 'TEXTAREA') return;
+                const style = window.getComputedStyle(target);
+                if (target.scrollHeight > target.clientHeight &&
+                    (style.overflowY === 'auto' || style.overflowY === 'scroll')) return;
+                if (target.scrollWidth > target.clientWidth &&
+                    (style.overflowX === 'auto' || style.overflowX === 'scroll')) return;
+            }
+            event.preventDefault();
+        };
         container.addEventListener("wheel", preventWheelScroll, { passive: false });
         return () => container.removeEventListener("wheel", preventWheelScroll);
     }, [containerRef]);
