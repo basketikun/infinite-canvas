@@ -152,4 +152,10 @@ export type ContextMenuState =
           x: number;
           y: number;
           connectionId: string;
+      }
+    | {
+          type: "canvas";
+          x: number;
+          y: number;
+          position: Position;
       };

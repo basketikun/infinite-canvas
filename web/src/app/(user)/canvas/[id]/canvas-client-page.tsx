@@ -74,6 +74,7 @@ type CanvasClipboard = {
 type PendingConnectionCreate = {
     connection: ConnectionHandle;
     position: Position;
+    placeByHandle?: boolean;
 };
 
 type AddNodesMenuState = {
@@ -99,6 +100,9 @@ const VIDEO_NODE_MAX_WIDTH = 420;
 const VIDEO_NODE_MAX_HEIGHT = 420;
 const CONNECTION_HANDLE_HIT_RADIUS = 40;
 const CONNECTION_NODE_HIT_PADDING = 32;
+const CONNECTION_TAP_MS = 200;
+const CONNECTION_TAP_MOVE_PX = 6;
+const CONNECTED_NODE_GAP = 96;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
@@ -268,6 +272,7 @@ function InfiniteCanvasPage() {
         startY: 0,
         initialSelectedNodes: [],
     });
+    const connectionTapRef = useRef<{ startTime: number; startX: number; startY: number } | null>(null);
 
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
@@ -321,6 +326,7 @@ function InfiniteCanvasPage() {
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
+    const [previewScale, setPreviewScale] = useState(1);
     const [assistantCollapsed, setAssistantCollapsed] = useState(true);
     const [assistantMounted, setAssistantMounted] = useState(false);
     const [titleEditing, setTitleEditing] = useState(false);
@@ -472,6 +478,10 @@ function InfiniteCanvasPage() {
     }, [selectionBox]);
 
     useEffect(() => {
+        setPreviewScale(1);
+    }, [previewNodeId]);
+
+    useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
 
@@ -559,7 +569,16 @@ function InfiniteCanvasPage() {
     const createConnectedNode = useCallback(
         (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
             const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
-            const newNode = createCanvasNode(type, pending.position, metadata);
+            const sourceNode = nodesRef.current.find((node) => node.id === pending.connection.nodeId);
+            const spec = getNodeSpec(type);
+            const centerPosition =
+                pending.placeByHandle && sourceNode
+                    ? {
+                          x: pending.connection.handleType === "source" ? sourceNode.position.x + sourceNode.width + CONNECTED_NODE_GAP + spec.width / 2 : sourceNode.position.x - CONNECTED_NODE_GAP - spec.width / 2,
+                          y: sourceNode.position.y + sourceNode.height / 2,
+                      }
+                    : pending.position;
+            const newNode = createCanvasNode(type, centerPosition, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
             if (!connection) {
                 message.warning("配置节点之间不能连接");
@@ -578,6 +597,7 @@ function InfiniteCanvasPage() {
     );
 
     const cancelPendingConnectionCreate = useCallback(() => {
+        connectionTapRef.current = null;
         setPendingConnectionCreate(null);
         setConnecting(null);
     }, [setConnecting]);
@@ -801,7 +821,7 @@ function InfiniteCanvasPage() {
         const newGroup: CanvasNodeGroup = {
             id: groupId,
             nodeIds,
-            label: "New Group",
+            label: "新分组",
         };
 
         setGroups((prev) => [
@@ -969,8 +989,7 @@ function InfiniteCanvasPage() {
         setDialogNodeId(id);
     }, []);
 
-    const copySelectedNodes = useCallback(() => {
-        const selectedIds = selectedNodeIdsRef.current;
+    const copyNodesToClipboard = useCallback((selectedIds: Set<string>) => {
         if (!selectedIds.size) return;
 
         const copiedNodes = nodesRef.current
@@ -988,6 +1007,10 @@ function InfiniteCanvasPage() {
             connections: connectionsRef.current.filter((connection) => selectedIds.has(connection.fromNodeId) && selectedIds.has(connection.toNodeId)).map((connection) => ({ ...connection })),
         };
     }, []);
+
+    const copySelectedNodes = useCallback(() => {
+        copyNodesToClipboard(selectedNodeIdsRef.current);
+    }, [copyNodesToClipboard]);
 
     const pasteCopiedNodes = useCallback(() => {
         const clipboard = clipboardRef.current;
@@ -1300,9 +1323,15 @@ function InfiniteCanvasPage() {
             const currentConnection = connectingParamsRef.current;
             if (currentConnection) {
                 const dropTarget = getConnectionDropTarget(event.clientX, event.clientY, currentConnection);
+                const tap = connectionTapRef.current;
+                const isShortTap = Boolean(tap && Date.now() - tap.startTime <= CONNECTION_TAP_MS && Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) <= CONNECTION_TAP_MOVE_PX);
                 if (dropTarget.nodeId) {
                     connectNodes(currentConnection, dropTarget.nodeId);
                     setConnecting(null);
+                } else if (isShortTap) {
+                    setMouseWorld(screenToCanvas(event.clientX, event.clientY));
+                    setAddNodesMenu(null);
+                    setPendingConnectionCreate({ connection: currentConnection, position: screenToCanvas(event.clientX, event.clientY), placeByHandle: true });
                 } else if (dropTarget.isNearNode) {
                     setConnecting(null);
                 } else {
@@ -1310,6 +1339,7 @@ function InfiniteCanvasPage() {
                     setAddNodesMenu(null);
                     setPendingConnectionCreate({ connection: currentConnection, position: screenToCanvas(event.clientX, event.clientY) });
                 }
+                connectionTapRef.current = null;
             }
         },
         [connectNodes, finishNodeDrag, getConnectionDropTarget, screenToCanvas, setConnecting],
@@ -1508,6 +1538,7 @@ function InfiniteCanvasPage() {
     const handleConnectStart = useCallback(
         (event: ReactMouseEvent, nodeId: string, handleType: "source" | "target") => {
             event.stopPropagation();
+            connectionTapRef.current = { startTime: Date.now(), startX: event.clientX, startY: event.clientY };
             setMouseWorld(screenToCanvas(event.clientX, event.clientY));
             setConnecting({ nodeId, handleType });
             connectionTargetNodeIdRef.current = null;
@@ -2049,12 +2080,20 @@ function InfiniteCanvasPage() {
         setTitleEditing(false);
     }, [projectId, renameProject, titleDraft]);
 
-    const preventCanvasContextMenu = useCallback((event: ReactMouseEvent) => {
-        if ((event.target as HTMLElement).closest("[data-node-id]")) return;
-        event.preventDefault();
-        setContextMenu(null);
-        setAddNodesMenu(null);
-    }, []);
+    const preventCanvasContextMenu = useCallback(
+        (event: ReactMouseEvent) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target) return;
+            if (target.closest("[data-node-id],[data-connection-id],[data-canvas-no-zoom],[data-connection-create-menu],[data-canvas-add-nodes-menu],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
+
+            event.preventDefault();
+            cancelPendingConnectionCreate();
+            setSelectedConnectionId(null);
+            setAddNodesMenu(null);
+            setContextMenu({ type: "canvas", x: event.clientX, y: event.clientY, position: screenToCanvas(event.clientX, event.clientY) });
+        },
+        [cancelPendingConnectionCreate, screenToCanvas],
+    );
 
     const handleCanvasDoubleClick = useCallback(
         (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -2977,18 +3016,65 @@ function InfiniteCanvasPage() {
                 {contextMenu ? (
                     <CanvasNodeContextMenu
                         menu={contextMenu}
+                        canUndo={historyState.canUndo}
+                        canRedo={historyState.canRedo}
                         onClose={() => setContextMenu(null)}
                         onDuplicate={() => {
                             if (contextMenu.type !== "node") return;
                             duplicateNode(contextMenu.nodeId);
                             setContextMenu(null);
                         }}
+                        onCopyNode={() => {
+                            if (contextMenu.type !== "node") return;
+                            const ids = selectedNodeIdsRef.current.has(contextMenu.nodeId) ? selectedNodeIdsRef.current : new Set([contextMenu.nodeId]);
+                            copyNodesToClipboard(ids);
+                            message.success("已复制节点");
+                            setContextMenu(null);
+                        }}
+                        onSaveAsset={() => {
+                            if (contextMenu.type !== "node") return;
+                            const node = nodeById.get(contextMenu.nodeId);
+                            if (node) void saveNodeAsset(node);
+                            setContextMenu(null);
+                        }}
                         onDelete={() => {
                             if (contextMenu.type === "node") {
                                 deleteNodes(new Set([contextMenu.nodeId]));
-                            } else {
+                            } else if (contextMenu.type === "connection") {
                                 deleteConnection(contextMenu.connectionId);
                             }
+                            setContextMenu(null);
+                        }}
+                        onCreateNode={(type) => {
+                            if (contextMenu.type !== "canvas") return;
+                            createNode(type, contextMenu.position);
+                            setContextMenu(null);
+                        }}
+                        onUpload={() => {
+                            if (contextMenu.type !== "canvas") return;
+                            handleUploadRequest(undefined, contextMenu.position);
+                            setContextMenu(null);
+                        }}
+                        onOpenMyAssets={() => {
+                            setAssetPickerTab("my-assets");
+                            setAssetPickerOpen(true);
+                            setContextMenu(null);
+                        }}
+                        onOpenAssetLibrary={() => {
+                            setAssetPickerTab("library");
+                            setAssetPickerOpen(true);
+                            setContextMenu(null);
+                        }}
+                        onUndo={() => {
+                            undoCanvas();
+                            setContextMenu(null);
+                        }}
+                        onRedo={() => {
+                            redoCanvas();
+                            setContextMenu(null);
+                        }}
+                        onPaste={() => {
+                            if (!pasteCopiedNodes()) void pasteSystemClipboard();
                             setContextMenu(null);
                         }}
                     />
@@ -3023,9 +3109,27 @@ function InfiniteCanvasPage() {
                     onCancel={() => setPreviewNodeId(null)}
                     footer={null}
                     width="auto"
-                    styles={{ body: { padding: 0, display: "flex", justifyContent: "center", alignItems: "center", maxHeight: "80vh" } }}
+                    styles={{ body: { padding: 0, display: "flex", justifyContent: "center", alignItems: "center", maxHeight: "80vh", overflow: "auto" } }}
                 >
-                    {previewNode?.metadata?.content ? <img src={previewNode.metadata.content} alt={previewNode.title || "图片"} style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }} /> : null}
+                    {previewNode?.metadata?.content ? (
+                        <div
+                            className="flex min-h-[240px] min-w-[320px] items-center justify-center overflow-auto p-6"
+                            data-canvas-no-zoom
+                            onWheel={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setPreviewScale((scale) => Math.min(6, Math.max(0.2, scale * Math.exp(-event.deltaY * 0.001))));
+                            }}
+                            onDoubleClick={() => setPreviewScale(1)}
+                        >
+                            <img
+                                src={previewNode.metadata.content}
+                                alt={previewNode.title || "图片"}
+                                draggable={false}
+                                style={{ maxWidth: "calc(100vw - 120px)", maxHeight: "80vh", objectFit: "contain", transform: `scale(${previewScale})`, transformOrigin: "center", transition: "transform 80ms ease" }}
+                            />
+                        </div>
+                    ) : null}
                 </Modal>
 
                 <Modal

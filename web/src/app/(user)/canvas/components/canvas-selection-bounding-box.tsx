@@ -122,7 +122,7 @@ export function CanvasSelectionBoundingBox({ selectedNodes, group, viewport, onG
                     }}
                     onMouseDown={(event) => event.stopPropagation()}
                 >
-                    <ToolbarButton icon={<Group className="size-4" />} label="Group" onClick={onGroup} />
+                    <ToolbarButton icon={<Group className="size-4" />} label="分组" onClick={onGroup} />
                 </div>
             ) : null}
 
@@ -136,12 +136,12 @@ export function CanvasSelectionBoundingBox({ selectedNodes, group, viewport, onG
                     onMouseDown={(event) => event.stopPropagation()}
                 >
                     <div className="relative">
-                        <ToolbarButton icon={<Rows3 className="size-4" />} label="Sort" onClick={() => setSortOpen((value) => !value)} />
+                        <ToolbarButton icon={<Rows3 className="size-4" />} label="排序" onClick={() => setSortOpen((value) => !value)} />
                         {sortOpen ? (
                             <div className="absolute bottom-full left-0 mb-1 w-36 overflow-hidden rounded-xl border shadow-xl backdrop-blur" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}>
                                 <SortButton
                                     icon={<SplitSquareVertical className="size-4 rotate-90" />}
-                                    label="Horizontal"
+                                    label="横向"
                                     onClick={() => {
                                         onSortNodes?.("horizontal");
                                         setSortOpen(false);
@@ -149,7 +149,7 @@ export function CanvasSelectionBoundingBox({ selectedNodes, group, viewport, onG
                                 />
                                 <SortButton
                                     icon={<SplitSquareVertical className="size-4" />}
-                                    label="Vertical"
+                                    label="纵向"
                                     onClick={() => {
                                         onSortNodes?.("vertical");
                                         setSortOpen(false);
@@ -157,7 +157,7 @@ export function CanvasSelectionBoundingBox({ selectedNodes, group, viewport, onG
                                 />
                                 <SortButton
                                     icon={<Grid2x2 className="size-4" />}
-                                    label="Grid"
+                                    label="网格"
                                     onClick={() => {
                                         onSortNodes?.("grid");
                                         setSortOpen(false);
@@ -166,7 +166,7 @@ export function CanvasSelectionBoundingBox({ selectedNodes, group, viewport, onG
                             </div>
                         ) : null}
                     </div>
-                    <ToolbarButton icon={<Ungroup className="size-4" />} label="Ungroup" onClick={onUngroup} />
+                    <ToolbarButton icon={<Ungroup className="size-4" />} label="取消分组" onClick={onUngroup} />
                 </div>
             ) : null}
         </div>

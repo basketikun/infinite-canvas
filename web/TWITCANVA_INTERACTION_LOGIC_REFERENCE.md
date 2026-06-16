@@ -22,11 +22,11 @@
 因此，后续迁移重点不是重做这些基础能力，而是补齐体验差异：
 
 1. 普通滚轮/触控板双指平移，`Ctrl/Cmd + wheel` 和触控板捏合缩放。已完成。
-2. 节点内部滚动和浮层事件隔离。
-3. 右键空白画布菜单和节点右键菜单补齐。
-4. 连接点短按打开添加菜单，并按连接点方向落新节点。
-5. 分组工具条中文化。
-6. 图片预览弹窗内部缩放。
+2. 节点内部滚动和浮层事件隔离。已完成。
+3. 右键空白画布菜单和节点右键菜单补齐。已完成。
+4. 连接点短按打开添加菜单，并按连接点方向落新节点。已完成。
+5. 分组工具条中文化。已完成。
+6. 图片预览弹窗内部缩放。已完成。
 7. 节点内容拖拽到助手作为附件。
 8. 按本项目节点类型重新设计连接类型校验。
 
@@ -165,24 +165,26 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - 修改 `handleWheel`。
 - 事件目标在节点内部输入、弹窗、下拉、媒体控件中时直接忽略画布处理。
 - 没有 `ctrlKey/metaKey` 时：
-  - `viewport.x = viewport.x - event.deltaX`
-  - `viewport.y = viewport.y - event.deltaY`
-  - `viewport.k` 不变。
+    - `viewport.x = viewport.x - event.deltaX`
+    - `viewport.y = viewport.y - event.deltaY`
+    - `viewport.k` 不变。
 - 有 `ctrlKey/metaKey` 时：
-  - 继续使用本项目当前以鼠标位置为锚点的缩放算法。
-  - 缩放范围继续沿用本项目 `0.05 ~ 5`，不要直接改成 TwitCanva 的 `0.1 ~ 2`。
+    - 继续使用本项目当前以鼠标位置为锚点的缩放算法。
+    - 缩放范围继续沿用本项目 `0.05 ~ 5`，不要直接改成 TwitCanva 的 `0.1 ~ 2`。
 - 触控板捏合缩放：
-  - Chromium 类浏览器通常会映射为 `ctrlKey + wheel`，走同一缩放逻辑。
-  - Safari 额外监听 `gesturestart` / `gesturechange`，使用 `event.scale` 做缩放兜底。
+    - Chromium 类浏览器通常会映射为 `ctrlKey + wheel`，走同一缩放逻辑。
+    - Safari 额外监听 `gesturestart` / `gesturechange`，使用 `event.scale` 做缩放兜底。
 - 更新快捷键弹窗文案：
-  - “滚轮 / 双指：平移画布”
-  - “Ctrl/Cmd + 滚轮 / 触控板捏合：缩放画布”
+    - “滚轮 / 双指：平移画布”
+    - “Ctrl/Cmd + 滚轮 / 触控板捏合：缩放画布”
 
 暂不迁移：
 
 - TwitCanva 的“缩放时如果鼠标悬停在节点上，则以节点中心作为缩放锚点，并在放大时轻微把节点拉向视口中心”的智能聚焦增强。普通 `Ctrl/Cmd + wheel` 缩放和触控板捏合缩放已经实现。
 
 ### 节点内部滚轮和指针事件隔离
+
+实现状态：已实现。
 
 当前差异：
 
@@ -195,7 +197,7 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - `web/src/app/(user)/canvas/components/canvas-node.tsx`
 - 画布内各类弹窗、浮层、下拉组件。
 
-迁移方案：
+实现说明：
 
 - 对节点内部可滚区域补 `onWheel={(event) => event.stopPropagation()}`。
 - 对媒体控件、Ant Design 下拉、弹窗、Popover、Dropdown 保留或补充 `data-canvas-no-zoom`。
@@ -203,6 +205,8 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - 确认图片预览、裁剪、蒙版、拆分等弹窗内滚轮不会平移画布。
 
 ### 右键空白画布全局菜单
+
+实现状态：已实现。
 
 当前差异：
 
@@ -215,35 +219,37 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - `web/src/app/(user)/canvas/components/canvas-context-menu.tsx`
 - `web/src/app/(user)/canvas/types.ts`
 
-迁移方案：
+实现说明：
 
 - 扩展 `ContextMenuState`：
 
 ```ts
 {
-  type: "canvas";
-  x: number;
-  y: number;
-  position: Position;
+    type: "canvas";
+    x: number;
+    y: number;
+    position: Position;
 }
 ```
 
 - 空白画布右键时记录屏幕坐标和画布坐标。
 - 菜单动作复用本项目已有能力：
-  - 添加文本节点。
-  - 添加图片节点。
-  - 添加视频节点。
-  - 添加音频节点。
-  - 添加配置节点。
-  - 上传素材。
-  - 打开我的素材。
-  - 打开素材库。
-  - 撤销。
-  - 重做。
-  - 粘贴。
+    - 添加文本节点。
+    - 添加图片节点。
+    - 添加视频节点。
+    - 添加音频节点。
+    - 添加配置节点。
+    - 上传素材。
+    - 打开我的素材。
+    - 打开素材库。
+    - 撤销。
+    - 重做。
+    - 粘贴。
 - 菜单文案全部使用中文。
 
 ### 节点右键菜单补齐和中文化
+
+实现状态：已实现。
 
 当前差异：
 
@@ -255,7 +261,7 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - `web/src/app/(user)/canvas/components/canvas-context-menu.tsx`
 - `web/src/app/(user)/canvas/[id]/canvas-client-page.tsx`
 
-迁移方案：
+实现说明：
 
 - `Duplicate` 改为“复制一份”。
 - `Delete` 改为“删除”。
@@ -264,6 +270,8 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - 连接菜单只保留连接相关动作，例如“删除连线”。
 
 ### 连接点短按打开添加菜单
+
+实现状态：已实现。
 
 当前差异：
 
@@ -276,25 +284,27 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - `ConnectionCreateMenu`
 - `createConnectedNode`
 
-迁移方案：
+实现说明：
 
 - 在 `handleConnectStart` 记录：
-  - 开始时间。
-  - 起点屏幕坐标。
-  - 起点节点 id。
-  - 连接点方向。
+    - 开始时间。
+    - 起点屏幕坐标。
+    - 起点节点 id。
+    - 连接点方向。
 - 在 `handleGlobalMouseUp` 判断：
-  - 持续时间小于 `200ms`。
-  - 移动距离小于阈值，例如 `6px`。
-  - 没有命中目标节点。
+    - 持续时间小于 `200ms`。
+    - 移动距离小于阈值，例如 `6px`。
+    - 没有命中目标节点。
 - 满足短按条件时打开连接创建菜单。
 - 从连接点创建新节点时按方向落位：
-  - 从右侧 `source` 创建：新节点放在源节点右侧。
-  - 从左侧 `target` 创建：新节点放在源节点左侧。
+    - 从右侧 `source` 创建：新节点放在源节点右侧。
+    - 从左侧 `target` 创建：新节点放在源节点左侧。
 - 间距按本项目节点尺寸计算，不复制 TwitCanva 固定 `340 / GAP 100`。
 - 创建后继续写入本项目 `connections`。
 
 ### 分组工具条中文化
+
+实现状态：已实现。
 
 当前差异：
 
@@ -305,7 +315,7 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - `web/src/app/(user)/canvas/components/canvas-selection-bounding-box.tsx`
 - `web/src/app/(user)/canvas/[id]/canvas-client-page.tsx`
 
-迁移方案：
+实现说明：
 
 - `New Group` 改为“新分组”。
 - `Group` 改为“分组”。
@@ -319,6 +329,8 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 
 ### 图片预览弹窗内部缩放
 
+实现状态：已实现。
+
 当前差异：
 
 - TwitCanva 媒体预览弹窗支持内部滚轮缩放。
@@ -328,13 +340,13 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 
 - `web/src/app/(user)/canvas/[id]/canvas-client-page.tsx`
 
-迁移方案：
+实现说明：
 
 - 给图片详情 Modal 增加局部 `previewScale` 状态。
 - 弹窗内部 `onWheel`：
-  - `event.preventDefault()`。
-  - `event.stopPropagation()`。
-  - 调整 `previewScale`。
+    - `event.preventDefault()`。
+    - `event.stopPropagation()`。
+    - 调整 `previewScale`。
 - 图片使用 `transform: scale(...)` 或按最大宽高计算缩放。
 - 可先只支持图片，视频仍使用原生 controls。
 
@@ -359,17 +371,17 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 
 - 不直接复制 TwitCanva 规则。
 - 按本项目节点类型重新定义：
-  - `Text`
-  - `Image`
-  - `Video`
-  - `Audio`
-  - `Config`
-  - `ImageEditor`
-  - `VideoEditor`
-  - `Storyboard`
-  - `CameraAngle`
-  - `LocalImageModel`
-  - `LocalVideoModel`
+    - `Text`
+    - `Image`
+    - `Video`
+    - `Audio`
+    - `Config`
+    - `ImageEditor`
+    - `VideoEditor`
+    - `Storyboard`
+    - `CameraAngle`
+    - `LocalImageModel`
+    - `LocalVideoModel`
 - 继续保留 `Config -> 生成节点` 的现有能力，因为它已经参与本项目生成上下文。
 - 非法连接给出明确中文提示，例如“音频节点暂不能作为图片生成输入”。
 
@@ -395,8 +407,8 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 轻量方案：
 
 - 节点内容开始拖拽时写入 `dataTransfer`：
-  - `nodeId`
-  - `nodeType`
+    - `nodeId`
+    - `nodeType`
 - 助手面板 `drop` 后把该节点加入 `selectedNodeIds`。
 - 复用现有助手引用 chips。
 
@@ -429,9 +441,9 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 
 - 如果保留本项目当前风格，不需要迁移 TwitCanva 面板互斥。
 - 如果要改成侧栏/浮层素材库，需要先决定：
-  - 打开素材库是否收起助手。
-  - 素材库是固定侧栏、浮层，还是继续 Modal。
-  - 历史生成记录是否并入“我的素材”。
+    - 打开素材库是否收起助手。
+    - 素材库是固定侧栏、浮层，还是继续 Modal。
+    - 历史生成记录是否并入“我的素材”。
 
 当前建议保留 Modal，不做第二套面板系统。
 
@@ -447,8 +459,8 @@ TwitCanva 的文本/图片节点基础快捷动作不需要单独迁移。完整
 - 不迁移 TwitCanva 固定偏移。
 - 本项目当前“粘贴到视口中心”更符合无限画布体验。
 - 继续区分两个动作：
-  - “复制一份”：在原节点附近偏移。
-  - “粘贴”：放到当前视口中心。
+    - “复制一份”：在原节点附近偏移。
+    - “粘贴”：放到当前视口中心。
 
 ## 第三批：暂缓迁移的大模块
 
@@ -555,13 +567,13 @@ TwitCanva 集成 TikTok 导入和 X/TikTok 发布。
 第一批：
 
 1. 已完成：普通滚轮平移，`Ctrl/Cmd + wheel` 和触控板捏合缩放。
-2. 节点内部滚轮和指针事件隔离。
-3. 快捷键弹窗文案调整。
-4. 右键空白画布全局菜单。
-5. 节点右键菜单补齐和中文化。
-6. 连接点短按打开添加菜单。
-7. 分组工具条中文化。
-8. 图片预览弹窗内部缩放。
+2. 已完成：节点内部滚轮和指针事件隔离。
+3. 已完成：快捷键弹窗文案调整。
+4. 已完成：右键空白画布全局菜单。
+5. 已完成：节点右键菜单补齐和中文化。
+6. 已完成：连接点短按打开添加菜单。
+7. 已完成：分组工具条中文化。
+8. 已完成：图片预览弹窗内部缩放。
 
 第二批：
 
