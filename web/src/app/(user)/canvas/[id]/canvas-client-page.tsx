@@ -45,6 +45,7 @@ import { CanvasLeftMenu } from "../components/canvas-left-menu";
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type AssetPickerTab, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
+import { useCanvasConnections } from "./hooks/use-canvas-connections";
 import { useImageNodeHandlers } from "../hooks/use-image-node-handlers";
 import { useTextNodeHandlers } from "../hooks/use-text-node-handlers";
 import { useCanvasStore } from "../stores/use-canvas-store";
@@ -58,18 +59,12 @@ import {
     type CanvasNodeData,
     type CanvasNodeGroup,
     type CanvasNodeMetadata,
-    type ConnectionHandle,
     type ContextMenuState,
     type Position,
     type SelectionBox,
 } from "../types";
-import type { AddNodesMenuState, CanvasClipboard, ConnectionDropTarget, PendingConnectionCreate } from "./canvas-page-types";
+import type { AddNodesMenuState, CanvasClipboard, PendingConnectionCreate } from "./canvas-page-types";
 import {
-    CONNECTION_HANDLE_HIT_RADIUS,
-    CONNECTION_NODE_HIT_PADDING,
-    CONNECTION_TAP_MOVE_PX,
-    CONNECTION_TAP_MS,
-    CONNECTED_NODE_GAP,
     IMAGE_PROMPT_REVERSE_PRESET,
     NODE_STATUS_ERROR,
     NODE_STATUS_LOADING,
@@ -79,13 +74,11 @@ import {
     applyNodeConfigPatch,
     buildGenerationConfig,
     createCanvasNode,
-    getConnectionTargetAnchor,
     hydrateAssistantImages,
     hydrateCanvasImages,
     imageMetadata,
     isHiddenBatchChild,
     isHiddenBatchConnectionEndpoint,
-    normalizeConnection,
     resetInterruptedGeneration,
     videoMetadata,
 } from "./canvas-page-utils";
@@ -230,7 +223,6 @@ function InfiniteCanvasPage() {
         startY: 0,
         initialSelectedNodes: [],
     });
-    const connectionTapRef = useRef<{ startTime: number; startX: number; startY: number } | null>(null);
 
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
@@ -252,12 +244,7 @@ function InfiniteCanvasPage() {
     const [chatSessions, setChatSessions] = useState<CanvasAssistantSession[]>([]);
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
-    const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-    const [connectingParams, setConnectingParams] = useState<ConnectionHandle | null>(null);
-    const [connectionTargetNodeId, setConnectionTargetNodeId] = useState<string | null>(null);
-    const [pendingConnectionCreate, setPendingConnectionCreate] = useState<PendingConnectionCreate | null>(null);
-    const [mouseWorld, setMouseWorld] = useState<Position>({ x: 0, y: 0 });
     const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [addNodesMenu, setAddNodesMenu] = useState<AddNodesMenuState | null>(null);
@@ -297,16 +284,53 @@ function InfiniteCanvasPage() {
         collapsingBatchIds,
     });
 
-    const { nodesRef, connectionsRef, selectedNodeIdsRef, viewportRef, connectingParamsRef, connectionTargetNodeIdRef, selectionBoxRef, pendingConnectionCreateRef } = useLatestCanvasRefs({
+    const { nodesRef, connectionsRef, selectedNodeIdsRef, viewportRef, selectionBoxRef } = useLatestCanvasRefs({
         nodes,
         connections,
         groups,
         selectedNodeIds,
         viewport,
+        selectionBox,
+    });
+
+    const configNodeMetadata = useMemo(
+        () => ({
+            model: effectiveConfig.imageModel || effectiveConfig.model,
+            size: effectiveConfig.size,
+            count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
+        }),
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size],
+    );
+
+    const {
+        selectedConnectionId,
+        setSelectedConnectionId,
         connectingParams,
         connectionTargetNodeId,
-        selectionBox,
         pendingConnectionCreate,
+        mouseWorld,
+        cancelPendingConnectionCreate,
+        createConnectedNode,
+        deleteConnection,
+        finishConnectionDrag,
+        handleConnectStart,
+        openConnectionContextMenu,
+        selectConnection,
+        updateConnectionDrag,
+        setConnecting,
+    } = useCanvasConnections({
+        nodesRef,
+        connectionsRef,
+        viewportRef,
+        screenToCanvas,
+        configNodeMetadata,
+        setNodes,
+        setConnections,
+        setSelectedNodeIds,
+        setContextMenu,
+        setAddNodesMenu,
+        setDialogNodeId,
+        message,
     });
 
     const { historyRef, lastHistoryRef, historyPausedRef, historyState, resetHistory, undoCanvas, redoCanvas } = useCanvasHistory({
@@ -396,15 +420,6 @@ function InfiniteCanvasPage() {
         setPreviewScale(1);
     }, [previewNodeId]);
 
-    const setConnecting = useCallback((next: ConnectionHandle | null) => {
-        connectingParamsRef.current = next;
-        setConnectingParams(next);
-        if (!next) {
-            connectionTargetNodeIdRef.current = null;
-            setConnectionTargetNodeId(null);
-        }
-    }, []);
-
     const keepNodeToolbar = useCallback(
         (nodeId: string) => {
             if (nodeDraggingRef.current || nodeImageSettingsOpen) return;
@@ -424,99 +439,6 @@ function InfiniteCanvasPage() {
             toolbarHideTimerRef.current = null;
         }, 120);
     }, []);
-
-    const connectNodes = useCallback(
-        (current: ConnectionHandle, targetNodeId: string) => {
-            if (current.nodeId === targetNodeId) return;
-
-            const connection = normalizeConnection(current.nodeId, targetNodeId, nodesRef.current, current.handleType);
-            if (!connection) {
-                message.warning("配置节点之间不能连接");
-                return;
-            }
-            const { fromNodeId, toNodeId } = connection;
-            const exists = connectionsRef.current.some((conn) => conn.fromNodeId === fromNodeId && conn.toNodeId === toNodeId);
-            if (!exists) {
-                setConnections((prev) => [...prev, { id: `conn-${Date.now()}`, fromNodeId, toNodeId }]);
-            }
-            setContextMenu(null);
-            setAddNodesMenu(null);
-        },
-        [message],
-    );
-
-    const createConnectedNode = useCallback(
-        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
-            const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
-            const sourceNode = nodesRef.current.find((node) => node.id === pending.connection.nodeId);
-            const spec = getNodeSpec(type);
-            const centerPosition =
-                pending.placeByHandle && sourceNode
-                    ? {
-                          x: pending.connection.handleType === "source" ? sourceNode.position.x + sourceNode.width + CONNECTED_NODE_GAP + spec.width / 2 : sourceNode.position.x - CONNECTED_NODE_GAP - spec.width / 2,
-                          y: sourceNode.position.y + sourceNode.height / 2,
-                      }
-                    : pending.position;
-            const newNode = createCanvasNode(type, centerPosition, metadata);
-            const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
-            if (!connection) {
-                message.warning("配置节点之间不能连接");
-                return;
-            }
-            setNodes((prev) => [...prev, newNode]);
-            setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
-            setSelectedNodeIds(new Set([newNode.id]));
-            setSelectedConnectionId(null);
-            setAddNodesMenu(null);
-            if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
-            setPendingConnectionCreate(null);
-            setConnecting(null);
-        },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message, setConnecting],
-    );
-
-    const cancelPendingConnectionCreate = useCallback(() => {
-        connectionTapRef.current = null;
-        setPendingConnectionCreate(null);
-        setConnecting(null);
-    }, [setConnecting]);
-
-    const getConnectionDropTarget = useCallback(
-        (clientX: number, clientY: number, current: ConnectionHandle): ConnectionDropTarget => {
-            const world = screenToCanvas(clientX, clientY);
-            const scale = Math.max(viewportRef.current.k, 0.05);
-            const padding = CONNECTION_NODE_HIT_PADDING / scale;
-            const handleRadius = CONNECTION_HANDLE_HIT_RADIUS / scale;
-            let isNearNode = false;
-            let bestNodeId: string | null = null;
-            let bestPriority = Number.POSITIVE_INFINITY;
-
-            [...nodesRef.current]
-                .filter((node) => !isHiddenBatchChild(node, nodesRef.current))
-                .reverse()
-                .forEach((node) => {
-                    const anchor = getConnectionTargetAnchor(node, current);
-                    const dx = world.x - anchor.x;
-                    const dy = world.y - anchor.y;
-                    const hitsHandle = dx * dx + dy * dy <= handleRadius * handleRadius;
-                    const hitsInside = world.x >= node.position.x && world.x <= node.position.x + node.width && world.y >= node.position.y && world.y <= node.position.y + node.height;
-                    const hitsExpanded = world.x >= node.position.x - padding && world.x <= node.position.x + node.width + padding && world.y >= node.position.y - padding && world.y <= node.position.y + node.height + padding;
-
-                    if (!hitsHandle && !hitsInside && !hitsExpanded) return;
-                    isNearNode = true;
-                    if (node.id === current.nodeId || !normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType)) return;
-
-                    const priority = hitsInside ? 0 : hitsHandle ? 1 : 2;
-                    if (priority < bestPriority) {
-                        bestNodeId = node.id;
-                        bestPriority = priority;
-                    }
-                });
-
-            return { nodeId: bestNodeId, isNearNode };
-        },
-        [screenToCanvas],
-    );
 
     const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
     const toolbarNode = toolbarNodeId ? nodeById.get(toolbarNodeId) || null : null;
@@ -655,12 +577,6 @@ function InfiniteCanvasPage() {
         },
         [chatSessions, cleanupCanvasFiles, projectId],
     );
-
-    const deleteConnection = useCallback((connectionId: string) => {
-        setConnections((prev) => prev.filter((conn) => conn.id !== connectionId));
-        setSelectedConnectionId((current) => (current === connectionId ? null : current));
-        setContextMenu((current) => (current?.type === "connection" && current.connectionId === connectionId ? null : current));
-    }, []);
 
     const getCommonGroup = useCallback(
         (nodeIds: Iterable<string>) => {
@@ -967,7 +883,7 @@ function InfiniteCanvasPage() {
             setAddNodesMenu(null);
             setDialogNodeId(null);
             setEditingNodeId(null);
-            if (pendingConnectionCreateRef.current) cancelPendingConnectionCreate();
+            if (pendingConnectionCreate) cancelPendingConnectionCreate();
             if (event.button !== 0) return;
 
             const world = screenToCanvas(event.clientX, event.clientY);
@@ -988,7 +904,7 @@ function InfiniteCanvasPage() {
 
             setSelectedConnectionId(null);
         },
-        [cancelPendingConnectionCreate, screenToCanvas],
+        [cancelPendingConnectionCreate, pendingConnectionCreate, screenToCanvas],
     );
 
     const handleNodeMouseDown = useCallback((event: ReactMouseEvent, nodeId: string) => {
@@ -1089,14 +1005,9 @@ function InfiniteCanvasPage() {
                 return;
             }
 
-            if (connectingParamsRef.current && !pendingConnectionCreateRef.current) {
-                const dropTarget = getConnectionDropTarget(event.clientX, event.clientY, connectingParamsRef.current);
-                connectionTargetNodeIdRef.current = dropTarget.nodeId;
-                setConnectionTargetNodeId(dropTarget.nodeId);
-                setMouseWorld(screenToCanvas(event.clientX, event.clientY));
-            }
+            updateConnectionDrag(event.clientX, event.clientY);
         },
-        [finishNodeDrag, getConnectionDropTarget, screenToCanvas],
+        [finishNodeDrag, updateConnectionDrag],
     );
 
     const handleGlobalPointerMove = useCallback(
@@ -1140,31 +1051,9 @@ function InfiniteCanvasPage() {
             selectionBoxRef.current = null;
             setSelectionBox(null);
 
-            if (pendingConnectionCreateRef.current) return;
-
-            const currentConnection = connectingParamsRef.current;
-            if (currentConnection) {
-                const dropTarget = getConnectionDropTarget(event.clientX, event.clientY, currentConnection);
-                const tap = connectionTapRef.current;
-                const isShortTap = Boolean(tap && Date.now() - tap.startTime <= CONNECTION_TAP_MS && Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) <= CONNECTION_TAP_MOVE_PX);
-                if (dropTarget.nodeId) {
-                    connectNodes(currentConnection, dropTarget.nodeId);
-                    setConnecting(null);
-                } else if (isShortTap) {
-                    setMouseWorld(screenToCanvas(event.clientX, event.clientY));
-                    setAddNodesMenu(null);
-                    setPendingConnectionCreate({ connection: currentConnection, position: screenToCanvas(event.clientX, event.clientY), placeByHandle: true });
-                } else if (dropTarget.isNearNode) {
-                    setConnecting(null);
-                } else {
-                    setMouseWorld(screenToCanvas(event.clientX, event.clientY));
-                    setAddNodesMenu(null);
-                    setPendingConnectionCreate({ connection: currentConnection, position: screenToCanvas(event.clientX, event.clientY) });
-                }
-                connectionTapRef.current = null;
-            }
+            finishConnectionDrag(event.clientX, event.clientY);
         },
-        [connectNodes, finishNodeDrag, getConnectionDropTarget, screenToCanvas, setConnecting],
+        [finishConnectionDrag, finishNodeDrag],
     );
 
     useEffect(() => {
@@ -1349,26 +1238,13 @@ function InfiniteCanvasPage() {
                 setInfoNodeId(null);
                 setCropNodeId(null);
                 setMaskEditNodeId(null);
-                setPendingConnectionCreate(null);
+                cancelPendingConnectionCreate();
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [copySelectedNodes, deleteConnection, deleteNodes, pasteCopiedNodes, pasteSystemClipboard, redoCanvas, selectedConnectionId, setConnecting, undoCanvas]);
-
-    const handleConnectStart = useCallback(
-        (event: ReactMouseEvent, nodeId: string, handleType: "source" | "target") => {
-            event.stopPropagation();
-            connectionTapRef.current = { startTime: Date.now(), startX: event.clientX, startY: event.clientY };
-            setMouseWorld(screenToCanvas(event.clientX, event.clientY));
-            setConnecting({ nodeId, handleType });
-            connectionTargetNodeIdRef.current = null;
-            setConnectionTargetNodeId(null);
-            setSelectedConnectionId(null);
-        },
-        [screenToCanvas, setConnecting],
-    );
+    }, [cancelPendingConnectionCreate, copySelectedNodes, deleteConnection, deleteNodes, pasteCopiedNodes, pasteSystemClipboard, redoCanvas, selectedConnectionId, setConnecting, undoCanvas]);
 
     const handleNodeResize = useCallback((nodeId: string, width: number, height: number, position?: Position) => {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, width, height, position: position || node.position } : node)));
@@ -2563,18 +2439,8 @@ function InfiniteCanvasPage() {
                                         from={from}
                                         to={to}
                                         active={selectedConnectionId === connection.id || relatedHighlight.connectionIds.has(connection.id)}
-                                        onSelect={() => {
-                                            setSelectedConnectionId(connection.id);
-                                            setSelectedNodeIds(new Set());
-                                            setContextMenu(null);
-                                            setAddNodesMenu(null);
-                                        }}
-                                        onContextMenu={(event) => {
-                                            setSelectedConnectionId(connection.id);
-                                            setSelectedNodeIds(new Set());
-                                            setAddNodesMenu(null);
-                                            setContextMenu({ type: "connection", x: event.clientX, y: event.clientY, connectionId: connection.id });
-                                        }}
+                                        onSelect={() => selectConnection(connection.id)}
+                                        onContextMenu={(event) => openConnectionContextMenu(connection.id, event.clientX, event.clientY)}
                                     />
                                 );
                             })}
