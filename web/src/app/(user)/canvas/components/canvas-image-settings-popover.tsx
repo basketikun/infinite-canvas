@@ -6,6 +6,8 @@ import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
 import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
+import { SeedreamImageSettingsPanel, seedreamSizeLabel } from "@/components/seedream-image-settings-panel";
+import { resolveAdapter } from "@/services/api/image-adapters";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -27,9 +29,15 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+
+    // Resolve which adapter this config uses
+    const modelName = config.model || config.imageModel || "";
+    const adapter = resolveAdapter(modelName);
+    const isSeedream = adapter.id === "seedream";
+
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const activeSize = config.size || "auto";
+    const activeSize = config.size || (isSeedream ? "2K" : "auto");
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -58,15 +66,28 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         };
     }, [onOpenChange, open]);
 
-    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} /> : null;
+    // Summary label shows differently for seedream vs default
+    const summaryLabel = isSeedream
+        ? seedreamSizeLabel(activeSize) + " · " + count + " 张"
+        : imageQualityLabel(quality) + " · " + imageSizeLabel(activeSize) + " · " + count + " 张";
+
+    const panel = open && buttonRect ? (
+        <ImageSettingsPortal
+            buttonRect={buttonRect}
+            panelRef={panelRef}
+            placement={placement}
+            theme={theme}
+            config={config}
+            onConfigChange={onConfigChange}
+            isSeedream={isSeedream}
+        />
+    ) : null;
 
     return (
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
-                    <span className="truncate">
-                        {imageQualityLabel(quality)} · {imageSizeLabel(activeSize)} · {count} 张
-                    </span>
+                    <span className="truncate">{summaryLabel}</span>
                 </Button>
             </span>
             {panel}
@@ -81,6 +102,7 @@ function ImageSettingsPortal({
     theme,
     config,
     onConfigChange,
+    isSeedream,
 }: {
     buttonRect: DOMRect;
     panelRef: RefObject<HTMLDivElement | null>;
@@ -88,6 +110,7 @@ function ImageSettingsPortal({
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
+    isSeedream: boolean;
 }) {
     const width = 356;
     const gap = 8;
@@ -97,7 +120,7 @@ function ImageSettingsPortal({
     const left = alignCenter ? buttonRect.left + buttonRect.width / 2 - width / 2 : alignRight ? buttonRect.right - width : buttonRect.left;
     const topPlacement = placement?.startsWith("top");
     const style = {
-        position: "fixed",
+        position: "fixed" as const,
         zIndex: 1200,
         width,
         left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
@@ -108,7 +131,11 @@ function ImageSettingsPortal({
         padding: 18,
         overflowY: "auto",
         color: theme.node.text,
-    } as const;
+    };
+
+    const panelChange = (key: "quality" | "size" | "count", value: string) => {
+        onConfigChange(key, value);
+    };
 
     return createPortal(
         <div
@@ -119,7 +146,11 @@ function ImageSettingsPortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
+            {isSeedream ? (
+                <SeedreamImageSettingsPanel config={config} onConfigChange={panelChange} theme={theme} className="space-y-4" />
+            ) : (
+                <ImageSettingsPanel config={config} onConfigChange={panelChange} theme={theme} className="space-y-4" />
+            )}
         </div>,
         document.body,
     );

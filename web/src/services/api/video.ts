@@ -23,15 +23,24 @@ export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: stri
 export type VideoGenerationTask = { id: string; provider: "openai" | "seedance"; model: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
+let _proxyTargetUrl = "";
+
 function aiApiUrl(config: AiConfig, path: string) {
-    return buildApiUrl(config.baseUrl, path);
+    const directUrl = buildApiUrl(config.baseUrl, path);
+    _proxyTargetUrl = directUrl;
+    return config.proxyEnabled ? "/api/ai-proxy" : directUrl;
 }
 
 function aiHeaders(config: AiConfig, contentType?: string) {
-    return {
-        Authorization: `Bearer ${config.apiKey}`,
-        ...(contentType ? { "Content-Type": contentType } : {}),
-    };
+    const headers: Record<string, string> = {};
+    if (config.proxyEnabled) {
+        headers["x-ai-proxy-target"] = _proxyTargetUrl;
+        headers["x-ai-proxy-auth"] = "Bearer " + config.apiKey;
+    } else {
+        headers["Authorization"] = "Bearer " + config.apiKey;
+    }
+    if (contentType) headers["Content-Type"] = contentType;
+    return headers;
 }
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
@@ -172,8 +181,11 @@ function assertSeedanceAudioReferences(audioReferences: ReferenceAudio[]) {
 }
 
 function seedanceApiUrl(config: AiConfig, taskId?: string) {
-    return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
+    const directUrl = buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
+    _proxyTargetUrl = directUrl;
+    return config.proxyEnabled ? "/api/ai-proxy" : directUrl;
 }
+
 
 async function buildSeedanceContent(config: AiConfig, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
     const content: Array<Record<string, unknown>> = [];

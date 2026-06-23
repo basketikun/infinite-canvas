@@ -6,17 +6,25 @@ import { buildApiUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/
 
 type RequestOptions = { signal?: AbortSignal };
 
+let _proxyTargetUrl = "";
+
 function aiApiUrl(config: AiConfig, path: string) {
-    return buildApiUrl(config.baseUrl, path);
+    const directUrl = buildApiUrl(config.baseUrl, path);
+    _proxyTargetUrl = directUrl;
+    return config.proxyEnabled ? "/api/ai-proxy" : directUrl;
 }
 
 function aiHeaders(config: AiConfig) {
-    return {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-    };
+    const headers: Record<string, string> = {};
+    if (config.proxyEnabled) {
+        headers["x-ai-proxy-target"] = _proxyTargetUrl;
+        headers["x-ai-proxy-auth"] = "Bearer " + config.apiKey;
+    } else {
+        headers["Authorization"] = "Bearer " + config.apiKey;
+    }
+    headers["Content-Type"] = "application/json";
+    return headers;
 }
-
 export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<Blob> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();

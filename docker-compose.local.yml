@@ -5,5 +5,9 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3003:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - DOCKER_HOST_GATEWAY=host.docker.internal
     restart: unless-stopped

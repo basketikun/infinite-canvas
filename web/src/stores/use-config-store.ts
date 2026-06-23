@@ -45,6 +45,7 @@ export type AiConfig = {
     size: string;
     count: string;
     canvasImageCount: string;
+    proxyEnabled: boolean;
 };
 
 export type WebdavSyncConfig = {
@@ -100,6 +101,7 @@ export const defaultConfig: AiConfig = {
     size: "1:1",
     count: "1",
     canvasImageCount: "3",
+    proxyEnabled: false,
 };
 
 export const defaultWebdavSyncConfig: WebdavSyncConfig = {
@@ -228,6 +230,7 @@ export const useConfigStore = create<ConfigStore>()(
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "3",
+                        proxyEnabled: config.proxyEnabled ?? false,
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
                         videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"),
                         textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels, channels) : filterModelsByCapability(models, "text"),

@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Button, Form, Input, Modal, Progress, Segmented, Select, Tabs } from "antd";
+import { App, Button, Form, Input, Modal, Progress, Segmented, Select, Switch, Tabs } from "antd"
 import { CircleAlert, Cloud, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
 import { useState } from "react";
 
@@ -121,7 +121,7 @@ export function AppConfigModal() {
         }
         setLoadingChannelId(channel.id);
         try {
-            const models = await fetchChannelModels(channel);
+            const models = await fetchChannelModels(channel, config.proxyEnabled);
             updateChannels(config.channels.map((item) => (item.id === channel.id ? { ...item, models } : item)));
             message.success(`${channel.name} 模型列表已更新`);
         } catch (error) {
@@ -139,7 +139,7 @@ export function AppConfigModal() {
         }
         setLoadingChannelId("all");
         try {
-            const entries = await Promise.all(runnable.map(async (channel) => [channel.id, await fetchChannelModels(channel)] as const));
+            const entries = await Promise.all(runnable.map(async (channel) => [channel.id, await fetchChannelModels(channel, config.proxyEnabled)] as const));
             const modelMap = new Map(entries);
             updateChannels(config.channels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: modelMap.get(channel.id) || [] } : channel)));
             message.success("模型列表已更新");
@@ -291,7 +291,16 @@ export function AppConfigModal() {
                                             </div>
                                         </section>
                                     ))}
+                            </div>
+                            <div className="mt-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="text-sm font-semibold">AI API 代理模式</div>
+                                        <div className="mt-1 text-xs text-stone-500">通过服务端转发 AI 请求，解决跨域（CORS）问题。本地 API（如 Cherry Studio）需开启此选项。</div>
+                                    </div>
+                                    <Switch checked={config.proxyEnabled} onChange={(checked) => updateConfig("proxyEnabled", checked)} />
                                 </div>
+                            </div>
                             </Form>
                         ),
                     },
