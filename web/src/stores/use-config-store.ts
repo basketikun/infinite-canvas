@@ -99,7 +99,7 @@ export const defaultConfig: AiConfig = {
     quality: "auto",
     size: "1:1",
     count: "1",
-    canvasImageCount: "3",
+    canvasImageCount: "1",
 };
 
 export const defaultWebdavSyncConfig: WebdavSyncConfig = {
@@ -126,7 +126,7 @@ type ConfigStore = {
 
 function isVideoModelName(model: string) {
     const value = modelOptionName(model).toLowerCase();
-    return value.includes("seedance") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo");
+    return value.includes("seedance") || value.includes("happyhorse") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo");
 }
 
 function isImageModelName(model: string) {
@@ -227,7 +227,7 @@ export const useConfigStore = create<ConfigStore>()(
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
-                        canvasImageCount: config.canvasImageCount || "3",
+                        canvasImageCount: config.canvasImageCount || "1",
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
                         videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"),
                         textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels, channels) : filterModelsByCapability(models, "text"),

@@ -9,6 +9,7 @@ import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/compone
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
+import { CANVAS_IMAGE_GENERATION_COUNT } from "../utils/canvas-image-generation";
 
 type CanvasImageSettingsPopoverProps = {
     config: AiConfig;
@@ -28,7 +29,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const quality = config.quality || "auto";
-    const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const count = CANVAS_IMAGE_GENERATION_COUNT;
     const activeSize = config.size || "auto";
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
@@ -119,7 +120,7 @@ function ImageSettingsPortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
+            <ImageSettingsPanel config={{ ...config, count: String(CANVAS_IMAGE_GENERATION_COUNT) }} onConfigChange={(key, value) => onConfigChange(key, key === "count" ? String(CANVAS_IMAGE_GENERATION_COUNT) : value)} theme={theme} className="space-y-4" maxCount={1} quickCount={1} />
         </div>,
         document.body,
     );

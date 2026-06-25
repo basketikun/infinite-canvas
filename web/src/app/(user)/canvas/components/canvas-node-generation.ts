@@ -164,6 +164,7 @@ function readReferenceImage(node: CanvasNodeData): ReferenceImage | null {
         name: `${node.title || node.id}.png`,
         type: node.metadata.mimeType || "image/png",
         dataUrl: node.metadata.content,
+        sourceUrl: node.metadata.sourceUrl,
         storageKey: node.metadata.storageKey,
     };
 }

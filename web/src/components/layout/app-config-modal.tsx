@@ -9,7 +9,19 @@ import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionLabel, modelOptionsFromChannels, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import {
+    createModelChannel,
+    defaultBaseUrlForApiFormat,
+    filterModelsByCapability,
+    modelOptionLabel,
+    modelOptionsFromChannels,
+    normalizeModelOptionValue,
+    useConfigStore,
+    type AiConfig,
+    type ApiCallFormat,
+    type ModelCapability,
+    type ModelChannel,
+} from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -221,7 +233,7 @@ export function AppConfigModal() {
             onCancel={() => setConfigDialogOpen(false)}
             styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 12 } }}
             footer={
-                <Button type="primary" onClick={finishConfig}>
+                <Button type="primary" data-testid="config-save-button" onClick={finishConfig}>
                     完成
                 </Button>
             }
@@ -280,13 +292,22 @@ export function AppConfigModal() {
                                                     <Select value={channel.apiFormat} options={apiFormatOptions} onChange={(value: ApiCallFormat) => updateChannelApiFormat(channel, value)} />
                                                 </Form.Item>
                                                 <Form.Item label="Base URL" className="mb-0">
-                                                    <Input value={channel.baseUrl} onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })} />
+                                                    <Input data-testid={`channel-base-url-input-${channel.id}`} value={channel.baseUrl} onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })} />
                                                 </Form.Item>
                                                 <Form.Item label="API Key" className="mb-0">
-                                                    <Input.Password value={channel.apiKey} onChange={(event) => updateChannel(channel.id, { apiKey: event.target.value })} />
+                                                    <Input.Password data-testid={`channel-api-key-input-${channel.id}`} value={channel.apiKey} onChange={(event) => updateChannel(channel.id, { apiKey: event.target.value })} />
                                                 </Form.Item>
                                                 <Form.Item label="模型列表" className="mb-0 md:col-span-2">
-                                                    <Select mode="tags" showSearch allowClear maxTagCount="responsive" placeholder="输入模型名，或点击拉取模型" value={channel.models} onChange={(models) => updateChannel(channel.id, { models })} />
+                                                    <Select
+                                                        data-testid={`channel-models-select-${channel.id}`}
+                                                        mode="tags"
+                                                        showSearch
+                                                        allowClear
+                                                        maxTagCount="responsive"
+                                                        placeholder="输入模型名，或点击拉取模型"
+                                                        value={channel.models}
+                                                        onChange={(models) => updateChannel(channel.id, { models })}
+                                                    />
                                                 </Form.Item>
                                             </div>
                                         </section>
@@ -308,6 +329,7 @@ export function AppConfigModal() {
                                     {modelGroups.map((group) => (
                                         <Form.Item key={group.modelsKey} label={group.optionsLabel} className="mb-0">
                                             <Select
+                                                data-testid={`${group.capability}-models-select`}
                                                 mode="tags"
                                                 showSearch
                                                 allowClear
@@ -323,7 +345,14 @@ export function AppConfigModal() {
                                 <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                     {modelGroups.map((group) => (
                                         <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-0">
-                                            <ModelPicker config={config} value={config[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
+                                            <ModelPicker
+                                                config={config}
+                                                value={config[group.modelKey]}
+                                                onChange={(model) => updateConfig(group.modelKey, model)}
+                                                capability={group.capability}
+                                                fullWidth
+                                                testId={`default-${group.capability}-model-picker`}
+                                            />
                                         </Form.Item>
                                     ))}
                                 </div>

@@ -16,12 +16,16 @@ type ModelPickerProps = {
     fullWidth?: boolean;
     placeholder?: string;
     onMissingConfig?: () => void;
+    testId?: string;
 };
 
-export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder = "选择模型", onMissingConfig }: ModelPickerProps) {
+export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder = "选择模型", onMissingConfig, testId }: ModelPickerProps) {
     const pickerId = useId();
     const [open, setOpen] = useState(false);
-    const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
+    const options = useMemo(
+        () => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))),
+        [capability, config, value],
+    );
     const current = value || "";
 
     useEffect(() => {
@@ -44,6 +48,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
             onValueChange={onChange}
         >
             <SelectTrigger
+                data-testid={testId}
                 className={cn(
                     "canvas-composer-model-picker h-8 w-fit max-w-full gap-2 rounded-full border border-input bg-transparent px-3 text-sm font-normal shadow-sm transition-colors",
                     fullWidth ? "w-full min-w-0 justify-start" : "min-w-[9rem] justify-start",

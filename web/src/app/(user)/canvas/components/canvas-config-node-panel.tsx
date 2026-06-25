@@ -12,6 +12,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
+import { CANVAS_IMAGE_GENERATION_COUNT } from "../utils/canvas-image-generation";
 import type { CanvasGenerationMode, CanvasNodeData, CanvasNodeMetadata } from "../types";
 
 type CanvasConfigNodePanelProps = {
@@ -30,7 +31,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = node.metadata?.generationMode || "image";
     const config = buildNodeConfig(globalConfig, node, mode);
-    const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const count = mode === "image" ? CANVAS_IMAGE_GENERATION_COUNT : Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const credits = requestCreditCost({ channelMode: config.channelMode, model: config.model, count: mode === "image" ? count : 1 });
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
     const hasAnyInput = Boolean(inputSummary.textCount || inputSummary.imageCount || inputSummary.videoCount || inputSummary.audioCount);
@@ -105,7 +106,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 {mode === "video" ? (
                     <CanvasVideoSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                 ) : mode === "image" ? (
-                    <CanvasImageSettingsPopover config={config} placement="topRight" autoAdjustOverflow={false} buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })} />
+                    <CanvasImageSettingsPopover config={config} placement="topRight" autoAdjustOverflow={false} buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: CANVAS_IMAGE_GENERATION_COUNT } : { [key]: value })} />
                 ) : mode === "audio" ? (
                     <CanvasAudioSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
                 ) : null}
@@ -166,7 +167,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
-        count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
+        count: String(mode === "image" ? CANVAS_IMAGE_GENERATION_COUNT : node.metadata?.count || globalConfig.count || defaultConfig.count),
     };
 }
 

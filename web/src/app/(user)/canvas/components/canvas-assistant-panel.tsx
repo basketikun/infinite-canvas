@@ -23,6 +23,7 @@ import { CanvasLocalAgentPanel } from "./canvas-local-agent-panel";
 import { NODE_DEFAULT_SIZE } from "../constants";
 import { CanvasNodeType, type CanvasAssistantMessage, type CanvasAssistantReference, type CanvasAssistantSession, type CanvasNodeData } from "../types";
 import { useCanvasAgentStore } from "../stores/use-canvas-agent-store";
+import { CANVAS_IMAGE_GENERATION_COUNT } from "../utils/canvas-image-generation";
 import { summarizeCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "../utils/canvas-agent-ops";
 
 export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
@@ -1024,7 +1025,7 @@ function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: 
             model: resolveGenerationModel(config, mode, stringOptional(input.model)),
             size: stringOptional(input.size) || config.size,
             quality: stringOptional(input.quality) || config.quality,
-            count: numberOptional(input.count) ?? generationCount(mode === "image" ? config.canvasImageCount || config.count : config.count),
+            count: mode === "image" ? CANVAS_IMAGE_GENERATION_COUNT : numberOptional(input.count) ?? generationCount(config.count),
             seconds: stringOptional(input.seconds) || config.videoSeconds,
             vquality: stringOptional(input.vquality) || config.vquality,
             generateAudio: stringOptional(input.generateAudio) || config.videoGenerateAudio,

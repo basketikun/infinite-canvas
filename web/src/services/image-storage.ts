@@ -4,6 +4,7 @@ import localforage from "localforage";
 
 import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
+import { remoteMediaProxyUrl } from "@/services/media-proxy-url";
 
 export type UploadedImage = {
     url: string;
@@ -12,19 +13,32 @@ export type UploadedImage = {
     height: number;
     bytes: number;
     mimeType: string;
+    sourceUrl?: string;
 };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    let blob: Blob;
+    const sourceUrl = typeof input === "string" && /^https?:\/\//i.test(input) ? input : undefined;
+    if (typeof input === "string") {
+        try {
+            const fetchUrl = remoteMediaProxyUrl(input);
+            const response = await fetch(fetchUrl);
+            blob = await response.blob();
+        } catch (error) {
+            throw error;
+        }
+    } else {
+        blob = input;
+    }
     const storageKey = `image:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = await readImageMeta(url);
-    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType, sourceUrl };
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {

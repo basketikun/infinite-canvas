@@ -352,7 +352,7 @@ export default function ImagePage() {
                                         </Button>
                                     </div>
                                 </div>
-                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述画面主体、风格、构图、光线和用途" />
+                                <Input.TextArea data-testid="image-prompt-input" value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述画面主体、风格、构图、光线和用途" />
                             </div>
 
                             <div className="min-w-0">
@@ -409,13 +409,13 @@ export default function ImagePage() {
                         </div>
 
                         <div className="mt-auto pt-6">
-                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
+                            <Button data-testid="image-generate-button" type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
                                 开始生成
                             </Button>
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
+                    <div data-testid="image-results" className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
                                 <h2 className="text-xl font-semibold">生成结果</h2>
@@ -486,7 +486,7 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
-                <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} testId="image-model-picker" />
             </label>
             <div className="col-span-2">
                 <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
@@ -509,7 +509,7 @@ function ResultImageCard({
     onSaveAsset: (image: GeneratedImage, index: number) => void;
 }) {
     return (
-        <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
+        <div data-testid="image-result-card" className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
             <Image src={image.dataUrl} alt={`生成结果 ${index + 1}`} className="aspect-square object-cover" />
             <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
                 <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
@@ -561,7 +561,7 @@ function PendingImageCard() {
 
 function FailedImageCard({ error, onRetry }: { error: string; onRetry: () => void }) {
     return (
-        <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-950 dark:bg-red-950/20">
+        <div data-testid="image-failed-card" className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-950 dark:bg-red-950/20">
             <div className="flex aspect-square flex-col items-center justify-center gap-3 p-5 text-center">
                 <div className="text-sm font-medium text-red-600 dark:text-red-300">生成失败</div>
                 <Typography.Paragraph ellipsis={{ rows: 4 }} className="!mb-0 !text-xs !text-red-500 dark:!text-red-300">

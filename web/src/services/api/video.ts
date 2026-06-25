@@ -3,6 +3,7 @@ import axios from "axios";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
+import { createApimartSeedance2Task, createHappyHorseTask, isApimartSeedance2Config, isHappyHorseModel, pollHappyHorseTask } from "@/services/api/apimart";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
@@ -20,7 +21,7 @@ type ApiEnvelope<T> = T | { code?: number; data?: T | null; msg?: string };
 type RequestOptions = { signal?: AbortSignal };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "apimart"; model: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -36,13 +37,13 @@ function aiHeaders(config: AiConfig, contentType?: string) {
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
     const task = await createVideoGenerationTask(config, prompt, references, videoReferences, audioReferences, options);
-    const delayMs = task.provider === "seedance" ? 5000 : 2500;
+    const delayMs = task.provider === "seedance" || task.provider === "apimart" ? 5000 : 2500;
     for (let attempt = 0; attempt < 120; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
         if (state.status === "failed") throw new Error(state.error);
-        if (attempt === 119) throw new Error(`${task.provider === "seedance" ? "Seedance " : ""}视频生成超时，请稍后重试`);
+        if (attempt === 119) throw new Error(`${task.provider === "seedance" ? "Seedance " : task.provider === "apimart" ? "APIMart " : ""}视频生成超时，请稍后重试`);
         await delay(delayMs, options?.signal);
     }
     throw new Error("视频生成超时，请稍后重试");
@@ -52,6 +53,13 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (isApimartSeedance2Config(requestConfig)) {
+        return { id: await createApimartSeedance2Task(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options), provider: "apimart", model: selectedModel };
+    }
+    if (isHappyHorseModel(requestConfig.model)) {
+        if (videoReferences.length || audioReferences.length) throw new Error("APIMart HappyHorse 当前不支持参考视频或参考音频，请移除后重试");
+        return { id: await createHappyHorseTask(requestConfig, selectedModel, prompt, references, options), provider: "apimart", model: selectedModel };
+    }
     if (isSeedanceVideoConfig(requestConfig)) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
@@ -64,12 +72,20 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
-    return task.provider === "seedance" ? pollSeedanceTask(requestConfig, task, options) : pollOpenAIVideoTask(requestConfig, task, options);
+    if (task.provider === "seedance") return pollSeedanceTask(requestConfig, task, options);
+    if (task.provider === "apimart") return pollHappyHorseTask(requestConfig, task.id, options);
+    return pollOpenAIVideoTask(requestConfig, task, options);
 }
 
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
-    if (result.blob) return uploadMediaFile(result.blob, "video");
-    if (result.url) return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
+    if (result.blob) {
+        const uploaded = await uploadMediaFile(result.blob, "video");
+        return uploaded;
+    }
+    if (result.url) {
+        const remote = { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
+        return remote;
+    }
     throw new Error("视频接口没有返回可播放的视频");
 }
 

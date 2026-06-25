@@ -15,6 +15,7 @@ import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "../types";
+import { CANVAS_IMAGE_GENERATION_COUNT } from "../utils/canvas-image-generation";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
@@ -40,7 +41,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
-    const credits = requestCreditCost({ channelMode: config.channelMode, model: config.model, count: mode === "image" ? config.count : 1 });
+    const credits = requestCreditCost({ channelMode: config.channelMode, model: config.model, count: mode === "image" ? CANVAS_IMAGE_GENERATION_COUNT : 1 });
 
     useEffect(() => {
         setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
@@ -86,7 +87,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                                 config={config}
                                 placement="topLeft"
                                 buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3"
-                                onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })}
+                                onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: CANVAS_IMAGE_GENERATION_COUNT } : { [key]: value })}
                                 onMissingConfig={() => openConfigDialog(true)}
                                 onOpenChange={onImageSettingsOpenChange}
                             />
@@ -155,7 +156,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
-        count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
+        count: String(mode === "image" ? CANVAS_IMAGE_GENERATION_COUNT : node.metadata?.count || globalConfig.count || defaultConfig.count),
     };
 }
 

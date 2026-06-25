@@ -44,6 +44,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "../components/asset-p
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { useCanvasStore } from "../stores/use-canvas-store";
 import { applyCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "../utils/canvas-agent-ops";
+import { buildCanvasImageGenerationConfig, resolveCanvasGenerationNodeModel } from "../utils/canvas-image-generation";
 import { buildCanvasResourceReferences, buildNodeMentionReferences } from "../utils/canvas-resource-references";
 import type { CanvasAgentMode } from "../components/canvas-agent-chat-ui";
 import {
@@ -578,7 +579,7 @@ function InfiniteCanvasPage() {
 
     const createConnectedNode = useCallback(
         (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
-            const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
+            const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: 1 } : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
             if (!connection) {
@@ -593,7 +594,7 @@ function InfiniteCanvasPage() {
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message, setConnecting],
+        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message, setConnecting],
     );
 
     const cancelPendingConnectionCreate = useCallback(() => {
@@ -773,7 +774,7 @@ function InfiniteCanvasPage() {
                     ? {
                           model: effectiveConfig.imageModel || effectiveConfig.model,
                           size: effectiveConfig.size,
-                          count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
+                          count: 1,
                       }
                     : undefined;
             const newNode = createCanvasNode(type, targetPosition, configMetadata);
@@ -783,7 +784,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
+        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
     );
 
     const deleteNodes = useCallback(
@@ -1688,7 +1689,7 @@ function InfiniteCanvasPage() {
             const userPrompt = payload.prompt.trim();
             const prompt = `只修改蒙版透明区域，其他区域保持不变。${userPrompt}`;
             const childId = nanoid();
-            const source = { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey };
+            const source = { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, sourceUrl: node.metadata.sourceUrl, storageKey: node.metadata.storageKey };
             const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, [source]);
             setMaskEditNodeId(null);
             setRunningNodeId(childId);
@@ -1765,7 +1766,7 @@ function InfiniteCanvasPage() {
             const title = buildAngleLabel(params);
             const prompt = buildAnglePrompt(params);
             const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, [
-                { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey },
+                { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, sourceUrl: node.metadata.sourceUrl, storageKey: node.metadata.storageKey },
             ]);
             setAngleNodeId(null);
             setRunningNodeId(childId);
@@ -1786,7 +1787,7 @@ function InfiniteCanvasPage() {
             setDialogNodeId(childId);
             const controller = startGenerationRequest(childId, node.id, childId);
             try {
-                const image = await requestEdit(generationConfig, prompt, [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey }], undefined, { signal: controller.signal }).then(
+                const image = await requestEdit(generationConfig, prompt, [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, sourceUrl: node.metadata.sourceUrl, storageKey: node.metadata.storageKey }], undefined, { signal: controller.signal }).then(
                     (items) => items[0],
                 );
                 const uploaded = await uploadImage(image.dataUrl);
@@ -1934,7 +1935,7 @@ function InfiniteCanvasPage() {
     const handleGenerateNode = useCallback(
         async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
             const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
-            const generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
+            const generationConfig = mode === "image" ? buildCanvasImageGenerationConfig(effectiveConfig, sourceNode) : buildGenerationConfig(effectiveConfig, sourceNode, mode);
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
                 return;
@@ -1965,13 +1966,13 @@ function InfiniteCanvasPage() {
 
             try {
                 if (mode === "image") {
-                    const count = getGenerationCount(generationConfig.count);
+                    const count = 1;
                     const isConfigNode = sourceNode?.type === CanvasNodeType.Config;
                     const isImageNode = sourceNode?.type === CanvasNodeType.Image;
                     const isEmptyImageNode = isImageNode && !sourceNode?.metadata?.content;
                     const sourceReference =
                         isImageNode && sourceNode?.metadata?.content
-                            ? [{ id: sourceNode.id, name: `${sourceNode.title || sourceNode.id}.png`, type: sourceNode.metadata.mimeType || "image/png", dataUrl: sourceNode.metadata.content, storageKey: sourceNode.metadata.storageKey }]
+                            ? [{ id: sourceNode.id, name: `${sourceNode.title || sourceNode.id}.png`, type: sourceNode.metadata.mimeType || "image/png", dataUrl: sourceNode.metadata.content, sourceUrl: sourceNode.metadata.sourceUrl, storageKey: sourceNode.metadata.storageKey }]
                             : [];
                     const referenceImages = sourceReference.length ? sourceReference : generationContext.referenceImages;
                     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
@@ -1982,7 +1983,7 @@ function InfiniteCanvasPage() {
                     const gap = 96;
                     const rowGap = 36;
                     const rootId = isEmptyImageNode ? nodeId : nanoid();
-                    const childIds = count > 1 ? Array.from({ length: count }, () => nanoid()) : [];
+                    const childIds: string[] = [];
                     const targetIds = count > 1 ? childIds : [rootId];
                     pendingChildIds = isEmptyImageNode ? childIds : [rootId, ...childIds];
                     const rootNode: CanvasNodeData = {
@@ -2373,7 +2374,7 @@ function InfiniteCanvasPage() {
                     prompt: "",
                     model: effectiveConfig.imageModel || effectiveConfig.model,
                     size: effectiveConfig.size,
-                    count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
+                    count: 1,
                 },
             );
             const connection = { id: nanoid(), fromNodeId: sourceNode.id, toNodeId: configNode.id };
@@ -2387,7 +2388,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             setDialogNodeId(configNode.id);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message],
+        [effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message],
     );
 
     const insertAssistantImage = useCallback(
@@ -2988,7 +2989,7 @@ function audioExtension(mimeType?: string) {
 }
 
 function imageMetadata(image: UploadedImage): CanvasNodeMetadata {
-    return { content: image.url, storageKey: image.storageKey, status: "success", naturalWidth: image.width, naturalHeight: image.height, bytes: image.bytes, mimeType: image.mimeType };
+    return { content: image.url, storageKey: image.storageKey, sourceUrl: image.sourceUrl, status: "success", naturalWidth: image.width, naturalHeight: image.height, bytes: image.bytes, mimeType: image.mimeType };
 }
 
 function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
@@ -3021,7 +3022,7 @@ function buildAudioGenerationMetadata(config: AiConfig): CanvasNodeMetadata {
 }
 
 function referenceUrl(image: ReferenceImage) {
-    return image.storageKey || image.url || (!image.dataUrl.startsWith("data:") ? image.dataUrl : undefined);
+    return image.sourceUrl || image.storageKey || image.url || (!image.dataUrl.startsWith("data:") ? image.dataUrl : undefined);
 }
 
 function generationReferenceUrls(context: { referenceImages: ReferenceImage[]; referenceVideos: Array<{ storageKey?: string; url?: string }>; referenceAudios?: Array<{ storageKey?: string; url?: string }> }) {
@@ -3122,7 +3123,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
     const defaultModel = mode === "image" ? config.imageModel : mode === "video" ? config.videoModel : mode === "audio" ? config.audioModel : config.textModel;
     return {
         ...config,
-        model: node?.metadata?.model || defaultModel || (mode === "audio" ? defaultConfig.audioModel : config.model || defaultConfig.model),
+        model: resolveCanvasGenerationNodeModel(node, mode) || defaultModel || (mode === "audio" ? defaultConfig.audioModel : config.model || defaultConfig.model),
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         size: node?.metadata?.size || config.size || defaultConfig.size,
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
@@ -3133,7 +3134,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         audioFormat: node?.metadata?.audioFormat || config.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node?.metadata?.audioSpeed || config.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node?.metadata?.audioInstructions || config.audioInstructions || defaultConfig.audioInstructions,
-        count: String(node?.metadata?.count || (mode === "image" ? config.canvasImageCount || config.count : config.count) || defaultConfig.count),
+        count: String(mode === "image" ? 1 : node?.metadata?.count || config.count || defaultConfig.count),
     };
 }
 
@@ -3167,6 +3168,7 @@ function sourceNodeReferenceImages(node: CanvasNodeData | null) {
             name: `${node.title || node.id}.png`,
             type: node.metadata.mimeType || "image/png",
             dataUrl: node.metadata.content,
+            sourceUrl: node.metadata.sourceUrl,
             storageKey: node.metadata.storageKey,
         },
     ];

@@ -74,7 +74,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     <SettingTitle color={theme.node.muted}>质量</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
                         {qualityOptions.map((item) => (
-                            <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
+                            <OptionPill key={item.value} testId={`image-quality-${item.value}`} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
@@ -105,6 +105,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             <button
                                 key={item.value}
                                 type="button"
+                                data-testid={`image-aspect-${item.value}`}
                                 className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
                                 style={{ borderColor: selectedAspect?.value === item.value ? theme.node.text : theme.node.stroke, background: "transparent", color: theme.node.text }}
                                 onMouseDown={(event) => event.stopPropagation()}
@@ -120,7 +121,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     <SettingTitle color={theme.node.muted}>生成张数</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
                         {Array.from({ length: quickCount }, (_, index) => index + 1).map((value) => (
-                            <OptionPill key={value} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>
+                            <OptionPill key={value} testId={`image-count-${value}`} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>
                                 {value} 张
                             </OptionPill>
                         ))}
@@ -153,10 +154,11 @@ export function imageSizeLabel(size: string) {
     return aspectOptions.find((item) => (item.size || item.value) === size || item.value === size)?.label || size;
 }
 
-function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
+function OptionPill({ selected, testId, theme, onClick, children }: { selected: boolean; testId?: string; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
     return (
         <button
             type="button"
+            data-testid={testId}
             className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80"
             style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
@@ -203,6 +205,7 @@ function CountInput({ value, max, theme, onChange }: { value: number; max: numbe
                 type="number"
                 min={1}
                 max={max}
+                data-testid="image-count-input"
                 className="min-w-0 flex-1 bg-transparent px-3 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 style={{ color: theme.node.text, WebkitTextFillColor: theme.node.text }}
                 value={value || ""}
