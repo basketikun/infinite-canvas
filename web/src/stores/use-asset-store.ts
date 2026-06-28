@@ -90,8 +90,10 @@ export const useAssetStore = create<AssetStore>()(
             cleanupImages: (extra) => {
                 window.setTimeout(async () => {
                     const { useCanvasStore } = await import("@/app/(user)/canvas/stores/use-canvas-store");
-                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                    const { readGenerationLogReferences } = await import("@/services/generation-log-storage");
+                    const generationLogs = await readGenerationLogReferences();
+                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, generationLogs, extra });
+                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, generationLogs, extra });
                 }, 0);
             },
         }),

@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     const filtered = filterPrompts(items, { keyword, category, tags });
 
     return Response.json({
-        items: filtered.slice((page - 1) * pageSize, page * pageSize),
+        items: filtered.slice((page - 1) * pageSize, page * pageSize).map(proxyPromptImages),
         tags: collectTags(withoutTagFilter),
         categories: categories.map((item) => item.category),
         total: filtered.length,
@@ -177,6 +177,35 @@ function defaultPrompt(id: string, title: string, prompt: string, coverUrl: stri
     return { id, title, coverUrl, prompt, tags, preview, createdAt: "", updatedAt: "" };
 }
 
+function proxyPromptImages(item: Prompt): Prompt {
+    return {
+        ...item,
+        coverUrl: proxyImageUrl(item.coverUrl),
+        preview: item.preview.replace(/!\[([^\]]*)]\(([^)]+)\)/g, (match, alt, image) => {
+            const proxied = proxyImageUrl(image);
+            return proxied === image ? match : `![${alt}](${proxied})`;
+        }),
+    };
+}
+
+function proxyImageUrl(image: string) {
+    if (!image) return "";
+    try {
+        const url = new URL(image);
+        if (!isProxyableImageUrl(url)) return image;
+        return `/api/image-proxy?${new URLSearchParams({ url: url.toString() })}`;
+    } catch {
+        return image;
+    }
+}
+
+function isProxyableImageUrl(url: URL) {
+    if (url.protocol !== "https:") return false;
+    if (url.hostname === "pbs.twimg.com") return url.pathname.startsWith("/media/");
+    if (url.hostname === "raw.githubusercontent.com") return /\.(?:avif|gif|jpe?g|png|webp)$/i.test(url.pathname);
+    return false;
+}
+
 async function fetchText(baseUrl: string, file: string) {
     const response = await fetch(`${baseUrl}/${file}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`${file} 拉取失败`);
@@ -206,7 +235,18 @@ function firstMatch(value: string, pattern: RegExp) {
 }
 
 function extractMarkdownImages(baseUrl: string, markdown: string) {
-    return Array.from(markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g), (match) => absoluteImage(baseUrl, match[1])).filter(Boolean);
+    return Array.from(markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g), (match) => absoluteImage(baseUrl, match[1])).filter(isPromptPreviewImage);
+}
+
+function isPromptPreviewImage(image: string) {
+    if (!image) return false;
+    try {
+        const url = new URL(image);
+        if (url.hostname === "img.shields.io") return false;
+        return true;
+    } catch {
+        return true;
+    }
 }
 
 function absoluteImage(baseUrl: string, image: string) {
