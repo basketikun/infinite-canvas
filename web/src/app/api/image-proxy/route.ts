@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const allowedHosts = new Set(["pbs.twimg.com"]);
+const allowedHosts = new Set(["pbs.twimg.com", "raw.githubusercontent.com"]);
 
 export async function GET(request: NextRequest) {
     const target = request.nextUrl.searchParams.get("url") || "";
@@ -37,7 +37,8 @@ function parseAllowedImageUrl(value: string) {
         const url = new URL(value);
         if (url.protocol !== "https:") return null;
         if (!allowedHosts.has(url.hostname)) return null;
-        if (!url.pathname.startsWith("/media/")) return null;
+        if (url.hostname === "pbs.twimg.com" && !url.pathname.startsWith("/media/")) return null;
+        if (url.hostname === "raw.githubusercontent.com" && !/\.(?:avif|gif|jpe?g|png|webp)$/i.test(url.pathname)) return null;
         return url;
     } catch {
         return null;

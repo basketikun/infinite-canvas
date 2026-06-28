@@ -192,11 +192,18 @@ function proxyImageUrl(image: string) {
     if (!image) return "";
     try {
         const url = new URL(image);
-        if (url.protocol !== "https:" || url.hostname !== "pbs.twimg.com" || !url.pathname.startsWith("/media/")) return image;
+        if (!isProxyableImageUrl(url)) return image;
         return `/api/image-proxy?${new URLSearchParams({ url: url.toString() })}`;
     } catch {
         return image;
     }
+}
+
+function isProxyableImageUrl(url: URL) {
+    if (url.protocol !== "https:") return false;
+    if (url.hostname === "pbs.twimg.com") return url.pathname.startsWith("/media/");
+    if (url.hostname === "raw.githubusercontent.com") return /\.(?:avif|gif|jpe?g|png|webp)$/i.test(url.pathname);
+    return false;
 }
 
 async function fetchText(baseUrl: string, file: string) {
@@ -228,7 +235,18 @@ function firstMatch(value: string, pattern: RegExp) {
 }
 
 function extractMarkdownImages(baseUrl: string, markdown: string) {
-    return Array.from(markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g), (match) => absoluteImage(baseUrl, match[1])).filter(Boolean);
+    return Array.from(markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g), (match) => absoluteImage(baseUrl, match[1])).filter(isPromptPreviewImage);
+}
+
+function isPromptPreviewImage(image: string) {
+    if (!image) return false;
+    try {
+        const url = new URL(image);
+        if (url.hostname === "img.shields.io") return false;
+        return true;
+    } catch {
+        return true;
+    }
 }
 
 function absoluteImage(baseUrl: string, image: string) {
