@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     const filtered = filterPrompts(items, { keyword, category, tags });
 
     return Response.json({
-        items: filtered.slice((page - 1) * pageSize, page * pageSize),
+        items: filtered.slice((page - 1) * pageSize, page * pageSize).map(proxyPromptImages),
         tags: collectTags(withoutTagFilter),
         categories: categories.map((item) => item.category),
         total: filtered.length,
@@ -175,6 +175,28 @@ async function buildDavidWuGptImage2Prompts() {
 
 function defaultPrompt(id: string, title: string, prompt: string, coverUrl: string, tags: string[], preview: string): Omit<Prompt, "category" | "githubUrl"> {
     return { id, title, coverUrl, prompt, tags, preview, createdAt: "", updatedAt: "" };
+}
+
+function proxyPromptImages(item: Prompt): Prompt {
+    return {
+        ...item,
+        coverUrl: proxyImageUrl(item.coverUrl),
+        preview: item.preview.replace(/!\[([^\]]*)]\(([^)]+)\)/g, (match, alt, image) => {
+            const proxied = proxyImageUrl(image);
+            return proxied === image ? match : `![${alt}](${proxied})`;
+        }),
+    };
+}
+
+function proxyImageUrl(image: string) {
+    if (!image) return "";
+    try {
+        const url = new URL(image);
+        if (url.protocol !== "https:" || url.hostname !== "pbs.twimg.com" || !url.pathname.startsWith("/media/")) return image;
+        return `/api/image-proxy?${new URLSearchParams({ url: url.toString() })}`;
+    } catch {
+        return image;
+    }
 }
 
 async function fetchText(baseUrl: string, file: string) {
