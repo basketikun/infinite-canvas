@@ -228,8 +228,13 @@ function withSystemPrompt(config: AiConfig, prompt: string) {
     return systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
 }
 
-function aiApiUrl(config: AiConfig, path: string) {
-    return buildApiUrl(config.baseUrl, path);
+function aiRequestUrl(config: AiConfig, path: string, headers: Record<string, string>) {
+    const targetUrl = buildApiUrl(config.baseUrl, path);
+    if (config.aiProxyMode === "nextjs") {
+        headers["x-ai-target"] = targetUrl;
+        return "/ai-proxy";
+    }
+    return targetUrl;
 }
 
 function aiHeaders(config: AiConfig, contentType?: string) {
@@ -260,6 +265,14 @@ function geminiHeaders(config: Pick<AiConfig, "apiKey">) {
         "x-goog-api-key": config.apiKey,
         "Content-Type": "application/json",
     };
+}
+
+function geminiRequestUrl(config: Pick<AiConfig, "aiProxyMode">, targetUrl: string, headers: Record<string, string>) {
+    if (config.aiProxyMode === "nextjs") {
+        headers["x-ai-target"] = targetUrl;
+        return "/ai-proxy";
+    }
+    return targetUrl;
 }
 
 function withSystemMessage<T extends ResponseInputMessage>(config: AiConfig, messages: T[]): ResponseInputMessage[] {
@@ -387,9 +400,10 @@ function consumeResponseStreamText(state: ResponseStreamState, text: string, onD
 }
 
 async function requestStreamingResponse(config: AiConfig, body: Record<string, unknown>, onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
-    const response = await fetch(aiApiUrl(config, "/responses"), {
+    const headers = { ...aiHeaders(config, "application/json"), Accept: "text/event-stream" };
+    const response = await fetch(aiRequestUrl(config, "/responses", headers), {
         method: "POST",
-        headers: { ...aiHeaders(config, "application/json"), Accept: "text/event-stream" },
+        headers,
         body: JSON.stringify({ ...body, stream: true }),
         signal: options?.signal,
     });
@@ -494,9 +508,10 @@ function toGeminiToolOptions(tools: ResponseFunctionTool[], toolChoice: ToolChoi
 }
 
 async function requestGeminiStreamingResponse(config: AiConfig, body: Record<string, unknown>, onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
-    const response = await fetch(`${geminiApiUrl(config, "streamGenerateContent")}?alt=sse`, {
+    const headers = geminiHeaders(config);
+    const response = await fetch(geminiRequestUrl(config, `${geminiApiUrl(config, "streamGenerateContent")}?alt=sse`, headers), {
         method: "POST",
-        headers: geminiHeaders(config),
+        headers,
         body: JSON.stringify(body),
         signal: options?.signal,
     });
@@ -580,13 +595,14 @@ async function requestGeminiImagesOnce(config: AiConfig, prompt: string, referen
     for (const image of references) {
         parts.push(toGeminiImagePart(await imageToDataUrl(image)));
     }
+    const headers = geminiHeaders(config);
     const response = await axios.post<GeminiPayload>(
-        geminiApiUrl(config, "generateContent"),
+        geminiRequestUrl(config, geminiApiUrl(config, "generateContent"), headers),
         {
             ...toGeminiBody(config, [{ role: "user", content: prompt }], { generationConfig: { responseModalities: ["TEXT", "IMAGE"] } }),
             contents: [{ role: "user", parts }],
         },
-        { headers: geminiHeaders(config), signal: options?.signal },
+        { headers, signal: options?.signal },
     );
     return parseGeminiImagePayload(response.data);
 }
@@ -620,8 +636,9 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     try {
+        const headers = aiHeaders(requestConfig, "application/json");
         const response = await axios.post<ImageApiResponse>(
-            aiApiUrl(requestConfig, "/images/generations"),
+            aiRequestUrl(requestConfig, "/images/generations", headers),
             {
                 model: requestConfig.model,
                 prompt: withSystemPrompt(requestConfig, prompt),
@@ -632,7 +649,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 output_format: IMAGE_OUTPUT_FORMAT,
             },
             {
-                headers: aiHeaders(requestConfig, "application/json"),
+                headers,
                 signal: options?.signal,
             },
         );
@@ -674,7 +691,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });
+        const headers = aiHeaders(requestConfig);
+        const response = await axios.post<ImageApiResponse>(aiRequestUrl(requestConfig, "/images/edits", headers), formData, { headers, signal: options?.signal });
         const images = parseImagePayload(response.data);
         return images;
     } catch (error) {

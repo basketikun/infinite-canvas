@@ -236,6 +236,21 @@ export function AppConfigModal() {
                         children: (
                             <Form layout="vertical" requiredMark={false}>
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                    <div className="flex items-center gap-2 text-sm font-semibold">
+                                        <Wifi className="size-4" />
+                                        AI 请求方式
+                                        <span className="ml-1 text-xs font-normal text-stone-500">服务商不支持浏览器跨域（CORS）时，改走本地代理</span>
+                                    </div>
+                                    <Segmented
+                                        value={config.aiProxyMode}
+                                        onChange={(value) => updateConfig("aiProxyMode", value as "direct" | "nextjs")}
+                                        options={[
+                                            { label: "前端直连", value: "direct" },
+                                            { label: "本地代理", value: "nextjs" },
+                                        ]}
+                                    />
+                                </div>
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                     <div className="min-w-0 flex-1">
                                         <div className="flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100">
                                             <CircleAlert className="size-3.5 shrink-0" />
