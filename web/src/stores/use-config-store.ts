@@ -18,6 +18,7 @@ export type ModelChannel = {
 
 export type AiConfig = {
     channelMode: "remote" | "local";
+    aiProxyMode: "direct" | "nextjs";
     baseUrl: string;
     apiKey: string;
     apiFormat: ApiCallFormat;
@@ -64,6 +65,7 @@ const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
+    aiProxyMode: "direct",
     baseUrl: OPENAI_BASE_URL,
     apiKey: "",
     apiFormat: "openai",
@@ -212,6 +214,7 @@ export const useConfigStore = create<ConfigStore>()(
                     config: {
                         ...config,
                         channelMode: "local",
+                        aiProxyMode: persistedConfig.aiProxyMode === "nextjs" ? "nextjs" : "direct",
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
