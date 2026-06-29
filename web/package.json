@@ -7,7 +7,7 @@
         "dev": "next dev --webpack -H 0.0.0.0 -p 3025",
         "build": "next build",
         "start": "next start",
-        "typecheck": "tsc --noEmit",
+        "typecheck": "tsc --noEmit --incremental false",
         "test": "vitest",
         "test:run": "vitest run",
         "format": "prettier --write .",

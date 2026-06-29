@@ -5,27 +5,31 @@ import { Empty, Input, Modal, Pagination, Tag } from "antd";
 import { Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { useAssetStore, type Asset } from "@/stores/use-asset-store";
+import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
 
 export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number };
+type AssetPickerKindFilter = "all" | AssetKind;
+type AssetPickerDefaultTab = "my-assets" | AssetPickerKindFilter;
 
 type Props = {
     open: boolean;
+    defaultTab?: AssetPickerDefaultTab;
     onInsert: (payload: InsertAssetPayload) => void;
     onClose: () => void;
 };
 
-export function AssetPickerModal({ open, onInsert, onClose }: Props) {
+export function AssetPickerModal({ open, defaultTab = "all", onInsert, onClose }: Props) {
+    const kindFilter = defaultTab === "my-assets" ? "all" : defaultTab;
     return (
         <Modal title="选择素材" open={open} onCancel={onClose} footer={null} width={860} destroyOnHidden styles={{ body: { padding: "0 24px 24px", minHeight: 480 } }}>
-            <MyAssetsTab onInsert={onInsert} />
+            <MyAssetsTab defaultTab={kindFilter} onInsert={onInsert} />
         </Modal>
     );
 }
 
 const PAGE_SIZE = 8;
 
-const kindOptions = [
+const kindOptions: Array<{ label: string; value: AssetPickerKindFilter }> = [
     { label: "全部", value: "all" },
     { label: "文本", value: "text" },
     { label: "图片", value: "image" },
@@ -55,10 +59,10 @@ function PickerCard({ title, kind, cover, onClick }: { title: string; kind: stri
     );
 }
 
-function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => void }) {
+function MyAssetsTab({ defaultTab, onInsert }: { defaultTab: AssetPickerKindFilter; onInsert: (payload: InsertAssetPayload) => void }) {
     const assets = useAssetStore((state) => state.assets);
     const [keyword, setKeyword] = useState("");
-    const [kindFilter, setKindFilter] = useState("all");
+    const [kindFilter, setKindFilter] = useState<AssetPickerKindFilter>(defaultTab);
     const [page, setPage] = useState(1);
 
     const filtered = useMemo(() => {
@@ -75,6 +79,11 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
         const maxPage = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
         setPage((v) => Math.min(v, maxPage));
     }, [filtered.length]);
+
+    useEffect(() => {
+        setPage(1);
+        setKindFilter(defaultTab);
+    }, [defaultTab]);
 
     const handleInsert = (asset: Asset) => {
         if (asset.kind === "text") {
