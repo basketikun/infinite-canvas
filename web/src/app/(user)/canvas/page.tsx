@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { App, Button } from "antd";
 import { Download, FileUp, Plus } from "lucide-react";
@@ -15,7 +15,9 @@ import { useCanvasStore } from "./stores/use-canvas-store";
 import { useCanvasUiStore } from "./stores/use-canvas-ui-store";
 import { exportCanvasProjects } from "./utils/canvas-export";
 
-export default function CanvasPage() {
+// useSearchParams() 在静态预渲染时会触发 CSR bailout，
+// 必须被 Suspense 边界包裹，否则 `next build` 会在生成 /canvas 静态页面时报错。
+function CanvasPageContent() {
     const { message } = App.useApp();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -124,5 +126,13 @@ export default function CanvasPage() {
             <input ref={inputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importCanvas(event.target.files?.[0])} />
             <CanvasDeleteProjectsDialog />
         </main>
+    );
+}
+
+export default function CanvasPage() {
+    return (
+        <Suspense fallback={<main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">加载中...</main>}>
+            <CanvasPageContent />
+        </Suspense>
     );
 }
