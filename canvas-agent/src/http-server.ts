@@ -4,7 +4,11 @@ import { DEFAULT_PORT, ensureCanvasWorkspace, loadConfig, saveConfig, updateCanv
 import { CanvasSession } from "./canvas-session.js";
 import { archiveCodexThread, listCodexThreads, readCodexThread, resumeCodexThread, runClaudeTurn, runCodexTurn, startCodexThread, summarizeCodexThread, verifyCodexThreadWorkspace, withAgentPrompt } from "./agents.js";
 import { tokenSummary } from "./security.js";
-import type { AgentAttachment } from "./types.js";
+import type { AgentAttachment, AgentAttachmentSizeLimits, AgentAttachmentSizeValidation } from "./types.js";
+
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
+const DEFAULT_ATTACHMENT_LIMITS: AgentAttachmentSizeLimits = { maxAttachmentBytes: MAX_ATTACHMENT_BYTES, maxAttachmentsBytes: MAX_ATTACHMENTS_BYTES };
 
 export function startHttpServer() {
     const config = loadConfig(true);
@@ -76,6 +80,8 @@ export function startHttpServer() {
     }));
     app.post("/agent/codex/turn", route(async (req, res) => {
         const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as AgentAttachment[]) : [];
+        const attachmentValidation = validateAgentAttachments(attachments);
+        if (!attachmentValidation.ok) return void res.status(413).json({ ok: false, error: attachmentValidation.error });
         const workspace = ensureCanvasWorkspace(config, String(req.body?.canvasId || ""));
         let threadId = String(req.body?.threadId || workspace.activeThreadId || "");
         if (!threadId) {
@@ -107,6 +113,28 @@ export function startHttpServer() {
 
 function route(handler: (req: Request, res: Response) => Promise<unknown>) {
     return (req: Request, res: Response, next: NextFunction) => void handler(req, res).catch(next);
+}
+
+export function attachmentPayloadBytes(attachment: AgentAttachment) {
+    const data = base64Payload(attachment.dataUrl || "");
+    if (!data) return 0;
+    const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+    return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
+}
+
+export function validateAgentAttachments(attachments: AgentAttachment[], limits = DEFAULT_ATTACHMENT_LIMITS): AgentAttachmentSizeValidation {
+    let bytes = 0;
+    for (const attachment of attachments) {
+        const attachmentBytes = attachmentPayloadBytes(attachment);
+        bytes += attachmentBytes;
+        if (attachmentBytes > limits.maxAttachmentBytes || bytes > limits.maxAttachmentsBytes) return { ok: false, bytes, error: "attachments too large" };
+    }
+    return { ok: true, bytes };
+}
+
+function base64Payload(dataUrl: string) {
+    const index = dataUrl.indexOf(",");
+    return (index >= 0 ? dataUrl.slice(index + 1) : dataUrl).replace(/\s/g, "");
 }
 
 function routeParam(value: string | string[]) {

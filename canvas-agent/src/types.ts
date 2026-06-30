@@ -6,3 +6,5 @@ export type CanvasConnection = { id: string; fromNodeId: string; toNodeId: strin
 export type CanvasSnapshot = { projectId?: string; title?: string; nodes?: CanvasNode[]; connections?: CanvasConnection[]; selectedNodeIds?: string[]; viewport?: Viewport; clientId?: string };
 export type AgentEmit = (type: string, payload: unknown) => void;
 export type AgentAttachment = { name?: string; type?: string; dataUrl?: string };
+export type AgentAttachmentSizeLimits = { maxAttachmentBytes: number; maxAttachmentsBytes: number };
+export type AgentAttachmentSizeValidation = { ok: true; bytes: number } | { ok: false; bytes: number; error: "attachments too large" };
