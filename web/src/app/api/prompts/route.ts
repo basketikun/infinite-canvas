@@ -22,6 +22,12 @@ type PromptCategory = {
     build: () => Promise<Omit<Prompt, "category" | "githubUrl">[]>;
 };
 
+type PromptSourceDiagnostic = {
+    category: string;
+    failures: number;
+    lastError: string;
+};
+
 const gptImage2RawBase = "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main";
 const awesomeGptImageRawBase = "https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main";
 const awesomeGpt4oImagePromptsBase = "https://raw.githubusercontent.com/ImgEdify/Awesome-GPT4o-Image-Prompts/main";
@@ -42,6 +48,7 @@ const categories: PromptCategory[] = [
 
 let memoryCache: { items: Prompt[]; fetchedAt: number } | null = null;
 let loadingPrompts: Promise<Prompt[]> | null = null;
+const promptSourceFailures = new Map<string, PromptSourceDiagnostic>();
 
 export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams;
@@ -54,12 +61,17 @@ export async function GET(request: NextRequest) {
     const withoutTagFilter = filterPrompts(items, { keyword, category, tags: [] });
     const filtered = filterPrompts(items, { keyword, category, tags });
 
-    return Response.json({
-        items: filtered.slice((page - 1) * pageSize, page * pageSize),
-        tags: collectTags(withoutTagFilter),
-        categories: categories.map((item) => item.category),
-        total: filtered.length,
-    });
+    return Response.json(
+        withPromptDiagnostics(
+            {
+                items: filtered.slice((page - 1) * pageSize, page * pageSize),
+                tags: collectTags(withoutTagFilter),
+                categories: categories.map((item) => item.category),
+                total: filtered.length,
+            },
+            params.get("debug") === "1",
+        ),
+    );
 }
 
 async function getPrompts() {
@@ -77,7 +89,8 @@ async function loadPrompts() {
             try {
                 const items = await category.build();
                 return items.map((item) => ({ ...item, coverUrl: normalizePromptCoverUrl(item.coverUrl), category: category.category, githubUrl: category.githubUrl }));
-            } catch {
+            } catch (error) {
+                recordPromptSourceFailure(category.category, error);
                 return [];
             }
         }),
@@ -179,6 +192,41 @@ function defaultPrompt(id: string, title: string, prompt: string, coverUrl: stri
 
 export function normalizePromptCoverUrl(coverUrl?: string) {
     return coverUrl?.trim() || undefined;
+}
+
+export function recordPromptSourceFailure(category: string, error: unknown) {
+    const detail = error instanceof Error ? error.message : error;
+    const previous = promptSourceFailures.get(category);
+
+    console.warn(`[prompts] failed to load ${category}`, detail);
+    promptSourceFailures.set(category, {
+        category,
+        failures: (previous?.failures || 0) + 1,
+        lastError: formatPromptSourceError(detail),
+    });
+}
+
+export function resetPromptSourceDiagnostics() {
+    promptSourceFailures.clear();
+}
+
+export function promptSourceDiagnostics() {
+    return Array.from(promptSourceFailures.values());
+}
+
+export function withPromptDiagnostics<T extends Record<string, unknown>>(payload: T, debug: boolean) {
+    if (!debug) return payload;
+    return { ...payload, diagnostics: { promptSources: promptSourceDiagnostics() } };
+}
+
+function formatPromptSourceError(error: unknown) {
+    if (typeof error === "string") return error;
+    if (error === undefined) return "undefined";
+    try {
+        return JSON.stringify(error);
+    } catch {
+        return String(error);
+    }
 }
 
 async function fetchText(baseUrl: string, file: string) {
