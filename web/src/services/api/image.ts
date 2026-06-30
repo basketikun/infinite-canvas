@@ -6,6 +6,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
+import { readAxiosApiError, readFetchApiError } from "./api-error";
 
 export type AiTextMessage = {
     role: "system" | "user" | "assistant";
@@ -207,22 +208,6 @@ function parseImagePayload(payload: ImageApiResponse) {
     return images;
 }
 
-function readAxiosError(error: unknown, fallback: string) {
-    if (axios.isCancel(error)) return "请求已取消";
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
-        const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || readStatusError(error.response?.status, fallback);
-    }
-    if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
-    return error instanceof Error ? error.message : fallback;
-}
-
-function readStatusError(status: number | undefined, fallback: string) {
-    if (status === 401 || status === 403) return "鉴权失败，请检查 API Key、套餐权限或模型权限";
-    if (status === 429) return "请求被限流或额度不足，请稍后重试";
-    return status ? `${fallback}：${status}` : fallback;
-}
-
 function withSystemPrompt(config: AiConfig, prompt: string) {
     const systemPrompt = config.systemPrompt.trim();
     return systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
@@ -335,16 +320,6 @@ function validateGeminiPayload(payload: GeminiPayload) {
     if (payload.promptFeedback?.blockReason) throw new Error(`Gemini 拒绝了本次请求：${payload.promptFeedback.blockReason}`);
 }
 
-async function readFetchError(response: Response, fallback: string) {
-    const text = await response.text();
-    if (!text) return readStatusError(response.status, fallback);
-    try {
-        return responseErrorMessage(JSON.parse(text)) || readStatusError(response.status, fallback);
-    } catch {
-        return text.slice(0, 300) || readStatusError(response.status, fallback);
-    }
-}
-
 function consumeResponseStreamBlock(block: string, state: ResponseStreamState, onDelta?: (text: string) => void) {
     const data = block
         .split(/\r?\n/)
@@ -394,7 +369,7 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
         body: JSON.stringify({ ...body, stream: true }),
         signal: options?.signal,
     });
-    if (!response.ok) throw new Error(await readFetchError(response, "请求失败"));
+    if (!response.ok) throw new Error(await readFetchApiError(response, "请求失败"));
     if (!response.body) {
         const payload = (await response.json()) as ResponseApiPayload;
         validateResponsePayload(payload);
@@ -501,7 +476,7 @@ async function requestGeminiStreamingResponse(config: AiConfig, body: Record<str
         body: JSON.stringify(body),
         signal: options?.signal,
     });
-    if (!response.ok) throw new Error(await readFetchError(response, "请求失败"));
+    if (!response.ok) throw new Error(await readFetchApiError(response, "请求失败"));
     if (!response.body) {
         const payload = (await response.json()) as GeminiPayload;
         return parseGeminiToolResponse(payload);
@@ -616,7 +591,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         try {
             return await requestGeminiImages(requestConfig, prompt, [], n, options);
         } catch (error) {
-            throw new Error(readAxiosError(error, "请求失败"));
+            throw new Error(readAxiosApiError(error, "请求失败"));
         }
     }
     const quality = normalizeQuality(config.quality);
@@ -641,7 +616,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         const images = parseImagePayload(response.data);
         return images;
     } catch (error) {
-        throw new Error(readAxiosError(error, "请求失败"));
+        throw new Error(readAxiosApiError(error, "请求失败"));
     }
 }
 
@@ -654,7 +629,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         try {
             return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
         } catch (error) {
-            throw new Error(readAxiosError(error, "请求失败"));
+            throw new Error(readAxiosApiError(error, "请求失败"));
         }
     }
     const quality = normalizeQuality(config.quality);
@@ -680,7 +655,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         const images = parseImagePayload(response.data);
         return images;
     } catch (error) {
-        throw new Error(readAxiosError(error, "请求失败"));
+        throw new Error(readAxiosApiError(error, "请求失败"));
     }
 }
 
@@ -699,7 +674,7 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
         if (answer === "没有返回内容") onDelta(answer);
         return answer;
     } catch (error) {
-        throw new Error(readAxiosError(error, "请求失败"));
+        throw new Error(readAxiosApiError(error, "请求失败"));
     }
 }
 
@@ -717,7 +692,7 @@ export async function requestToolResponse(config: AiConfig, messages: ResponseIn
             parallel_tool_calls: false,
         }, onDelta, options);
     } catch (error) {
-        throw new Error(readAxiosError(error, "请求失败"));
+        throw new Error(readAxiosApiError(error, "请求失败"));
     }
 }
 
@@ -741,7 +716,7 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
             .filter((id): id is string => Boolean(id))
             .sort((a, b) => a.localeCompare(b));
     } catch (error) {
-        throw new Error(readAxiosError(error, "读取模型失败"));
+        throw new Error(readAxiosApiError(error, "读取模型失败"));
     }
 }
 
