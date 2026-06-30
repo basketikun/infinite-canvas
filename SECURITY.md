@@ -53,6 +53,16 @@ Examples that are usually out of scope:
 - Social engineering, phishing, spam, or account recovery requests.
 - Dependency reports without a practical impact on this project.
 
+## WebDAV Sync Boundary
+
+- In `direct` mode, the browser accesses the configured WebDAV endpoint
+  directly and is subject to browser CORS restrictions.
+- In `nextjs proxy` mode, the server forwards WebDAV requests. Deployers
+  should only enable this mode in trusted environments.
+- The WebDAV proxy rejects private network addresses and cloud metadata
+  addresses by default.
+- WebDAV passwords and API keys can be cleared from the app settings.
+
 ## Disclosure
 
 The maintainers aim to acknowledge valid reports within 7 days and coordinate a
