@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { DEFAULT_PORT, ensureCanvasWorkspace, loadConfig, saveConfig, updateCanvasWorkspace, type CanvasAgentConfig } from "./config.js";
 import { CanvasSession } from "./canvas-session.js";
 import { archiveCodexThread, listCodexThreads, readCodexThread, resumeCodexThread, runClaudeTurn, runCodexTurn, startCodexThread, summarizeCodexThread, verifyCodexThreadWorkspace, withAgentPrompt } from "./agents.js";
+import { tokenSummary } from "./security.js";
 import type { AgentAttachment } from "./types.js";
 
 export function startHttpServer() {
@@ -98,7 +99,8 @@ export function startHttpServer() {
     app.listen(port, "127.0.0.1", () => {
         console.log("Infinite Canvas Agent");
         console.log(`Local URL: ${config.url}`);
-        console.log(`Connect token: ${config.token}`);
+        console.log(`Connect token: ${tokenSummary(config.token)}`);
+        console.log("Open /config locally or inspect ~/.infinite-canvas/canvas-agent.json to retrieve the full token.");
         console.log("Codex MCP: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp");
     });
 }
