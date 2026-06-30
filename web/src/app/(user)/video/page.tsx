@@ -3,7 +3,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
-import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
 
@@ -17,6 +16,7 @@ import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceRefe
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
+import { createWorkbenchLogStore, VIDEO_GENERATION_LOG_STORE_NAME } from "@/services/workbench/log-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -66,8 +66,7 @@ type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vqu
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
-const LOG_STORE_KEY = "infinite-canvas:video_generation_logs";
-const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
+const logStore = createWorkbenchLogStore<GenerationLog>(VIDEO_GENERATION_LOG_STORE_NAME);
 
 export default function VideoPage() {
     const { message } = App.useApp();
@@ -258,7 +257,7 @@ export default function VideoPage() {
             .filter((log) => selectedLogIds.includes(log.id))
             .map((log) => log.video?.storageKey)
             .filter((key): key is string => Boolean(key));
-        void Promise.all([deleteStoredMedia(mediaKeys), ...selectedLogIds.map((id) => logStore.removeItem(id))]).then(refreshLogs);
+        void Promise.all([deleteStoredMedia(mediaKeys), ...selectedLogIds.map((id) => logStore.remove(id))]).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);
@@ -268,7 +267,7 @@ export default function VideoPage() {
     };
 
     const saveLog = async (log: GenerationLog) => {
-        await logStore.setItem(log.id, serializeLog(log));
+        await logStore.save(serializeLog(log));
         await refreshLogs();
     };
 
@@ -671,10 +670,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
 async function readStoredLogs() {
     if (typeof window === "undefined") return [];
     try {
-        const logs: GenerationLog[] = [];
-        await logStore.iterate<GenerationLog, void>((value) => {
-            logs.push(value);
-        });
+        const logs = await logStore.list();
         return (await Promise.all(logs.map(normalizeLog))).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch {
         return [];

@@ -3,7 +3,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
-import localforage from "localforage";
 import { saveAs } from "file-saver";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
@@ -18,6 +17,7 @@ import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { createWorkbenchLogStore, IMAGE_GENERATION_LOG_STORE_NAME } from "@/services/workbench/log-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
 
@@ -63,9 +63,8 @@ type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
-const LOG_STORE_KEY = "infinite-canvas:image_generation_logs";
 const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate";
-const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
+const logStore = createWorkbenchLogStore<GenerationLog>(IMAGE_GENERATION_LOG_STORE_NAME);
 
 export default function ImagePage() {
     const { message } = App.useApp();
@@ -241,7 +240,7 @@ export default function ImagePage() {
 
     const deleteSelectedLogs = () => {
         const imageKeys = logs.filter((log) => selectedLogIds.includes(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
-        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => logStore.removeItem(id))]).then(refreshLogs);
+        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => logStore.remove(id))]).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);
@@ -251,7 +250,7 @@ export default function ImagePage() {
     };
 
     const saveLog = (log: GenerationLog) => {
-        void logStore.setItem(log.id, serializeLog(log)).then(refreshLogs);
+        void logStore.save(serializeLog(log)).then(refreshLogs);
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs());
@@ -689,10 +688,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
 async function readStoredLogs() {
     if (typeof window === "undefined") return [];
     try {
-        const values: GenerationLog[] = [];
-        await logStore.iterate<GenerationLog, void>((value) => {
-            values.push(value);
-        });
+        const values = await logStore.list();
         const logs = await Promise.all(values.map(normalizeLog));
         return logs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch {

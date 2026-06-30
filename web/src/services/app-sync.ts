@@ -1,17 +1,17 @@
 "use client";
 
-import localforage from "localforage";
-
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
 import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-storage";
 import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
+import { createWorkbenchLogStore, IMAGE_GENERATION_LOG_STORE_NAME, VIDEO_GENERATION_LOG_STORE_NAME, type WorkbenchLog } from "@/services/workbench/log-store";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { WebdavSyncConfig } from "@/stores/use-config-store";
 import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
 
-type StoredLog = Record<string, unknown> & { id?: string };
+type StoredLog = Record<string, unknown> & Partial<WorkbenchLog>;
+type StoredLogWithId = Record<string, unknown> & WorkbenchLog;
 export type AppSyncDomainKey = "canvas" | "assets" | "image-workbench" | "video-workbench";
 type DomainKey = AppSyncDomainKey;
 type CanvasDomainData = { projects: CanvasProject[] };
@@ -77,9 +77,8 @@ export type AppSyncProgressEvent = {
 export type AppSyncProgress = (event: AppSyncProgressEvent) => void;
 
 const FILE_CONCURRENCY = 3;
-const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
-const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
-type LogStore = typeof imageLogStore;
+const imageLogStore = createWorkbenchLogStore<StoredLogWithId>(IMAGE_GENERATION_LOG_STORE_NAME);
+const videoLogStore = createWorkbenchLogStore<StoredLogWithId>(VIDEO_GENERATION_LOG_STORE_NAME);
 const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 
 export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?: AppSyncProgress): Promise<AppSyncResult> {
@@ -107,17 +106,17 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
             key: "image-workbench",
             label: "生图工作台",
             emptyData: { logs: [] },
-            localData: async () => ({ logs: await readStoredLogs(imageLogStore) }),
+            localData: async () => ({ logs: await imageLogStore.list() }),
             mergeData: (local, remote) => ({ logs: mergeById(local.logs, remote.logs, "createdAt") }),
-            applyData: async (data) => replaceStoredLogs(imageLogStore, data.logs),
+            applyData: async (data) => imageLogStore.replace(data.logs.filter(hasLogId)),
         }),
         syncDomain<LogDomainData>(config, onProgress, {
             key: "video-workbench",
             label: "视频创作台",
             emptyData: { logs: [] },
-            localData: async () => ({ logs: await readStoredLogs(videoLogStore) }),
+            localData: async () => ({ logs: await videoLogStore.list() }),
             mergeData: (local, remote) => ({ logs: mergeById(local.logs, remote.logs, "createdAt") }),
-            applyData: async (data) => replaceStoredLogs(videoLogStore, data.logs),
+            applyData: async (data) => videoLogStore.replace(data.logs.filter(hasLogId)),
         }),
     ]);
 
@@ -277,22 +276,6 @@ async function hydrateAsset(asset: Asset): Promise<Asset> {
     return asset;
 }
 
-async function readStoredLogs(store: LogStore) {
-    const logs: StoredLog[] = [];
-    await store.iterate<StoredLog, void>((value) => {
-        if (value && typeof value === "object") logs.push(value);
-    });
-    return logs;
-}
-
-async function replaceStoredLogs(store: LogStore, logs: StoredLog[]) {
-    await store.clear();
-    await runWithConcurrency(logs, FILE_CONCURRENCY, async (log) => {
-        const id = getStringField(log, "id");
-        if (id) await store.setItem(id, log);
-    });
-}
-
 function mergeById<T extends { id?: string }>(local: T[], remote: T[], timeKey: string) {
     const items = new Map<string, T>();
     remote.forEach((item) => {
@@ -306,6 +289,10 @@ function mergeById<T extends { id?: string }>(local: T[], remote: T[], timeKey: 
         if (!current || getTime(item as Record<string, unknown>, timeKey) >= getTime(current as Record<string, unknown>, timeKey)) items.set(id, item);
     });
     return Array.from(items.values()).sort((a, b) => getTime(b as Record<string, unknown>, timeKey) - getTime(a as Record<string, unknown>, timeKey));
+}
+
+function hasLogId(log: StoredLog): log is StoredLogWithId {
+    return Boolean(getStringField(log, "id"));
 }
 
 function collectStorageKeys(value: unknown, keys = new Set<string>()) {
