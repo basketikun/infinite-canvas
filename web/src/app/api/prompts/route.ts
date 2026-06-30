@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 type Prompt = {
     id: string;
     title: string;
-    coverUrl: string;
+    coverUrl?: string;
     prompt: string;
     tags: string[];
     category: string;
@@ -76,7 +76,7 @@ async function loadPrompts() {
         categories.map(async (category) => {
             try {
                 const items = await category.build();
-                return items.map((item) => ({ ...item, category: category.category, githubUrl: category.githubUrl }));
+                return items.map((item) => ({ ...item, coverUrl: normalizePromptCoverUrl(item.coverUrl), category: category.category, githubUrl: category.githubUrl }));
             } catch {
                 return [];
             }
@@ -174,7 +174,11 @@ async function buildDavidWuGptImage2Prompts() {
 }
 
 function defaultPrompt(id: string, title: string, prompt: string, coverUrl: string, tags: string[], preview: string): Omit<Prompt, "category" | "githubUrl"> {
-    return { id, title, coverUrl, prompt, tags, preview, createdAt: "", updatedAt: "" };
+    return { id, title, coverUrl: normalizePromptCoverUrl(coverUrl), prompt, tags, preview, createdAt: "", updatedAt: "" };
+}
+
+export function normalizePromptCoverUrl(coverUrl?: string) {
+    return coverUrl?.trim() || undefined;
 }
 
 async function fetchText(baseUrl: string, file: string) {

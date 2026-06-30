@@ -3,7 +3,7 @@ import { compactApiParams, serializeApiParams } from "@/services/api/request";
 export type Prompt = {
     id: string;
     title: string;
-    coverUrl: string;
+    coverUrl?: string;
     prompt: string;
     tags: string[];
     category: string;
