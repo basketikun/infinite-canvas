@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
 import { nanoid } from "nanoid";
@@ -36,7 +36,7 @@ type GeneratedVideo = {
 
 type GenerationResult = {
     id: string;
-    status: "pending" | "success" | "failed";
+    status: "pending" | "success" | "failed" | "paused";
     video?: GeneratedVideo;
     error?: string;
 };
@@ -71,7 +71,8 @@ const logStore = createWorkbenchLogStore<GenerationLog>(VIDEO_GENERATION_LOG_STO
 export default function VideoPage() {
     const { message } = App.useApp();
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const activeLogIdsRef = useRef<Set<string>>(new Set());
+    const activeControllersRef = useRef(new Map<string, AbortController>());
+    const pausedLogIdsRef = useRef(new Set<string>());
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
@@ -94,9 +95,12 @@ export default function VideoPage() {
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
     const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [activePollingIds, setActivePollingIds] = useState<string[]>([]);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
+    const currentPollingLogId = activePollingIds[0];
+    const syncActivePollingIds = () => setActivePollingIds(Array.from(activeControllersRef.current.keys()));
 
     useEffect(() => {
         if (!running || !startedAt) return;
@@ -177,6 +181,7 @@ export default function VideoPage() {
         try {
             const task = await createVideoGenerationTask(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences);
             const log = buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, videoReferences: snapshot.videoReferences, audioReferences: snapshot.audioReferences, durationMs: 0, status: "生成中", task });
+            setResults([{ id: log.id, status: "pending" }]);
             await saveLog(log);
             void pollGenerationLog(log, snapshot.config);
         } catch (error) {
@@ -209,6 +214,14 @@ export default function VideoPage() {
 
     const retryResult = () => {
         void generate();
+    };
+
+    const resumeVideoPolling = (logId: string) => {
+        const log = logs.find((item) => item.id === logId);
+        if (!log?.task || log.status !== "生成中") return;
+        pausedLogIdsRef.current.delete(logId);
+        setResults([{ id: log.id, status: "pending" }]);
+        void pollGenerationLog(log);
     };
 
     const downloadVideo = (video: GeneratedVideo) => {
@@ -257,6 +270,7 @@ export default function VideoPage() {
             .filter((log) => selectedLogIds.includes(log.id))
             .map((log) => log.video?.storageKey)
             .filter((key): key is string => Boolean(key));
+        selectedLogIds.forEach((id) => cancelVideoPolling(id, false));
         void Promise.all([deleteStoredMedia(mediaKeys), ...selectedLogIds.map((id) => logStore.remove(id))]).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
@@ -280,22 +294,31 @@ export default function VideoPage() {
 
     const resumePendingLogs = (items: GenerationLog[]) => {
         for (const log of items) {
-            if (log.status === "生成中" && log.task) void pollGenerationLog(log);
+            if (log.status === "生成中" && log.task && !pausedLogIdsRef.current.has(log.id)) void pollGenerationLog(log);
         }
     };
 
     const pollGenerationLog = async (log: GenerationLog, configOverride?: AiConfig) => {
-        if (!log.task || activeLogIdsRef.current.has(log.id)) return;
-        activeLogIdsRef.current.add(log.id);
+        if (!log.task || activeControllersRef.current.has(log.id)) return;
+        pausedLogIdsRef.current.delete(log.id);
+        const controller = new AbortController();
+        activeControllersRef.current.set(log.id, controller);
+        syncActivePollingIds();
         setRunning(true);
         setStartedAt((value) => value || performance.now());
         setResults((value) => (value.length ? value : [{ id: log.id, status: "pending" }]));
         const taskConfig = buildVideoConfig({ ...effectiveConfig, ...log.config }, log.task.model || log.model);
+        const hasNewerController = () => {
+            const current = activeControllersRef.current.get(log.id);
+            return Boolean(current && current !== controller);
+        };
         try {
             for (let attempt = 0; attempt < 120; attempt += 1) {
-                const state = await pollVideoGenerationTask(configOverride || taskConfig, log.task);
+                const state = await pollVideoGenerationTask(configOverride || taskConfig, log.task, { signal: controller.signal });
+                throwIfCancelled(controller.signal);
                 if (state.status === "completed") {
                     const stored = await storeGeneratedVideo(state.result);
+                    throwIfCancelled(controller.signal);
                     const nextVideo: GeneratedVideo = {
                         id: nanoid(),
                         url: stored.url,
@@ -313,20 +336,42 @@ export default function VideoPage() {
                 }
                 if (state.status === "failed") throw new Error(state.error);
                 if (attempt === 119) throw new Error("视频生成超时，请稍后重试");
-                await delay(log.task.provider === "seedance" ? 5000 : 2500);
+                await delay(log.task.provider === "seedance" ? 5000 : 2500, controller.signal);
             }
         } catch (error) {
+            if (isCancelledError(error)) {
+                if (!hasNewerController()) setResults((value) => markPausedVideoResult(value, log.id));
+                return;
+            }
             const errorMessage = error instanceof Error ? error.message : "生成失败";
             setResults([{ id: log.id, status: "failed", error: errorMessage }]);
             await saveLog({ ...log, status: "失败", durationMs: Date.now() - log.createdAt, error: errorMessage });
             message.error(errorMessage);
         } finally {
-            activeLogIdsRef.current.delete(log.id);
-            if (!activeLogIdsRef.current.size) {
+            if (activeControllersRef.current.get(log.id) === controller) activeControllersRef.current.delete(log.id);
+            syncActivePollingIds();
+            if (!activeControllersRef.current.size) {
                 setRunning(false);
                 setStartedAt(0);
+                setElapsedMs(0);
             }
         }
+    };
+
+    const cancelVideoPolling = (logId: string, announce = true) => {
+        const controller = activeControllersRef.current.get(logId);
+        if (!controller) return;
+        pausedLogIdsRef.current.add(logId);
+        controller.abort();
+        activeControllersRef.current.delete(logId);
+        syncActivePollingIds();
+        setResults((value) => markPausedVideoResult(value, logId));
+        if (!activeControllersRef.current.size) {
+            setRunning(false);
+            setStartedAt(0);
+            setElapsedMs(0);
+        }
+        if (announce) message.info("已暂停视频轮询，刷新页面后会继续查询");
     };
 
     const previewGenerationLog = (log: GenerationLog) => {
@@ -342,7 +387,7 @@ export default function VideoPage() {
         if (log.config.videoSeconds) updateConfig("videoSeconds", log.config.videoSeconds);
         if (log.config.videoGenerateAudio) updateConfig("videoGenerateAudio", log.config.videoGenerateAudio);
         if (log.config.videoWatermark) updateConfig("videoWatermark", log.config.videoWatermark);
-        setResults(log.status === "生成中" ? [{ id: log.id, status: "pending" }] : log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: "failed", error: log.error || "生成失败" }]);
+        setResults(log.status === "生成中" ? [{ id: log.id, status: pausedLogIdsRef.current.has(log.id) ? "paused" : "pending" }] : log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: "failed", error: log.error || "生成失败" }]);
     };
 
     return (
@@ -472,9 +517,15 @@ export default function VideoPage() {
                         </div>
 
                         <div className="mt-auto pt-6">
-                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
-                                开始生成
-                            </Button>
+                            {currentPollingLogId ? (
+                                <Button danger size="large" block icon={<X className="size-4" />} onClick={() => cancelVideoPolling(currentPollingLogId)}>
+                                    暂停轮询
+                                </Button>
+                            ) : (
+                                <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
+                                    开始生成
+                                </Button>
+                            )}
                         </div>
                     </div>
 
@@ -485,7 +536,17 @@ export default function VideoPage() {
                         </div>
                         {results.length ? (
                             <div className="grid gap-4">
-                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || "生成失败"} onRetry={retryResult} /> : <PendingVideoCard key={result.id} />))}
+                                {results.map((result) =>
+                                    result.status === "success" && result.video ? (
+                                        <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} />
+                                    ) : result.status === "failed" ? (
+                                        <FailedVideoCard key={result.id} error={result.error || "生成失败"} onRetry={retryResult} />
+                                    ) : result.status === "paused" ? (
+                                        <PausedVideoCard key={result.id} onResume={() => resumeVideoPolling(result.id)} />
+                                    ) : (
+                                        <PendingVideoCard key={result.id} onCancel={activePollingIds.includes(result.id) ? () => cancelVideoPolling(result.id) : undefined} />
+                                    ),
+                                )}
                             </div>
                         ) : (
                             <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
@@ -565,12 +626,33 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
     );
 }
 
-function PendingVideoCard() {
+function PendingVideoCard({ onCancel }: { onCancel?: () => void }) {
     return (
         <div className="relative aspect-video overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
                 <LoaderCircle className="size-6 animate-spin" />
                 <span>生成中</span>
+                {onCancel ? (
+                    <Button size="small" danger icon={<X className="size-3.5" />} onClick={onCancel}>
+                        暂停轮询
+                    </Button>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
+function PausedVideoCard({ onResume }: { onResume: () => void }) {
+    return (
+        <div className="overflow-hidden rounded-lg border border-stone-200 bg-stone-50 dark:border-stone-800 dark:bg-stone-900">
+            <div className="flex aspect-video flex-col items-center justify-center gap-3 p-5 text-center">
+                <div className="text-sm font-medium text-stone-600 dark:text-stone-300">已暂停轮询</div>
+                <Typography.Paragraph className="!mb-0 !text-xs !text-stone-500 dark:!text-stone-400">远端视频任务仍在继续，刷新页面后会自动恢复查询。</Typography.Paragraph>
+            </div>
+            <div className="flex justify-end border-t border-stone-200 p-3 dark:border-stone-800">
+                <Button size="small" onClick={onResume}>
+                    继续查询
+                </Button>
             </div>
         </div>
     );
@@ -844,6 +926,34 @@ function normalizeResolution(value: string) {
     return normalizeVideoResolutionValue(value);
 }
 
-function delay(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+function markPausedVideoResult(results: GenerationResult[], logId: string): GenerationResult[] {
+    if (!results.length) return [{ id: logId, status: "paused" }];
+    return results.map((item) => (item.id === logId || item.status === "pending" ? { ...item, id: logId, status: "paused", error: undefined } : item));
+}
+
+function throwIfCancelled(signal?: AbortSignal) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+}
+
+function isCancelledError(error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") return true;
+    return error instanceof Error && (error.name === "AbortError" || error.message === "AbortError" || error.message === "请求已取消");
+}
+
+function delay(ms: number, signal?: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+        }
+        const timer = setTimeout(resolve, ms);
+        signal?.addEventListener(
+            "abort",
+            () => {
+                clearTimeout(timer);
+                reject(new DOMException("Aborted", "AbortError"));
+            },
+            { once: true },
+        );
+    });
 }
