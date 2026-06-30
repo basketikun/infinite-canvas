@@ -28,7 +28,7 @@ type CanvasStore = {
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
-    replaceProjects: (projects: CanvasProject[]) => void;
+    replaceProjects: (projects: CanvasProject[]) => Promise<void>;
     updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
 };
 
@@ -36,6 +36,18 @@ const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 type PersistedCanvasState = Pick<CanvasStore, "projects">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
+
+function cancelQueuedCanvasSave() {
+    if (!saveTimer) return;
+    clearTimeout(saveTimer);
+    saveTimer = null;
+}
+
+async function replacePersistedCanvasProjects(projects: CanvasProject[]) {
+    cancelQueuedCanvasSave();
+    await replaceCanvasProjects(projects);
+    queuedPersistState = { projects };
+}
 
 const canvasStorage: PersistStorage<CanvasStore> = {
     getItem: async () => {
@@ -48,13 +60,13 @@ const canvasStorage: PersistStorage<CanvasStore> = {
         if (queuedPersistState && queuedPersistState.projects === nextState.projects) return;
         const previousProjects = queuedPersistState?.projects || [];
         queuedPersistState = nextState;
-        if (saveTimer) clearTimeout(saveTimer);
+        cancelQueuedCanvasSave();
         saveTimer = setTimeout(() => {
             saveTimer = null;
             void saveCanvasProjects(nextState.projects, previousProjects);
         }, 400);
     },
-    removeItem: () => replaceCanvasProjects([]),
+    removeItem: () => replacePersistedCanvasProjects([]),
 };
 
 export const useCanvasStore = create<CanvasStore>()(
@@ -111,7 +123,10 @@ export const useCanvasStore = create<CanvasStore>()(
                     const projects = state.projects.filter((project) => !ids.includes(project.id));
                     return { projects };
                 }),
-            replaceProjects: (projects) => set({ projects }),
+            replaceProjects: async (projects) => {
+                await replacePersistedCanvasProjects(projects);
+                set({ projects });
+            },
             updateProject: (id, patch) =>
                 set((state) => ({
                     projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
