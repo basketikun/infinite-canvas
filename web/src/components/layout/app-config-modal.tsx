@@ -1,7 +1,7 @@
 "use client";
 
 import { App, Button, Form, Input, Modal, Progress, Segmented, Select, Tabs } from "antd";
-import { CircleAlert, Cloud, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
+import { CircleAlert, Cloud, KeyRound, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
 import { useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -73,6 +73,7 @@ export function AppConfigModal() {
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
+    const clearSecrets = useConfigStore((state) => state.clearSecrets);
     const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
     const webdavReady = Boolean(webdav.url.trim());
 
@@ -86,6 +87,11 @@ export function AppConfigModal() {
         if (!ready) return;
         message.success(shouldPromptContinue ? "配置已保存，请继续刚才的请求" : "配置已保存");
         clearPromptContinue();
+    };
+
+    const clearSensitiveConfig = () => {
+        clearSecrets();
+        message.success("已清理 API Key 和 WebDAV 密码");
     };
 
     const updateChannels = (channels: ModelChannel[]) => {
@@ -221,9 +227,14 @@ export function AppConfigModal() {
             onCancel={() => setConfigDialogOpen(false)}
             styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 12 } }}
             footer={
-                <Button type="primary" onClick={finishConfig}>
-                    完成
-                </Button>
+                <div className="flex items-center justify-between gap-3">
+                    <Button danger icon={<KeyRound className="size-4" />} onClick={clearSensitiveConfig}>
+                        清理敏感信息
+                    </Button>
+                    <Button type="primary" onClick={finishConfig}>
+                        完成
+                    </Button>
+                </div>
             }
         >
             <Tabs

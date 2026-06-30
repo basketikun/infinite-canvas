@@ -122,6 +122,7 @@ type ConfigStore = {
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
     clearPromptContinue: () => void;
+    clearSecrets: () => void;
 };
 
 function isVideoModelName(model: string) {
@@ -194,6 +195,18 @@ export const useConfigStore = create<ConfigStore>()(
             openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
+            clearSecrets: () =>
+                set((state) => ({
+                    config: {
+                        ...state.config,
+                        apiKey: "",
+                        channels: state.config.channels.map((channel) => ({ ...channel, apiKey: "" })),
+                    },
+                    webdav: {
+                        ...state.webdav,
+                        password: "",
+                    },
+                })),
         }),
         {
             name: CONFIG_STORE_KEY,
