@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
+import { useSecretStore } from "./use-secret-store";
 
 export type ApiCallFormat = "openai" | "gemini";
 
@@ -167,7 +168,7 @@ function modelListKey(capability: ModelCapability) {
 
 function isAiConfigReady(config: AiConfig, model: string) {
     const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
+    return Boolean(model.trim() && channel.baseUrl.trim() && resolveModelApiKey(config, channel).trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -195,7 +196,8 @@ export const useConfigStore = create<ConfigStore>()(
             openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
-            clearSecrets: () =>
+            clearSecrets: () => {
+                useSecretStore.getState().clearSecrets();
                 set((state) => ({
                     config: {
                         ...state.config,
@@ -206,7 +208,8 @@ export const useConfigStore = create<ConfigStore>()(
                         ...state.webdav,
                         password: "",
                     },
-                })),
+                }));
+            },
         }),
         {
             name: CONFIG_STORE_KEY,
@@ -330,9 +333,14 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         ...config,
         model: modelOptionName(value || config.model),
         baseUrl: channel.baseUrl,
-        apiKey: channel.apiKey,
+        apiKey: resolveModelApiKey(config, channel),
         apiFormat: channel.apiFormat,
     };
+}
+
+function resolveModelApiKey(config: AiConfig, channel: ModelChannel) {
+    const secretApiKey = useSecretStore.getState().apiKeysByChannelId[channel.id];
+    return secretApiKey?.trim() ? secretApiKey : channel.apiKey || config.apiKey;
 }
 
 function normalizeChannels(config: AiConfig) {

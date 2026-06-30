@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { useSecretStore } from "./use-secret-store";
 import { createModelChannel, decodeChannelModel, defaultConfig, encodeChannelModel, modelOptionName, normalizeModelOptionValue, resolveModelRequestConfig, type AiConfig } from "./use-config-store";
 
 describe("model channel helpers", () => {
@@ -28,5 +29,24 @@ describe("model channel helpers", () => {
         expect(resolved.model).toBe("gpt-5.5");
         expect(resolved.baseUrl).toBe("https://example.com");
         expect(resolved.apiKey).toBe("key");
+    });
+
+    it("prefers secret store api keys over legacy channel api keys", () => {
+        const config: AiConfig = {
+            ...defaultConfig,
+            apiKey: "legacy-global-key",
+            channels: [createModelChannel({ id: "remote", baseUrl: "https://example.com", apiKey: "legacy-channel-key", models: ["gpt-5.5"] })],
+        };
+
+        useSecretStore.getState().clearSecrets();
+
+        try {
+            useSecretStore.getState().setChannelApiKey("remote", "secret-channel-key");
+            const resolved = resolveModelRequestConfig(config, "remote::gpt-5.5");
+
+            expect(resolved.apiKey).toBe("secret-channel-key");
+        } finally {
+            useSecretStore.getState().clearSecrets();
+        }
     });
 });

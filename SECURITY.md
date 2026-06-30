@@ -62,3 +62,23 @@ this community project.
 Please allow time for investigation and remediation before publishing details.
 Credit will be given on request unless you prefer to remain anonymous.
 
+## Sensitive Config Migration
+
+Older Infinite Canvas builds stored AI API keys, WebDAV credentials, and model
+channel secrets inside the browser-persisted `infinite-canvas:ai_config_store`
+entry.
+
+Current builds add a separate browser-persisted secret store at
+`infinite-canvas:secret_store`. Model request resolution first reads channel API
+keys from this secret store, then falls back to legacy channel fields in
+`infinite-canvas:ai_config_store` so existing local configurations keep working
+during the migration window.
+
+The app configuration modal includes a "清理敏感信息" action. It clears AI API
+keys, WebDAV password data, and Agent token data from both the new secret store
+and the legacy config store. On shared or untrusted devices, users should also
+clear browser site data for this origin.
+
+This client-side separation is a transition step, not a server-side vault. Any
+script or browser extension with access to this origin may still read browser
+storage, so avoid entering production credentials on untrusted deployments.

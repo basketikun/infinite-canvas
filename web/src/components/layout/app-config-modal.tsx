@@ -91,7 +91,7 @@ export function AppConfigModal() {
 
     const clearSensitiveConfig = () => {
         clearSecrets();
-        message.success("已清理 API Key 和 WebDAV 密码");
+        message.success("已清理 API Key、WebDAV 密码和 Agent Token");
     };
 
     const updateChannels = (channels: ModelChannel[]) => {
