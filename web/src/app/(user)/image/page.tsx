@@ -1,9 +1,8 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
-import localforage from "localforage";
 import { saveAs } from "file-saver";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
@@ -18,6 +17,7 @@ import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { createWorkbenchLogStore, IMAGE_GENERATION_LOG_STORE_NAME } from "@/services/workbench/log-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
 
@@ -34,7 +34,7 @@ type GeneratedImage = {
 
 type GenerationResult = {
     id: string;
-    status: "pending" | "success" | "failed";
+    status: "pending" | "success" | "failed" | "cancelled";
     image?: GeneratedImage;
     error?: string;
 };
@@ -63,13 +63,13 @@ type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
-const LOG_STORE_KEY = "infinite-canvas:image_generation_logs";
 const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate";
-const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
+const logStore = createWorkbenchLogStore<GenerationLog>(IMAGE_GENERATION_LOG_STORE_NAME);
 
 export default function ImagePage() {
     const { message } = App.useApp();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const generationControllerRef = useRef<AbortController | null>(null);
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
@@ -158,16 +158,21 @@ export default function ImagePage() {
         setResults(Array.from({ length: generationCount }, () => ({ id: nanoid(), status: "pending" })));
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
-
-        const tasks = Array.from({ length: generationCount }, (_, index) => runGenerationSlot(index, snapshot));
-
-        const result = await Promise.allSettled(tasks);
-        const successImages = result.filter((item): item is PromiseFulfilledResult<GeneratedImage> => item.status === "fulfilled").map((item) => item.value);
-        const successCount = successImages.length;
-        const failCount = generationCount - successCount;
-        const failed = result.find((item): item is PromiseRejectedResult => item.status === "rejected");
+        const controller = new AbortController();
+        generationControllerRef.current = controller;
 
         try {
+            const tasks = Array.from({ length: generationCount }, (_, index) => runGenerationSlot(index, snapshot, controller.signal));
+
+            const result = await Promise.allSettled(tasks);
+            if (controller.signal.aborted || result.some((item) => item.status === "rejected" && isCancelledError(item.reason))) {
+                return;
+            }
+
+            const successImages = result.filter((item): item is PromiseFulfilledResult<GeneratedImage> => item.status === "fulfilled").map((item) => item.value);
+            const successCount = successImages.length;
+            const failCount = generationCount - successCount;
+            const failed = result.find((item): item is PromiseRejectedResult => item.status === "rejected");
             const logImages = await Promise.all(
                 successImages.map(async (image) => {
                     const stored = await uploadImage(image.dataUrl);
@@ -189,8 +194,25 @@ export default function ImagePage() {
             );
             successCount ? message.success("图片已生成") : message.error(failed?.reason instanceof Error ? failed.reason.message : "生成失败");
         } finally {
-            setRunning(false);
+            if (generationControllerRef.current === controller) {
+                generationControllerRef.current = null;
+                setRunning(false);
+                setStartedAt(0);
+                setElapsedMs(0);
+            }
         }
+    };
+
+    const cancelGeneration = () => {
+        const controller = generationControllerRef.current;
+        if (!controller) return;
+        controller.abort();
+        generationControllerRef.current = null;
+        setRunning(false);
+        setStartedAt(0);
+        setElapsedMs(0);
+        setResults((value) => value.map((item) => (item.status === "pending" ? { ...item, status: "cancelled" } : item)));
+        message.info("已取消生成");
     };
 
     const downloadImage = (image: GeneratedImage, index: number) => {
@@ -241,7 +263,7 @@ export default function ImagePage() {
 
     const deleteSelectedLogs = () => {
         const imageKeys = logs.filter((log) => selectedLogIds.includes(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
-        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => logStore.removeItem(id))]).then(refreshLogs);
+        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => logStore.remove(id))]).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);
@@ -251,7 +273,7 @@ export default function ImagePage() {
     };
 
     const saveLog = (log: GenerationLog) => {
-        void logStore.setItem(log.id, serializeLog(log)).then(refreshLogs);
+        void logStore.save(serializeLog(log)).then(refreshLogs);
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs());
@@ -282,18 +304,25 @@ export default function ImagePage() {
         return { text, config: { ...effectiveConfig, model, count: "1" }, references: [...references] };
     };
 
-    const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
+    const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }, signal?: AbortSignal) => {
         const itemStartedAt = performance.now();
+        const isActiveSignal = () => !signal || generationControllerRef.current?.signal === signal;
         try {
-            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
+            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references, undefined, { signal }) : await requestGeneration(snapshot.config, snapshot.text, { signal });
+            throwIfCancelled(signal);
             const image = result[0];
             if (!image) throw new Error("接口没有返回图片");
             const meta = await readImageMeta(image.dataUrl);
+            throwIfCancelled(signal);
             const nextImage = { id: image.id, dataUrl: image.dataUrl, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl) };
-            setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
+            if (isActiveSignal()) setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
             return nextImage;
         } catch (error) {
-            setResults((value) => updateResultAt(value, index, { status: "failed", error: error instanceof Error ? error.message : "生成失败" }));
+            if (isCancelledError(error)) {
+                if (isActiveSignal()) setResults((value) => updateResultAt(value, index, { status: "cancelled", error: undefined }));
+                throw error;
+            }
+            if (isActiveSignal()) setResults((value) => updateResultAt(value, index, { status: "failed", error: error instanceof Error ? error.message : "生成失败" }));
             throw error;
         }
     };
@@ -409,9 +438,15 @@ export default function ImagePage() {
                         </div>
 
                         <div className="mt-auto pt-6">
-                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
-                                开始生成
-                            </Button>
+                            {running ? (
+                                <Button danger size="large" block icon={<X className="size-4" />} onClick={cancelGeneration}>
+                                    取消生成
+                                </Button>
+                            ) : (
+                                <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} disabled={!canGenerate} onClick={() => void generate()}>
+                                    开始生成
+                                </Button>
+                            )}
                         </div>
                     </div>
 
@@ -429,6 +464,8 @@ export default function ImagePage() {
                                         <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
                                     ) : result.status === "failed" ? (
                                         <FailedImageCard key={result.id} error={result.error || "生成失败"} onRetry={() => retryResult(index)} />
+                                    ) : result.status === "cancelled" ? (
+                                        <CancelledImageCard key={result.id} />
                                     ) : (
                                         <PendingImageCard key={result.id} />
                                     ),
@@ -581,6 +618,26 @@ function updateResultAt(results: GenerationResult[], index: number, next: Partia
     return results.map((item, itemIndex) => (itemIndex === index ? { ...item, ...next } : item));
 }
 
+function throwIfCancelled(signal?: AbortSignal) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+}
+
+function isCancelledError(error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") return true;
+    return error instanceof Error && (error.name === "AbortError" || error.message === "AbortError" || error.message === "请求已取消");
+}
+
+function CancelledImageCard() {
+    return (
+        <div className="overflow-hidden rounded-lg border border-stone-200 bg-stone-50 dark:border-stone-800 dark:bg-stone-900">
+            <div className="flex aspect-square flex-col items-center justify-center gap-2 p-5 text-center text-sm font-medium text-stone-500 dark:text-stone-400">
+                <X className="size-6" />
+                <span>已取消</span>
+            </div>
+        </div>
+    );
+}
+
 function LogPanel({
     logs,
     selectedLogIds,
@@ -689,10 +746,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
 async function readStoredLogs() {
     if (typeof window === "undefined") return [];
     try {
-        const values: GenerationLog[] = [];
-        await logStore.iterate<GenerationLog, void>((value) => {
-            values.push(value);
-        });
+        const values = await logStore.list();
         const logs = await Promise.all(values.map(normalizeLog));
         return logs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch {

@@ -63,6 +63,17 @@ docker run --rm -p 3000:3000 infinite-canvas
 
 首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
 
+## 质量检查
+
+```powershell
+cd web
+bun run typecheck
+bun run test:run
+
+cd ..\canvas-agent
+bun run build
+```
+
 ## New API 自动配置
 
 如果使用 New API，可在 `系统设置 -> 聊天方式 -> 添加聊天设置` 中填入：

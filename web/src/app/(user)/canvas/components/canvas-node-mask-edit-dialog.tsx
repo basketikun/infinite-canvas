@@ -44,7 +44,8 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
     const draw = (event: ReactPointerEvent<HTMLCanvasElement>) => {
         const point = readCanvasPoint(event.currentTarget, event.clientX, event.clientY);
         const maskCanvas = maskCanvasRef.current;
-        const context = maskCanvas?.getContext("2d");
+        if (!maskCanvas) return;
+        const context = maskCanvas.getContext("2d");
         if (!context) return;
         context.lineCap = "round";
         context.lineJoin = "round";

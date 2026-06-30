@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
+import { useSecretStore } from "./use-secret-store";
 
 export type ApiCallFormat = "openai" | "gemini";
 
@@ -122,6 +123,7 @@ type ConfigStore = {
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
     clearPromptContinue: () => void;
+    clearSecrets: () => void;
 };
 
 function isVideoModelName(model: string) {
@@ -166,7 +168,7 @@ function modelListKey(capability: ModelCapability) {
 
 function isAiConfigReady(config: AiConfig, model: string) {
     const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
+    return Boolean(model.trim() && channel.baseUrl.trim() && resolveModelApiKey(config, channel).trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -194,6 +196,20 @@ export const useConfigStore = create<ConfigStore>()(
             openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
+            clearSecrets: () => {
+                useSecretStore.getState().clearSecrets();
+                set((state) => ({
+                    config: {
+                        ...state.config,
+                        apiKey: "",
+                        channels: state.config.channels.map((channel) => ({ ...channel, apiKey: "" })),
+                    },
+                    webdav: {
+                        ...state.webdav,
+                        password: "",
+                    },
+                }));
+            },
         }),
         {
             name: CONFIG_STORE_KEY,
@@ -300,8 +316,8 @@ export function normalizeModelOptionValue(value: string | undefined, channels: M
         const channel = channels.find((item) => item.id === decoded.channelId);
         return channel && channel.models.includes(decoded.model) ? model : "";
     }
-    const channel = channels.find((item) => item.models.includes(decoded?.model || model)) || channels[0];
-    return channel && channel.models.includes(decoded?.model || model) ? encodeChannelModel(channel.id, decoded?.model || model) : model;
+    const channel = channels.find((item) => item.models.includes(model)) || channels[0];
+    return channel && channel.models.includes(model) ? encodeChannelModel(channel.id, model) : model;
 }
 
 export function resolveModelChannel(config: AiConfig, value: string) {
@@ -317,9 +333,14 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         ...config,
         model: modelOptionName(value || config.model),
         baseUrl: channel.baseUrl,
-        apiKey: channel.apiKey,
+        apiKey: resolveModelApiKey(config, channel),
         apiFormat: channel.apiFormat,
     };
+}
+
+function resolveModelApiKey(config: AiConfig, channel: ModelChannel) {
+    const secretApiKey = useSecretStore.getState().apiKeysByChannelId[channel.id];
+    return secretApiKey?.trim() ? secretApiKey : channel.apiKey || config.apiKey;
 }
 
 function normalizeChannels(config: AiConfig) {
