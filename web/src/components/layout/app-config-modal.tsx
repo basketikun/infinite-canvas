@@ -233,7 +233,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         <>
             <Tabs
                 activeKey={activeTab}
-                onChange={setActiveTab}
+                onChange={(key) => setActiveTab(key as ConfigTabKey)}
                 items={[
                     {
                         key: "channels",

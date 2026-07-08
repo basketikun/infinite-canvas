@@ -2965,16 +2965,17 @@ function MenuLabel({ text, shortcut }: { text: string; shortcut: string }) {
     );
 }
 
-function CompactAgentStatus({ status, onClick }: { status: { connected: boolean; enabled: boolean; activity: string }; onClick: () => void }) {
+function CompactAgentStatus({ status, onClick }: { status?: { connected: boolean; enabled: boolean; activity: string }; onClick: () => void }) {
     const colorTheme = useThemeStore((state) => state.theme);
     const theme = canvasThemes[colorTheme];
-    const label = status.connected ? "Codex 已连接" : status.enabled ? `Codex ${status.activity || "连接中"}` : "Codex 未连接";
-    const dotColor = status.connected ? "#22c55e" : status.enabled ? "#f59e0b" : theme.node.muted;
+    const agentStatus = status ?? { connected: false, enabled: false, activity: "" };
+    const label = agentStatus.connected ? "Codex 已连接" : agentStatus.enabled ? `Codex ${agentStatus.activity || "连接中"}` : "Codex 未连接";
+    const dotColor = agentStatus.connected ? "#22c55e" : agentStatus.enabled ? "#f59e0b" : theme.node.muted;
     return (
         <button
             type="button"
             className="flex h-8 items-center gap-1.5 text-xs transition hover:opacity-75"
-            style={{ color: status.connected ? "#16a34a" : status.enabled ? "#d97706" : theme.node.muted }}
+            style={{ color: agentStatus.connected ? "#16a34a" : agentStatus.enabled ? "#d97706" : theme.node.muted }}
             onClick={onClick}
             title="打开本地 Codex 面板"
         >
