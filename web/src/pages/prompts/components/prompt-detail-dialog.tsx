@@ -84,9 +84,11 @@ export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset }: { p
                                     ))}
                                 </div>
                                 <PromptBody prompt={prompt.prompt} onCopy={onCopy} />
-                                <div className="mt-4 text-xs text-stone-500 dark:text-stone-400">
-                                    创建：{formatPromptDate(prompt.createdAt)} · 更新：{formatPromptDate(prompt.updatedAt)}
-                                </div>
+                                {formatPromptDate(prompt.createdAt) || formatPromptDate(prompt.updatedAt) ? (
+                                    <div className="mt-4 text-xs text-stone-500 dark:text-stone-400">
+                                        {[formatPromptDate(prompt.createdAt) && `创建：${formatPromptDate(prompt.createdAt)}`, formatPromptDate(prompt.updatedAt) && `更新：${formatPromptDate(prompt.updatedAt)}`].filter(Boolean).join(" · ")}
+                                    </div>
+                                ) : null}
                                 <Space wrap className="mt-5">
                                     <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(prompt.prompt)}>
                                         复制提示词
