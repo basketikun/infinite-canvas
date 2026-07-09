@@ -1,7 +1,7 @@
 services:
   app:
-    image: ghcr.io/basketikun/infinite-canvas:latest
-    container_name: infinite-canvas
+    image: ghcr.io/<your-org>/<your-image>:latest
+    container_name: cozy-tv
     ports:
       - "3000:3000"
     restart: unless-stopped

@@ -27,12 +27,12 @@ Codex / 浏览器侧边栏
 
 ```txt
 本地 Codex
-  -> infinite-canvas MCP 工具
+  -> cozy-tv MCP 工具
   -> 本机 Canvas Agent
   -> 浏览器画布
 ```
 
-用户在本地 Codex 里发起请求，例如读取画布、创建文本节点、连接节点或触发生成。Codex 调用 `infinite-canvas` MCP 工具，MCP 工具再请求本机 `Canvas Agent` 的 `/api/tools` 接口。
+用户在本地 Codex 里发起请求，例如读取画布、创建文本节点、连接节点或触发生成。Codex 调用 `cozy-tv` MCP 工具，MCP 工具再请求本机 `Canvas Agent` 的 `/api/tools` 接口。
 
 常见工具包括：
 
@@ -53,12 +53,12 @@ Codex / 浏览器侧边栏
 浏览器右侧 Codex 面板
   -> 本机 Canvas Agent
   -> Codex app-server --stdio
-  -> infinite-canvas MCP 工具
+  -> cozy-tv MCP 工具
   -> 本机 Canvas Agent
   -> 浏览器画布
 ```
 
-用户在网页右侧面板输入提示词后，浏览器把请求发送到 `Canvas Agent` 的 `/agent/codex/turn` 接口。`Canvas Agent` 会在本机启动或复用 `codex app-server --stdio`，并给这个 Codex 会话注入同一套 `infinite-canvas` MCP 工具。
+用户在网页右侧面板输入提示词后，浏览器把请求发送到 `Canvas Agent` 的 `/agent/codex/turn` 接口。`Canvas Agent` 会在本机启动或复用 `codex app-server --stdio`，并给这个 Codex 会话注入同一套 `cozy-tv` MCP 工具。
 
 所以即使入口在浏览器右侧面板，真正改动画布时仍然会回到同一条工具链路：
 

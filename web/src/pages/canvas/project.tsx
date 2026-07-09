@@ -32,7 +32,7 @@ import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
-import { InfiniteCanvas } from "@/components/canvas/infinite-canvas";
+import { CozyCanvas } from "@/components/canvas/cozy-canvas";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
 import { CanvasNode } from "@/components/canvas/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
@@ -131,7 +131,7 @@ export default function CanvasPage() {
 
     if (!mounted) return <CanvasRefreshShell />;
 
-    return <InfiniteCanvasPage />;
+    return <CozyCanvasPage />;
 }
 
 function CanvasRefreshShell() {
@@ -212,7 +212,7 @@ function ConnectionCreateOption({ theme, icon, title, description, onClick }: { 
     );
 }
 
-function InfiniteCanvasPage() {
+function CozyCanvasPage() {
     const { message, modal } = App.useApp();
     const params = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -1020,7 +1020,7 @@ function InfiniteCanvasPage() {
     }, [applyHistory]);
 
     const createAndOpenProject = useCallback(() => {
-        const id = createProject(`无限画布 ${useCanvasStore.getState().projects.length + 1}`);
+        const id = createProject(`Cozy Tv ${useCanvasStore.getState().projects.length + 1}`);
         navigate(`/canvas/${id}`);
     }, [createProject, navigate]);
 
@@ -2495,7 +2495,7 @@ function InfiniteCanvasPage() {
                     onToggleAgent={toggleAgentPanel}
                 />
 
-                <InfiniteCanvas
+                <CozyCanvas
                     containerRef={containerRef}
                     viewport={viewport}
                     backgroundMode={backgroundMode}
@@ -2643,7 +2643,7 @@ function InfiniteCanvasPage() {
                         />
                     ) : null}
                     {pendingConnectionCreate ? <ConnectionCreateMenu pending={pendingConnectionCreate} onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)} onClose={cancelPendingConnectionCreate} /> : null}
-                </InfiniteCanvas>
+                </CozyCanvas>
 
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || nodeImageSettingsOpen ? null : toolbarNode}
@@ -2844,7 +2844,7 @@ function CanvasTopBar({
                         menu={{
                             items: [
                                 { key: "home", icon: <Home className="size-4" />, label: "主页", onClick: onHome },
-                                { key: "docs", icon: <BookOpen className="size-4" />, label: "文档", onClick: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer") },
+                                { key: "docs", disabled: DOCS_URL === "#", icon: <BookOpen className="size-4" />, label: DOCS_URL === "#" ? "文档待配置" : "文档", onClick: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer") },
                                 { key: "projects", icon: <Images className="size-4" />, label: "我的画布", onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },

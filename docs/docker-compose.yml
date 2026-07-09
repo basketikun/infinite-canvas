@@ -1,6 +1,6 @@
 services:
   docs:
-    image: ghcr.io/basketikun/infinite-canvas-docs:latest
+    image: ghcr.io/<your-org>/<your-docs-image>:latest
     ports:
       - "3001:3000"
     restart: unless-stopped

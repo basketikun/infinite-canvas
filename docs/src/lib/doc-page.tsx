@@ -1,5 +1,4 @@
 import { getMDXComponents } from '@/components/mdx';
-import { gitConfig } from '@/lib/shared';
 import { getPageMarkdownUrl, source } from '@/lib/source';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
@@ -23,7 +22,6 @@ export function DocPageContent({ page }: { page: DocPageData }) {
         <MarkdownCopyButton markdownUrl={markdownUrl} />
         <ViewOptionsPopover
           markdownUrl={markdownUrl}
-          githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/${gitConfig.docsContentDir}/${page.path}`}
         />
       </div>
       <DocsBody>

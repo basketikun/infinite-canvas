@@ -35,7 +35,7 @@ const youMindNanoBananaProRawBase = "https://raw.githubusercontent.com/YouMind-O
 const davidWuGptImage2RawBase = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main";
 const cacheTtlMs = 1000 * 60 * 60;
 const promptCacheKey = "third-party-prompts";
-const promptCacheStore = localforage.createInstance({ name: "infinite-canvas", storeName: "prompt_cache" });
+const promptCacheStore = localforage.createInstance({ name: "cozy-tv", storeName: "prompt_cache" });
 
 const categories: PromptCategory[] = [
     { category: "awesome-gpt-image", githubUrl: "https://github.com/ZeroLu/awesome-gpt-image", build: buildAwesomeGptImagePrompts },

@@ -54,7 +54,7 @@ export type WebdavSyncConfig = {
 };
 export type ConfigTabKey = "channels" | "models" | "preferences" | "webdav" | "codex";
 
-export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
+export const CONFIG_STORE_KEY = "cozy-tv:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
@@ -104,7 +104,7 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
     url: "",
     username: "",
     password: "",
-    directory: "infinite-canvas",
+    directory: "cozy-tv",
     lastSyncedAt: "",
 };
 

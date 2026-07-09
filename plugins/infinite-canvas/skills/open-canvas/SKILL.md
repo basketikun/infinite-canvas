@@ -1,11 +1,11 @@
 ---
 name: open-canvas
-description: 打开 Infinite Canvas 网页画布并自动连接本地 Canvas Agent。用户要求打开、启动、进入、使用 Infinite Canvas 或画布时使用。
+description: 打开 Cozy Tv 网页画布并自动连接本地 Canvas Agent。用户要求打开、启动、进入、使用 Cozy Tv 或画布时使用。
 ---
 
-# Open Infinite Canvas
+# Open Cozy Tv
 
-当用户要求打开、启动、进入或使用 Infinite Canvas 时，不要把 URL 交给用户手动复制，不要通过浏览器点击“新建画布”。优先快速拉起本地画布和本地 Canvas Agent，然后直接打开带 `mode`、`agentUrl`、`agentToken` 的 URL，让网页自动创建或选择画布并连接 Agent。
+当用户要求打开、启动、进入或使用 Cozy Tv 时，不要把 URL 交给用户手动复制，不要通过浏览器点击“新建画布”。优先快速拉起本地画布和本地 Canvas Agent，然后直接打开带 `mode`、`agentUrl`、`agentToken` 的 URL，让网页自动创建或选择画布并连接 Agent。
 
 ## 默认打开方式
 
@@ -17,7 +17,7 @@ description: 打开 Infinite Canvas 网页画布并自动连接本地 Canvas Age
 
 ## 工作流
 
-1. 如果当前仓库是 Infinite Canvas 项目，优先使用当前仓库的 `web/` 前端。
+1. 如果当前仓库是 Cozy Tv 项目，优先使用当前仓库的 `web/` 前端。
 2. 先检查本地端口归属：如果 `3000`、`3001` 等端口已被占用，必须用 `lsof`/`ps` 或服务输出确认监听进程的工作目录属于当前仓库的 `web/`，不能只因为端口存在就当成本地画布。
 3. 如果已有当前仓库的 Next dev 服务，复用它并记录真实画布地址，例如 `http://localhost:3001`。
 4. 如果没有当前仓库的服务，启动本地画布开发服务，默认在 `web/` 下运行 `bun run dev`；若默认端口被其他项目占用，改用空闲端口启动，例如 `bunx next dev --webpack -H 0.0.0.0 -p <空闲端口>`。不要执行构建或测试。
@@ -29,7 +29,7 @@ description: 打开 Infinite Canvas 网页画布并自动连接本地 Canvas Age
 
 ## 用户只安装插件时
 
-- 如果当前工作区不是 Infinite Canvas 源码仓库，优先提示用户先打开或启动 Infinite Canvas 网页，再连接本地 Agent。
+- 如果当前工作区不是 Cozy Tv 源码仓库，优先提示用户先打开或启动 Cozy Tv 网页，再连接本地 Agent。
 - 可以使用线上画布地址或用户给出的本地地址作为 `<画布网页地址>`，但仍要通过本地 Canvas Agent 获取 token 后再打开最终 URL。
 - 不要假设用户已经安装本仓库依赖；插件的 MCP 会通过 `npx -y @basketikun/canvas-agent mcp` 使用已发布的 Canvas Agent。
 

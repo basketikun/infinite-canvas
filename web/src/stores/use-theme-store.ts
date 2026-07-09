@@ -14,6 +14,6 @@ export const useThemeStore = create<ThemeStore>()(
             theme: "dark",
             setTheme: (theme) => set({ theme }),
         }),
-        { name: "infinite-canvas:theme_store" },
+        { name: "cozy-tv:theme_store" },
     ),
 );

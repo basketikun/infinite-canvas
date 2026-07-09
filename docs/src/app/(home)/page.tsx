@@ -1,12 +1,8 @@
 import Link from 'next/link';
 import { ArrowUpRight, BookOpen, Rocket } from 'lucide-react';
-import { appName, gitConfig } from '@/lib/shared';
+import { appName } from '@/lib/shared';
 
-const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
-const demoUrl = 'https://canvas.best/';
-const starHistoryUrl = `https://www.star-history.com/?repos=${gitConfig.user}%2F${gitConfig.repo}&type=date`;
-const starHistoryChart = `https://api.star-history.com/chart?repos=${gitConfig.user}/${gitConfig.repo}&type=date&transparent=true`;
-const darkStarHistoryChart = `${starHistoryChart}&theme=dark`;
+const placeholderUrl = '#';
 
 const previewImages = [
   {
@@ -41,7 +37,7 @@ export default function HomePage() {
             <span className="block text-zinc-500 dark:text-zinc-400">文档中心</span>
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-8 text-zinc-600 dark:text-zinc-400">
-            面向图片创作的无限画布，把画布编排、AI 生成、参考图编辑、提示词库和素材沉淀放在同一个工作流里。
+            面向图片创作的 Cozy Tv，把画布编排、AI 生成、参考图编辑、提示词库和素材沉淀放在同一个工作流里。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -52,21 +48,17 @@ export default function HomePage() {
               快速开始
             </Link>
             <a
-              href={githubUrl}
-              target="_blank"
-              rel="noreferrer noopener"
+              href={placeholderUrl}
               className="inline-flex items-center justify-center gap-2 rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium text-zinc-900 transition hover:border-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-100 dark:hover:border-zinc-500 dark:hover:bg-zinc-900"
             >
               <img src="/github.svg" alt="" className="size-4" />
-              GitHub
+              GitHub 待配置
             </a>
             <a
-              href={demoUrl}
-              target="_blank"
-              rel="noreferrer noopener"
+              href={placeholderUrl}
               className="inline-flex items-center justify-center gap-2 rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium text-zinc-900 transition hover:border-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-100 dark:hover:border-zinc-500 dark:hover:bg-zinc-900"
             >
-              在线体验
+              在线体验待配置
               <ArrowUpRight className="size-4" />
             </a>
           </div>
@@ -75,7 +67,7 @@ export default function HomePage() {
         <div className="overflow-hidden rounded-2xl lg:w-[108%] lg:max-w-none">
           <img
             src={previewImages[3].src}
-            alt="无限画布效果图"
+            alt="Cozy Tv 效果图"
             className="aspect-[16/10] w-full rounded-xl object-cover"
           />
         </div>
@@ -119,18 +111,10 @@ export default function HomePage() {
         </p>
         <div className="mt-7 flex justify-center">
           <a
-            href={`${githubUrl}/graphs/contributors`}
-            target="_blank"
-            rel="noreferrer noopener"
+            href={placeholderUrl}
             className="inline-flex max-w-full"
           >
-            <img
-              src={`https://contrib.rocks/image?repo=${gitConfig.user}/${gitConfig.repo}`}
-              alt="开发贡献者头像"
-              loading="lazy"
-              decoding="async"
-              className="max-w-full"
-            />
+            <span className="rounded-full border border-dashed border-zinc-300 px-5 py-3 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">贡献者入口待配置</span>
           </a>
         </div>
       </section>
@@ -140,30 +124,7 @@ export default function HomePage() {
           Star History
         </h2>
         <div className="mt-7 flex justify-center">
-          <a
-            href={starHistoryUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="block w-full max-w-4xl"
-          >
-            <picture>
-              <source
-                media="(prefers-color-scheme: dark)"
-                srcSet={darkStarHistoryChart}
-              />
-              <source
-                media="(prefers-color-scheme: light)"
-                srcSet={starHistoryChart}
-              />
-              <img
-                src={starHistoryChart}
-                alt="Star History Chart"
-                loading="lazy"
-                decoding="async"
-                className="mx-auto w-full"
-              />
-            </picture>
-          </a>
+          <div className="w-full max-w-4xl rounded-2xl border border-dashed border-zinc-300 py-12 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">Star History 待配置</div>
         </div>
       </section>
     </main>

@@ -1,13 +1,13 @@
 ---
 title: Codex App 插件
-description: 在 Codex App 中安装并使用 Infinite Canvas 插件
+description: 在 Codex App 中安装并使用 Cozy Tv 插件
 ---
 
 # Codex App 插件
 
-Infinite Canvas 提供了一个 Codex App 插件，用来把 Codex 和本地 Canvas Agent 连接起来。安装后，你可以直接在 Codex 中说“打开 Infinite Canvas”，让 Codex 打开画布、读取节点、创建节点并触发生成流程。
+Cozy Tv 提供了一个 Codex App 插件，用来把 Codex 和本地 Canvas Agent 连接起来。安装后，你可以直接在 Codex 中说“打开 Cozy Tv”，让 Codex 打开画布、读取节点、创建节点并触发生成流程。
 
-插件源码位于仓库的 `plugins/infinite-canvas/` 目录。
+插件源码位于仓库的 `plugins/cozy-tv/` 目录。
 
 ## 安装方式
 
@@ -16,10 +16,10 @@ Infinite Canvas 提供了一个 Codex App 插件，用来把 Codex 和本地 Can
 把下面这段发给 Codex：
 
 ```text
-请从 https://github.com/basketikun/infinite-canvas.git 安装 Infinite Canvas Codex 插件。
-请 clone 仓库到 ~/plugins/infinite-canvas，确认 plugins/infinite-canvas/.codex-plugin/plugin.json 存在，
-把 plugins/infinite-canvas 加入 personal marketplace，先运行 codex plugin marketplace add ~，
-再运行 codex plugin add infinite-canvas@personal。
+请从 <your-repository-url> 安装 Cozy Tv Codex 插件。
+请 clone 仓库到 ~/plugins/cozy-tv，确认 plugins/cozy-tv/.codex-plugin/plugin.json 存在，
+把 plugins/cozy-tv 加入 personal marketplace，先运行 codex plugin marketplace add ~，
+再运行 codex plugin add cozy-tv@personal。
 安装后请校验插件，并告诉我是否需要开启一个新对话来加载新技能和 MCP 工具。
 ```
 
@@ -31,10 +31,10 @@ Infinite Canvas 提供了一个 Codex App 插件，用来把 Codex 和本地 Can
 
 ```bash
 mkdir -p ~/plugins
-git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-canvas
+git clone <your-repository-url> ~/plugins/cozy-tv
 ```
 
-确保 `~/.agents/plugins/marketplace.json` 中有 Infinite Canvas 条目。这里的 `path` 要指向仓库里的插件子目录：
+确保 `~/.agents/plugins/marketplace.json` 中有 Cozy Tv 条目。这里的 `path` 要指向仓库里的插件子目录：
 
 ```json
 {
@@ -44,10 +44,10 @@ git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-c
   },
   "plugins": [
     {
-      "name": "infinite-canvas",
+      "name": "cozy-tv",
       "source": {
         "source": "local",
-        "path": "./plugins/infinite-canvas/plugins/infinite-canvas"
+        "path": "./plugins/cozy-tv/plugins/cozy-tv"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -63,29 +63,29 @@ git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-c
 
 ```bash
 codex plugin marketplace add ~
-codex plugin add infinite-canvas@personal
+codex plugin add cozy-tv@personal
 ```
 
 安装完成后，建议新建一个 Codex 对话，让新的 skill 和 MCP 工具完整加载。
 
 ### 本仓库开发调试安装
 
-如果你正在 Infinite Canvas 仓库中开发插件，可以直接使用仓库自带的 marketplace：
+如果你正在 Cozy Tv 仓库中开发插件，可以直接使用仓库自带的 marketplace：
 
 ```bash
-cd /path/to/infinite-canvas
+cd /path/to/cozy-tv
 codex plugin marketplace add "$(pwd)"
-codex plugin add infinite-canvas@infinite-canvas-local
+codex plugin add cozy-tv@cozy-tv-local
 ```
 
-仓库内的 `.agents/plugins/marketplace.json` 已经指向 `./plugins/infinite-canvas`，适合开发者本地调试。
+仓库内的 `.agents/plugins/marketplace.json` 已经指向 `./plugins/cozy-tv`，适合开发者本地调试。
 
 ## 使用插件
 
 新建 Codex 对话后，可以直接说：
 
 ```text
-打开 Infinite Canvas 新建画布 并连接好Codex
+打开 Cozy Tv 新建画布 并连接好Codex
 ```
 
 插件会优先确认当前仓库的本地画布服务是否已经运行。如果端口被占用，它会检查监听进程是否属于当前项目，避免误连到其他项目。确认或启动画布后，插件会启动本地 Canvas Agent，并打开带连接参数的新建画布 URL。
@@ -102,9 +102,9 @@ codex plugin add infinite-canvas@infinite-canvas-local
 
 普通业务代码变更通常不需要更新插件。只有改了下面这些内容时，才建议重新安装或刷新插件：
 
-- `plugins/infinite-canvas/.codex-plugin/plugin.json`
-- `plugins/infinite-canvas/.mcp.json`
-- `plugins/infinite-canvas/skills/` 下的技能说明
+- `plugins/cozy-tv/.codex-plugin/plugin.json`
+- `plugins/cozy-tv/.mcp.json`
+- `plugins/cozy-tv/skills/` 下的技能说明
 - 插件暴露的 MCP、app 或入口脚本
 
 重新安装后建议开启新对话，避免旧对话继续使用缓存中的技能和 MCP 工具。
@@ -114,7 +114,7 @@ codex plugin add infinite-canvas@infinite-canvas-local
 插件默认通过下面的 MCP 命令启动 Canvas Agent：
 
 ```bash
-npx -y @basketikun/canvas-agent mcp
+npx -y <your-canvas-agent-package> mcp
 ```
 
 如果需要手动排查，先启动画布：
@@ -128,7 +128,7 @@ bun run dev
 然后启动本地 Agent。端口不是 `3000` 时，把 `CANVAS_URL` 换成真实本地画布地址：
 
 ```bash
-CANVAS_URL=http://localhost:3000 npx -y @basketikun/canvas-agent
+CANVAS_URL=http://localhost:3000 npx -y <your-canvas-agent-package>
 ```
 
 从 Agent 输出或 `http://127.0.0.1:17371/config` 读取本地地址和 token 后，打开：

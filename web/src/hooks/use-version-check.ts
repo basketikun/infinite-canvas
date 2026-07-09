@@ -3,8 +3,8 @@ import { App } from "antd";
 import { APP_VERSION } from "@/constant/env";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
-const latestVersionUrl = "https://raw.githubusercontent.com/basketikun/infinite-canvas/main/VERSION";
-const latestChangelogUrl = "https://raw.githubusercontent.com/basketikun/infinite-canvas/main/CHANGELOG.md";
+const latestVersionUrl = import.meta.env.VITE_RELEASE_VERSION_URL || "";
+const latestChangelogUrl = import.meta.env.VITE_RELEASE_CHANGELOG_URL || "";
 
 function readLocalReleases(): ReleaseInfo[] {
     return __APP_RELEASES__ || [];
@@ -33,6 +33,7 @@ export function useVersionCheck() {
     const hasNewVersion = isNewerVersion(latestVersion, currentVersion);
 
     const checkLatestVersion = useCallback(async () => {
+        if (!latestVersionUrl) return false;
         try {
             const response = await fetch(latestVersionUrl);
             if (!response.ok) return false;
@@ -48,6 +49,7 @@ export function useVersionCheck() {
         async (showMessage = false) => {
             setChecking(true);
             try {
+                if (!latestVersionUrl || !latestChangelogUrl) throw new Error("版本更新源待配置");
                 const [versionResponse, changelogResponse] = await Promise.all([fetch(latestVersionUrl), fetch(latestChangelogUrl)]);
                 if (!versionResponse.ok) throw new Error("版本读取失败");
                 if (!changelogResponse.ok) throw new Error("更新日志读取失败");

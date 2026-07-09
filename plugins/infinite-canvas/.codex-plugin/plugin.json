@@ -1,24 +1,24 @@
 {
   "name": "infinite-canvas",
   "version": "0.1.0",
-  "description": "Use Codex to read and operate Infinite Canvas through the local Canvas Agent MCP server.",
+  "description": "Use Codex to read and operate Cozy Tv through the local Canvas Agent MCP server.",
   "author": {
-    "name": "Infinite Canvas"
+    "name": "Cozy Tv"
   },
-  "repository": "https://github.com/basketikun/infinite-canvas",
+  "repository": "<your-repository-url>",
   "license": "AGPL-3.0",
-  "keywords": ["infinite-canvas", "canvas", "mcp", "agent"],
+  "keywords": ["cozy-tv", "canvas", "mcp", "agent"],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Infinite Canvas",
-    "shortDescription": "Use Codex to operate the current Infinite Canvas board.",
-    "longDescription": "Connects Codex to the local Canvas Agent MCP server so Codex can inspect the current Infinite Canvas board, create nodes, connect flows, and trigger generation through the web canvas confirmation flow.",
-    "developerName": "Infinite Canvas",
+    "displayName": "Cozy Tv",
+    "shortDescription": "Use Codex to operate the current Cozy Tv board.",
+    "longDescription": "Connects Codex to the local Canvas Agent MCP server so Codex can inspect the current Cozy Tv board, create nodes, connect flows, and trigger generation through the web canvas confirmation flow.",
+    "developerName": "Cozy Tv",
     "category": "Productivity",
     "capabilities": ["Canvas", "MCP", "Creative Workflow"],
     "defaultPrompt": [
-      "打开 Infinite Canvas",
+      "打开 Cozy Tv",
       "读取当前画布并总结节点结构",
       "根据选中节点创建一组生图提示词"
     ],

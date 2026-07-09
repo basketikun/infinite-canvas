@@ -1,6 +1,6 @@
 services:
   app:
-    image: infinite-canvas:local
+    image: cozy-tv:local
     build:
       context: .
       dockerfile: Dockerfile

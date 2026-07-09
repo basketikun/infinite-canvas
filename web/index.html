@@ -3,12 +3,12 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="description" content="一个无限画布创作工具" />
-        <link rel="icon" href="/logo.svg" />
-        <title>无限画布</title>
+        <meta name="description" content="Cozy Tv 创作工具" />
+        <link rel="icon" href="/logo.png" />
+        <title>Cozy Tv</title>
         <script>
             try {
-                var s = JSON.parse(localStorage.getItem("infinite-canvas:theme_store") || "{}");
+                var s = JSON.parse(localStorage.getItem("cozy-tv:theme_store") || "{}");
                 var t = s.state && s.state.theme === "light" ? "light" : "dark";
                 document.documentElement.classList.toggle("dark", t === "dark");
                 document.documentElement.style.colorScheme = t;

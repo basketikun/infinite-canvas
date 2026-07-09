@@ -2,7 +2,7 @@ import localforage from "localforage";
 import type { StateStorage } from "zustand/middleware";
 
 localforage.config({
-    name: "infinite-canvas",
+    name: "cozy-tv",
     storeName: "app_state",
 });
 

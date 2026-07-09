@@ -11,10 +11,10 @@ description: 画布本地存储、节点结构、媒体文件与清理机制
 
 当前画布项目主要保存在浏览器本地：
 
-- 画布项目 JSON：`localForage`，数据库名 `infinite-canvas`，storeName `app_state`，key 为 `infinite-canvas:canvas_store`。
-- 我的素材 JSON：`localForage`，数据库名 `infinite-canvas`，storeName `app_state`，key 为 `infinite-canvas:asset_store`。
-- 图片 Blob：单独存到 `localForage` 实例，数据库名 `infinite-canvas`，storeName `image_files`。
-- 视频等媒体 Blob：单独存到 `localForage` 实例，数据库名 `infinite-canvas`，storeName `media_files`。
+- 画布项目 JSON：`localForage`，数据库名 `cozy-tv`，storeName `app_state`，key 为 `cozy-tv:canvas_store`。
+- 我的素材 JSON：`localForage`，数据库名 `cozy-tv`，storeName `app_state`，key 为 `cozy-tv:asset_store`。
+- 图片 Blob：单独存到 `localForage` 实例，数据库名 `cozy-tv`，storeName `image_files`。
+- 视频等媒体 Blob：单独存到 `localForage` 实例，数据库名 `cozy-tv`，storeName `media_files`。
 
 画布 JSON 不直接长期保存大体积 base64 图片或视频。图片节点、视频节点、助手图片和素材媒体只保存展示 URL、`storageKey` 和元信息，真实 Blob 通过 `storageKey` 读取。
 

@@ -6,7 +6,7 @@ import { getImageBlob } from "@/services/image-storage";
 import type { CanvasExportAsset, CanvasExportFile } from "@/types/canvas-export";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 
-export async function exportCanvasProjects(projects: CanvasProject[], fileName = "无限画布") {
+export async function exportCanvasProjects(projects: CanvasProject[], fileName = "Cozy Tv") {
     const zipFiles: { name: string; data: BlobPart }[] = [];
     const exportedProjects = await Promise.all(
         projects.map(async (project) => {
@@ -24,7 +24,7 @@ export async function exportCanvasProjects(projects: CanvasProject[], fileName =
         }),
     );
 
-    const data: CanvasExportFile = { app: "infinite-canvas", version: 3, exportedAt: new Date().toISOString(), projects: exportedProjects };
+    const data: CanvasExportFile = { app: "cozy-tv", version: 3, exportedAt: new Date().toISOString(), projects: exportedProjects };
     const zip = await createZip([{ name: "projects.json", data: JSON.stringify(data, null, 2) }, ...zipFiles]);
     saveAs(zip, `${safeFileName(fileName)}.zip`);
 }

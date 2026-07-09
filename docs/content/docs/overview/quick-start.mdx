@@ -1,6 +1,6 @@
 ---
 title: 快速开始
-description: 用最少步骤把无限画布跑起来
+description: 用最少步骤把Cozy Tv跑起来
 ---
 
 # 快速开始
@@ -14,8 +14,8 @@ description: 用最少步骤把无限画布跑起来
 ## 本地启动
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
-cd infinite-canvas
+git clone <your-repository-url>
+cd cozy-tv
 cd web
 bun install
 bun run dev
@@ -32,8 +32,8 @@ http://localhost:3000
 如果你需要基于当前源码构建镜像：
 
 ```bash
-docker build -t infinite-canvas .
-docker run --rm -p 3000:3000 infinite-canvas
+docker build -t cozy-tv .
+docker run --rm -p 3000:3000 cozy-tv
 ```
 
 ## 首次使用建议

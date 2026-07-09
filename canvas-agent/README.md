@@ -1,4 +1,4 @@
-# Infinite Canvas Agent
+# Cozy Tv Agent
 
 本地 Canvas Agent 用来连接画布网页和用户电脑上的 Codex / Claude Code。本地开发时优先连接 `http://localhost:3000`，不需要先使用线上站点。
 
@@ -56,12 +56,12 @@ codex mcp remove infinite-canvas
 
 ### Codex app 插件
 
-仓库内提供了 Codex app 插件：`plugins/infinite-canvas`。在 Codex app 中添加本仓库的 marketplace 后，可以安装 `Infinite Canvas` 插件；插件会注册同一个 `infinite-canvas` MCP，并带上画布操作说明。
+仓库内提供了 Codex app 插件：`plugins/infinite-canvas`。在 Codex app 中添加本仓库的 marketplace 后，可以安装 `Cozy Tv` 插件；插件会注册同一个 `infinite-canvas` MCP，并带上画布操作说明。
 
 添加本地 marketplace 时建议使用仓库绝对路径，避免 Codex 从其他工作目录解析失败：
 
 ```bash
-cd /path/to/infinite-canvas
+cd /path/to/cozy-tv
 codex plugin marketplace add "$(pwd)"
 codex plugin add infinite-canvas@infinite-canvas-local
 ```
@@ -72,7 +72,7 @@ codex plugin add infinite-canvas@infinite-canvas-local
 npx -y @basketikun/canvas-agent mcp
 ```
 
-使用时可以直接在 Codex 里说“打开 Infinite Canvas”，插件会优先启动本地画布和本地 Agent，读取 Local URL 和 Connect token，然后直接打开画布网页地址新建并连接画布。如果自动连接失败，再检查本地画布服务和 Canvas Agent 是否都已启动。
+使用时可以直接在 Codex 里说“打开 Cozy Tv”，插件会优先启动本地画布和本地 Agent，读取 Local URL 和 Connect token，然后直接打开画布网页地址新建并连接画布。如果自动连接失败，再检查本地画布服务和 Canvas Agent 是否都已启动。
 
 Canvas Agent 启动后，给 Codex 添加 MCP：
 
@@ -83,7 +83,7 @@ codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp
 本仓库开发时可以改成，实际使用建议替换为本机绝对路径：
 
 ```bash
-codex mcp add infinite-canvas -- node /path/to/infinite-canvas/canvas-agent/dist/index.js mcp
+codex mcp add infinite-canvas -- node /path/to/cozy-tv/canvas-agent/dist/index.js mcp
 ```
 
 Canvas Agent 源码使用 TypeScript 编写，MCP 协议层使用官方 `@modelcontextprotocol/sdk`，工具入参使用 `zod` 描述。
@@ -143,7 +143,7 @@ claude mcp add --scope user --transport stdio infinite-canvas -- npx -y @basketi
 本仓库开发时可以改成：
 
 ```bash
-claude mcp add --scope user --transport stdio infinite-canvas -- node /path/to/infinite-canvas/canvas-agent/dist/index.js mcp
+claude mcp add --scope user --transport stdio infinite-canvas -- node /path/to/cozy-tv/canvas-agent/dist/index.js mcp
 ```
 
 Canvas Agent 调用 Claude Code 时会默认带上 `--allowedTools mcp__infinite-canvas__*`，画布写操作仍由网页侧边栏确认。

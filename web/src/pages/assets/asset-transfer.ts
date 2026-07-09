@@ -6,7 +6,7 @@ import { getImageBlob, setImageBlob } from "@/services/image-storage";
 import type { Asset } from "@/stores/use-asset-store";
 
 type AssetExportFile = {
-    app: "infinite-canvas";
+    app: "cozy-tv";
     version: 1;
     exportedAt: string;
     assets: Asset[];
@@ -37,7 +37,7 @@ export async function exportAssets(assets: Asset[]) {
         }),
     );
 
-    const data: AssetExportFile = { app: "infinite-canvas", version: 1, exportedAt: new Date().toISOString(), assets, files };
+    const data: AssetExportFile = { app: "cozy-tv", version: 1, exportedAt: new Date().toISOString(), assets, files };
     const zip = await createZip([{ name: "assets.json", data: JSON.stringify(data, null, 2) }, ...zipFiles]);
     saveAs(zip, "我的素材.zip");
 }

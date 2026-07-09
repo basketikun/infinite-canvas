@@ -16,7 +16,7 @@ const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const DEFAULT_AGENT_URL = "http://127.0.0.1:17371";
 const AGENT_CONNECT_STEPS = [
-    { title: "方式一：在 Codex 中使用插件", text: "在 Codex app 安装 Infinite Canvas 插件后，通过插件启动画布，插件会自动启动本地 Agent 并带上连接信息。" },
+    { title: "方式一：在 Codex 中使用插件", text: "在 Codex app 安装 Cozy Tv 插件后，通过插件启动画布，插件会自动启动本地 Agent 并带上连接信息。" },
     { title: "方式二：直接运行 Agent", text: "不使用 Codex 插件时，在终端运行下面命令，再回到网页里连接或手动填入 Local URL 和 Connect token。", command: "npx -y @basketikun/canvas-agent" },
 ];
 const AGENT_PLUGIN_REMOVE_COMMAND = "codex plugin remove infinite-canvas";
@@ -821,7 +821,7 @@ function parseEventData<T>(event: Event) {
 
 function formatLogText(logs: AgentEventLog[], context: AgentLogContext) {
     const head = [
-        "Infinite Canvas Agent 诊断日志",
+        "Cozy Tv Agent 诊断日志",
         `Canvas Agent: ${context.endpoint}`,
         `连接: ${context.connected ? "在线" : context.enabled ? "连接中" : "未启用"}`,
         `状态: ${context.activity}`,

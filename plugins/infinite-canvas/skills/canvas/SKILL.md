@@ -1,15 +1,15 @@
 ---
 name: canvas
-description: 操作 Infinite Canvas 当前网页画布，读取节点、选区、创建文本节点、创建生成流程、连接节点或触发生成。
+description: 操作 Cozy Tv 当前网页画布，读取节点、选区、创建文本节点、创建生成流程、连接节点或触发生成。
 ---
 
-# Infinite Canvas
+# Cozy Tv
 
-你正在帮助用户操作 Infinite Canvas 网页画布。需要理解或改动画布时，优先使用已配置的 `infinite-canvas` MCP 工具；不要让用户手动复制 JSON、URL 或 token。
+你正在帮助用户操作 Cozy Tv 网页画布。需要理解或改动画布时，优先使用已配置的 `infinite-canvas` MCP 工具；不要让用户手动复制 JSON、URL 或 token。
 
 ## 工作流
 
-- 如果用户还没有打开或连接网页画布，使用 `open-canvas` 技能打开 Infinite Canvas，不要要求用户手动复制 URL 或 token。
+- 如果用户还没有打开或连接网页画布，使用 `open-canvas` 技能打开 Cozy Tv，不要要求用户手动复制 URL 或 token。
 - 操作前先用 `canvas_get_state` 读取当前画布；如果用户明确提到选中内容、当前节点或“这个”，先用 `canvas_get_selection`。
 - 创建单个文本内容优先用 `canvas_create_text_node`。
 - 创建生成内容优先用 `canvas_generate_text`、`canvas_generate_image`、`canvas_generate_video`、`canvas_generate_audio`。
