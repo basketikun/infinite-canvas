@@ -2,18 +2,19 @@ import axios from "axios";
 
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { buildApiUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { buildAiProxyHeaders, buildApiUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
 type RequestOptions = { signal?: AbortSignal };
 
 function aiApiUrl(config: AiConfig, path: string) {
-    return buildApiUrl(config.baseUrl, path);
+    return buildApiUrl(config.baseUrl, path, config.apiFormat === "openai" && config.useProxy);
 }
 
-function aiHeaders(config: AiConfig) {
+function aiHeaders(config: AiConfig): Record<string, string> {
     return {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
+        ...buildAiProxyHeaders(config),
     };
 }
 

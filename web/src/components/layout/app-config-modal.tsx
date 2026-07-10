@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Modal, Progress, Select, Tabs } from "antd";
+import { App, Button, Form, Input, Modal, Progress, Select, Switch, Tabs } from "antd";
 import { CircleAlert, Cloud, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
 import { useState } from "react";
 
@@ -97,7 +97,7 @@ export function AppConfigModal() {
 
     const updateChannelApiFormat = (channel: ModelChannel, apiFormat: ApiCallFormat) => {
         const baseUrl = !channel.baseUrl.trim() || channel.baseUrl.trim() === defaultBaseUrlForApiFormat(channel.apiFormat) ? defaultBaseUrlForApiFormat(apiFormat) : channel.baseUrl;
-        updateChannel(channel.id, { apiFormat, baseUrl });
+        updateChannel(channel.id, { apiFormat, baseUrl, useProxy: apiFormat === "openai" ? channel.useProxy : false });
     };
 
     const addChannel = () => {
@@ -283,6 +283,19 @@ export function AppConfigModal() {
                                                 <Form.Item label="API Key" className="mb-0">
                                                     <Input.Password value={channel.apiKey} onChange={(event) => updateChannel(channel.id, { apiKey: event.target.value })} />
                                                 </Form.Item>
+                                                <Form.Item label="服务端代理" className="mb-0">
+                                                    <div className="flex min-h-8 items-center gap-2">
+                                                        <Switch
+                                                            className="proxy-channel-switch"
+                                                            checked={channel.apiFormat === "openai" && channel.useProxy}
+                                                            checkedChildren="开"
+                                                            disabled={channel.apiFormat !== "openai"}
+                                                            unCheckedChildren="关"
+                                                            onChange={(useProxy) => updateChannel(channel.id, { useProxy })}
+                                                        />
+                                                        <span className="text-xs text-stone-500">用于第三方中转站 CORS；直连官方或厂商接口可关闭</span>
+                                                    </div>
+                                                </Form.Item>
                                                 <Form.Item label="模型列表" className="mb-0 md:col-span-2">
                                                     <Select mode="tags" showSearch allowClear maxTagCount="responsive" placeholder="输入模型名，或点击拉取模型" value={channel.models} onChange={(models) => updateChannel(channel.id, { models })} />
                                                 </Form.Item>
@@ -434,6 +447,7 @@ function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
         baseUrl: channels[0]?.baseUrl || config.baseUrl,
         apiKey: channels[0]?.apiKey || config.apiKey,
         apiFormat: channels[0]?.apiFormat || config.apiFormat,
+        useProxy: channels[0]?.useProxy || false,
         imageModels,
         videoModels,
         textModels,

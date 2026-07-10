@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 export type ApiCallFormat = "openai" | "gemini";
+export type ApiVersion = "v1" | "v3";
 
 export type ModelChannel = {
     id: string;
@@ -11,6 +12,7 @@ export type ModelChannel = {
     baseUrl: string;
     apiKey: string;
     apiFormat: ApiCallFormat;
+    useProxy: boolean;
     models: string[];
 };
 
@@ -19,6 +21,7 @@ export type AiConfig = {
     baseUrl: string;
     apiKey: string;
     apiFormat: ApiCallFormat;
+    useProxy: boolean;
     channels: ModelChannel[];
     model: string;
     imageModel: string;
@@ -56,6 +59,8 @@ export type WebdavSyncConfig = {
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
+export const AI_PROXY_PATH = "/api/ai-proxy";
+export const AI_PROXY_TARGET_HEADER = "x-ai-proxy-target-base-url";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 
@@ -64,6 +69,7 @@ export const defaultConfig: AiConfig = {
     baseUrl: OPENAI_BASE_URL,
     apiKey: "",
     apiFormat: "openai",
+    useProxy: false,
     channels: [
         {
             id: "default",
@@ -71,6 +77,7 @@ export const defaultConfig: AiConfig = {
             baseUrl: OPENAI_BASE_URL,
             apiKey: "",
             apiFormat: "openai",
+            useProxy: false,
             models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
         },
     ],
@@ -255,6 +262,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         baseUrl: channel?.baseUrl?.trim() || defaultBaseUrlForApiFormat(apiFormat),
         apiKey: channel?.apiKey || "",
         apiFormat,
+        useProxy: apiFormat === "openai" ? Boolean(channel?.useProxy) : false,
         models: uniqueRawModels(channel?.models || []),
     };
 }
@@ -304,7 +312,7 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.includes(model));
-    return matched || config.channels[0] || createModelChannel({ id: "default", name: "默认渠道", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName) });
+    return matched || config.channels[0] || createModelChannel({ id: "default", name: "默认渠道", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, useProxy: config.useProxy, models: config.models.map(modelOptionName) });
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
@@ -315,6 +323,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
+        useProxy: channel.apiFormat === "openai" && channel.useProxy,
     };
 }
 
@@ -336,6 +345,7 @@ function normalizeChannels(config: AiConfig) {
                 baseUrl: config.baseUrl || defaultConfig.baseUrl,
                 apiKey: config.apiKey || "",
                 apiFormat: config.apiFormat || defaultConfig.apiFormat,
+                useProxy: config.useProxy || false,
                 models: uniqueRawModels([
                     ...(config.models || []),
                     config.model,
@@ -366,12 +376,28 @@ function uniqueModelOptions(models: string[]) {
     return Array.from(new Set((models || []).map((model) => model.trim()).filter(Boolean)));
 }
 
-export function buildApiUrl(baseUrl: string, path: string) {
+export function buildApiTargetBaseUrl(baseUrl: string, apiVersion: ApiVersion = "v1") {
     let normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
     normalizedBaseUrl = normalizeArkPlanBaseUrl(normalizedBaseUrl);
     const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
-    const apiBaseUrl = lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/api/v3") || lowerBaseUrl.endsWith("/api/plan/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
+    if (lowerBaseUrl.endsWith("/api/plan/v3") || lowerBaseUrl.endsWith("/api/v3")) return normalizedBaseUrl;
+    if (apiVersion === "v3") {
+        if (lowerBaseUrl.endsWith("/v1")) return `${normalizedBaseUrl.slice(0, -3)}/v3`;
+        if (lowerBaseUrl.endsWith("/v3")) return normalizedBaseUrl;
+        return `${normalizedBaseUrl}/v3`;
+    }
+    return lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
+}
+
+export function buildApiUrl(baseUrl: string, path: string, useProxy = false, apiVersion: ApiVersion = "v1") {
+    const apiBaseUrl = buildApiTargetBaseUrl(baseUrl, apiVersion);
+    if (useProxy) return `${AI_PROXY_PATH}${path}`;
     return `${apiBaseUrl}${path}`;
+}
+
+export function buildAiProxyHeaders(config: Pick<AiConfig, "baseUrl" | "apiFormat" | "useProxy">, apiVersion: ApiVersion = "v1"): Record<string, string> {
+    if (config.apiFormat !== "openai" || !config.useProxy) return {};
+    return { [AI_PROXY_TARGET_HEADER]: buildApiTargetBaseUrl(config.baseUrl, apiVersion) };
 }
 
 function normalizeArkPlanBaseUrl(baseUrl: string) {

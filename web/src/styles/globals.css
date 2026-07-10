@@ -225,6 +225,31 @@
         font-weight: 700;
     }
 
+    .proxy-channel-switch.ant-switch {
+        background: #44403c !important;
+        border: 1px solid rgba(214, 211, 209, 0.42);
+        min-width: 48px;
+    }
+
+    .proxy-channel-switch.ant-switch:hover:not(.ant-switch-disabled) {
+        background: #57534e !important;
+    }
+
+    .proxy-channel-switch.ant-switch.ant-switch-checked {
+        background: #10b981 !important;
+        border-color: #34d399;
+    }
+
+    .proxy-channel-switch.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+        background: #059669 !important;
+    }
+
+    .proxy-channel-switch.ant-switch .ant-switch-inner {
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
     .thin-scrollbar {
         scrollbar-color: rgba(120, 113, 108, 0.45) transparent;
         scrollbar-width: thin;

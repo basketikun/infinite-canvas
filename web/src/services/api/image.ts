@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { buildApiUrl, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildAiProxyHeaders, buildApiUrl, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -229,12 +229,13 @@ function withSystemPrompt(config: AiConfig, prompt: string) {
 }
 
 function aiApiUrl(config: AiConfig, path: string) {
-    return buildApiUrl(config.baseUrl, path);
+    return buildApiUrl(config.baseUrl, path, config.apiFormat === "openai" && config.useProxy);
 }
 
-function aiHeaders(config: AiConfig, contentType?: string) {
+function aiHeaders(config: AiConfig, contentType?: string): Record<string, string> {
     return {
         Authorization: `Bearer ${config.apiKey}`,
+        ...buildAiProxyHeaders(config),
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
 }
@@ -721,7 +722,7 @@ export async function requestToolResponse(config: AiConfig, messages: ResponseIn
     }
 }
 
-export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">) {
+export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "useProxy">) {
     try {
         if (config.apiFormat === "gemini") {
             const response = await axios.get<GeminiPayload>(geminiApiUrl({ ...defaultGeminiConfig, ...config }), { headers: geminiHeaders({ ...defaultGeminiConfig, ...config }) });
@@ -731,9 +732,10 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
                 .filter((id): id is string => Boolean(id))
                 .sort((a, b) => a.localeCompare(b));
         }
-        const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(buildApiUrl(config.baseUrl, "/models"), {
+        const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(buildApiUrl(config.baseUrl, "/models", config.apiFormat === "openai" && config.useProxy), {
             headers: {
                 Authorization: `Bearer ${config.apiKey}`,
+                ...buildAiProxyHeaders(config),
             },
         });
         return (response.data.data || [])
@@ -746,13 +748,14 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
 }
 
 export async function fetchChannelModels(channel: ModelChannel) {
-    return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat });
+    return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat, useProxy: channel.useProxy });
 }
 
-const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "model" | "systemPrompt"> = {
+const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "useProxy" | "model" | "systemPrompt"> = {
     baseUrl: "https://generativelanguage.googleapis.com",
     apiKey: "",
     apiFormat: "gemini",
+    useProxy: false,
     model: "",
     systemPrompt: "",
 };
