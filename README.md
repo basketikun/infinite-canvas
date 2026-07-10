@@ -52,7 +52,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-运行后默认端口为 `3000`。访问 Canvas 后，未登录页面会显示“使用 Token 账号一键登录”；Token 登录成功后会自动创建或复用 `image` 分组令牌，并返回 Canvas。
+运行后默认端口为 `3000`。访问 Canvas 后，未登录页面会显示“使用 Token 账号一键登录”；Token 登录成功后会自动创建或复用 `Image` 分组令牌，并返回 Canvas。
 
 真实 Token API Key 不会写入 URL、页面状态或浏览器存储，只会以 AES-256-GCM 密文保存在服务端会话数据库中。浏览器统一请求同源 `/api/ai`，不能修改上游 Base URL。
 

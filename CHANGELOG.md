@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-+ [新增] Canvas 支持使用 Token/New API 账号一键登录，并自动创建或复用 `image` 分组令牌。
++ [新增] Canvas 支持使用 Token/New API 账号一键登录，并自动创建或复用 `Image` 分组令牌。
 + [安全] 真实 Token API Key 仅加密保存在服务端会话数据库中，浏览器统一通过固定的同源 AI 代理访问模型服务。
 + [调整] 配置页移除 Base URL、API Key、渠道和调用格式输入，登录后自动更新 Token 可用模型。
 

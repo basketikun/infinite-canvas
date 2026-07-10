@@ -32,7 +32,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
                     使用 Token 账号一键登录
                     <ArrowRight className="size-4" />
                 </Link>
-                <p className="mt-5 text-center text-xs leading-5 text-stone-500">登录后系统会自动创建或复用 image 分组令牌。真实密钥仅保存在服务器加密会话中。</p>
+                <p className="mt-5 text-center text-xs leading-5 text-stone-500">登录后系统会自动创建或复用 Image 分组令牌。真实密钥仅保存在服务器加密会话中。</p>
             </section>
         </main>
     );

@@ -194,7 +194,7 @@ export function AppConfigModal() {
                                             <CircleAlert className="size-4 text-emerald-600" />
                                             Token 账号已自动配置
                                         </div>
-                                        <div className="mt-1 text-xs leading-5 text-stone-500">所有模型请求均通过服务器安全代理，图像能力使用 Token 的 image 分组令牌，无需填写 Base URL 或 API Key。</div>
+                                        <div className="mt-1 text-xs leading-5 text-stone-500">所有模型请求均通过服务器安全代理，图像能力使用 Token 的 Image 分组令牌，无需填写 Base URL 或 API Key。</div>
                                     </div>
                                     <Button icon={<RefreshCw className="size-4" />} loading={loadingChannelId === "all"} onClick={() => void refreshAllModels()}>
                                         从 Token 更新模型
