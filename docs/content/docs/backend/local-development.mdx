@@ -1,13 +1,30 @@
 ---
 title: 本地开发
-description: 前端优先的本地开发方式
+description: Token 一键登录与同源代理的本地开发方式
 ---
 
 # 本地开发
 
-当前主应用以 `web/` 前端为主，AI 请求由浏览器前台直连用户自己的 OpenAI 兼容接口。
+主应用位于 `web/`，同时包含页面、Token OAuth 回调、加密会话和同源 AI 代理。
 
-## 1. 启动前端
+## 1. 准备环境变量
+
+在 `web/.env.local` 中至少配置：
+
+```dotenv
+CANVAS_PUBLIC_ORIGIN=http://localhost:3000
+TOKEN_ISSUER_URL=http://localhost:3001
+TOKEN_API_BASE_URL=http://localhost:3001
+CANVAS_OAUTH_CLIENT_ID=canvas
+CANVAS_OAUTH_CLIENT_SECRET=replace_with_the_same_secret_as_token
+CANVAS_OAUTH_REDIRECT_URI=http://localhost:3000/auth/callback
+CANVAS_ENCRYPTION_KEY=replace_with_32_byte_base64_or_64_hex_key
+CANVAS_DATA_DIR=.data
+```
+
+Token/New API 端必须使用相同的 Client ID、Client Secret 和精确回调地址，并启用 `image` 分组。
+
+## 2. 启动前端
 
 ```bash
 cd web
@@ -15,26 +32,18 @@ bun install
 bun run dev
 ```
 
-前端默认访问：
-
-```text
-http://localhost:3000
-```
-
-## 2. 配置模型
-
-打开右上角配置弹窗，填写自己的 `Base URL`、`API Key` 和模型名。第三方提示词由 Next.js route 拉取并缓存在运行实例内存中；WebDAV 可选择前端直连或 Next.js 转发。
+访问 `http://localhost:3000`，通过 Token 账号完成登录。真实 Token API Key 只保存在本地 `.data/canvas.db` 的加密字段中。
 
 ## 3. 启动文档站
 
-如果需要单独调整文档站，在 `docs` 目录执行：
-
 ```bash
+cd docs
 bun run dev
 ```
 
-## 常见场景
+## 常见改动位置
 
-- 改画布、页面和交互：主要看 `web/`
-- 改提示词缓存或 WebDAV 代理：主要看 `web/src/app/api/` 和 `web/src/app/webdav-proxy/`
-- 改文档站内容：主要看 `docs/content/docs/`
+- 登录、会话和 AI 代理：`web/src/app/api/auth/`、`web/src/app/auth/`、`web/src/app/api/ai/`、`web/src/lib/server/`
+- 画布、页面和交互：`web/src/app/(user)/`
+- 提示词缓存或 WebDAV 代理：`web/src/app/api/prompts/`、`web/src/app/webdav-proxy/`
+- 文档站内容：`docs/content/docs/`

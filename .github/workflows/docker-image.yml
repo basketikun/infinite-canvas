@@ -25,6 +25,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/deploy/canvas-mewinyou' }}
             type=ref,event=tag
             type=sha,prefix=
 

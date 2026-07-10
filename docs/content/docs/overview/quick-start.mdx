@@ -5,20 +5,16 @@ description: 用最少步骤把无限画布跑起来
 
 # 快速开始
 
-如果你只是想先把项目跑起来，优先部署或启动 `web/` 前端。
+当前 Token 一键登录架构需要持久化的 Next.js 服务端会话，推荐使用 Docker 部署。无持久化 SQLite 数据盘的纯静态或 Serverless 部署不适合直接使用这套登录方式。
 
-## Vercel 部署
-
-在 Vercel 中导入仓库即可，根目录 `vercel.json` 会构建 `web/`。当前版本的 AI 请求由浏览器前台直连用户自己的 OpenAI 兼容地址，不需要额外配置服务端。
-
-## 本地启动
+## Docker 启动
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
 cd infinite-canvas
-cd web
-bun install
-bun run dev
+cp .env.example .env
+# 编辑 .env，并为 CANVAS_ENCRYPTION_KEY 填入 `openssl rand -base64 32` 的结果
+docker compose up -d
 ```
 
 启动后访问：
@@ -27,22 +23,27 @@ bun run dev
 http://localhost:3000
 ```
 
-## Docker 启动
+生产环境还需要在 Token/New API 服务端配置相同的 `CANVAS_OAUTH_CLIENT_ID`、`CANVAS_OAUTH_CLIENT_SECRET` 和精确匹配的 `CANVAS_OAUTH_REDIRECT_URI`。
 
-如果你需要基于当前源码构建镜像：
+## 本地启动
 
 ```bash
-docker build -t infinite-canvas .
-docker run --rm -p 3000:3000 infinite-canvas
+cd web
+bun install
+bun run dev
 ```
 
-## 首次使用建议
+本地环境必须把 `CANVAS_PUBLIC_ORIGIN` 和 OAuth 回调地址改为本地地址，并让本地 Token/New API 使用完全相同的回调配置。
 
-- 先打开右上角配置弹窗，填入自己的 `Base URL`、`API Key` 和模型名。
-- 如果需要提示词仓库内容，打开 `/prompts` 会通过 Next.js route 拉取并缓存在内存中。
-- 如果需要跨设备同步画布、素材和生成记录，可在配置弹窗中填写 WebDAV。
+## 首次使用
 
-## 说明
+- 未登录时点击“使用 Token 账号一键登录”。
+- Token 登录后会自动创建或复用 `image` 分组令牌并返回 Canvas。
+- Canvas 会自动从 Token 更新可用模型；也可以在配置弹窗中手动刷新模型列表。
+- 画布、素材和生成记录主要保存在浏览器本地；跨设备同步可自行配置 WebDAV。
 
-- 当前画布项目和“我的素材”主要保存在浏览器本地，WebDAV 同步需要用户自行配置。
-- AI API Key 保存在浏览器本地，并由前端直接请求 OpenAI 兼容接口。
+## 安全说明
+
+- 真实 Token API Key 不进入浏览器，也不会出现在 URL 中。
+- API Key 以 AES-256-GCM 密文保存在服务端 SQLite 会话数据库中。
+- 浏览器只请求同源 `/api/ai`，代理上游固定为 Token/New API，用户不能指定任意 Base URL。

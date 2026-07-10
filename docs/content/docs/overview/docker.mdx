@@ -1,52 +1,49 @@
 ---
 title: Docker 部署
-description: 使用 Docker Compose 部署无限画布
+description: 使用 Docker Compose 部署带 Token 一键登录的无限画布
 ---
 
 # Docker 部署
 
-如果你希望在自己的机器或服务器上运行项目，可以直接使用 Docker Compose。
+当前镜像运行 Next.js 页面、OAuth 回调、加密会话和同源 AI 代理。部署时必须配置环境变量并持久化 `/app/data`。
 
-## 使用发布镜像
+## 1. 准备配置
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
 cd infinite-canvas
+cp .env.example .env
+openssl rand -base64 32
+```
+
+把随机结果写入 `.env` 的 `CANVAS_ENCRYPTION_KEY`，并填写与 Token/New API 服务端一致的 OAuth Client Secret。不要提交真实 `.env`。
+
+Token/New API 端需要对应配置：
+
+```dotenv
+CANVAS_OAUTH_CLIENT_ID=canvas
+CANVAS_OAUTH_CLIENT_SECRET=replace_with_the_same_long_random_secret
+CANVAS_OAUTH_REDIRECT_URI=https://canvas.example.com/auth/callback
+CANVAS_OAUTH_TOKEN_GROUP=image
+```
+
+## 2. 启动
+
+```bash
 docker compose up -d
 ```
 
-启动后访问：
+`docker-compose.yml` 默认使用 `ghcr.io/carminback/infinite-canvas:latest`，也可以通过 `CANVAS_IMAGE` 指定已验证的 SHA 镜像标签。生产部署建议固定到具体 `sha-...` 标签。
 
-```text
-http://localhost:3000
-```
+## 3. 数据卷
 
-## 本地构建镜像
+Compose 会把本地 `./data` 挂载到容器 `/app/data`。其中 `canvas.db` 保存：
 
-如果需要基于当前源码构建镜像：
+- Session ID 的 SHA-256 哈希；
+- Token 用户 ID 和用户名；
+- 经 AES-256-GCM 加密的 Token API Key；
+- 会话过期时间。
 
-```bash
-docker compose -f docker-compose.local.yml up -d --build
-```
+真实 API Key 不会写入浏览器存储或 URL。丢失 `CANVAS_ENCRYPTION_KEY` 后旧会话无法解密，需要用户重新登录。
 
-## 文档站镜像
-
-文档站位于 `docs/` 目录，按带服务端能力的 Next.js standalone 应用单独构建，不打进主应用镜像。
-
-使用发布镜像：
-
-```bash
-cd docs
-docker compose up -d
-```
-
-基于当前源码本地构建：
-
-```bash
-cd docs
-docker compose -f docker-compose.local.yml up -d --build
-```
-
-## 数据说明
-
-当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由 Next.js route 拉取后缓存在运行实例内存里，不需要额外挂载数据目录。
+画布、我的素材和生成记录仍主要保存在浏览器本地；WebDAV 同步需要用户自行配置。

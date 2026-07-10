@@ -59,19 +59,20 @@ export type WebdavSyncConfig = {
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
-export const FIXED_AI_BASE_URL = "https://image3.mewinyou.shop";
+export const FIXED_AI_BASE_URL = "/api/ai";
+export const SESSION_API_KEY = "canvas-session";
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
     baseUrl: FIXED_AI_BASE_URL,
-    apiKey: "",
+    apiKey: SESSION_API_KEY,
     apiFormat: "openai",
     channels: [
         {
             id: "default",
-            name: "默认渠道",
+            name: "Token 模型服务",
             baseUrl: FIXED_AI_BASE_URL,
-            apiKey: "",
+            apiKey: SESSION_API_KEY,
             apiFormat: "openai",
             models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
         },
@@ -130,7 +131,20 @@ function isVideoModelName(model: string) {
 
 function isImageModelName(model: string) {
     const value = modelOptionName(model).toLowerCase();
-    return !isVideoModelName(model) && !isAudioModelName(model) && (value.includes("seedream") || value.includes("gpt-image") || value.includes("image") || value.includes("dall-e") || value.includes("dalle") || value.includes("imagen") || value.includes("flux") || value.includes("sdxl") || value.includes("stable-diffusion") || value.includes("midjourney"));
+    return (
+        !isVideoModelName(model) &&
+        !isAudioModelName(model) &&
+        (value.includes("seedream") ||
+            value.includes("gpt-image") ||
+            value.includes("image") ||
+            value.includes("dall-e") ||
+            value.includes("dalle") ||
+            value.includes("imagen") ||
+            value.includes("flux") ||
+            value.includes("sdxl") ||
+            value.includes("stable-diffusion") ||
+            value.includes("midjourney"))
+    );
 }
 
 function isAudioModelName(model: string) {
@@ -163,9 +177,8 @@ function modelListKey(capability: ModelCapability) {
     return `${capability}Models` as "imageModels" | "videoModels" | "textModels" | "audioModels";
 }
 
-function isAiConfigReady(config: AiConfig, model: string) {
-    const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.apiKey.trim());
+function isAiConfigReady(_config: AiConfig, model: string) {
+    return Boolean(model.trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -212,7 +225,8 @@ export const useConfigStore = create<ConfigStore>()(
                         ...config,
                         channelMode: "local",
                         baseUrl: FIXED_AI_BASE_URL,
-                        apiFormat: normalizeApiFormat(config.apiFormat),
+                        apiKey: SESSION_API_KEY,
+                        apiFormat: "openai",
                         channels,
                         models,
                         imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
@@ -252,13 +266,12 @@ export function useEffectiveConfig() {
 }
 
 export function createModelChannel(channel?: Partial<ModelChannel>): ModelChannel {
-    const apiFormat = normalizeApiFormat(channel?.apiFormat);
     return {
         id: channel?.id?.trim() || nanoid(),
         name: channel?.name?.trim() || "新渠道",
         baseUrl: FIXED_AI_BASE_URL,
-        apiKey: channel?.apiKey || "",
-        apiFormat,
+        apiKey: SESSION_API_KEY,
+        apiFormat: "openai",
         models: uniqueRawModels(channel?.models || []),
     };
 }
@@ -297,11 +310,11 @@ export function normalizeModelOptionValue(value: string | undefined, channels: M
     if (!model) return "";
     const decoded = decodeChannelModel(model);
     if (decoded) {
-        const channel = channels.find((item) => item.id === decoded.channelId);
-        return channel && channel.models.includes(decoded.model) ? model : "";
+        const channel = channels.find((item) => item.id === decoded.channelId) || channels.find((item) => item.models.includes(decoded.model));
+        return channel && channel.models.includes(decoded.model) ? encodeChannelModel(channel.id, decoded.model) : "";
     }
-    const channel = channels.find((item) => item.models.includes(decoded?.model || model)) || channels[0];
-    return channel && channel.models.includes(decoded?.model || model) ? encodeChannelModel(channel.id, decoded?.model || model) : model;
+    const channel = channels.find((item) => item.models.includes(model)) || channels[0];
+    return channel && channel.models.includes(model) ? encodeChannelModel(channel.id, model) : model;
 }
 
 export function resolveModelChannel(config: AiConfig, value: string) {
@@ -311,55 +324,66 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     return matched || config.channels[0] || createModelChannel({ id: "default", name: "默认渠道", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName) });
 }
 
-export function resolveModelRequestConfig(config: AiConfig, value: string) {
-    const channel = resolveModelChannel(config, value);
+export function resolveModelRequestConfig(config: AiConfig, value: string): AiConfig {
     return {
         ...config,
         model: modelOptionName(value || config.model),
         baseUrl: FIXED_AI_BASE_URL,
-        apiKey: channel.apiKey,
-        apiFormat: channel.apiFormat,
+        apiKey: SESSION_API_KEY,
+        apiFormat: "openai" as const,
     };
 }
 
 function normalizeChannels(config: AiConfig) {
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
-    const channels = persistedChannels.map((channel, index) =>
+    const models = uniqueRawModels([...persistedChannels.flatMap((channel) => channel.models || []), ...(config.models || []), config.model, config.imageModel, config.videoModel, config.textModel, config.audioModel]);
+    return [
         createModelChannel({
-            ...channel,
-            id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
-            name: channel.name || (index === 0 ? "默认渠道" : `渠道 ${index + 1}`),
-            models: uniqueRawModels(channel.models || []),
+            id: "default",
+            name: "Token 模型服务",
+            models: models.length ? models : defaultConfig.channels[0].models,
         }),
-    );
-    if (!channels.length) {
-        channels.push(
-            createModelChannel({
-                id: "default",
-                name: "默认渠道",
-                baseUrl: config.baseUrl || defaultConfig.baseUrl,
-                apiKey: config.apiKey || "",
-                apiFormat: config.apiFormat || defaultConfig.apiFormat,
-                models: uniqueRawModels([
-                    ...(config.models || []),
-                    config.model,
-                    config.imageModel,
-                    config.videoModel,
-                    config.textModel,
-                    config.audioModel,
-                ]),
-            }),
-        );
-    }
-    return channels.map((channel) => ({ ...channel, models: uniqueRawModels(channel.models) }));
+    ];
+}
+
+export function applyModelChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
+    const safeChannels = channels.map((channel) => createModelChannel(channel));
+    const models = modelOptionsFromChannels(safeChannels);
+    const imageModels = keepOrSuggestModels(config.imageModels, filterModelsByCapability(models, "image"), models);
+    const videoModels = keepOrSuggestModels(config.videoModels, filterModelsByCapability(models, "video"), models);
+    const textModels = keepOrSuggestModels(config.textModels, filterModelsByCapability(models, "text"), models);
+    const audioModels = keepOrSuggestModels(config.audioModels, filterModelsByCapability(models, "audio"), models);
+    return {
+        ...config,
+        channelMode: "local",
+        baseUrl: FIXED_AI_BASE_URL,
+        apiKey: SESSION_API_KEY,
+        apiFormat: "openai",
+        channels: safeChannels,
+        models,
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+        imageModel: normalizeDefaultModel(config.imageModel, imageModels),
+        videoModel: normalizeDefaultModel(config.videoModel, videoModels),
+        textModel: normalizeDefaultModel(config.textModel, textModels),
+        audioModel: normalizeDefaultModel(config.audioModel, audioModels),
+    };
+}
+
+function keepOrSuggestModels(current: string[], suggested: string[], allModels: string[]) {
+    const available = new Set(allModels);
+    const kept = uniqueModelOptions(current).filter((model) => available.has(model));
+    return kept.length ? kept : suggested;
+}
+
+function normalizeDefaultModel(value: string, options: string[]) {
+    return options.includes(value) ? value : options[0] || value;
 }
 
 export function defaultBaseUrlForApiFormat(_apiFormat: ApiCallFormat) {
     return FIXED_AI_BASE_URL;
-}
-
-function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
-    return apiFormat === "gemini" ? "gemini" : "openai";
 }
 
 function uniqueRawModels(models: string[]) {

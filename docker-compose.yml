@@ -1,7 +1,12 @@
 services:
   app:
-    image: ghcr.io/basketikun/infinite-canvas:latest
+    image: ${CANVAS_IMAGE:-ghcr.io/carminback/infinite-canvas:latest}
     container_name: infinite-canvas
     ports:
       - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data
     restart: unless-stopped

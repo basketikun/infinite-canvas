@@ -11,7 +11,7 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
-export function AppTopNav() {
+export function AppTopNav({ username }: { username: string }) {
     const pathname = usePathname();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
@@ -69,7 +69,7 @@ export function AppTopNav() {
                         </div>
 
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
-                            <UserStatusActions />
+                            <UserStatusActions username={username} />
                         </div>
                     </div>
                 </header>

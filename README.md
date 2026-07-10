@@ -24,7 +24,7 @@
 ## 核心功能
 
 - 无限画布：多画布项目、节点拖拽缩放、连线、小地图、撤销重做、导入导出。
-- AI 创作：浏览器前台直连你配置的 OpenAI 兼容接口，支持文生图、图生图、参考图编辑、文本问答、音频和视频生成；Seedance 2.0 可通过火山方舟 Agent Plan 接入。
+- AI 创作：通过 Token/New API 账号一键授权，所有模型请求由同源服务端代理转发，支持文生图、图生图、参考图编辑、文本问答、音频和视频生成。
 - 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回画布。
 - 本地 Agent：通过本机 Canvas Agent 连接 Codex / Claude Code，让 Agent 通过 MCP 操作当前画布；
 - Codex App 插件：提供 Codex app 插件，安装后会自动注册 MCP 并尝试拉起本地 Agent。
@@ -37,42 +37,26 @@
 ## 技术栈
 
 - 前端：Next.js、React、TypeScript、Tailwind CSS、Ant Design、Zustand、TanStack Query。
-- 少量 Next.js Route：第三方提示词内存缓存、WebDAV 可选代理。
-- 部署：Vercel 或 Docker。
+- Next.js 服务端：Token OAuth 回调、加密会话、固定 AI 代理、第三方提示词缓存和 WebDAV 可选代理。
+- 部署：Docker（需要持久化会话数据库）。
 
 ## 快速开始
 
-推荐直接导入仓库到 Vercel，根目录已提供 `vercel.json`，会构建 `web/`。AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器本地。
+当前一键登录架构需要可持久化运行的 Next.js 服务，推荐使用 Docker。先复制环境变量示例，并为 Canvas 与 Token/New API 配置相同的 OAuth Client Secret：
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
 cd infinite-canvas
-cd web
-bun install
-bun run dev
+cp .env.example .env
+# 编辑 .env，并使用 `openssl rand -base64 32` 生成 CANVAS_ENCRYPTION_KEY
+docker compose up -d
 ```
 
-Docker 运行：
+运行后默认端口为 `3000`。访问 Canvas 后，未登录页面会显示“使用 Token 账号一键登录”；Token 登录成功后会自动创建或复用 `image` 分组令牌，并返回 Canvas。
 
-```bash
-docker build -t infinite-canvas .
-docker run --rm -p 3000:3000 infinite-canvas
-```
+真实 Token API Key 不会写入 URL、页面状态或浏览器存储，只会以 AES-256-GCM 密文保存在服务端会话数据库中。浏览器统一请求同源 `/api/ai`，不能修改上游 Base URL。
 
-运行后默认端口3000，可访问 `http://localhost:3000`。
-
-首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
-
-## New API 自动配置
-
-如果使用 New API，可在 `系统设置 -> 聊天方式 -> 添加聊天设置` 中填入：
-
-```text
-https://canvas.best?apiKey={key}&baseUrl={address}
-```
-
-跳转后会自动打开配置弹窗并填入 API Key 和 Base URL。
-如果自己部署了，可以把 `https://canvas.best` 替换成你部署的地址。
+本地开发说明见 [本地开发](docs/content/docs/backend/local-development.mdx)，生产环境变量和数据卷说明见 [Docker 部署](docs/content/docs/overview/docker.mdx)。
 
 ## 效果展示
 
