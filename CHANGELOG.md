@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [调整] 线上画布的所有 AI 渠道固定使用 `https://image3.mewinyou.shop`，用户只需填写 API Key。
+
 + [新增] 渠道兼容Gemini格式。
 + [新增] 新增Codex App插件支持。
 
