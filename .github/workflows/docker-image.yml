@@ -2,6 +2,7 @@ name: Docker image
 
 on:
   push:
+    branches: ["deploy/canvas-mewinyou"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -10,7 +11,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/basketikun/infinite-canvas
+  IMAGE_NAME: ghcr.io/carminback/infinite-canvas
 
 jobs:
   meta:
