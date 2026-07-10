@@ -313,8 +313,9 @@ export function modelOptionName(value: string) {
 
 export function modelOptionLabel(config: AiConfig, value: string) {
     const model = modelOptionName(value);
+    const displayName = model === "gemini-3.1-flash-image" ? "Nano Banana" : model;
     const priceLabel = config.modelPriceLabels[model];
-    return priceLabel ? model + " · " + priceLabel : model;
+    return priceLabel ? displayName + " · " + priceLabel : displayName;
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
