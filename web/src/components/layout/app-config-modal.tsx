@@ -5,11 +5,11 @@ import { CircleAlert, Cloud, RefreshCw, Wifi } from "lucide-react";
 import { useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
-import { fetchChannelModels } from "@/services/api/image";
+import { fetchModelCatalog } from "@/services/model-catalog";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { applyModelChannels, filterModelsByCapability, modelOptionLabel, normalizeModelOptionValue, useConfigStore, type AiConfig, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { applyModelCatalog, filterModelsByCapability, modelOptionLabel, normalizeModelOptionValue, useConfigStore, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -63,6 +63,7 @@ export function AppConfigModal() {
     const config = useConfigStore((state) => state.config);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
+    const setConfig = useConfigStore((state) => state.setConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
     const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
@@ -70,10 +71,6 @@ export function AppConfigModal() {
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
     const webdavReady = Boolean(webdav.url.trim());
-
-    const saveConfig = (nextConfig: AiConfig) => {
-        (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
-    };
 
     const finishConfig = () => {
         const ready = config.models.length > 0;
@@ -83,19 +80,11 @@ export function AppConfigModal() {
         clearPromptContinue();
     };
 
-    const updateChannels = (channels: ModelChannel[]) => {
-        const nextConfig = applyModelChannels(config, channels);
-        saveConfig(nextConfig);
-    };
-
     const refreshAllModels = async () => {
-        const runnable = config.channels;
         setLoadingChannelId("all");
         try {
-            const entries = await Promise.all(runnable.map(async (channel) => [channel.id, await fetchChannelModels(channel)] as const));
-            const modelMap = new Map(entries);
-            updateChannels(config.channels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: modelMap.get(channel.id) || [] } : channel)));
-            message.success("模型列表已更新");
+            setConfig(applyModelCatalog(config, await fetchModelCatalog()));
+            message.success("模型列表和价格已更新");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取模型失败");
         } finally {
@@ -194,7 +183,7 @@ export function AppConfigModal() {
                                             <CircleAlert className="size-4 text-emerald-600" />
                                             Token 账号已自动配置
                                         </div>
-                                        <div className="mt-1 text-xs leading-5 text-stone-500">所有模型请求均通过服务器安全代理，图像能力使用 Token 的 Image 分组令牌，无需填写 Base URL 或 API Key。</div>
+                                        <div className="mt-1 text-xs leading-5 text-stone-500">所有模型请求均通过服务器安全代理，并按能力使用 Token 的 Image、Video、ChatGPT 分组令牌，无需填写 Base URL 或 API Key。</div>
                                     </div>
                                     <Button icon={<RefreshCw className="size-4" />} loading={loadingChannelId === "all"} onClick={() => void refreshAllModels()}>
                                         从 Token 更新模型

@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-+ [新增] Canvas 支持使用 Token/New API 账号一键登录，并自动创建或复用 `Image` 分组令牌。
++ [新增] Canvas 支持使用 Token/New API 账号一键登录，并自动创建或复用 `Image`、`Video`、`ChatGPT` 分组令牌。
 + [安全] 真实 Token API Key 仅加密保存在服务端会话数据库中，浏览器统一通过固定的同源 AI 代理访问模型服务。
-+ [调整] 配置页移除 Base URL、API Key、渠道和调用格式输入，登录后自动更新 Token 可用模型。
++ [调整] 配置页移除 Base URL、API Key、渠道和调用格式输入；登录后按生图、视频、文本、音频能力自动更新模型，并展示生图分辨率价格和视频按秒/按条价格。
 
 + [新增] 渠道兼容Gemini格式。
 + [新增] 新增Codex App插件支持。

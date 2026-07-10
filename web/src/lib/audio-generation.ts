@@ -9,7 +9,6 @@ export const audioVoiceOptions = [
     { value: "onyx", label: "Onyx" },
     { value: "sage", label: "Sage" },
     { value: "shimmer", label: "Shimmer" },
-    { value: "verse", label: "Verse" },
     { value: "marin", label: "Marin" },
     { value: "cedar", label: "Cedar" },
 ];
@@ -18,7 +17,6 @@ export const audioFormatOptions = [
     { value: "mp3", label: "MP3" },
     { value: "wav", label: "WAV" },
     { value: "opus", label: "Opus" },
-    { value: "aac", label: "AAC" },
     { value: "flac", label: "FLAC" },
     { value: "pcm", label: "PCM" },
 ];
@@ -54,7 +52,6 @@ export function audioSpeedLabel(value: string) {
 export function audioMimeType(format: string) {
     if (format === "wav") return "audio/wav";
     if (format === "opus") return "audio/opus";
-    if (format === "aac") return "audio/aac";
     if (format === "flac") return "audio/flac";
     if (format === "pcm") return "audio/pcm";
     return "audio/mpeg";

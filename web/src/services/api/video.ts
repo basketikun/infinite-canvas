@@ -30,6 +30,7 @@ function aiApiUrl(config: AiConfig, path: string) {
 function aiHeaders(config: AiConfig, contentType?: string) {
     return {
         Authorization: `Bearer ${config.apiKey}`,
+        "X-Canvas-Capability": "video",
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
 }

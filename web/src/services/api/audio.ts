@@ -5,6 +5,7 @@ import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { buildApiUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
 type RequestOptions = { signal?: AbortSignal };
+type AudioChatResponse = { choices?: Array<{ message?: { audio?: { data?: string } } }>; error?: { message?: string } };
 
 function aiApiUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path);
@@ -14,6 +15,7 @@ function aiHeaders(config: AiConfig) {
     return {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
+        "X-Canvas-Capability": "audio",
     };
 }
 
@@ -22,9 +24,9 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     const model = requestConfig.model.trim();
     assertAudioConfig(requestConfig, model);
     const format = normalizeAudioFormatValue(config.audioFormat);
-    const instructions = config.audioInstructions.trim();
 
     try {
+        if (model.startsWith("gpt-4o-audio")) return await requestAudioChatCompletion(requestConfig, prompt, format, options);
         const response = await axios.post<Blob>(
             aiApiUrl(requestConfig, "/audio/speech"),
             {
@@ -33,7 +35,7 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
                 voice: normalizeAudioVoiceValue(config.audioVoice),
                 response_format: format,
                 speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
-                ...(instructions ? { instructions } : {}),
+                ...(config.audioInstructions.trim() ? { instructions: config.audioInstructions.trim() } : {}),
             },
             { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
         );
@@ -44,9 +46,34 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     }
 }
 
+async function requestAudioChatCompletion(config: AiConfig, prompt: string, format: string, options?: RequestOptions) {
+    const speed = normalizeAudioSpeedValue(config.audioSpeed);
+    const instructions = [config.audioInstructions.trim(), speed === "1" ? "" : "请以 " + speed + " 倍语速朗读。"].filter(Boolean).join("\n");
+    const response = await axios.post<AudioChatResponse>(
+        aiApiUrl(config, "/chat/completions"),
+        {
+            model: config.model,
+            modalities: ["text", "audio"],
+            messages: [...(instructions ? [{ role: "system", content: instructions }] : []), { role: "user", content: prompt }],
+            audio: { voice: normalizeAudioVoiceValue(config.audioVoice), format: format === "pcm" ? "pcm16" : format },
+        },
+        { headers: aiHeaders(config), signal: options?.signal },
+    );
+    const data = response.data.choices?.[0]?.message?.audio?.data;
+    if (!data) throw new Error(response.data.error?.message || "音频模型没有返回音频数据");
+    return base64AudioBlob(data, format);
+}
+
 export async function storeGeneratedAudio(blob: Blob, format = "mp3"): Promise<UploadedFile> {
     const audio = blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
     return uploadMediaFile(audio, "audio");
+}
+
+function base64AudioBlob(data: string, format: string) {
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return new Blob([bytes], { type: audioMimeType(format) });
 }
 
 function assertAudioConfig(config: AiConfig, model: string) {

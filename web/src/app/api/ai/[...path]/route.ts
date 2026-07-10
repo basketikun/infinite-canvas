@@ -1,32 +1,37 @@
 import { NextResponse } from "next/server";
 
-import { getCanvasPublicOrigin, getCanvasSession, getCanvasTokenOrigin } from "@/lib/server/canvas-auth";
+import { getCanvasPublicOrigin, getCanvasSession, getCanvasTokenOrigin, type CanvasCapability } from "@/lib/server/canvas-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 600;
 
-const ALLOWED_ROUTES: Array<{ method: string; pattern: RegExp }> = [
-    { method: "GET", pattern: /^\/v1\/models$/ },
-    { method: "POST", pattern: /^\/v1\/responses$/ },
-    { method: "POST", pattern: /^\/v1\/images\/(generations|edits)$/ },
-    { method: "POST", pattern: /^\/v1\/videos$/ },
-    { method: "GET", pattern: /^\/v1\/videos\/[^/]+(?:\/content)?$/ },
-    { method: "POST", pattern: /^\/v1\/contents\/generations\/tasks$/ },
-    { method: "GET", pattern: /^\/v1\/contents\/generations\/tasks\/[^/]+$/ },
-    { method: "POST", pattern: /^\/v1\/audio\/speech$/ },
+const CAPABILITY_HEADER = "x-canvas-capability";
+const ALLOWED_ROUTES: Array<{ method: string; pattern: RegExp; capabilities: CanvasCapability[] }> = [
+    { method: "POST", pattern: /^\/v1\/responses$/, capabilities: ["text"] },
+    { method: "POST", pattern: /^\/v1\/chat\/completions$/, capabilities: ["audio"] },
+    { method: "POST", pattern: /^\/v1\/images\/(generations|edits)$/, capabilities: ["image"] },
+    { method: "POST", pattern: /^\/v1\/videos$/, capabilities: ["video"] },
+    { method: "GET", pattern: /^\/v1\/videos\/[^/]+(?:\/content)?$/, capabilities: ["video"] },
+    { method: "POST", pattern: /^\/v1\/contents\/generations\/tasks$/, capabilities: ["video"] },
+    { method: "GET", pattern: /^\/v1\/contents\/generations\/tasks\/[^/]+$/, capabilities: ["video"] },
+    { method: "POST", pattern: /^\/v1\/audio\/speech$/, capabilities: ["audio"] },
 ];
 
 async function proxyRequest(request: Request, context: { params: Promise<{ path: string[] }> }) {
     const session = await getCanvasSession();
     if (!session) return NextResponse.json({ error: { message: "登录已失效，请重新登录" } }, { status: 401 });
 
-    const path = `/${(await context.params).path.join("/")}`;
-    if (!ALLOWED_ROUTES.some((route) => route.method === request.method && route.pattern.test(path))) {
-        return NextResponse.json({ error: { message: "不允许的模型接口" } }, { status: 404 });
-    }
+    const path = "/" + (await context.params).path.join("/");
+    const route = ALLOWED_ROUTES.find((candidate) => candidate.method === request.method && candidate.pattern.test(path));
+    if (!route) return NextResponse.json({ error: { message: "不允许的模型接口" } }, { status: 404 });
     if (request.method !== "GET" && request.method !== "HEAD" && request.headers.get("origin") !== getCanvasPublicOrigin()) {
         return NextResponse.json({ error: { message: "请求来源校验失败" } }, { status: 403 });
+    }
+
+    const capability = request.headers.get(CAPABILITY_HEADER) as CanvasCapability | null;
+    if (!capability || !route.capabilities.includes(capability)) {
+        return NextResponse.json({ error: { message: "模型能力类型不匹配" } }, { status: 400 });
     }
 
     const incomingUrl = new URL(request.url);
@@ -34,6 +39,7 @@ async function proxyRequest(request: Request, context: { params: Promise<{ path:
     upstreamUrl.search = incomingUrl.search;
     const headers = new Headers(request.headers);
     for (const name of [
+        CAPABILITY_HEADER,
         "authorization",
         "proxy-authorization",
         "cookie",
@@ -53,7 +59,7 @@ async function proxyRequest(request: Request, context: { params: Promise<{ path:
     ]) {
         headers.delete(name);
     }
-    headers.set("Authorization", `Bearer ${session.accessToken}`);
+    headers.set("Authorization", "Bearer " + session.accessTokens[capability]);
     headers.set("Accept-Encoding", "identity");
 
     const init: RequestInit & { duplex?: "half" } = {

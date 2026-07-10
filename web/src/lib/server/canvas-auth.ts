@@ -11,11 +11,15 @@ const DEFAULT_TOKEN_ORIGIN = "https://token.mewinyou.shop";
 const DEFAULT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OAUTH_COOKIE_TTL_SECONDS = 10 * 60;
 
+export type CanvasCapability = "image" | "video" | "text" | "audio";
+
+export type CanvasAccessTokens = Record<CanvasCapability, string>;
+
 export type CanvasSession = {
     issuer: string;
     subject: string;
     username: string;
-    accessToken: string;
+    accessTokens: CanvasAccessTokens;
     expiresAt: number;
 };
 
@@ -130,7 +134,7 @@ export function getCanvasSessionById(sessionId: string | undefined): CanvasSessi
             issuer: row.issuer,
             subject: row.subject,
             username: row.username,
-            accessToken: decrypt(row.token_ciphertext),
+            accessTokens: parseAccessTokens(decrypt(row.token_ciphertext)),
             expiresAt: row.expires_at,
         };
     } catch {
@@ -139,7 +143,7 @@ export function getCanvasSessionById(sessionId: string | undefined): CanvasSessi
     }
 }
 
-export function createCanvasSession(input: { issuer: string; subject: string; username: string; accessToken: string }) {
+export function createCanvasSession(input: { issuer: string; subject: string; username: string; accessTokens: CanvasAccessTokens }) {
     const db = getDatabase();
     const sessionId = randomBytes(32).toString("base64url");
     const createdAt = nowSeconds();
@@ -150,9 +154,17 @@ export function createCanvasSession(input: { issuer: string; subject: string; us
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_hash) DO UPDATE SET issuer = excluded.issuer, subject = excluded.subject, username = excluded.username,
              token_ciphertext = excluded.token_ciphertext, created_at = excluded.created_at, expires_at = excluded.expires_at`,
-    ).run(hashSessionId(sessionId), input.issuer, input.subject, input.username, encrypt(input.accessToken), createdAt, expiresAt);
+    ).run(hashSessionId(sessionId), input.issuer, input.subject, input.username, encrypt(JSON.stringify(input.accessTokens)), createdAt, expiresAt);
     db.prepare("DELETE FROM canvas_sessions WHERE expires_at < ?").run(createdAt);
     return { sessionId, expiresAt, maxAge: ttl };
+}
+
+function parseAccessTokens(value: string): CanvasAccessTokens {
+    const parsed = JSON.parse(value) as Partial<CanvasAccessTokens>;
+    for (const capability of ["image", "video", "text", "audio"] as const) {
+        if (!parsed[capability]?.startsWith("sk-")) throw new Error("missing " + capability + " token");
+    }
+    return parsed as CanvasAccessTokens;
 }
 
 export function deleteCanvasSession(sessionId: string | undefined) {

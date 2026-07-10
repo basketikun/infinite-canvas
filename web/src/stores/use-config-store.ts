@@ -7,6 +7,12 @@ import { nanoid } from "nanoid";
 
 export type ApiCallFormat = "openai" | "gemini";
 
+export type ModelCatalogItem = { id: string; priceLabel?: string };
+
+export type ModelCatalog = Record<ModelCapability, ModelCatalogItem[]> & {
+    defaults: Record<ModelCapability, string>;
+};
+
 export type ModelChannel = {
     id: string;
     name: string;
@@ -41,6 +47,8 @@ export type AiConfig = {
     videoModels: string[];
     textModels: string[];
     audioModels: string[];
+    modelPriceLabels: Record<string, string>;
+    modelCatalogVersion: number;
     quality: string;
     size: string;
     count: string;
@@ -74,14 +82,14 @@ export const defaultConfig: AiConfig = {
             baseUrl: FIXED_AI_BASE_URL,
             apiKey: SESSION_API_KEY,
             apiFormat: "openai",
-            models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
+            models: ["gpt-image-2", "gemini-3.1-flash-image", "grok-image-video", "gpt-5.6-sol", "gpt-4o-audio-preview"],
         },
     ],
     model: "default::gpt-image-2",
     imageModel: "default::gpt-image-2",
-    videoModel: "default::grok-imagine-video",
-    textModel: "default::gpt-5.5",
-    audioModel: "default::gpt-4o-mini-tts",
+    videoModel: "default::grok-image-video",
+    textModel: "default::gpt-5.6-sol",
+    audioModel: "default::gpt-4o-audio-preview",
     audioVoice: "alloy",
     audioFormat: "mp3",
     audioSpeed: "1",
@@ -91,11 +99,16 @@ export const defaultConfig: AiConfig = {
     videoGenerateAudio: "true",
     videoWatermark: "false",
     systemPrompt: "",
-    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
-    imageModels: ["default::gpt-image-2"],
-    videoModels: ["default::grok-imagine-video"],
-    textModels: ["default::gpt-5.5"],
-    audioModels: ["default::gpt-4o-mini-tts"],
+    models: ["default::gpt-image-2", "default::gemini-3.1-flash-image", "default::grok-image-video", "default::gpt-5.6-sol", "default::gpt-4o-audio-preview"],
+    imageModels: ["default::gpt-image-2", "default::gemini-3.1-flash-image"],
+    videoModels: ["default::grok-image-video"],
+    textModels: ["default::gpt-5.6-sol"],
+    audioModels: ["default::gpt-4o-audio-preview"],
+    modelPriceLabels: {
+        "gpt-image-2": "1K $0.10 · 2K $0.14 · 4K $0.20",
+        "gemini-3.1-flash-image": "1K $0.10 · 2K $0.14 · 4K $0.20",
+    },
+    modelCatalogVersion: 0,
     quality: "auto",
     size: "1:1",
     count: "1",
@@ -117,6 +130,7 @@ type ConfigStore = {
     isConfigOpen: boolean;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
+    setConfig: (config: AiConfig) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
@@ -195,6 +209,7 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+            setConfig: (config) => set({ config }),
             updateWebdavConfig: (key, value) =>
                 set((state) => ({
                     webdav: {
@@ -230,7 +245,7 @@ export const useConfigStore = create<ConfigStore>()(
                         channels,
                         models,
                         imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
-                        videoModel: normalizeModelOptionValue(config.videoModel || "grok-imagine-video", channels),
+                        videoModel: normalizeModelOptionValue(config.videoModel || "grok-image-video", channels),
                         textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
                         audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
@@ -242,6 +257,8 @@ export const useConfigStore = create<ConfigStore>()(
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "3",
+                        modelPriceLabels: config.modelPriceLabels && typeof config.modelPriceLabels === "object" ? config.modelPriceLabels : {},
+                        modelCatalogVersion: Number.isFinite(config.modelCatalogVersion) ? config.modelCatalogVersion : 0,
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
                         videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"),
                         textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels, channels) : filterModelsByCapability(models, "text"),
@@ -295,10 +312,9 @@ export function modelOptionName(value: string) {
 }
 
 export function modelOptionLabel(config: AiConfig, value: string) {
-    const decoded = decodeChannelModel(value);
-    if (!decoded) return value;
-    const channel = config.channels.find((item) => item.id === decoded.channelId);
-    return channel ? `${decoded.model}（${channel.name}）` : decoded.model;
+    const model = modelOptionName(value);
+    const priceLabel = config.modelPriceLabels[model];
+    return priceLabel ? model + " · " + priceLabel : model;
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
@@ -344,6 +360,44 @@ function normalizeChannels(config: AiConfig) {
             models: models.length ? models : defaultConfig.channels[0].models,
         }),
     ];
+}
+
+export function applyModelCatalog(config: AiConfig, catalog: ModelCatalog): AiConfig {
+    const items = [...catalog.image, ...catalog.video, ...catalog.text, ...catalog.audio];
+    const channel = createModelChannel({ id: "default", name: "Token 模型服务", models: items.map((item) => item.id) });
+    const toOptions = (items: ModelCatalogItem[]) => items.map((item) => encodeChannelModel(channel.id, item.id));
+    const imageModels = toOptions(catalog.image);
+    const videoModels = toOptions(catalog.video);
+    const textModels = toOptions(catalog.text);
+    const audioModels = toOptions(catalog.audio);
+    const useCatalogDefaults = config.modelCatalogVersion < 1;
+    const select = (current: string, options: string[], defaultModel: string) => {
+        if (!options.length) return "";
+        const preferred = encodeChannelModel(channel.id, defaultModel);
+        return useCatalogDefaults && options.includes(preferred) ? preferred : normalizeDefaultModel(normalizeModelOptionValue(current, [channel]), options);
+    };
+    const imageModel = select(config.imageModel, imageModels, catalog.defaults.image);
+    const videoModel = select(config.videoModel, videoModels, catalog.defaults.video);
+    const textModel = select(config.textModel, textModels, catalog.defaults.text);
+    const audioModel = select(config.audioModel, audioModels, catalog.defaults.audio);
+    const modelPriceLabels = Object.fromEntries(items.filter((item) => item.priceLabel).map((item) => [item.id, item.priceLabel || ""]));
+    const models = modelOptionsFromChannels([channel]);
+    return {
+        ...config,
+        channels: [channel],
+        models,
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+        imageModel,
+        videoModel,
+        textModel,
+        audioModel,
+        model: models.includes(normalizeModelOptionValue(config.model, [channel])) ? normalizeModelOptionValue(config.model, [channel]) : imageModel,
+        modelPriceLabels,
+        modelCatalogVersion: 1,
+    };
 }
 
 export function applyModelChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {

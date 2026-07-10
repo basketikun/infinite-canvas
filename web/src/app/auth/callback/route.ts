@@ -20,6 +20,7 @@ type TokenResponse = {
     access_token?: string;
     token_type?: string;
     scope?: string;
+    group_tokens?: { image?: string; video?: string; text?: string; audio?: string };
     user?: { sub?: string; username?: string };
     error?: string;
     error_description?: string;
@@ -58,14 +59,15 @@ export async function GET(request: Request) {
             signal: AbortSignal.timeout(15_000),
         });
         const payload = (await tokenResponse.json()) as TokenResponse;
-        if (!tokenResponse.ok || !payload.access_token || payload.token_type?.toLowerCase() !== "bearer" || !payload.user?.sub || !payload.user.username) {
+        const groupTokens = payload.group_tokens;
+        if (!tokenResponse.ok || !payload.access_token || payload.token_type?.toLowerCase() !== "bearer" || !groupTokens?.image || !groupTokens.video || !groupTokens.text || !groupTokens.audio || !payload.user?.sub || !payload.user.username) {
             throw new Error(payload.error_description || payload.error || `token exchange failed (${tokenResponse.status})`);
         }
         const session = createCanvasSession({
             issuer: getCanvasTokenOrigin(),
             subject: payload.user.sub,
             username: payload.user.username,
-            accessToken: payload.access_token,
+            accessTokens: { image: groupTokens.image, video: groupTokens.video, text: groupTokens.text, audio: groupTokens.audio },
         });
         const response = NextResponse.redirect(new URL(oauth.returnTo, getCanvasPublicOrigin()));
         response.headers.set("Cache-Control", "no-store");
