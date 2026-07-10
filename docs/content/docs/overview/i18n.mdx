@@ -1,0 +1,102 @@
+---
+title: 多语言
+description: 前端多语言切换与文案组织方式
+---
+
+# 多语言
+
+主应用（`web/`）支持 **中文（zh）** 与 **English（en）** 切换。语言偏好保存在浏览器本地，键名为 `infinite-canvas:locale`。
+
+## 切换入口
+
+- 顶部导航栏右侧 **语言按钮**（地球图标 + 中/EN），与主题切换、配置入口并列。
+- 画布页顶部工具栏同样提供语言切换（通过 `UserStatusActions`）。
+
+切换后会同步：
+
+- 页面文案（`t()` 翻译）
+- Ant Design 组件语言包（`zh_CN` / `en_US`）
+- 日期时间格式（`zh-CN` / `en-US`）
+- `<html lang>` 属性
+
+## 开发模式 vs 发布
+
+| 项目 | 说明 |
+| --- | --- |
+| 开发 | `npm run dev` / `bun run dev`，热更新即时生效 |
+| 发布 | `npm run build` 会将中英文文案打包进静态资源，Docker / nginx 部署无需额外配置 |
+| CI | `.github/workflows/docker-image.yml` 构建镜像时会执行 `web` 前端 build，多语言资源一并打进镜像 |
+
+语言切换**仅影响前端 UI**；文档站（`docs/`）目前仍为中文。
+
+## 代码结构
+
+```
+web/src/i18n/
+  index.ts              # createTranslator、translate、locale 工具
+  locales/
+    en/                 # 英文文案（基准字典，定义 TranslationDictionary 类型）
+    zh/                 # 中文文案（需与 en 键结构一致）
+web/src/stores/use-locale-store.ts
+web/src/components/layout/locale-provider.tsx
+web/src/components/layout/language-toggle.tsx
+```
+
+### 命名空间
+
+| 前缀 | 内容 |
+| --- | --- |
+| `common.*` | 通用按钮、状态、导航辅助文案 |
+| `nav.*` | 顶部导航标签 |
+| `home.*` | 首页 |
+| `image.*` / `video.*` / `assets.*` / `prompts.*` | 各工作台页面 |
+| `canvasList.*` | 画布列表页 |
+| `config.*` | 配置弹窗 |
+| `canvas.*` | 画布编辑器、节点、Agent 面板 |
+| `errors.*` | API、同步、WebDAV 等用户可见错误 |
+| `version.*` | 版本更新弹窗 |
+
+### 组件内用法
+
+```tsx
+import { useTranslation } from "@/components/layout/locale-provider";
+
+function Example() {
+  const { t, locale } = useTranslation();
+  return <button>{t("common.save")}</button>;
+}
+```
+
+带参数：
+
+```tsx
+t("common.waiting", { duration: "3s" })
+```
+
+### 非组件代码
+
+```ts
+import { translate } from "@/i18n";
+
+throw new Error(translate("errors.video.timeout"));
+```
+
+### 日期格式化
+
+```tsx
+import { formatLocaleDateTime } from "@/lib/format-locale";
+
+formatLocaleDateTime(value, locale);
+```
+
+## 新增文案规范
+
+1. 先在 `locales/en/` 添加英文键，再在 `locales/zh/` 添加对应中文。
+2. 组件内禁止硬编码用户可见中文或英文，统一走 `t()` / `translate()`。
+3. 内部存储（如生成记录 status `"成功"`）可保留固定字面量，UI 展示层再映射为 `t()`。
+4. 发给 AI 模型的 system prompt 可保持中文，不必纳入 UI 翻译。
+5. WebDAV / 同步进度应 emit **稳定 stage ID**（如 `readingRemoteManifest`），由 UI 层翻译，不要在 service 层写死中文 stage 文本。
+
+## 默认语言
+
+默认 **中文（zh）**。首次访问无本地记录时使用该默认值。

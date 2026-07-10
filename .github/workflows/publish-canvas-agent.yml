@@ -1,5 +1,7 @@
 name: Publish Canvas Agent
 
+# 发布 canvas-agent npm 包（与 web 前端 i18n 无关）
+
 on:
   push:
     branches:

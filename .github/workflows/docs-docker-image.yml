@@ -1,5 +1,7 @@
 name: Docs Docker image
 
+# 构建文档站镜像（文档站目前为中文，与应用 i18n 独立）
+
 on:
   push:
     tags: ["v*"]

@@ -48,7 +48,7 @@
 - 管理后台主题、背景、卡片阴影、表格配色等统一在 `web/src/lib/app-theme.ts`、`AppProviders` 或必要的全局 CSS 作用域中配置；页面私有组件不要自己写 `dark ? ...` 主题分支。
 - 组件优先使用函数组件和现有 hooks，不新增大型状态管理方案。
 - UI 图标优先使用 `lucide-react` 或项目已经使用的 Ant Design 图标。
-- 页面文案保持中文。
+- 页面文案支持中/英切换，默认中文；新增 UI 文案统一放入 `web/src/i18n/locales/`，组件使用 `useTranslation()` 或 `translate()`，不要硬编码用户可见文本。
 - 不要在组件里堆太多无关逻辑；复杂逻辑优先抽成同目录工具函数或小组件。
 - 样式优先由组件自己管理；组件私有样式优先使用 Tailwind className 或少量内联 style，不要为单个组件新增大量全局 CSS。
 - 全局 CSS 只放基础变量、全局重置、跨页面通用样式和少量第三方组件必要覆盖；不要在 `globals.css` 堆页面私有样式。

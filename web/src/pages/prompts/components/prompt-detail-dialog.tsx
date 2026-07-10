@@ -1,9 +1,13 @@
 import { Copy, FolderPlus } from "lucide-react";
 import { Button, Modal, Space, Tag } from "antd";
 
-import { formatPromptDate, type Prompt } from "@/services/api/prompts";
+import { useTranslation } from "@/components/layout/locale-provider";
+import { formatLocaleDate } from "@/lib/format-locale";
+import { type Prompt } from "@/services/api/prompts";
 
 export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset }: { prompt: Prompt | null; onClose: () => void; onCopy: (prompt: string) => void; onSaveAsset?: (prompt: Prompt) => void }) {
+    const { locale, t } = useTranslation();
+
     return (
         <>
             <Modal title={prompt?.title} open={Boolean(prompt)} onCancel={onClose} footer={null} width={860}>
@@ -24,15 +28,18 @@ export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset }: { p
                                 </div>
                                 <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-800 dark:text-stone-300">{prompt.prompt}</p>
                                 <div className="mt-4 text-xs text-stone-500 dark:text-stone-400">
-                                    创建：{formatPromptDate(prompt.createdAt)} · 更新：{formatPromptDate(prompt.updatedAt)}
+                                    {t("prompts.detail.createdUpdated", {
+                                        created: formatLocaleDate(prompt.createdAt, locale, { year: "numeric", month: "2-digit", day: "2-digit" }),
+                                        updated: formatLocaleDate(prompt.updatedAt, locale, { year: "numeric", month: "2-digit", day: "2-digit" }),
+                                    })}
                                 </div>
                                 <Space wrap className="mt-5">
                                     <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(prompt.prompt)}>
-                                        复制提示词
+                                        {t("prompts.detail.copyPrompt")}
                                     </Button>
                                     {onSaveAsset ? (
                                         <Button icon={<FolderPlus className="size-4" />} onClick={() => onSaveAsset(prompt)}>
-                                            加入我的素材
+                                            {t("prompts.detail.addToAssets")}
                                         </Button>
                                     ) : null}
                                 </Space>

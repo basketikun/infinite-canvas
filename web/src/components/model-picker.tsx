@@ -1,8 +1,10 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { Cpu } from "lucide-react";
 
+import { useTranslation } from "@/components/layout/locale-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import type { TranslationKey } from "@/i18n";
 import { modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelPickerProps = {
@@ -16,9 +18,11 @@ type ModelPickerProps = {
     onMissingConfig?: () => void;
 };
 
-export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder = "选择模型", onMissingConfig }: ModelPickerProps) {
+export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder, onMissingConfig }: ModelPickerProps) {
+    const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
+    const resolvedPlaceholder = placeholder ?? t("modelPicker.placeholder");
     const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
     const current = value || "";
 
@@ -50,10 +54,10 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 )}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
-                title={current ? modelOptionLabel(config, current) : placeholder}
+                title={current ? modelOptionLabel(config, current) : resolvedPlaceholder}
             >
                 <ModelIcon model={current} />
-                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? modelOptionLabel(config, current) : placeholder}</span>
+                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? modelOptionLabel(config, current) : resolvedPlaceholder}</span>
             </SelectTrigger>
             <SelectContent
                 data-canvas-no-zoom
@@ -73,7 +77,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                     ))
                 ) : (
                     <SelectItem value="__empty__" disabled>
-                        {emptyModelLabel(config, capability)}
+                        {emptyModelLabel(config, capability, t)}
                     </SelectItem>
                 )}
             </SelectContent>
@@ -81,10 +85,17 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
     );
 }
 
-function emptyModelLabel(config: AiConfig, capability?: ModelCapability) {
-    const label = capability === "image" ? "生图" : capability === "video" ? "视频" : capability === "text" ? "文本" : capability === "audio" ? "音频" : "";
-    if (capability && config.models.length) return "请先在上方配置可选模型";
-    return config.models.length ? `暂无匹配的${label}模型` : "请先到配置里添加渠道和模型";
+const capabilityKeys: Record<ModelCapability, TranslationKey> = {
+    image: "modelPicker.capabilityImage",
+    video: "modelPicker.capabilityVideo",
+    text: "modelPicker.capabilityText",
+    audio: "modelPicker.capabilityAudio",
+};
+
+function emptyModelLabel(config: AiConfig, capability: ModelCapability | undefined, t: (key: TranslationKey, params?: Record<string, string | number>) => string) {
+    const label = capability ? t(capabilityKeys[capability]) : "";
+    if (capability && config.models.length) return t("modelPicker.configureModelsFirst");
+    return config.models.length ? t("modelPicker.noMatchingModels", { capability: label }) : t("modelPicker.addChannelFirst");
 }
 
 function ModelLabel({ config, model }: { config: AiConfig; model: string }) {

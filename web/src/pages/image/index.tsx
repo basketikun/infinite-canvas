@@ -4,7 +4,10 @@ import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip
 import localforage from "localforage";
 import { saveAs } from "file-saver";
 
+import { useTranslation } from "@/components/layout/locale-provider";
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
+import { formatLocaleDateTime } from "@/lib/format-locale";
+import { getRuntimeLocale, translate } from "@/i18n";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -66,6 +69,7 @@ const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&
 const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
 
 export default function ImagePage() {
+    const { t } = useTranslation();
     const { message } = App.useApp();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const config = useConfigStore((state) => state.config);
@@ -119,7 +123,7 @@ export default function ImagePage() {
             const items = await navigator.clipboard.read();
             const blobs = await Promise.all(items.flatMap((item) => item.types.filter((type) => type.startsWith("image/")).map((type) => item.getType(type))));
             if (!blobs.length) {
-                message.error("剪切板里没有可读取的图片");
+                message.error(t("image.messages.clipboardNoImage"));
                 return;
             }
             const nextReferences = await Promise.all(
@@ -129,20 +133,20 @@ export default function ImagePage() {
                 }),
             );
             setReferences((value) => [...value, ...nextReferences]);
-            message.success(`已读取 ${nextReferences.length} 张参考图`);
+            message.success(t("image.messages.clipboardReadSuccess", { count: nextReferences.length }));
         } catch {
-            message.error("剪切板里没有可读取的图片");
+            message.error(t("image.messages.clipboardNoImage"));
         }
     };
 
     const generate = async () => {
         const text = prompt.trim();
         if (!text) {
-            message.error("请输入生图提示词");
+            message.error(t("image.messages.promptRequired"));
             return;
         }
         if (!isAiConfigReady(effectiveConfig, model)) {
-            message.warning("请先完成配置");
+            message.warning(t("image.messages.configRequired"));
             openConfigDialog(true);
             return;
         }
@@ -185,7 +189,7 @@ export default function ImagePage() {
                     images: logImages,
                 }),
             );
-            successCount ? message.success("图片已生成") : message.error(failed?.reason instanceof Error ? failed.reason.message : "生成失败");
+            successCount ? message.success(t("image.messages.generatedSuccess")) : message.error(failed?.reason instanceof Error ? failed.reason.message : t("image.messages.generateFailed"));
         } finally {
             setRunning(false);
         }
@@ -198,21 +202,21 @@ export default function ImagePage() {
     const addResultToReferences = async (image: GeneratedImage, index: number) => {
         const stored = await uploadImage(image.dataUrl);
         setReferences((value) => [...value, { id: nanoid(), name: `result-${index + 1}.png`, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
-        message.success("已加入参考图");
+        message.success(t("image.messages.addedToReferences"));
     };
 
     const saveResultToAssets = async (image: GeneratedImage, index: number) => {
         const stored = await uploadImage(image.dataUrl);
         addAsset({
             kind: "image",
-            title: `生成结果 ${index + 1}`,
+            title: t("image.result.savedTitle", { index: index + 1 }),
             coverUrl: stored.url,
             tags: [],
-            source: "生图工作台",
+            source: t("image.result.source"),
             data: { dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType },
             metadata: { source: "image-page", prompt },
         });
-        message.success("已加入我的素材");
+        message.success(t("image.messages.addedToAssets"));
     };
 
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
@@ -222,7 +226,7 @@ export default function ImagePage() {
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         } else {
-            message.warning("生图工作台只能使用文本或图片素材");
+            message.warning(t("image.messages.assetsRestriction"));
         }
         setAssetPickerOpen(false);
     };
@@ -269,11 +273,11 @@ export default function ImagePage() {
     const buildRequestSnapshot = () => {
         const text = prompt.trim();
         if (!text) {
-            message.error("请输入生图提示词");
+            message.error(t("image.messages.promptRequired"));
             return null;
         }
         if (!isAiConfigReady(effectiveConfig, model)) {
-            message.warning("请先完成配置");
+            message.warning(t("image.messages.configRequired"));
             openConfigDialog(true);
             return null;
         }
@@ -285,13 +289,13 @@ export default function ImagePage() {
         try {
             const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
             const image = result[0];
-            if (!image) throw new Error("接口没有返回图片");
+            if (!image) throw new Error(t("image.messages.noApiImage"));
             const meta = await readImageMeta(image.dataUrl);
             const nextImage = { id: image.id, dataUrl: image.dataUrl, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl) };
             setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
             return nextImage;
         } catch (error) {
-            setResults((value) => updateResultAt(value, index, { status: "failed", error: error instanceof Error ? error.message : "生成失败" }));
+            setResults((value) => updateResultAt(value, index, { status: "failed", error: error instanceof Error ? error.message : t("image.messages.generateFailed") }));
             throw error;
         }
     };
@@ -324,14 +328,14 @@ export default function ImagePage() {
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">生图工作台</h1>
+                                    <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">{t("image.title")}</h1>
                                 </div>
                                 <div className="flex shrink-0 gap-2 lg:hidden">
                                     <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
-                                        记录
+                                        {t("image.logs")}
                                     </Button>
                                     <Button icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
-                                        参数
+                                        {t("image.params")}
                                     </Button>
                                 </div>
                             </div>
@@ -340,28 +344,28 @@ export default function ImagePage() {
                         <div className="mt-6 space-y-5">
                             <div>
                                 <div className="mb-2 flex items-center justify-between gap-3">
-                                    <span className="text-base font-semibold">提示词</span>
+                                    <span className="text-base font-semibold">{t("image.prompt")}</span>
                                     <div className="flex gap-2">
                                         <Button size="small" icon={<BookOpen className="size-3.5" />} onClick={() => setPromptDialogOpen(true)}>
-                                            查看提示词库
+                                            {t("image.viewPromptLibrary")}
                                         </Button>
                                         <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => setAssetPickerOpen(true)}>
-                                            查看我的素材
+                                            {t("image.viewMyAssets")}
                                         </Button>
                                     </div>
                                 </div>
-                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述画面主体、风格、构图、光线和用途" />
+                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder={t("image.promptPlaceholder")} />
                             </div>
 
                             <div className="min-w-0">
                                 <div className="mb-2 flex items-center justify-between gap-3">
-                                    <span className="text-base font-semibold">参考图</span>
+                                    <span className="text-base font-semibold">{t("image.references")}</span>
                                     <div className="flex gap-2">
                                         <Button size="small" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
-                                            剪切板
+                                            {t("image.clipboard")}
                                         </Button>
                                         <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
-                                            上传
+                                            {t("image.upload")}
                                         </Button>
                                     </div>
                                 </div>
@@ -382,13 +386,13 @@ export default function ImagePage() {
                                                 type="button"
                                                 className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex"
                                                 onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
-                                                aria-label="移除参考图"
+                                                aria-label={t("image.removeReferenceAria")}
                                             >
                                                 <Trash2 className="size-3.5" />
                                             </button>
                                         </div>
                                     ))}
-                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图</div> : null}
+                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">{t("image.noReferences")}</div> : null}
                                 </div>
                             </div>
 
@@ -397,7 +401,7 @@ export default function ImagePage() {
                                     {modelOptionLabel(effectiveConfig, model)} · {effectiveConfig.size} · {effectiveConfig.quality}
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
-                                    调整
+                                    {t("image.adjust")}
                                 </Button>
                             </div>
 
@@ -408,7 +412,7 @@ export default function ImagePage() {
 
                         <div className="mt-auto pt-6">
                             <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
-                                开始生成
+                                {t("image.startGenerate")}
                             </Button>
                         </div>
                     </div>
@@ -416,9 +420,9 @@ export default function ImagePage() {
                     <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
-                                <h2 className="text-xl font-semibold">生成结果</h2>
+                                <h2 className="text-xl font-semibold">{t("image.results")}</h2>
                             </div>
-                            {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
+                            {running ? <Tag className="m-0 px-2 py-1">{t("image.waiting", { duration: formatDuration(elapsedMs) })}</Tag> : null}
                         </div>
                         {results.length ? (
                             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
@@ -426,7 +430,7 @@ export default function ImagePage() {
                                     result.status === "success" && result.image ? (
                                         <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
                                     ) : result.status === "failed" ? (
-                                        <FailedImageCard key={result.id} error={result.error || "生成失败"} onRetry={() => retryResult(index)} />
+                                        <FailedImageCard key={result.id} error={result.error || t("image.result.failed")} onRetry={() => retryResult(index)} />
                                     ) : (
                                         <PendingImageCard key={result.id} />
                                     ),
@@ -435,7 +439,7 @@ export default function ImagePage() {
                         ) : (
                             <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
                                 <ImagePlus className="mb-4 size-11 text-stone-400" />
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有生成图片" />
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("image.noResults")} />
                             </div>
                         )}
                     </div>
@@ -452,7 +456,7 @@ export default function ImagePage() {
                     event.target.value = "";
                 }}
             />
-            <Drawer title="生成记录" placement="bottom" size="large" open={logsOpen} onClose={() => setLogsOpen(false)}>
+            <Drawer title={t("image.logsDrawerTitle")} placement="bottom" size="large" open={logsOpen} onClose={() => setLogsOpen(false)}>
                 <LogPanel
                     logs={logs}
                     selectedLogIds={selectedLogIds}
@@ -463,27 +467,28 @@ export default function ImagePage() {
                     onPreviewLog={(log) => void previewGenerationLog(log)}
                 />
             </Drawer>
-            <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
+            <Drawer title={t("image.paramsDrawerTitle")} placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
                     <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
-            <Modal title="删除生成记录" open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
-                确定删除选中的 {selectedLogIds.length} 条生成记录吗？
+            <Modal title={t("image.deleteLogsTitle")} open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
+                {t("image.deleteLogsConfirm", { count: selectedLogIds.length })}
             </Modal>
         </div>
     );
 }
 
 function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
+    const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     return (
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
-                <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
+                <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">{t("image.model")}</span>
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
@@ -506,9 +511,11 @@ function ResultImageCard({
     onDownload: (image: GeneratedImage, index: number) => void;
     onSaveAsset: (image: GeneratedImage, index: number) => void;
 }) {
+    const { t } = useTranslation();
+
     return (
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
-            <Image src={image.dataUrl} alt={`生成结果 ${index + 1}`} className="aspect-square object-cover" />
+            <Image src={image.dataUrl} alt={t("image.resultAlt", { index: index + 1 })} className="aspect-square object-cover" />
             <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
                 <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
                     <span>
@@ -518,19 +525,19 @@ function ResultImageCard({
                     <span>{formatDuration(image.durationMs)}</span>
                 </div>
                 <div className="grid min-w-0 grid-cols-3 gap-2">
-                    <Tooltip title="添加到素材">
+                    <Tooltip title={t("image.result.addToAssetsTooltip")}>
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
-                            添加到素材
+                            {t("image.result.addToAssets")}
                         </Button>
                     </Tooltip>
-                    <Tooltip title="加入参考图">
+                    <Tooltip title={t("image.result.addToReferencesTooltip")}>
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
-                            加入参考图
+                            {t("image.result.addToReferences")}
                         </Button>
                     </Tooltip>
-                    <Tooltip title="下载">
+                    <Tooltip title={t("image.result.downloadTooltip")}>
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
-                            下载
+                            {t("image.result.download")}
                         </Button>
                     </Tooltip>
                 </div>
@@ -540,6 +547,8 @@ function ResultImageCard({
 }
 
 function PendingImageCard() {
+    const { t } = useTranslation();
+
     return (
         <div className="relative aspect-square overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
             <div
@@ -551,24 +560,26 @@ function PendingImageCard() {
             />
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
                 <LoaderCircle className="size-6 animate-spin" />
-                <span>生成中</span>
+                <span>{t("image.result.generating")}</span>
             </div>
         </div>
     );
 }
 
 function FailedImageCard({ error, onRetry }: { error: string; onRetry: () => void }) {
+    const { t } = useTranslation();
+
     return (
         <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-950 dark:bg-red-950/20">
             <div className="flex aspect-square flex-col items-center justify-center gap-3 p-5 text-center">
-                <div className="text-sm font-medium text-red-600 dark:text-red-300">生成失败</div>
+                <div className="text-sm font-medium text-red-600 dark:text-red-300">{t("image.result.failed")}</div>
                 <Typography.Paragraph ellipsis={{ rows: 4 }} className="!mb-0 !text-xs !text-red-500 dark:!text-red-300">
                     {error}
                 </Typography.Paragraph>
             </div>
             <div className="flex justify-end border-t border-red-200 p-3 dark:border-red-950">
                 <Button size="small" danger onClick={onRetry}>
-                    重试
+                    {t("image.result.retry")}
                 </Button>
             </div>
         </div>
@@ -596,6 +607,7 @@ function LogPanel({
     onDeleteSelected: () => void;
     onPreviewLog: (log: GenerationLog) => void;
 }) {
+    const { t } = useTranslation();
     const allSelected = Boolean(logs.length) && selectedLogIds.length === logs.length;
     const toggleAll = () => onSelectedLogIdsChange(allSelected ? [] : logs.map((log) => log.id));
 
@@ -603,19 +615,19 @@ function LogPanel({
         <>
             <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                    <h2 className="text-base font-semibold">生成记录</h2>
+                    <h2 className="text-base font-semibold">{t("image.log.title")}</h2>
                 </div>
                 <Tag className="m-0">{logs.length}</Tag>
             </div>
             <div className="mb-4 flex flex-wrap gap-2">
                 <Button size="small" icon={<Plus className="size-3.5" />} onClick={onCreateSession}>
-                    新建
+                    {t("image.log.new")}
                 </Button>
                 <Button size="small" icon={<CheckSquare className="size-3.5" />} disabled={!logs.length} onClick={toggleAll}>
-                    {allSelected ? "取消" : "全选"}
+                    {allSelected ? t("image.log.deselect") : t("image.log.selectAll")}
                 </Button>
                 <Button size="small" danger icon={<Trash2 className="size-3.5" />} disabled={!selectedLogIds.length} onClick={onDeleteSelected}>
-                    删除
+                    {t("image.log.delete")}
                 </Button>
             </div>
             <div className="space-y-3">
@@ -629,13 +641,14 @@ function LogPanel({
                         onClick={() => onPreviewLog(log)}
                     />
                 ))}
-                {!logs.length ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-stone-300 text-center text-sm text-stone-500 dark:border-stone-700">暂无生成记录</div> : null}
+                {!logs.length ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-stone-300 text-center text-sm text-stone-500 dark:border-stone-700">{t("image.log.noLogs")}</div> : null}
             </div>
         </>
     );
 }
 
 function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: GenerationLog; selected: boolean; active: boolean; onSelectedChange: (checked: boolean) => void; onClick: () => void }) {
+    const { t } = useTranslation();
     const thumbnails = (log.thumbnails || []).filter(Boolean).slice(0, 4);
 
     return (
@@ -661,16 +674,16 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                 <div className="grid justify-items-end gap-2">
                     <div className="flex gap-1">
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">
-                            成功 {log.successCount ?? log.imageCount}
+                            {t("image.log.success")} {log.successCount ?? log.imageCount}
                         </Tag>
                         {log.failCount ? (
                             <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="red">
-                                失败 {log.failCount}
+                                {t("image.log.failed")} {log.failCount}
                             </Tag>
                         ) : null}
                     </div>
                     <div className="flex flex-wrap justify-end gap-1">
-                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.imageCount} 张</Tag>
+                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{t("image.log.imageCount", { count: log.imageCount })}</Tag>
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">
                             {formatDuration(log.durationMs)}
                         </Tag>
@@ -715,9 +728,9 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
     return {
         id: log.id || nanoid(),
         createdAt: log.createdAt || Date.now(),
-        title: log.title || log.model || "未命名",
+        title: log.title || log.model || translate("image.log.untitled"),
         prompt: log.prompt || log.title || "",
-        time: log.time || new Date().toLocaleString("zh-CN", { hour12: false }),
+        time: log.time || formatLocaleDateTime(Date.now(), getRuntimeLocale(), { hour12: false }),
         model: log.model || config.imageModel || "",
         config,
         references,
@@ -801,9 +814,9 @@ function buildLog({
     return {
         id: nanoid(),
         createdAt: Date.now(),
-        title: prompt.slice(0, 12) || "未命名",
+        title: prompt.slice(0, 12) || translate("image.log.untitled"),
         prompt,
-        time: new Date().toLocaleString("zh-CN", { hour12: false }),
+        time: formatLocaleDateTime(Date.now(), getRuntimeLocale(), { hour12: false }),
         model,
         config: logConfig,
         references,

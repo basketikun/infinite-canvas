@@ -5,14 +5,59 @@ description: 使用 Docker Compose 部署无限画布
 
 # Docker 部署
 
-如果你希望在自己的机器或服务器上运行项目，可以直接使用 Docker Compose。
+如果你希望在自己的机器或服务器上运行项目，应使用 **发布模式**（构建静态产物 + nginx），而不是 Vite 开发服务器。
+
+开发调试请使用 `web/` 下的 `bun run dev` / `npm run dev`；详见 [快速开始](/docs/overview/quick-start) 中的「开发模式与发布模式」说明。
+
+## 发布命令速查
+
+```bash
+# 1. 构建前端静态产物（在 web/ 目录）
+cd web
+bun run build    # 或 npm run build
+
+# 2a. Docker Compose 一键构建并启动（推荐，在仓库根目录）
+cd ..
+docker compose up -d --build
+docker compose ps
+
+# 2b. 或拉取已发布镜像
+docker pull ghcr.io/basketikun/infinite-canvas:latest
+docker run --rm -p 3000:3000 ghcr.io/basketikun/infinite-canvas:latest
+
+# 2c. 或仅本地构建镜像
+docker build -t infinite-canvas .
+docker run --rm -p 3000:3000 infinite-canvas
+```
+
+容器状态为 `healthy` 后访问 `http://localhost:3000`。
+
+## 开发模式切换发布的注意事项
+
+- **不要**把 `bun run dev` 当作生产部署：dev 会走 Vite 热更新，浏览器会加载 `node_modules/.vite/deps/chunk-*.js`，体积和请求数都高于生产包。
+- 切换到发布前，先 **停止 dev 进程**，避免与 Docker 争抢 **3000** 端口。
+- 修改过 `vite.config.ts` 或依赖后，发布前建议在 `web/` 重新执行 `bun install` / `npm install`，并可选删除 `web/node_modules/.vite`（仅影响 dev 缓存，不影响 `build`）。
+- 生产镜像内是 nginx 托管的 `web/dist`，**不会**包含 Vite dev 中间层；若线上仍看到 `.vite/deps` 请求，说明访问的不是 Docker/nginx 服务。
+- 本地可用 `bun run start` / `npm run start` 预览 `dist`，用于发布前验收；正式对外仍推荐 Docker 或同类静态托管。
+- 多语言资源在 `web` build 时一并打包，无需单独配置；详见 [多语言](/docs/overview/i18n)。
 
 ## 使用发布镜像
+
+如果已发布到 GHCR 的镜像可用：
+
+```bash
+docker pull ghcr.io/basketikun/infinite-canvas:latest
+docker run --rm -p 3000:3000 ghcr.io/basketikun/infinite-canvas:latest
+```
+
+## 本地构建并启动（推荐）
+
+根目录 `docker-compose.yml` 会基于当前源码构建镜像，并在容器内自动启动 nginx 静态服务：
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
 cd infinite-canvas
-docker compose up -d
+docker compose up -d --build
 ```
 
 启动后访问：
@@ -21,9 +66,17 @@ docker compose up -d
 http://localhost:3000
 ```
 
+查看服务状态：
+
+```bash
+docker compose ps
+```
+
+`healthy` 表示 nginx 已就绪。
+
 ## 本地构建镜像
 
-如果需要基于当前源码构建镜像：
+如果需要单独构建镜像：
 
 ```bash
 docker compose -f docker-compose.local.yml up -d --build
@@ -49,4 +102,4 @@ docker compose -f docker-compose.local.yml up -d --build
 
 ## 数据说明
 
-当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由浏览器前端直连拉取，不需要额外挂载数据目录。
+当前主应用镜像使用 nginx 静态托管前端。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由浏览器前端直连拉取，不需要额外挂载数据目录。

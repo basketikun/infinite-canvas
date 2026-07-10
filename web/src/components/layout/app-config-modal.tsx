@@ -1,13 +1,17 @@
 import { App, Button, Form, Input, Modal, Progress, Select, Tabs } from "antd";
 import { CircleAlert, Cloud, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { useTranslation } from "@/components/layout/locale-provider";
 import { ModelPicker } from "@/components/model-picker";
+import type { TranslationKey } from "@/i18n";
+import { formatLocaleDateTime } from "@/lib/format-locale";
 import { fetchChannelModels } from "@/services/api/image";
-import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
+import { syncAppDataToWebdav, APP_SYNC_STAGE, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionLabel, modelOptionsFromChannels, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import type { TranslateFn } from "@/i18n";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -25,44 +29,126 @@ type WebdavDomainProgress = {
     status?: "active" | "success" | "exception";
 };
 
-const modelGroups: ModelGroup[] = [
-    { capability: "image", modelKey: "imageModel", modelsKey: "imageModels", defaultLabel: "默认生图模型", optionsLabel: "生图模型可选项" },
-    { capability: "video", modelKey: "videoModel", modelsKey: "videoModels", defaultLabel: "默认视频模型", optionsLabel: "视频模型可选项" },
-    { capability: "text", modelKey: "textModel", modelsKey: "textModels", defaultLabel: "默认文本模型", optionsLabel: "文本模型可选项" },
-    { capability: "audio", modelKey: "audioModel", modelsKey: "audioModels", defaultLabel: "默认音频模型", optionsLabel: "音频模型可选项" },
-];
+type WebdavStageId =
+    | "waitLocalData"
+    | "syncDone"
+    | "syncFailed"
+    | "waiting"
+    | "preparing"
+    | "readingRemoteManifest"
+    | "readingLocalData"
+    | "downloadingMedia"
+    | "writingLocalMerge"
+    | "uploadingMedia"
+    | "mediaComplete"
+    | "mediaNoUpload"
+    | "uploadingManifest"
+    | "checkingMissingMedia"
+    | "downloadingMediaProgress"
+    | "checkingLocalMedia"
+    | "uploadingMediaProgress"
+    | "done"
+    | "unknown";
 
-const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
-    { label: "OpenAI", value: "openai" },
-    { label: "Gemini", value: "gemini" },
-];
-
-const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench"];
-const webdavDomainLabels: Record<AppSyncDomainKey, string> = {
-    canvas: "画布",
-    assets: "我的素材",
-    "image-workbench": "生图工作台",
-    "video-workbench": "视频创作台",
+const webdavStageSourceMap: Record<string, WebdavStageId> = {
+    [APP_SYNC_STAGE.waitLocalData]: "waitLocalData",
+    [APP_SYNC_STAGE.syncDone]: "syncDone",
+    [APP_SYNC_STAGE.syncFailed]: "syncFailed",
+    [APP_SYNC_STAGE.readingRemoteManifest]: "readingRemoteManifest",
+    [APP_SYNC_STAGE.readingLocalData]: "readingLocalData",
+    [APP_SYNC_STAGE.downloadingMedia]: "downloadingMedia",
+    [APP_SYNC_STAGE.writingLocalMerge]: "writingLocalMerge",
+    [APP_SYNC_STAGE.uploadingMedia]: "uploadingMedia",
+    [APP_SYNC_STAGE.mediaComplete]: "mediaComplete",
+    [APP_SYNC_STAGE.mediaNoUpload]: "mediaNoUpload",
+    [APP_SYNC_STAGE.done]: "done",
+    [APP_SYNC_STAGE.checkingMissingMedia]: "checkingMissingMedia",
+    [APP_SYNC_STAGE.downloadingMediaProgress]: "downloadingMediaProgress",
+    [APP_SYNC_STAGE.checkingLocalMedia]: "checkingLocalMedia",
 };
 
-function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProgress> {
+const webdavStageTranslationKeys: Partial<Record<WebdavStageId, TranslationKey>> = {
+    waitLocalData: "errors.appSync.waitLocalData",
+    syncDone: "errors.appSync.syncDone",
+    syncFailed: "errors.appSync.syncFailed",
+    waiting: "config.webdav.stages.waiting",
+    preparing: "config.webdav.stages.preparing",
+    readingRemoteManifest: "config.webdav.stages.readingRemoteManifest",
+    readingLocalData: "config.webdav.stages.readingLocalData",
+    downloadingMedia: "config.webdav.stages.downloadingMedia",
+    writingLocalMerge: "config.webdav.stages.writingLocalMerge",
+    uploadingMedia: "config.webdav.stages.uploadingMedia",
+    mediaComplete: "config.webdav.stages.mediaComplete",
+    mediaNoUpload: "config.webdav.stages.mediaNoUpload",
+    uploadingManifest: "config.webdav.stages.uploadingManifest",
+    done: "errors.appSync.done",
+    checkingMissingMedia: "errors.appSync.checkMissingMedia",
+    downloadingMediaProgress: "errors.appSync.downloadMedia",
+    checkingLocalMedia: "errors.appSync.checkLocalMedia",
+};
+
+function getWebdavDomainLabel(t: TranslateFn, key: AppSyncDomainKey) {
+    return t(webdavDomainLabelKeys[key]);
+}
+
+function createWebdavDomainProgress(t: TranslateFn): Record<AppSyncDomainKey, WebdavDomainProgress> {
     return webdavDomainKeys.reduce(
         (progress, key) => ({
             ...progress,
-            [key]: { label: webdavDomainLabels[key], stage: "等待同步" },
+            [key]: { label: getWebdavDomainLabel(t, key), stage: t("config.webdav.stages.waiting") },
         }),
         {} as Record<AppSyncDomainKey, WebdavDomainProgress>,
     );
 }
 
+const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench"];
+
+const webdavDomainLabelKeys: Record<AppSyncDomainKey, TranslationKey> = {
+    canvas: "config.webdav.domains.canvas",
+    assets: "config.webdav.domains.assets",
+    "image-workbench": "config.webdav.domains.imageWorkbench",
+    "video-workbench": "config.webdav.domains.videoWorkbench",
+};
+
+function getWebdavStageId(stage: string): WebdavStageId {
+    if (webdavStageSourceMap[stage]) return webdavStageSourceMap[stage];
+    if (stage.startsWith(`${APP_SYNC_STAGE.uploadingManifest}:`)) return "uploadingManifest";
+    if (stage.startsWith(`${APP_SYNC_STAGE.uploadingMediaProgress}:`)) return "uploadingMediaProgress";
+    return "unknown";
+}
+
+function translateWebdavStage(t: TranslateFn, stage: string) {
+    const stageId = getWebdavStageId(stage);
+    if (stageId === "uploadingManifest") {
+        const size = stage.includes(":") ? stage.slice(stage.indexOf(":") + 1) : "";
+        return size ? t("errors.appSync.uploadManifest", { size }) : t("config.webdav.stages.uploadingManifest");
+    }
+    if (stageId === "uploadingMediaProgress") {
+        const size = stage.includes(":") ? stage.slice(stage.indexOf(":") + 1) : "";
+        return size ? t("errors.appSync.uploadMedia", { size }) : t("config.webdav.stages.uploadingMedia");
+    }
+    const key = webdavStageTranslationKeys[stageId];
+    return key ? t(key) : stage;
+}
+
+function createModelGroups(t: TranslateFn): ModelGroup[] {
+    return [
+        { capability: "image", modelKey: "imageModel", modelsKey: "imageModels", defaultLabel: t("config.models.defaultImageModel"), optionsLabel: t("config.models.imageModelOptions") },
+        { capability: "video", modelKey: "videoModel", modelsKey: "videoModels", defaultLabel: t("config.models.defaultVideoModel"), optionsLabel: t("config.models.videoModelOptions") },
+        { capability: "text", modelKey: "textModel", modelsKey: "textModels", defaultLabel: t("config.models.defaultTextModel"), optionsLabel: t("config.models.textModelOptions") },
+        { capability: "audio", modelKey: "audioModel", modelsKey: "audioModels", defaultLabel: t("config.models.defaultAudioModel"), optionsLabel: t("config.models.audioModelOptions") },
+    ];
+}
+
 export function AppConfigModal() {
     const { message } = App.useApp();
+    const { locale, t } = useTranslation();
     const [activeTab, setActiveTab] = useState("channels");
     const [loadingChannelId, setLoadingChannelId] = useState("");
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
-    const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
+    const [webdavDomainProgress, setWebdavDomainProgress] = useState<Record<AppSyncDomainKey, WebdavDomainProgress>>(() => createWebdavDomainProgress(t));
     const config = useConfigStore((state) => state.config);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
@@ -73,6 +159,14 @@ export function AppConfigModal() {
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
     const webdavReady = Boolean(webdav.url.trim());
+    const modelGroups = useMemo(() => createModelGroups(t), [t]);
+    const apiFormatOptions = useMemo(
+        () => [
+            { label: t("config.apiFormat.openai"), value: "openai" as ApiCallFormat },
+            { label: t("config.apiFormat.gemini"), value: "gemini" as ApiCallFormat },
+        ],
+        [t],
+    );
 
     const saveConfig = (nextConfig: AiConfig) => {
         (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
@@ -82,7 +176,7 @@ export function AppConfigModal() {
         const ready = config.channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
         setConfigDialogOpen(false);
         if (!ready) return;
-        message.success(shouldPromptContinue ? "配置已保存，请继续刚才的请求" : "配置已保存");
+        message.success(shouldPromptContinue ? t("config.messages.savedContinue") : t("config.messages.saved"));
         clearPromptContinue();
     };
 
@@ -101,12 +195,12 @@ export function AppConfigModal() {
     };
 
     const addChannel = () => {
-        updateChannels([...config.channels, createModelChannel({ name: `渠道 ${config.channels.length + 1}` })]);
+        updateChannels([...config.channels, createModelChannel({ name: t("config.channels.channelNameDefault", { index: config.channels.length + 1 }) })]);
     };
 
     const deleteChannel = (id: string) => {
         if (config.channels.length <= 1) {
-            message.warning("至少保留一个渠道");
+            message.warning(t("config.channels.messages.keepOneChannel"));
             return;
         }
         updateChannels(config.channels.filter((channel) => channel.id !== id));
@@ -114,16 +208,16 @@ export function AppConfigModal() {
 
     const refreshChannelModels = async (channel: ModelChannel) => {
         if (!channel.baseUrl.trim() || !channel.apiKey.trim()) {
-            message.error("请先填写该渠道的 Base URL 和 API Key");
+            message.error(t("config.channels.messages.fillBaseUrlAndKey"));
             return;
         }
         setLoadingChannelId(channel.id);
         try {
             const models = await fetchChannelModels(channel);
             updateChannels(config.channels.map((item) => (item.id === channel.id ? { ...item, models } : item)));
-            message.success(`${channel.name} 模型列表已更新`);
+            message.success(t("config.channels.messages.modelsUpdated", { name: channel.name }));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "读取模型失败");
+            message.error(error instanceof Error ? error.message : t("errors.image.readModelsFailed"));
         } finally {
             setLoadingChannelId("");
         }
@@ -132,7 +226,7 @@ export function AppConfigModal() {
     const refreshAllModels = async () => {
         const runnable = config.channels.filter((channel) => channel.baseUrl.trim() && channel.apiKey.trim());
         if (!runnable.length) {
-            message.error("请先填写至少一个渠道的 Base URL 和 API Key");
+            message.error(t("config.channels.messages.fillAtLeastOneChannel"));
             return;
         }
         setLoadingChannelId("all");
@@ -140,9 +234,9 @@ export function AppConfigModal() {
             const entries = await Promise.all(runnable.map(async (channel) => [channel.id, await fetchChannelModels(channel)] as const));
             const modelMap = new Map(entries);
             updateChannels(config.channels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: modelMap.get(channel.id) || [] } : channel)));
-            message.success("模型列表已更新");
+            message.success(t("config.channels.messages.allModelsUpdated"));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "读取模型失败");
+            message.error(error instanceof Error ? error.message : t("errors.image.readModelsFailed"));
         } finally {
             setLoadingChannelId("");
         }
@@ -156,27 +250,27 @@ export function AppConfigModal() {
 
     const testWebdav = async () => {
         if (!webdavReady) {
-            message.error("请先填写 WebDAV 地址");
+            message.error(t("config.webdav.messages.fillUrl"));
             return;
         }
         setTestingWebdav(true);
         try {
             await testWebdavConnection(webdav);
-            message.success("WebDAV 连接可用");
+            message.success(t("config.webdav.messages.connectionOk"));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "WebDAV 连接测试失败");
+            message.error(error instanceof Error ? error.message : t("errors.webdav.connectionTestFailed"));
         } finally {
             setTestingWebdav(false);
         }
     };
 
     const updateWebdavProgress = (event: AppSyncProgressEvent) => {
-        setWebdavSyncStatus(event.stage);
+        setWebdavSyncStatus(translateWebdavStage(t, event.stage));
         if (!event.domain) return;
         setWebdavDomainProgress((current) => ({
             ...current,
             [event.domain as AppSyncDomainKey]: {
-                label: event.label || webdavDomainLabels[event.domain as AppSyncDomainKey],
+                label: event.label || getWebdavDomainLabel(t, event.domain as AppSyncDomainKey),
                 stage: event.stage,
                 current: event.current,
                 total: event.total,
@@ -187,19 +281,28 @@ export function AppConfigModal() {
 
     const syncWebdav = async () => {
         if (!webdavReady) {
-            message.error("请先填写 WebDAV 地址");
+            message.error(t("config.webdav.messages.fillUrl"));
             return;
         }
         setSyncingWebdav(true);
-        setWebdavDomainProgress(createWebdavDomainProgress());
-        setWebdavSyncStatus("准备同步");
+        setWebdavDomainProgress(createWebdavDomainProgress(t));
+        setWebdavSyncStatus(t("config.webdav.stages.preparing"));
         try {
             const result = await syncAppDataToWebdav(webdav, updateWebdavProgress);
             updateWebdavConfig("lastSyncedAt", result.syncedAt);
-            message.success(`同步完成：${result.projects} 个画布，${result.assets} 个素材，${result.imageLogs + result.videoLogs} 条记录，本次上传 ${result.uploadedFiles} 个文件 ${formatBytes(result.uploadedBytes)}`);
+            message.success(
+                t("config.webdav.messages.syncComplete", {
+                    projects: result.projects,
+                    assets: result.assets,
+                    logs: result.imageLogs + result.videoLogs,
+                    files: result.uploadedFiles,
+                    size: formatBytes(result.uploadedBytes),
+                }),
+            );
         } catch (error) {
-            setWebdavSyncStatus(error instanceof Error ? error.message : "WebDAV 同步失败");
-            message.error(error instanceof Error ? error.message : "WebDAV 同步失败");
+            const errorMessage = error instanceof Error ? error.message : t("config.webdav.messages.syncFailed");
+            setWebdavSyncStatus(errorMessage);
+            message.error(errorMessage);
         } finally {
             setSyncingWebdav(false);
         }
@@ -209,8 +312,8 @@ export function AppConfigModal() {
         <Modal
             title={
                 <div>
-                    <div className="text-lg font-semibold">配置与用户偏好</div>
-                    <div className="mt-1 text-xs font-normal text-stone-500">渠道聚合、模型选择和同步偏好</div>
+                    <div className="text-lg font-semibold">{t("config.title")}</div>
+                    <div className="mt-1 text-xs font-normal text-stone-500">{t("config.subtitle")}</div>
                 </div>
             }
             open={isConfigOpen}
@@ -220,7 +323,7 @@ export function AppConfigModal() {
             styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 12 } }}
             footer={
                 <Button type="primary" onClick={finishConfig}>
-                    完成
+                    {t("config.done")}
                 </Button>
             }
         >
@@ -230,26 +333,26 @@ export function AppConfigModal() {
                 items={[
                     {
                         key: "channels",
-                        label: "渠道",
+                        label: t("config.tabs.channels"),
                         children: (
                             <Form layout="vertical" requiredMark={false}>
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                     <div className="min-w-0 flex-1">
                                         <div className="flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100">
                                             <CircleAlert className="size-3.5 shrink-0" />
-                                            <span className="font-semibold">重要：</span>
-                                            <span>新增或拉取模型后，需要到“模型”Tab 选择可选项才会显示。</span>
+                                            <span className="font-semibold">{t("config.channels.importantPrefix")}</span>
+                                            <span>{t("config.channels.importantMessage")}</span>
                                             <Button type="link" size="small" className="h-auto p-0 text-xs font-semibold text-amber-900 dark:text-amber-100" onClick={() => setActiveTab("models")}>
-                                                去模型设置
+                                                {t("config.channels.goToModels")}
                                             </Button>
                                         </div>
                                     </div>
                                     <div className="flex shrink-0 gap-2">
                                         <Button icon={<RefreshCw className="size-4" />} loading={Boolean(loadingChannelId)} onClick={() => void refreshAllModels()}>
-                                            拉取全部
+                                            {t("config.channels.refreshAll")}
                                         </Button>
                                         <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
-                                            新增渠道
+                                            {t("config.channels.addChannel")}
                                         </Button>
                                     </div>
                                 </div>
@@ -258,33 +361,33 @@ export function AppConfigModal() {
                                         <section key={channel.id} className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                             <div className="mb-3 flex items-center justify-between gap-3">
                                                 <div className="min-w-0">
-                                                    <div className="truncate text-sm font-semibold">{channel.name || "未命名渠道"}</div>
+                                                    <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamedChannel")}</div>
                                                     <div className="mt-1 text-xs text-stone-500">
-                                                        {apiFormatLabel(channel.apiFormat)} · 已保存 {channel.models.length} 个模型
+                                                        {apiFormatLabel(channel.apiFormat, t)} · {t("config.channels.savedModels", { count: channel.models.length })}
                                                     </div>
                                                 </div>
                                                 <div className="flex shrink-0 gap-2">
                                                     <Button size="small" loading={loadingChannelId === channel.id} onClick={() => void refreshChannelModels(channel)}>
-                                                        拉取模型
+                                                        {t("config.channels.refreshModels")}
                                                     </Button>
                                                     <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
                                                 </div>
                                             </div>
                                             <div className="grid gap-4 md:grid-cols-2">
-                                                <Form.Item label="渠道名称" className="mb-0">
+                                                <Form.Item label={t("config.channels.channelName")} className="mb-0">
                                                     <Input value={channel.name} onChange={(event) => updateChannel(channel.id, { name: event.target.value })} />
                                                 </Form.Item>
-                                                <Form.Item label="调用格式" className="mb-0">
+                                                <Form.Item label={t("config.channels.apiFormat")} className="mb-0">
                                                     <Select value={channel.apiFormat} options={apiFormatOptions} onChange={(value: ApiCallFormat) => updateChannelApiFormat(channel, value)} />
                                                 </Form.Item>
-                                                <Form.Item label="Base URL" className="mb-0">
+                                                <Form.Item label={t("config.channels.baseUrl")} className="mb-0">
                                                     <Input value={channel.baseUrl} onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })} />
                                                 </Form.Item>
-                                                <Form.Item label="API Key" className="mb-0">
+                                                <Form.Item label={t("config.channels.apiKey")} className="mb-0">
                                                     <Input.Password value={channel.apiKey} onChange={(event) => updateChannel(channel.id, { apiKey: event.target.value })} />
                                                 </Form.Item>
-                                                <Form.Item label="模型列表" className="mb-0 md:col-span-2">
-                                                    <Select mode="tags" showSearch allowClear maxTagCount="responsive" placeholder="输入模型名，或点击拉取模型" value={channel.models} onChange={(models) => updateChannel(channel.id, { models })} />
+                                                <Form.Item label={t("config.channels.modelList")} className="mb-0 md:col-span-2">
+                                                    <Select mode="tags" showSearch allowClear maxTagCount="responsive" placeholder={t("config.channels.modelListPlaceholder")} value={channel.models} onChange={(models) => updateChannel(channel.id, { models })} />
                                                 </Form.Item>
                                             </div>
                                         </section>
@@ -295,12 +398,12 @@ export function AppConfigModal() {
                     },
                     {
                         key: "models",
-                        label: "模型",
+                        label: t("config.tabs.models"),
                         children: (
                             <Form layout="vertical" requiredMark={false}>
                                 <div className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                                    <div className="text-sm font-semibold">默认模型和可选项</div>
-                                    <div className="mt-1 text-xs leading-5 text-stone-500">可选项决定各处下拉框展示哪些模型；同名模型会以括号里的渠道名区分。</div>
+                                    <div className="text-sm font-semibold">{t("config.models.sectionTitle")}</div>
+                                    <div className="mt-1 text-xs leading-5 text-stone-500">{t("config.models.sectionDescription")}</div>
                                 </div>
                                 <div className="grid gap-4 md:grid-cols-2">
                                     {modelGroups.map((group) => (
@@ -310,7 +413,7 @@ export function AppConfigModal() {
                                                 showSearch
                                                 allowClear
                                                 maxTagCount="responsive"
-                                                placeholder={config.models.length ? `请选择或输入${group.optionsLabel}` : "先到渠道里填写或拉取模型"}
+                                                placeholder={config.models.length ? t("config.models.selectOrInput", { label: group.optionsLabel }) : t("config.models.addModelsInChannels")}
                                                 value={config[group.modelsKey]}
                                                 options={modelOptions}
                                                 onChange={(models) => updateCapabilityModels(group, models)}
@@ -330,11 +433,11 @@ export function AppConfigModal() {
                     },
                     {
                         key: "preferences",
-                        label: "生成偏好",
+                        label: t("config.tabs.preferences"),
                         children: (
                             <Form layout="vertical" requiredMark={false}>
                                 <div className="grid gap-4 md:grid-cols-4">
-                                    <Form.Item label="画布默认生图张数" extra="新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。" className="mb-4">
+                                    <Form.Item label={t("config.preferences.canvasImageCount")} extra={t("config.preferences.canvasImageCountExtra")} className="mb-4">
                                         <Input
                                             type="number"
                                             min={1}
@@ -344,13 +447,13 @@ export function AppConfigModal() {
                                             onBlur={(event) => updateConfig("canvasImageCount", normalizeImageCount(event.target.value))}
                                         />
                                     </Form.Item>
-                                    <Form.Item label="默认音频声音" className="mb-4">
+                                    <Form.Item label={t("config.preferences.defaultAudioVoice")} className="mb-4">
                                         <Select value={config.audioVoice} options={audioVoiceOptions} onChange={(value) => updateConfig("audioVoice", value)} />
                                     </Form.Item>
-                                    <Form.Item label="默认音频格式" className="mb-4">
+                                    <Form.Item label={t("config.preferences.defaultAudioFormat")} className="mb-4">
                                         <Select value={config.audioFormat} options={audioFormatOptions} onChange={(value) => updateConfig("audioFormat", value)} />
                                     </Form.Item>
-                                    <Form.Item label="默认音频语速" className="mb-4">
+                                    <Form.Item label={t("config.preferences.defaultAudioSpeed")} className="mb-4">
                                         <Input
                                             type="number"
                                             min={0.25}
@@ -362,18 +465,18 @@ export function AppConfigModal() {
                                         />
                                     </Form.Item>
                                 </div>
-                                <Form.Item label="默认音频指令" className="mb-4">
-                                    <Input.TextArea rows={2} value={config.audioInstructions} placeholder="例如：自然、温暖、适合旁白。" onChange={(event) => updateConfig("audioInstructions", event.target.value)} />
+                                <Form.Item label={t("config.preferences.defaultAudioInstructions")} className="mb-4">
+                                    <Input.TextArea rows={2} value={config.audioInstructions} placeholder={t("config.preferences.defaultAudioInstructionsPlaceholder")} onChange={(event) => updateConfig("audioInstructions", event.target.value)} />
                                 </Form.Item>
-                                <Form.Item label="系统提示词" className="mb-0">
-                                    <Input.TextArea rows={4} value={config.systemPrompt} placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。" onChange={(event) => updateConfig("systemPrompt", event.target.value)} />
+                                <Form.Item label={t("config.preferences.systemPrompt")} className="mb-0">
+                                    <Input.TextArea rows={4} value={config.systemPrompt} placeholder={t("config.preferences.systemPromptPlaceholder")} onChange={(event) => updateConfig("systemPrompt", event.target.value)} />
                                 </Form.Item>
                             </Form>
                         ),
                     },
                     {
                         key: "webdav",
-                        label: "WebDAV",
+                        label: t("config.tabs.webdav"),
                         children: (
                             <Form layout="vertical" requiredMark={false}>
                                 <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
@@ -381,32 +484,38 @@ export function AppConfigModal() {
                                         <div>
                                             <div className="flex items-center gap-2 text-sm font-semibold">
                                                 <Cloud className="size-4" />
-                                                WebDAV 同步
+                                                {t("config.webdav.title")}
                                             </div>
-                                            <div className="mt-1 text-xs text-stone-500">同步画布、我的素材、生成记录和本地媒体文件，不包含 AI API Key；浏览器会直接连接 WebDAV 服务。</div>
+                                            <div className="mt-1 text-xs text-stone-500">{t("config.webdav.description")}</div>
                                         </div>
-                                        <div className="text-xs text-stone-500">{webdav.lastSyncedAt ? `上次同步 ${formatWebdavTime(webdav.lastSyncedAt)}` : "尚未同步"}</div>
+                                        <div className="text-xs text-stone-500">
+                                            {webdav.lastSyncedAt
+                                                ? t("config.webdav.lastSynced", {
+                                                      time: formatLocaleDateTime(webdav.lastSyncedAt, locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+                                                  })
+                                                : t("config.webdav.notSynced")}
+                                        </div>
                                     </div>
                                     <div className="grid gap-4 md:grid-cols-2">
-                                        <Form.Item label="WebDAV 地址" className="mb-4">
-                                            <Input value={webdav.url} placeholder="https://nas.example.com/webdav" onChange={(event) => updateWebdavConfig("url", event.target.value)} />
+                                        <Form.Item label={t("config.webdav.url")} className="mb-4">
+                                            <Input value={webdav.url} placeholder={t("config.webdav.urlPlaceholder")} onChange={(event) => updateWebdavConfig("url", event.target.value)} />
                                         </Form.Item>
-                                        <Form.Item label="远程目录" extra={`会在该目录下分业务目录保存，每个目录包含 ${WEBDAV_MANIFEST_FILE_NAME} 和 files/`} className="mb-4">
+                                        <Form.Item label={t("config.webdav.directory")} extra={t("config.webdav.directoryExtra", { manifest: WEBDAV_MANIFEST_FILE_NAME })} className="mb-4">
                                             <Input value={webdav.directory} placeholder="infinite-canvas" onChange={(event) => updateWebdavConfig("directory", event.target.value)} />
                                         </Form.Item>
-                                        <Form.Item label="用户名" className="mb-0">
+                                        <Form.Item label={t("config.webdav.username")} className="mb-0">
                                             <Input value={webdav.username} autoComplete="username" onChange={(event) => updateWebdavConfig("username", event.target.value)} />
                                         </Form.Item>
-                                        <Form.Item label="密码 / 应用密码" className="mb-0">
+                                        <Form.Item label={t("config.webdav.password")} className="mb-0">
                                             <Input.Password value={webdav.password} autoComplete="current-password" onChange={(event) => updateWebdavConfig("password", event.target.value)} />
                                         </Form.Item>
                                     </div>
                                     <div className="mt-4 flex flex-wrap items-center gap-2">
                                         <Button icon={<Wifi className="size-4" />} disabled={!webdavReady || syncingWebdav} loading={testingWebdav} onClick={() => void testWebdav()}>
-                                            测试连接
+                                            {t("config.webdav.testConnection")}
                                         </Button>
                                         <Button type="primary" icon={<RefreshCw className="size-4" />} disabled={!webdavReady || testingWebdav} loading={syncingWebdav} onClick={() => void syncWebdav()}>
-                                            {syncingWebdav ? "同步中" : "立即同步"}
+                                            {syncingWebdav ? t("config.webdav.syncing") : t("config.webdav.syncNow")}
                                         </Button>
                                         {webdavSyncStatus ? <span className="text-xs text-stone-500">{webdavSyncStatus}</span> : null}
                                     </div>
@@ -464,26 +573,25 @@ function uniqueModels(models: string[]) {
     return Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
 }
 
-function apiFormatLabel(apiFormat: ApiCallFormat) {
-    return apiFormat === "gemini" ? "Gemini" : "OpenAI";
-}
-
-function formatWebdavTime(value: string) {
-    return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+function apiFormatLabel(apiFormat: ApiCallFormat, t: TranslateFn) {
+    return apiFormat === "gemini" ? t("config.apiFormat.gemini") : t("config.apiFormat.openai");
 }
 
 function WebdavProgressGrid({ progress }: { progress: Record<AppSyncDomainKey, WebdavDomainProgress> }) {
+    const { t } = useTranslation();
+
     return (
         <div className="mt-3 grid gap-2">
             {webdavDomainKeys.map((key) => {
                 const item = progress[key];
                 const count = item.total ? `${item.current || 0}/${item.total}` : "";
+                const stageLabel = translateWebdavStage(t, item.stage);
                 return (
                     <div key={key} className="rounded-md border border-stone-200 px-3 py-2 dark:border-stone-800">
                         <div className="mb-1 flex min-w-0 items-center justify-between gap-3 text-xs">
                             <span className="shrink-0 font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
                             <span className="min-w-0 truncate text-right text-stone-500">
-                                {item.stage}
+                                {stageLabel}
                                 {count ? ` · ${count}` : ""}
                             </span>
                         </div>
@@ -499,14 +607,15 @@ function getWebdavProgressPercent(item: WebdavDomainProgress) {
     if (item.status === "success") return 100;
     if (item.total) return Math.min(100, Math.round(((item.current || 0) / item.total) * 100));
     if (item.status === "exception") return 100;
-    if (item.stage === "等待同步") return 0;
-    if (item.stage === "读取远端清单") return 12;
-    if (item.stage === "读取本地数据") return 24;
-    if (item.stage === "下载缺失媒体") return 36;
-    if (item.stage === "写入本地合并结果") return 58;
-    if (item.stage === "上传新增媒体") return 66;
-    if (item.stage === "媒体已齐全" || item.stage === "媒体无需上传") return 74;
-    if (item.stage.startsWith("上传清单")) return 90;
+    const stageId = getWebdavStageId(item.stage);
+    if (stageId === "waiting") return 0;
+    if (stageId === "readingRemoteManifest") return 12;
+    if (stageId === "readingLocalData") return 24;
+    if (stageId === "downloadingMedia") return 36;
+    if (stageId === "writingLocalMerge") return 58;
+    if (stageId === "uploadingMedia") return 66;
+    if (stageId === "mediaComplete" || stageId === "mediaNoUpload") return 74;
+    if (stageId === "uploadingManifest") return 90;
     return item.status === "active" ? 30 : 0;
 }
 

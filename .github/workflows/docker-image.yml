@@ -1,5 +1,8 @@
 name: Docker image
 
+# 构建主应用镜像（含 web 前端 build，中英文 i18n 资源一并打包进 dist）
+# 手动触发：Actions → Docker image → Run workflow
+
 on:
   push:
     tags: ["v*"]

@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
+import { useTranslation } from "@/components/layout/locale-provider";
 import { audioFormatOptions, audioSpeedLabel, audioVoiceOptions, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -18,6 +19,7 @@ type AudioSettingsPanelProps = {
 };
 
 export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: AudioSettingsPanelProps) {
+    const { t } = useTranslation();
     const voice = normalizeAudioVoiceValue(config.audioVoice);
     const format = normalizeAudioFormatValue(config.audioFormat);
     const speed = normalizeAudioSpeedValue(config.audioSpeed);
@@ -25,8 +27,8 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
     return (
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
-                {showTitle ? <div className="text-lg font-semibold">音频设置</div> : null}
-                <SettingGroup title="声音" color={theme.node.muted}>
+                {showTitle ? <div className="text-lg font-semibold">{t("audioSettings.title")}</div> : null}
+                <SettingGroup title={t("audioSettings.voice")} color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {audioVoiceOptions.map((item) => (
                             <OptionPill key={item.value} selected={voice === item.value} theme={theme} onClick={() => onConfigChange("audioVoice", item.value)}>
@@ -35,7 +37,7 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                     </div>
                 </SettingGroup>
-                <SettingGroup title="格式" color={theme.node.muted}>
+                <SettingGroup title={t("audioSettings.format")} color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {audioFormatOptions.map((item) => (
                             <OptionPill key={item.value} selected={format === item.value} theme={theme} onClick={() => onConfigChange("audioFormat", item.value)}>
@@ -44,7 +46,7 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                     </div>
                 </SettingGroup>
-                <SettingGroup title="语速" color={theme.node.muted}>
+                <SettingGroup title={t("audioSettings.speed")} color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
                         {speedOptions.map((value) => (
                             <OptionPill key={value} selected={speed === value} theme={theme} onClick={() => onConfigChange("audioSpeed", value)}>
@@ -65,10 +67,10 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         onMouseDown={(event) => event.stopPropagation()}
                     />
                 </SettingGroup>
-                <SettingGroup title="声音指令" color={theme.node.muted}>
+                <SettingGroup title={t("audioSettings.instructions")} color={theme.node.muted}>
                     <textarea
                         value={config.audioInstructions || ""}
-                        placeholder="例如：自然、温暖、适合旁白。"
+                        placeholder={t("audioSettings.instructionsPlaceholder")}
                         className="thin-scrollbar h-20 w-full resize-none rounded-xl border bg-transparent px-3 py-2 text-sm leading-5 outline-none"
                         style={{ borderColor: theme.node.stroke, color: theme.node.text }}
                         onChange={(event) => onConfigChange("audioInstructions", event.target.value)}

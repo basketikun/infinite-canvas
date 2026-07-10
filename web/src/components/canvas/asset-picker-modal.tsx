@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Empty, Input, Modal, Pagination, Tag } from "antd";
 import { Search } from "lucide-react";
 
+import { useTranslation } from "@/components/layout/locale-provider";
 import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 
@@ -15,8 +16,10 @@ type Props = {
 };
 
 export function AssetPickerModal({ open, onInsert, onClose }: Props) {
+    const { t } = useTranslation();
+
     return (
-        <Modal title="选择素材" open={open} onCancel={onClose} footer={null} width={860} destroyOnHidden styles={{ body: { padding: "0 24px 24px", minHeight: 480 } }}>
+        <Modal title={t("canvas.assetPicker.title")} open={open} onCancel={onClose} footer={null} width={860} destroyOnHidden styles={{ body: { padding: "0 24px 24px", minHeight: 480 } }}>
             <MyAssetsTab onInsert={onInsert} />
         </Modal>
     );
@@ -24,14 +27,7 @@ export function AssetPickerModal({ open, onInsert, onClose }: Props) {
 
 const PAGE_SIZE = 8;
 
-const kindOptions = [
-    { label: "全部", value: "all" },
-    { label: "文本", value: "text" },
-    { label: "图片", value: "image" },
-    { label: "视频", value: "video" },
-];
-
-function PickerCard({ title, kind, cover, onClick }: { title: string; kind: string; cover: string; onClick: () => void }) {
+function PickerCard({ title, kind, cover, onClick, kindLabel, insertLabel }: { title: string; kind: string; cover: string; onClick: () => void; kindLabel: string; insertLabel: string }) {
     return (
         <button
             type="button"
@@ -46,19 +42,33 @@ function PickerCard({ title, kind, cover, onClick }: { title: string; kind: stri
             <div className="p-2.5">
                 <div className="flex items-center justify-between gap-2">
                     <span className="line-clamp-1 text-xs font-medium text-stone-800 dark:text-stone-200">{title}</span>
-                    <Tag className="m-0 shrink-0 text-[10px]">{kind === "image" ? "图片" : kind === "video" ? "视频" : "文本"}</Tag>
+                    <Tag className="m-0 shrink-0 text-[10px]">{kindLabel}</Tag>
                 </div>
             </div>
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-stone-950/0 text-sm font-medium text-white opacity-0 transition group-hover:bg-stone-950/55 group-hover:opacity-100">插入</div>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-stone-950/0 text-sm font-medium text-white opacity-0 transition group-hover:bg-stone-950/55 group-hover:opacity-100">{insertLabel}</div>
         </button>
     );
 }
 
 function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => void }) {
+    const { t } = useTranslation();
     const assets = useAssetStore((state) => state.assets);
     const [keyword, setKeyword] = useState("");
     const [kindFilter, setKindFilter] = useState("all");
     const [page, setPage] = useState(1);
+
+    const kindOptions = [
+        { label: t("canvas.assetPicker.filterAll"), value: "all" },
+        { label: t("canvas.assetPicker.filterText"), value: "text" },
+        { label: t("canvas.assetPicker.filterImage"), value: "image" },
+        { label: t("canvas.assetPicker.filterVideo"), value: "video" },
+    ];
+
+    const kindLabel = (kind: string) => {
+        if (kind === "image") return t("canvas.assetPicker.kindImage");
+        if (kind === "video") return t("canvas.assetPicker.kindVideo");
+        return t("canvas.assetPicker.kindText");
+    };
 
     const filtered = useMemo(() => {
         const query = keyword.trim().toLowerCase();
@@ -90,7 +100,7 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
                     className="w-56"
                     size="small"
                     prefix={<Search className="size-3.5 text-stone-400" />}
-                    placeholder="搜索素材"
+                    placeholder={t("canvas.assetPicker.searchPlaceholder")}
                     value={keyword}
                     allowClear
                     onChange={(e) => {
@@ -118,11 +128,11 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
             {visible.length ? (
                 <div className="grid grid-cols-4 gap-3">
                     {visible.map((asset) => (
-                        <PickerCard key={asset.id} title={asset.title} kind={asset.kind} cover={asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "")} onClick={() => handleInsert(asset)} />
+                        <PickerCard key={asset.id} title={asset.title} kind={asset.kind} kindLabel={kindLabel(asset.kind)} insertLabel={t("canvas.assetPicker.insert")} cover={asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "")} onClick={() => handleInsert(asset)} />
                     ))}
                 </div>
             ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有素材" className="py-12" />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("canvas.assetPicker.empty")} className="py-12" />
             )}
 
             {filtered.length > PAGE_SIZE && (

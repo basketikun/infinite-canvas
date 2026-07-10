@@ -4,9 +4,12 @@ import { Button, Input } from "antd";
 
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
+import { useTranslation } from "@/components/layout/locale-provider";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
+import { formatLocaleDateTime } from "@/lib/format-locale";
 
 export function CanvasProjectCard({ project }: { project: CanvasProject }) {
+    const { t, locale } = useTranslation();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const renameProject = useCanvasStore((state) => state.renameProject);
@@ -35,7 +38,7 @@ export function CanvasProjectCard({ project }: { project: CanvasProject }) {
                     onClick={(event) => event.stopPropagation()}
                     onChange={(event) => toggleSelected(project.id, event.target.checked)}
                     className="mt-1 size-4 accent-stone-950 dark:accent-stone-100"
-                    aria-label={`选择 ${project.title}`}
+                    aria-label={t("canvas.projectCard.selectProject", { title: project.title })}
                 />
                 {editing ? (
                     <Input className="min-w-0" value={editingTitle} onClick={(event) => event.stopPropagation()} onChange={(event) => setEditingTitle(event.target.value)} onKeyDown={(event) => event.key === "Enter" && saveTitle()} autoFocus />
@@ -50,24 +53,26 @@ export function CanvasProjectCard({ project }: { project: CanvasProject }) {
                     >
                         <h2 className="truncate text-xl font-semibold">{project.title}</h2>
                         <p className="mt-3 text-sm leading-6 text-stone-600 dark:text-stone-400">
-                            {project.nodes.length} 个节点 · {project.connections.length} 条连线
+                            {t("canvas.projectCard.stats", { nodes: project.nodes.length, connections: project.connections.length })}
                         </p>
                     </button>
                 )}
             </div>
             <div className="mt-8 flex items-end justify-between gap-3">
-                <p className="text-xs text-stone-500">更新于 {new Date(project.updatedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>
+                <p className="text-xs text-stone-500">
+                    {t("common.updatedAt")} {formatLocaleDateTime(project.updatedAt, locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </p>
                 <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
                     {editing ? (
                         <>
-                            <Button type="text" size="small" shape="circle" icon={<Check className="size-4" />} onClick={saveTitle} aria-label="保存名称" />
-                            <Button type="text" size="small" shape="circle" icon={<X className="size-4" />} onClick={stopEditing} aria-label="取消重命名" />
+                            <Button type="text" size="small" shape="circle" icon={<Check className="size-4" />} onClick={saveTitle} aria-label={t("canvas.projectCard.saveTitle")} />
+                            <Button type="text" size="small" shape="circle" icon={<X className="size-4" />} onClick={stopEditing} aria-label={t("canvas.projectCard.cancelRename")} />
                         </>
                     ) : (
                         <>
-                            <Button type="text" size="small" shape="circle" icon={<Download className="size-4" />} onClick={() => void exportCanvasProjects([project], project.title || "无限画布")} aria-label="导出" />
-                            <Button type="text" size="small" shape="circle" icon={<Pencil className="size-4" />} onClick={() => startEditing(project.id, project.title)} aria-label="重命名" />
-                            <Button type="text" size="small" shape="circle" icon={<Trash2 className="size-4" />} onClick={() => setDeleteIds([project.id])} aria-label="删除" />
+                            <Button type="text" size="small" shape="circle" icon={<Download className="size-4" />} onClick={() => void exportCanvasProjects([project], project.title || t("common.infiniteCanvas"))} aria-label={t("canvas.projectCard.export")} />
+                            <Button type="text" size="small" shape="circle" icon={<Pencil className="size-4" />} onClick={() => startEditing(project.id, project.title)} aria-label={t("canvas.projectCard.rename")} />
+                            <Button type="text" size="small" shape="circle" icon={<Trash2 className="size-4" />} onClick={() => setDeleteIds([project.id])} aria-label={t("canvas.projectCard.delete")} />
                         </>
                     )}
                 </div>

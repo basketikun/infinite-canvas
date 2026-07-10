@@ -2,16 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Button, Modal, Segmented } from "antd";
 import { ImagePlus } from "lucide-react";
 
+import { useTranslation } from "@/components/layout/locale-provider";
+import type { TranslateFn } from "@/i18n";
 import { readImageMeta } from "@/lib/image-utils";
 import { MAX_UPSCALE_LONG_EDGE, resolveUpscaleSize, type ImageUpscaleAlgorithm, type ImageUpscaleParams } from "@/lib/canvas/canvas-image-data";
 
 export type CanvasImageUpscaleParams = ImageUpscaleParams;
-
-const algorithms: Array<{ value: ImageUpscaleAlgorithm; title: string; description: string }> = [
-    { value: "high", title: "高清插值", description: "适合照片和细节图" },
-    { value: "bilinear", title: "双线性", description: "平滑、速度快" },
-    { value: "nearest", title: "最近邻", description: "适合像素风格" },
-];
 
 const targetOptions = [
     { label: "1K", value: 1024 },
@@ -24,7 +20,17 @@ const defaultParams: CanvasImageUpscaleParams = {
     algorithm: "high",
 };
 
+function upscaleAlgorithms(t: TranslateFn): Array<{ value: ImageUpscaleAlgorithm; title: string; description: string }> {
+    return [
+        { value: "high", title: t("canvas.dialogs.upscale.algorithms.high.title"), description: t("canvas.dialogs.upscale.algorithms.high.description") },
+        { value: "bilinear", title: t("canvas.dialogs.upscale.algorithms.bilinear.title"), description: t("canvas.dialogs.upscale.algorithms.bilinear.description") },
+        { value: "nearest", title: t("canvas.dialogs.upscale.algorithms.nearest.title"), description: t("canvas.dialogs.upscale.algorithms.nearest.description") },
+    ];
+}
+
 export function CanvasNodeUpscaleDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (params: CanvasImageUpscaleParams) => void }) {
+    const { t } = useTranslation();
+    const algorithms = upscaleAlgorithms(t);
     const [params, setParams] = useState<CanvasImageUpscaleParams>(defaultParams);
     const [image, setImage] = useState<{ width: number; height: number } | null>(null);
     const sourceLongEdge = image ? Math.max(image.width, image.height) : 0;
@@ -53,7 +59,7 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, onClose, onConfirm }: {
         <Modal title={null} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={820} centered destroyOnHidden>
             <div className="space-y-5">
                 <div>
-                    <h2 className="text-xl font-semibold">图片放大</h2>
+                    <h2 className="text-xl font-semibold">{t("canvas.dialogs.upscale.title")}</h2>
                 </div>
                 <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_360px]">
                     <div className="rounded-xl border p-4">
@@ -61,23 +67,23 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, onClose, onConfirm }: {
                             <img src={dataUrl} alt="" className="max-h-[320px] max-w-full rounded-lg object-contain shadow-xl" draggable={false} />
                         </div>
                         <div className="mt-3 flex items-center justify-between text-sm">
-                            <span className="opacity-60">源图</span>
-                            <span className="font-semibold">{image ? `${image.width} x ${image.height} px` : "读取中"}</span>
+                            <span className="opacity-60">{t("canvas.dialogs.upscale.source")}</span>
+                            <span className="font-semibold">{image ? `${image.width} x ${image.height} ${t("canvas.common.px")}` : t("canvas.common.reading")}</span>
                         </div>
                     </div>
                     <div className="space-y-6 py-2">
                         <div className="space-y-2">
-                            <div className="font-medium opacity-75">目标像素</div>
+                            <div className="font-medium opacity-75">{t("canvas.dialogs.upscale.targetPixels")}</div>
                             <Segmented
                                 block
                                 value={params.targetLongEdge}
                                 options={targetOptions.map((option) => ({ label: `${option.label} · ${option.value}px`, value: option.value, disabled: Boolean(image && sourceLongEdge >= option.value) }))}
                                 onChange={(value) => setParams((current) => ({ ...current, targetLongEdge: Number(value) }))}
                             />
-                            {image && !canUpscale ? <div className="text-xs font-medium text-[#ef4444]">{reachedMax ? "图片已达到 4K，无需放大" : "图片已达到当前目标像素，无需放大"}</div> : null}
+                            {image && !canUpscale ? <div className="text-xs font-medium text-[#ef4444]">{reachedMax ? t("canvas.dialogs.upscale.reachedMax4k") : t("canvas.dialogs.upscale.reachedTarget")}</div> : null}
                         </div>
                         <div className="space-y-2">
-                            <div className="font-medium opacity-75">放大算法</div>
+                            <div className="font-medium opacity-75">{t("canvas.dialogs.upscale.algorithm")}</div>
                             <Segmented
                                 block
                                 value={params.algorithm}
@@ -95,15 +101,15 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, onClose, onConfirm }: {
                         </div>
                         <div className="rounded-xl border px-4 py-3 text-sm">
                             <div className="flex items-center justify-between">
-                                <span className="opacity-60">输出尺寸</span>
-                                <span className="font-semibold">{outputSize ? `${outputSize.width} x ${outputSize.height} px` : "未知"}</span>
+                                <span className="opacity-60">{t("canvas.dialogs.upscale.outputSize")}</span>
+                                <span className="font-semibold">{outputSize ? `${outputSize.width} x ${outputSize.height} ${t("canvas.common.px")}` : t("canvas.common.unknown")}</span>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div className="flex justify-end">
                     <Button type="primary" size="large" icon={<ImagePlus className="size-4" />} disabled={!canUpscale} onClick={() => onConfirm(params)}>
-                        生成放大图
+                        {t("canvas.dialogs.upscale.generate")}
                     </Button>
                 </div>
             </div>

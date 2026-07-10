@@ -11,14 +11,15 @@ description: 用最少步骤把无限画布跑起来
 
 在 Vercel 中导入仓库即可，根目录 `vercel.json` 会构建 `web/`。当前版本的 AI 请求由浏览器前台直连用户自己的 OpenAI 兼容地址，不需要额外配置服务端。
 
-## 本地启动
+## 开发模式（本地调试）
+
+开发模式使用 Vite 开发服务器，支持热更新，**仅用于日常开发**，不要当作生产部署方式。
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
-cd infinite-canvas
-cd web
-bun install
-bun run dev
+cd infinite-canvas/web
+bun install   # 未安装 bun 时可用 npm install
+bun run dev   # 未安装 bun 时可用 npm run dev
 ```
 
 启动后访问：
@@ -27,14 +28,87 @@ bun run dev
 http://localhost:3000
 ```
 
-## Docker 启动
+### 开发模式注意事项
 
-如果你需要基于当前源码构建镜像：
+- 默认端口为 **3000**。若浏览器访问的是其他端口（例如 3101），说明当前运行的可能是别的项目，请确认终端里 Vite 实际监听的地址。
+- 开发模式下浏览器会请求 `node_modules/.vite/deps/chunk-*.js`，这是 Vite 依赖预构建的正常现象，**生产构建不会出现这些请求**。
+- 修改 `vite.config.ts`、增删依赖或升级 Vite 后，建议：
+  1. 停止 dev 进程
+  2. 删除 `web/node_modules/.vite` 缓存目录
+  3. 重新执行 `bun install` / `npm install`
+  4. 再启动 `bun run dev` / `npm run dev`
+- 开发模式不会走 nginx，也不会使用 Docker 镜像内的静态文件。
+
+## 发布模式（本地预览）
+
+发布前先在前端目录构建静态产物，再用 preview 或 Docker 验证：
+
+```bash
+cd web
+bun run build    # 或 npm run build，输出到 web/dist
+bun run start    # 或 npm run start，本地预览 http://localhost:3000
+```
+
+`build` 会做 TypeScript 检查并生成生产静态资源；`start` 用 Vite preview 托管 `dist`，适合发布前自测，不等同于正式 Docker 部署。
+
+## Docker 发布（推荐）
+
+生产部署应使用构建后的静态文件 + nginx，而不是 `bun run dev`。
+
+### 拉取发布镜像
+
+```bash
+docker pull ghcr.io/basketikun/infinite-canvas:latest
+docker run --rm -p 3000:3000 ghcr.io/basketikun/infinite-canvas:latest
+```
+
+### 基于当前源码构建并启动
+
+```bash
+cd infinite-canvas
+docker compose up -d --build
+docker compose ps   # 状态为 healthy 后再访问
+```
+
+访问：
+
+```text
+http://localhost:3000
+```
+
+### 单独构建镜像
 
 ```bash
 docker build -t infinite-canvas .
 docker run --rm -p 3000:3000 infinite-canvas
 ```
+
+或使用本地 compose 覆盖文件：
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
+```
+
+## 从开发模式切换到发布
+
+| 项目 | 开发模式 | 发布模式 |
+| --- | --- | --- |
+| 命令 | `bun run dev` / `npm run dev` | `bun run build` + Docker 或 `bun run start` |
+| 产物 | 内存编译，无 `dist` | `web/dist` 静态文件 |
+| 网络特征 | 大量 `.vite/deps/chunk-*.js` | 按路由拆分的 `assets/*.js`，带缓存 |
+| 多语言 | 切换后热更新生效 | build 时中英文一并打包，无需额外步骤 |
+| 适用场景 | 改代码、调试 UI | 自测发布包、服务器部署 |
+
+切换步骤建议：
+
+1. **停止**正在运行的 dev 进程（Ctrl+C）。
+2. 在 `web/` 执行 **`bun run build`**（或 `npm run build`），确认无报错。
+3. 任选一种发布验证方式：
+   - 本地快速预览：`bun run start`
+   - 接近生产环境：`docker compose up -d --build`
+4. 若 dev 与 Docker 同时占用 3000 端口，先停掉其中一个再启动另一个。
+
+更完整的 Docker 说明见 [Docker 部署](/docs/overview/docker)。多语言说明见 [多语言](/docs/overview/i18n)。
 
 ## 首次使用建议
 

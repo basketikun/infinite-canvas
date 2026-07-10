@@ -4,6 +4,7 @@
 
 - [快速开始](/docs/overview/quick-start)
 - [功能介绍](/docs/overview/features)
+- [多语言](/docs/overview/i18n)
 - [Render 部署](/docs/overview/render)
 - [Docker 部署](/docs/overview/docker)
 - [第三方 GitHub 提示词仓库](/docs/overview/third-party-prompt-repositories)

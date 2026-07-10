@@ -1,31 +1,30 @@
+import { useMemo } from "react";
 import { FileText, ImagePlus, Images, Maximize2, Video } from "lucide-react";
 
-export const navigationTools = [
-    {
-        slug: "canvas",
-        label: "我的画布",
-        icon: Maximize2,
-    },
-    {
-        slug: "image",
-        label: "生图工作台",
-        icon: ImagePlus,
-    },
-    {
-        slug: "video",
-        label: "视频创作台",
-        icon: Video,
-    },
-    {
-        slug: "prompts",
-        label: "提示词库",
-        icon: FileText,
-    },
-    {
-        slug: "assets",
-        label: "我的素材",
-        icon: Images,
-    },
+import { useTranslation } from "@/components/layout/locale-provider";
+import type { TranslationKey } from "@/i18n";
+
+const navigationToolDefs = [
+    { slug: "canvas", labelKey: "nav.canvas", icon: Maximize2 },
+    { slug: "image", labelKey: "nav.image", icon: ImagePlus },
+    { slug: "video", labelKey: "nav.video", icon: Video },
+    { slug: "prompts", labelKey: "nav.prompts", icon: FileText },
+    { slug: "assets", labelKey: "nav.assets", icon: Images },
 ] as const;
 
-export type NavigationToolSlug = (typeof navigationTools)[number]["slug"];
+export type NavigationToolSlug = (typeof navigationToolDefs)[number]["slug"];
+
+export function useNavigationTools() {
+    const { t } = useTranslation();
+
+    return useMemo(
+        () =>
+            navigationToolDefs.map((tool) => ({
+                ...tool,
+                label: t(tool.labelKey as TranslationKey),
+            })),
+        [t],
+    );
+}
+
+export const navigationToolSlugs = navigationToolDefs.map((tool) => tool.slug);

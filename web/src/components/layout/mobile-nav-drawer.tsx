@@ -1,7 +1,8 @@
 import { Drawer } from "antd";
 import { Link } from "react-router-dom";
 
-import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
+import { useNavigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
+import { useTranslation } from "@/components/layout/locale-provider";
 import { cn } from "@/lib/utils";
 
 type MobileNavDrawerProps = {
@@ -11,8 +12,11 @@ type MobileNavDrawerProps = {
 };
 
 export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDrawerProps) {
+    const { t } = useTranslation();
+    const navigationTools = useNavigationTools();
+
     return (
-        <Drawer title="导航" placement="left" size={280} open={open} onClose={onClose} className="md:hidden">
+        <Drawer title={t("mobileNav.title")} placement="left" size={280} open={open} onClose={onClose} className="md:hidden">
             <div className="space-y-1">
                 {navigationTools.map((tool) => {
                     const Icon = tool.icon;

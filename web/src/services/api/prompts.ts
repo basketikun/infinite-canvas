@@ -1,5 +1,7 @@
 import localforage from "localforage";
 
+import { translate } from "@/i18n";
+
 export type Prompt = {
     id: string;
     title: string;
@@ -160,7 +162,7 @@ function defaultPrompt(id: string, title: string, prompt: string, coverUrl: stri
 
 async function fetchText(baseUrl: string, file: string) {
     const response = await fetch(`${baseUrl}/${file}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`${file} 拉取失败`);
+    if (!response.ok) throw new Error(translate("errors.prompts.fetchFailed", { file }));
     return response.text();
 }
 
@@ -211,7 +213,7 @@ function youMindTags(title: string, modelTag: string) {
 
 function davidWuTags(item: { category_cn?: string; category?: string; author?: string; source?: string; needs_ref?: boolean }) {
     const tags = splitTags([item.category_cn, item.category, item.author, item.source].filter(Boolean).join("/"), /\//);
-    if (item.needs_ref) tags.push("需要参考图");
+    if (item.needs_ref) tags.push(translate("errors.prompts.needsReferenceImage"));
     return tags;
 }
 

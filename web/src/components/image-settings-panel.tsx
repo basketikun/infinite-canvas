@@ -1,32 +1,43 @@
 import { type ReactNode, useState } from "react";
 import { ConfigProvider, Switch } from "antd";
 
+import { useTranslation } from "@/components/layout/locale-provider";
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import type { TranslationKey } from "@/i18n";
+import { translate } from "@/i18n";
 import type { AiConfig } from "@/stores/use-config-store";
 
-const qualityOptions = [
-    { value: "auto", label: "自动" },
-    { value: "high", label: "高" },
-    { value: "medium", label: "中" },
-    { value: "low", label: "低" },
-];
 const DIMENSION_STEP = 16;
 
 const aspectOptions = [
-    { value: "1:1", label: "1:1", width: 1024, height: 1024, icon: "square" },
-    { value: "3:2", label: "3:2", width: 1536, height: 1024, icon: "landscape" },
-    { value: "2:3", label: "2:3", width: 1024, height: 1536, icon: "portrait" },
-    { value: "4:3", label: "4:3", width: 1360, height: 1024, icon: "landscape" },
-    { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait" },
-    { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape" },
-    { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait" },
-    { value: "1:1-2k", label: "1:1(2k)", size: "2048x2048", width: 2048, height: 2048, icon: "square" },
-    { value: "16:9-2k", label: "16:9(2k)", size: "2048x1152", width: 2048, height: 1152, icon: "landscape" },
-    { value: "9:16-2k", label: "9:16(2k)", size: "1152x2048", width: 1152, height: 2048, icon: "portrait" },
-    { value: "16:9-4k", label: "16:9(4k)", size: "3840x2160", width: 3840, height: 2160, icon: "landscape" },
-    { value: "9:16-4k", label: "9:16(4k)", size: "2160x3840", width: 2160, height: 3840, icon: "portrait" },
-    { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
-];
+    { value: "1:1", labelKey: "imageSettings.aspect.square", width: 1024, height: 1024, icon: "square" },
+    { value: "3:2", labelKey: "imageSettings.aspect.landscape32", width: 1536, height: 1024, icon: "landscape" },
+    { value: "2:3", labelKey: "imageSettings.aspect.portrait23", width: 1024, height: 1536, icon: "portrait" },
+    { value: "4:3", labelKey: "imageSettings.aspect.landscape43", width: 1360, height: 1024, icon: "landscape" },
+    { value: "3:4", labelKey: "imageSettings.aspect.portrait34", width: 1024, height: 1360, icon: "portrait" },
+    { value: "16:9", labelKey: "imageSettings.aspect.landscape169", width: 1824, height: 1024, icon: "landscape" },
+    { value: "9:16", labelKey: "imageSettings.aspect.portrait916", width: 1024, height: 1824, icon: "portrait" },
+    { value: "1:1-2k", labelKey: "imageSettings.aspect.square2k", size: "2048x2048", width: 2048, height: 2048, icon: "square" },
+    { value: "16:9-2k", labelKey: "imageSettings.aspect.landscape169_2k", size: "2048x1152", width: 2048, height: 1152, icon: "landscape" },
+    { value: "9:16-2k", labelKey: "imageSettings.aspect.portrait916_2k", size: "1152x2048", width: 1152, height: 2048, icon: "portrait" },
+    { value: "16:9-4k", labelKey: "imageSettings.aspect.landscape169_4k", size: "3840x2160", width: 3840, height: 2160, icon: "landscape" },
+    { value: "9:16-4k", labelKey: "imageSettings.aspect.portrait916_4k", size: "2160x3840", width: 2160, height: 3840, icon: "portrait" },
+    { value: "auto", labelKey: "imageSettings.aspect.auto", width: 0, height: 0, icon: "auto" },
+] as const;
+
+const qualityOptionKeys = [
+    { value: "auto", labelKey: "imageSettings.qualityAuto" },
+    { value: "high", labelKey: "imageSettings.qualityHigh" },
+    { value: "medium", labelKey: "imageSettings.qualityMedium" },
+    { value: "low", labelKey: "imageSettings.qualityLow" },
+] as const;
+
+const qualityLabelKeys: Record<string, TranslationKey> = {
+    auto: "imageSettings.qualityAuto",
+    high: "imageSettings.qualityHigh",
+    medium: "imageSettings.qualityMedium",
+    low: "imageSettings.qualityLow",
+};
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
@@ -39,15 +50,16 @@ type ImageSettingsPanelProps = {
 };
 
 export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
+    const { t } = useTranslation();
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
-    const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
+    const selectedAspect = aspectOptions.find((item) => ("size" in item ? item.size : undefined) === activeSize || item.value === activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
     const selectAspect = (value: string) => {
         const option = aspectOptions.find((item) => item.value === value);
-        onConfigChange("size", option?.size || option?.value || "auto");
+        onConfigChange("size", (option && "size" in option ? option.size : undefined) || option?.value || "auto");
     };
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 1024));
@@ -67,25 +79,25 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     if (document.activeElement instanceof HTMLInputElement && event.currentTarget.contains(document.activeElement)) document.activeElement.blur();
                 }}
             >
-                {showTitle ? <div className="text-lg font-semibold">图像设置</div> : null}
+                {showTitle ? <div className="text-lg font-semibold">{t("imageSettings.title")}</div> : null}
                 <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>质量</SettingTitle>
+                    <SettingTitle color={theme.node.muted}>{t("imageSettings.quality")}</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {qualityOptions.map((item) => (
+                        {qualityOptionKeys.map((item) => (
                             <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
-                                {item.label}
+                                {t(item.labelKey)}
                             </OptionPill>
                         ))}
                     </div>
                 </div>
                 <div className="space-y-2.5">
                     <div className="flex items-center justify-between gap-3">
-                        <SettingTitle color={theme.node.muted}>尺寸</SettingTitle>
+                        <SettingTitle color={theme.node.muted}>{t("imageSettings.size")}</SettingTitle>
                         <div className="flex items-center gap-2">
                             <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
-                                16倍数对齐
+                                {t("imageSettings.snapTo16")}
                             </span>
-                            <span title="输入完成后自动向上补成 16 的倍数" onMouseDown={(event) => event.stopPropagation()}>
+                            <span title={t("imageSettings.snapTooltip")} onMouseDown={(event) => event.stopPropagation()}>
                                 <Switch size="small" checked={snapDimensionToStep} onChange={setSnapDimensionToStep} />
                             </span>
                         </div>
@@ -97,7 +109,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </div>
                 <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>宽高比</SettingTitle>
+                    <SettingTitle color={theme.node.muted}>{t("imageSettings.aspectRatio")}</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
                         {aspectOptions.map((item) => (
                             <button
@@ -109,17 +121,17 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                 onClick={() => selectAspect(item.value)}
                             >
                                 <AspectIcon type={item.icon} width={item.width} height={item.height} color={theme.node.text} />
-                                <span>{item.label}</span>
+                                <span>{t(item.labelKey)}</span>
                             </button>
                         ))}
                     </div>
                 </div>
                 <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>生成张数</SettingTitle>
+                    <SettingTitle color={theme.node.muted}>{t("imageSettings.count")}</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
                         {Array.from({ length: quickCount }, (_, index) => index + 1).map((value) => (
                             <OptionPill key={value} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>
-                                {value} 张
+                                {t("imageSettings.countUnit", { count: value })}
                             </OptionPill>
                         ))}
                         <CountInput value={count} max={maxCount} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} />
@@ -144,11 +156,13 @@ export function ImageSettingsTheme({ theme, children }: { theme: CanvasTheme; ch
 }
 
 export function imageQualityLabel(value: string) {
-    return ({ auto: "自动", high: "高", medium: "中", low: "低" } as Record<string, string>)[value] || value;
+    const key = qualityLabelKeys[value];
+    return key ? translate(key) : value;
 }
 
 export function imageSizeLabel(size: string) {
-    return aspectOptions.find((item) => (item.size || item.value) === size || item.value === size)?.label || size;
+    const option = aspectOptions.find((item) => ("size" in item ? item.size : undefined) === size || item.value === size);
+    return option ? translate(option.labelKey) : size;
 }
 
 function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {

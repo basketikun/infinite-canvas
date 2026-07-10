@@ -16,4 +16,9 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 前端构建：修复 TypeScript 严格检查下的构建报错。
 - Vercel 部署：新增 `web` 和 `docs` 两个子项目的 Vercel 配置，需分别验证静态前端和文档站部署。
 - Docker 部署：运行镜像从 Node serve 改为 nginx 静态托管，需验证前端路由刷新回退。
+- Docker 部署：根目录 `docker compose up -d --build` 应自动构建并启动 nginx，容器健康检查为 `healthy` 后可访问 `http://localhost:3000`。
+- 前端加载：路由懒加载、版本日志按需加载、画布项目渐进式恢复媒体，需验证首页首屏、进入 `/canvas/:id` 和图片/视频工作台加载速度。
+- 前端开发加载：移除未使用的 Pro Components、配置弹窗按需加载、Vite 依赖预构建与 warmup，需验证 dev 模式下首屏不再大量请求 `node_modules/.vite/deps/chunk-*.js`（生产构建不应出现此类请求）。
+- 文档：快速开始与 Docker 部署已补充开发/发布命令及切换注意事项，需按文档走一遍 dev → build → Docker 流程确认端口与访问地址。
+- 多语言：全站可视化页面支持中/英切换（顶部语言按钮），需验证首页、各工作台、画布、配置弹窗、错误提示与 Ant Design 组件语言；切换后刷新应保持偏好；Docker 发布包应包含双语资源。
 - 环境变量：移除过期的后端 `.env.example` 示例文件。
