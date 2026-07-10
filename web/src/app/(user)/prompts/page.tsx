@@ -34,7 +34,7 @@ export default function PromptsPage() {
     };
 
     const savePromptAsset = (item: Prompt) => {
-        addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.category, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl } });
+        addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.category, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id } });
         message.success("已加入我的素材");
     };
 

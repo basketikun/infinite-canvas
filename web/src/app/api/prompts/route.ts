@@ -10,7 +10,6 @@ type Prompt = {
     prompt: string;
     tags: string[];
     category: string;
-    githubUrl: string;
     preview: string;
     createdAt: string;
     updatedAt: string;
@@ -18,26 +17,25 @@ type Prompt = {
 
 type PromptCategory = {
     category: string;
-    githubUrl: string;
-    build: () => Promise<Omit<Prompt, "category" | "githubUrl">[]>;
+    build: () => Promise<Omit<Prompt, "category">[]>;
 };
 
-const gptImage2RawBase = "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main";
-const awesomeGptImageRawBase = "https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main";
-const awesomeGpt4oImagePromptsBase = "https://raw.githubusercontent.com/ImgEdify/Awesome-GPT4o-Image-Prompts/main";
-const youMindGptImage2RawBase = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main";
-const youMindNanoBananaProRawBase = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main";
-const davidWuGptImage2RawBase = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main";
+const gptImage2RawBase = "https://cdn.jsdelivr.net/gh/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts@main";
+const awesomeGptImageRawBase = "https://cdn.jsdelivr.net/gh/ZeroLu/awesome-gpt-image@main";
+const awesomeGpt4oImagePromptsBase = "https://cdn.jsdelivr.net/gh/ImgEdify/Awesome-GPT4o-Image-Prompts@main";
+const youMindGptImage2RawBase = "https://cdn.jsdelivr.net/gh/YouMind-OpenLab/awesome-gpt-image-2@main";
+const youMindNanoBananaProRawBase = "https://cdn.jsdelivr.net/gh/YouMind-OpenLab/awesome-nano-banana-pro-prompts@main";
+const davidWuGptImage2RawBase = "https://cdn.jsdelivr.net/gh/davidwuw0811-boop/awesome-gpt-image2-prompts@main";
 const gptImage2CaseFiles = ["README.md", "cases/ad-creative.md", "cases/character.md", "cases/comparison.md", "cases/ecommerce.md", "cases/portrait.md", "cases/poster.md", "cases/ui.md"];
 const cacheTtlMs = 1000 * 60 * 60;
 
 const categories: PromptCategory[] = [
-    { category: "gpt-image-2-prompts", githubUrl: "https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts", build: buildGptImage2Prompts },
-    { category: "awesome-gpt-image", githubUrl: "https://github.com/ZeroLu/awesome-gpt-image", build: buildAwesomeGptImagePrompts },
-    { category: "awesome-gpt4o-image-prompts", githubUrl: "https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts", build: buildAwesomeGpt4oImagePrompts },
-    { category: "youmind-gpt-image-2", githubUrl: "https://github.com/YouMind-OpenLab/awesome-gpt-image-2", build: () => buildYouMindPrompts(youMindGptImage2RawBase, "youmind-gpt-image-2", "gpt-image-2") },
-    { category: "youmind-nano-banana-pro", githubUrl: "https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts", build: () => buildYouMindPrompts(youMindNanoBananaProRawBase, "youmind-nano-banana-pro", "nano-banana-pro") },
-    { category: "davidwu-gpt-image2-prompts", githubUrl: "https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts", build: buildDavidWuGptImage2Prompts },
+    { category: "gpt-image-2-prompts", build: buildGptImage2Prompts },
+    { category: "awesome-gpt-image", build: buildAwesomeGptImagePrompts },
+    { category: "awesome-gpt4o-image-prompts", build: buildAwesomeGpt4oImagePrompts },
+    { category: "youmind-gpt-image-2", build: () => buildYouMindPrompts(youMindGptImage2RawBase, "youmind-gpt-image-2", "gpt-image-2") },
+    { category: "youmind-nano-banana-pro", build: () => buildYouMindPrompts(youMindNanoBananaProRawBase, "youmind-nano-banana-pro", "nano-banana-pro") },
+    { category: "davidwu-gpt-image2-prompts", build: buildDavidWuGptImage2Prompts },
 ];
 
 let memoryCache: { items: Prompt[]; fetchedAt: number } | null = null;
@@ -76,7 +74,7 @@ async function loadPrompts() {
         categories.map(async (category) => {
             try {
                 const items = await category.build();
-                return items.map((item) => ({ ...item, category: category.category, githubUrl: category.githubUrl }));
+                return items.map((item) => ({ ...item, category: category.category }));
             } catch {
                 return [];
             }
@@ -101,7 +99,7 @@ async function buildGptImage2Prompts() {
     const cases = new Map<string, string>();
     const markdowns = await Promise.all(gptImage2CaseFiles.map((file) => fetchText(gptImage2RawBase, file)));
     markdowns.forEach((markdown) => collectGptImage2Cases(cases, markdown));
-    const items: Omit<Prompt, "category" | "githubUrl">[] = [];
+    const items: Omit<Prompt, "category">[] = [];
     data.forEach((item) => {
         const prompt = cases.get(item.tweet_url || "");
         if (!item.title || !prompt || !item.image_dir) return;
@@ -119,7 +117,7 @@ function collectGptImage2Cases(cases: Map<string, string>, markdown: string) {
 
 async function buildAwesomeGptImagePrompts() {
     const markdown = await fetchText(awesomeGptImageRawBase, "README.zh-CN.md");
-    const items: Omit<Prompt, "category" | "githubUrl">[] = [];
+    const items: Omit<Prompt, "category">[] = [];
     for (const section of splitBeforeHeading(markdown, "## ")) {
         const tags = tagsFromHeading(firstMatch(section, /^##\s+(.+)$/m));
         for (const block of splitBeforeHeading(section, "### ")) {
@@ -135,7 +133,7 @@ async function buildAwesomeGptImagePrompts() {
 
 async function buildAwesomeGpt4oImagePrompts() {
     const markdown = await fetchText(awesomeGpt4oImagePromptsBase, "README.zh-CN.md");
-    const items: Omit<Prompt, "category" | "githubUrl">[] = [];
+    const items: Omit<Prompt, "category">[] = [];
     for (const block of splitBeforeHeading(markdown, "### ")) {
         const title = firstMatch(block, /^###\s+(.+)$/m).trim();
         const prompt = firstMatch(block, /- \*\*提示词文本：\*\*\s*`(.*?)`/s).trim();
@@ -148,7 +146,7 @@ async function buildAwesomeGpt4oImagePrompts() {
 
 async function buildYouMindPrompts(baseUrl: string, idPrefix: string, modelTag: string) {
     const markdown = await fetchText(baseUrl, "README_zh.md");
-    const items: Omit<Prompt, "category" | "githubUrl">[] = [];
+    const items: Omit<Prompt, "category">[] = [];
     for (const block of splitBeforeHeading(markdown, "### ")) {
         const title = firstMatch(block, /^###\s+No\.\s*\d+:\s*(.+)$/m).trim();
         const prompt = firstMatch(block, /#### .*?提示词\s*\r?\n\s*```[\w-]*\r?\n(.*?)\r?\n```/s).trim();
@@ -170,10 +168,10 @@ async function buildDavidWuGptImage2Prompts() {
             const preview = [item.title_en, item.note, image ? `![](${image})` : ""].filter(Boolean).join("\n\n");
             return defaultPrompt(`davidwu-gpt-image2-prompts-${leftPad(item.id || index + 1)}`, title, prompt, image, davidWuTags(item), preview);
         })
-        .filter((item): item is Omit<Prompt, "category" | "githubUrl"> => Boolean(item));
+        .filter((item): item is Omit<Prompt, "category"> => Boolean(item));
 }
 
-function defaultPrompt(id: string, title: string, prompt: string, coverUrl: string, tags: string[], preview: string): Omit<Prompt, "category" | "githubUrl"> {
+function defaultPrompt(id: string, title: string, prompt: string, coverUrl: string, tags: string[], preview: string): Omit<Prompt, "category"> {
     return { id, title, coverUrl, prompt, tags, preview, createdAt: "", updatedAt: "" };
 }
 
