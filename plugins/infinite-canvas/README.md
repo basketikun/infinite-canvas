@@ -59,6 +59,18 @@ codex plugin add infinite-canvas@personal
 
 安装后建议开启一个新的 Codex 对话，让新的 skill 和 MCP 工具完整加载。
 
+安装 Codex 插件后会加载 `infinite-canvas` MCP。这个 MCP 内置工具较多，会增加 Codex 上下文和 token 消耗；不使用插件时建议移除插件：
+
+```bash
+codex plugin remove infinite-canvas
+```
+
+如果你另外手动执行过 `codex mcp add`，再移除手动添加的 MCP：
+
+```bash
+codex mcp remove infinite-canvas
+```
+
 ### 本仓库开发调试
 
 如果你就在 Infinite Canvas 仓库中调试插件，可以直接添加仓库自带 marketplace。建议使用仓库绝对路径，避免 Codex 从其他工作目录解析失败：
@@ -86,7 +98,7 @@ codex plugin add infinite-canvas@infinite-canvas-local
 
 ## 工作机制
 
-插件默认通过以下命令启动 MCP，并会在 MCP 启动时自动尝试拉起本地 Agent：
+插件默认通过以下命令启动 MCP；这个命令只提供 MCP 工具，不会把 MCP 写入全局配置，也不会在退出时自动卸载。需要打开画布时，`open-canvas` 技能会另外启动本地 Agent：
 
 ```bash
 npx -y @basketikun/canvas-agent mcp

@@ -17,6 +17,7 @@ import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
+import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import type { ReferenceImage } from "@/types/image";
 
 type GeneratedImage = {
@@ -88,6 +89,10 @@ export default function ImagePage() {
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
     const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [autoRunToken, setAutoRunToken] = useState(0);
+    const imageCommand = useWorkbenchAgentStore((state) => state.imageCommand);
+    const clearImageCommand = useWorkbenchAgentStore((state) => state.clearImageCommand);
+    const processedCommandRef = useRef(0);
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
@@ -190,6 +195,21 @@ export default function ImagePage() {
             setRunning(false);
         }
     };
+
+    // 响应 Agent 面板下发的生图命令：填入提示词，并按需自动触发生成。
+    useEffect(() => {
+        if (!imageCommand || imageCommand.nonce === processedCommandRef.current) return;
+        processedCommandRef.current = imageCommand.nonce;
+        clearImageCommand();
+        if (typeof imageCommand.prompt === "string") setPrompt(imageCommand.prompt);
+        if (imageCommand.run && !running) setAutoRunToken((value) => value + 1);
+    }, [imageCommand, clearImageCommand, running]);
+
+    useEffect(() => {
+        if (!autoRunToken) return;
+        void generate();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoRunToken]);
 
     const downloadImage = (image: GeneratedImage, index: number) => {
         saveAs(image.dataUrl, `image-${index + 1}.png`);
@@ -296,12 +316,34 @@ export default function ImagePage() {
         }
     };
 
-    const retryResult = (index: number) => {
+    const retryResult = async (index: number) => {
         const snapshot = buildRequestSnapshot();
         if (!snapshot) return;
         setPreviewLog(null);
         setResults((value) => updateResultAt(value, index, { status: "pending", error: undefined, image: undefined }));
-        void runGenerationSlot(index, snapshot).catch(() => {});
+        const retryStartedAt = performance.now();
+        try {
+            const image = await runGenerationSlot(index, snapshot);
+            const stored = await uploadImage(image.dataUrl);
+            const logImage = { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+            setResults((value) => updateResultAt(value, index, { image: { ...image, dataUrl: stored.url, storageKey: stored.storageKey } }));
+            saveLog(
+                buildLog({
+                    prompt: snapshot.text,
+                    model,
+                    config: { ...snapshot.config, count: "1" },
+                    references: snapshot.references,
+                    durationMs: performance.now() - retryStartedAt,
+                    successCount: 1,
+                    failCount: 0,
+                    status: "成功",
+                    images: [logImage],
+                }),
+            );
+            message.success("重试成功");
+        } catch {
+            // runGenerationSlot 已经把结果状态更新为 failed
+        }
     };
 
     return (

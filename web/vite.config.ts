@@ -28,6 +28,7 @@ function aiProxyPlugin(): Plugin {
 }
 
 export default defineConfig({
+    base: process.env.VITE_BASE || "/",
     plugins: [aiProxyPlugin(), react()],
     resolve: {
         alias: {

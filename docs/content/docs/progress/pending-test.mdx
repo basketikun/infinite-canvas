@@ -5,9 +5,30 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+- 本地 Agent 连接说明：新增提醒说明只有安装 Codex 插件或手动添加 MCP 后才会增加 Codex token 消耗，直接运行 `npx -y @basketikun/canvas-agent` 不会安装 MCP；需验证文案位置清晰。
+- 本地 Agent 连接说明：画布面板和配置页 Codex Tab 改为区分“Codex 插件启动画布”和“直接运行 Agent 后网页连接”两种方式，需验证文案和布局清晰。
+- 全站 Agent：Agent 面板从画布页抽离为全站常驻面板，挂在全局布局右侧，开/关只挤压左侧内容不遮挡；顶栏和画布工具条各有一个开关按钮，需验证在首页、生图、视频、素材、提示词库、画布等页面都能打开面板并保持 SSE 连接不断开。
+- 全站 Agent：新增 `site_navigate` 工具，Agent 可直接跳转 `/`、`/canvas`、`/canvas/:id`、`/image`、`/video`、`/prompts`、`/assets`、`/config`；导航直接执行不走工具确认，需验证跳转正确且面板不消失。
+- 全站 Agent：画布工具（canvas_apply_ops 等）仅在当前处于画布页时可用，不在画布页调用会返回“当前不在画布页，请先用 site_navigate 打开画布”，需验证 Agent 会先导航到画布再执行画布操作。
+- 全站 Agent：Codex 会话改为单一站点级连续线程（不再按 canvasId 分），跨页面/跨画布保持同一条对话上下文，历史记录即这条线程；本地 Agent workspace 从按画布分改为固定 `site` workspace（`~/.infinite-canvas/codex-workspaces/site`），已装 `@basketikun/canvas-agent` 的用户需更新到新版本才生效。
+- 全站 Agent：移除仅前端调用 OpenAI responses 接口的在线画布助手死代码（含 `requestToolResponse`），Agent 统一走 MCP + 本地 Codex 链路。
+- 画布节点名称：每个节点保留 `title` 名称字段，默认名称显示在节点上方，双击名称可直接编辑，节点信息弹窗和 JSON 可查看该字段。
+- 画布节点工具条：节点顶部工具条改为点击选中节点后显示，单纯鼠标移入 / 移出节点不应再频繁弹出。
+- 画布组节点：组内子节点优先响应点击和拖拽；当鼠标位于组内节点上时，应移动 / 编辑该节点，而不是移动整个组。
+- 画布组节点：工具栏新增“组”节点，普通节点拖入组区域会高亮目标组，松手后自动吸附进组；拖出组区域会解除归属，拖动组节点会一起移动组内子节点。
+- GitHub Pages：新增版本 tag 触发的前端静态站点自动发布 workflow，需在仓库 Pages 设置中选择 GitHub Actions 并验证路由刷新回退。
+- 画布图片切图：行数 / 列数会生成可直接拖拽的等分切图线，并支持新增横向 / 纵向线、删除单条线、重置切图线和切片数量预览。
 - Codex App 插件文档：新增插件安装教程，区分 AI 自动安装、手动安装和本仓库开发调试安装；同步优化插件 README 与技能说明。
+- 本地 Codex 连接画布文档：新增 Canvas Agent、MCP、SSE 与浏览器画布交互原理说明，需确认文档导航和描述是否清晰。
+- 顶部导航：缩小桌面顶部导航栏高度，导航项下划线和内容垂直对齐需确认。
+- 配置与用户偏好：新增独立顶部导航页面，并在页面和弹窗中复用同一套配置面板；新增 Codex Tab，展示插件安装和本地 Agent 启动步骤，可配置本地 Agent 地址、Connect token 和工具执行确认开关。
+- Codex 全局连接：配置页可直接连接本地 Canvas Agent，连接状态同步到画布和顶部 OpenAI 状态图标，刷新后会按本地保存的地址和 token 自动尝试重连；需验证已连接、连接中、连接失败、断开和刷新自动重连状态。
+- 画布 Agent：Codex 旧 thread 在重启后不可用时会自动新建会话并重试，需验证进入画布直接发送消息不会再出现 `thread not loaded` 或 `no rollout found`。
+- 画布 Agent：切换不同画布时会清空并重新加载当前 canvasId 对应的 Codex 会话，需验证不会继续显示上一个画布的对话。
+- 画布 Agent：右侧 Agent 面板移除网站 / 本机模式切换，固定使用本机 Agent。
 - 配置与用户偏好：每个模型渠道新增 OpenAI / Gemini 调用格式选择，默认 OpenAI，切换默认格式时同步更新默认 Base URL；渠道 Tab 增加紧凑醒目的提醒，说明模型是否可选需要到“模型”Tab 选择。
 - Gemini 调用格式：支持拉取 Gemini 模型列表，并用于文本问答、在线 Agent 工具调用、基础生图和图生图请求。
+- Gemini 生图：生图工作台和画布生图会把尺寸配置转换为 Gemini `responseFormat.image.aspectRatio` 传入，需验证 1:1、9:16、16:9 及自定义像素尺寸的输出比例。
 - 音频和视频生成：选择 Gemini 调用格式时先给出不支持提示，仍需使用 OpenAI 兼容渠道。
 - WebDAV 同步：移除 Next.js 转发代理和连接方式选择，改为浏览器前端直接连接 WebDAV 服务。
 - 提示词库：移除 Next.js route 抓取和服务端内存缓存，改为浏览器前端直连 GitHub 原始文件并缓存到 IndexedDB。
@@ -17,3 +38,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Vercel 部署：新增 `web` 和 `docs` 两个子项目的 Vercel 配置，需分别验证静态前端和文档站部署。
 - Docker 部署：运行镜像从 Node serve 改为 nginx 静态托管，需验证前端路由刷新回退。
 - 环境变量：移除过期的后端 `.env.example` 示例文件。
+- 生图工作台：修复失败图片点击重试后只保存在页面状态、刷新或跳转后丢失的问题，重试成功结果会写入本地图片存储和生成记录。
+- 视频生成：任务查询接口直接返回 `url` / `result_url` / `video_url` 时会跳过 `/content` 下载，并优先保存到浏览器本地媒体存储。
+- 视频生成：任务创建或查询失败时会解析接口返回的 `msg` / `message` / 嵌套 JSON 错误，并在生成结果失败卡片里展示真实原因。
+- 画布生成配置：修复切换文本/视频/音频模式时模型选择仍显示为生图模型（gpt-image-2）的问题，切换模式后应自动匹配对应能力的默认模型。

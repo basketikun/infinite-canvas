@@ -7,6 +7,18 @@ import type { CanvasNode, CanvasNodeType, CanvasSnapshot } from "./types.js";
 
 type PendingRequest = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 
+const SITE_TOOLS = new Set<ToolName>([
+    "site_navigate",
+    "canvas_list_projects",
+    "workbench_image_get_config",
+    "workbench_image_generate",
+    "workbench_video_get_config",
+    "workbench_video_generate",
+    "prompts_search",
+    "assets_list",
+    "assets_add",
+]);
+
 export class CanvasSession {
     private clients = new Map<string, ServerResponse>();
     private pending = new Map<string, PendingRequest>();
@@ -18,13 +30,14 @@ export class CanvasSession {
 
     openEvents(url: URL, res: ServerResponse) {
         const clientId = url.searchParams.get("clientId") || crypto.randomUUID();
+        const statusOnly = url.searchParams.get("role") === "status";
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-        this.clients.set(clientId, res);
+        if (!statusOnly) this.clients.set(clientId, res);
         sendEvent(res, "hello", { ok: true, clientId });
         const timer = setInterval(() => sendEvent(res, "ping", { time: Date.now() }), 15000);
         res.on("close", () => {
             clearInterval(timer);
-            this.clients.delete(clientId);
+            if (!statusOnly) this.clients.delete(clientId);
             if (this.canvasState?.clientId === clientId) this.canvasState = null;
         });
     }
@@ -48,6 +61,10 @@ export class CanvasSession {
         if (!isToolName(name)) throw new Error(`未知工具：${String(name)}`);
         let tool: ToolName = name;
         let input = parseToolInput(tool, rawInput) as Record<string, unknown>;
+        if (SITE_TOOLS.has(tool)) {
+            if (!this.clients.size) throw new Error("当前没有已连接网页");
+            return await this.requestCanvasTool(tool, input);
+        }
         const readTool = ["canvas_get_state", "canvas_get_selection", "canvas_export_snapshot"].includes(tool);
         if (readTool && (!this.clients.size || !this.canvasState)) throw new Error("当前没有已连接画布");
         if (tool === "canvas_get_state" || tool === "canvas_export_snapshot") return compactCanvasState(this.canvasState);

@@ -40,6 +40,20 @@ Canvas Agent 默认只监听 `127.0.0.1`。网页第一次带正确 token 连接
 
 如果希望 Codex 终端能直接操作画布，需要先把 Canvas Agent 注册成 Codex MCP。
 
+直接运行 `npx -y @basketikun/canvas-agent` 只启动本地 Agent 服务，不会安装 MCP，也不会增加 Codex 工具上下文。只有安装 Codex app 插件，或手动执行 `codex mcp add` 后，`infinite-canvas` 工具才会进入 Codex 上下文；由于工具较多，不使用时建议移除。
+
+通过插件安装时移除插件：
+
+```bash
+codex plugin remove infinite-canvas
+```
+
+手动添加 MCP 时移除 MCP：
+
+```bash
+codex mcp remove infinite-canvas
+```
+
 ### Codex app 插件
 
 仓库内提供了 Codex app 插件：`plugins/infinite-canvas`。在 Codex app 中添加本仓库的 marketplace 后，可以安装 `Infinite Canvas` 插件；插件会注册同一个 `infinite-canvas` MCP，并带上画布操作说明。
@@ -52,7 +66,7 @@ codex plugin marketplace add "$(pwd)"
 codex plugin add infinite-canvas@infinite-canvas-local
 ```
 
-插件默认通过 npm 启动 MCP：
+插件默认通过 npm 启动 MCP；这个命令只提供 MCP 工具，不会把 MCP 写入全局配置，也不会在退出时自动卸载：
 
 ```bash
 npx -y @basketikun/canvas-agent mcp

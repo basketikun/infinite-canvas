@@ -1,0 +1,173 @@
+---
+title: 本地 Codex 连接画布原理
+description: 说明 Canvas Agent、MCP、SSE 和浏览器画布之间如何交互
+---
+
+# 本地 Codex 连接画布原理
+
+本地 Codex 连接画布的核心不是让 Codex 直接控制浏览器，也不是模拟鼠标点击或操作 DOM，而是在用户电脑上运行一个 `Canvas Agent` 作为桥接服务。
+
+```txt
+Codex / 浏览器侧边栏
+        |
+        v
+本机 Canvas Agent
+        |
+        v
+浏览器画布 React 状态
+```
+
+真正的画布数据仍然在浏览器里，节点、连线、选区和视口都由前端 React 状态维护。Codex 只能通过 `Canvas Agent` 暴露的工具协议发出“读取画布”或“执行画布操作”的请求。
+
+## 两个使用方向
+
+### 1. 本地 Codex 主动连接画布
+
+这个方向的入口在 Codex。
+
+```txt
+本地 Codex
+  -> infinite-canvas MCP 工具
+  -> 本机 Canvas Agent
+  -> 浏览器画布
+```
+
+用户在本地 Codex 里发起请求，例如读取画布、创建文本节点、连接节点或触发生成。Codex 调用 `infinite-canvas` MCP 工具，MCP 工具再请求本机 `Canvas Agent` 的 `/api/tools` 接口。
+
+常见工具包括：
+
+- `canvas_get_state`：读取当前画布摘要。
+- `canvas_get_selection`：读取当前选区。
+- `canvas_apply_ops`：批量执行画布操作。
+- `canvas_create_text_node`：创建文本节点。
+- `canvas_generate_image` / `canvas_generate_text`：创建生成流程并触发生成。
+- `canvas_update_node` / `canvas_connect_nodes`：更新节点或连接节点。
+
+这条链路适合在 Codex 对话里直接让 Codex 操作当前打开的画布。
+
+### 2. 浏览器右侧面板主动打开 Codex
+
+这个方向的入口在浏览器。
+
+```txt
+浏览器右侧 Codex 面板
+  -> 本机 Canvas Agent
+  -> Codex app-server --stdio
+  -> infinite-canvas MCP 工具
+  -> 本机 Canvas Agent
+  -> 浏览器画布
+```
+
+用户在网页右侧面板输入提示词后，浏览器把请求发送到 `Canvas Agent` 的 `/agent/codex/turn` 接口。`Canvas Agent` 会在本机启动或复用 `codex app-server --stdio`，并给这个 Codex 会话注入同一套 `infinite-canvas` MCP 工具。
+
+所以即使入口在浏览器右侧面板，真正改动画布时仍然会回到同一条工具链路：
+
+```txt
+Codex -> MCP -> Canvas Agent -> 浏览器画布
+```
+
+右侧面板只是把“打开 Codex 会话、发送 prompt、展示流式事件”这件事搬到了网页里。
+
+## 浏览器和 Canvas Agent 如何连接
+
+`Canvas Agent` 默认监听本机地址：
+
+```txt
+http://127.0.0.1:17371
+```
+
+启动后会生成 `Connect token`，网页连接时必须携带 token。浏览器连接后会建立一条 SSE 长连接：
+
+```txt
+GET /events?token=xxx&clientId=xxx
+```
+
+连接成功后，`Canvas Agent` 会发送 `hello` 事件，浏览器把状态更新为已连接。
+
+## 画布状态如何同步给 Codex
+
+浏览器会把当前画布快照主动同步给 `Canvas Agent`：
+
+```txt
+POST /canvas/state?token=xxx&clientId=xxx
+```
+
+快照包含：
+
+- 当前画布 ID 和标题；
+- 节点列表；
+- 连线列表；
+- 当前选中的节点 ID；
+- 当前视口位置和缩放。
+
+`Canvas Agent` 把最近一次快照保存在内存里。Codex 调用 `canvas_get_state` 时，读取的是这份由浏览器同步过来的最新快照，而不是直接读取浏览器 DOM。
+
+## Codex 如何操作画布
+
+以创建文本节点为例，流程如下：
+
+```txt
+Codex 调 canvas_create_text_node
+  -> MCP POST /api/tools
+  -> Canvas Agent 转成 canvas_apply_ops
+  -> Canvas Agent 通过 SSE 发送 tool_call
+  -> 浏览器执行 add_node
+  -> 浏览器 POST /canvas/result
+  -> Canvas Agent 返回结果给 Codex
+```
+
+`Canvas Agent` 会把一些高级工具转换成统一的画布操作：
+
+```json
+{
+  "ops": [
+    {
+      "type": "add_node",
+      "nodeType": "text",
+      "metadata": {
+        "content": "文本内容",
+        "status": "success"
+      }
+    }
+  ]
+}
+```
+
+浏览器收到 `tool_call` 后，调用前端的 `applyCanvasAgentOps`，在 React 状态中执行 `add_node`、`update_node`、`delete_node`、`connect_nodes`、`set_viewport`、`select_nodes` 等操作。执行完成后再把结果通过 `/canvas/result` 回传给 `Canvas Agent`。
+
+## 工具确认和撤销
+
+为了避免 Codex 直接改动画布，浏览器侧对 `canvas_apply_ops` 默认有二次确认机制。收到写操作后，右侧面板会先展示待执行工具调用，用户确认后才真正应用到画布。
+
+执行后，前端会保存最近一次操作前的画布快照，用于撤销上一轮 Agent 工具操作。
+
+如果关闭工具确认，本地 Codex 可以直接执行画布工具调用，但仍然是通过同一套 `Canvas Agent -> SSE -> 浏览器执行` 的链路。
+
+## 安全边界
+
+- `Canvas Agent` 默认只监听 `127.0.0.1`。
+- 网页连接必须携带本机生成的 `Connect token`。
+- 第一次带正确 token 连接后，`Canvas Agent` 会记录网页 Origin，避免其他来源复用当前本机 Agent。
+- Codex 不直接访问浏览器 DOM，也不直接持有画布内部状态。
+- 线上网页不保存本机 Codex 登录态、API Key 或本地文件权限。
+- 画布写操作最终由浏览器前端执行，因此可以在前端做确认、撤销和权限控制。
+
+## 一句话总结
+
+本地 Codex 连接画布的本质是：
+
+```txt
+Codex 调 MCP 工具，Canvas Agent 做本机桥接，浏览器通过 SSE 接收工具调用并在 React 状态中真正修改画布。
+```
+
+读状态是：
+
+```txt
+浏览器快照 -> Canvas Agent 内存 -> MCP 工具 -> Codex
+```
+
+写操作是：
+
+```txt
+Codex -> MCP 工具 -> Canvas Agent -> SSE tool_call -> 浏览器 applyOps -> /canvas/result -> Codex
+```

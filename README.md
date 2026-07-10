@@ -8,16 +8,24 @@
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/Linux.do-Community-2b6de8?style=flat-square" alt="Linux.do"></a>
   <a href="https://render.com/deploy?repo=https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>
   <a href="https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/github/stars/basketikun/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.2.0-2563eb?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/basketikun/infinite-canvas/tags"><img src="https://img.shields.io/github/v/tag/basketikun/infinite-canvas?style=flat-square&label=version" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-f97316?style=flat-square" alt="License"></a>
   <a href="https://vite.dev/"><img src="https://img.shields.io/badge/Vite-7-646cff?style=flat-square&logo=vite&logoColor=white" alt="Vite"></a>
   <a href="https://reactrouter.com/"><img src="https://img.shields.io/badge/React_Router-7-ca4245?style=flat-square&logo=reactrouter&logoColor=white" alt="React Router"></a>
 </p>
 
+<p align="center">
+  <a href="https://trendshift.io/repositories/50077?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-50077" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/50077/daily?language=TypeScript" alt="basketikun%2Finfinite-canvas | Trendshift" width="250" height="55"></a>
+</p>
+
+<p align="center">
+  <a href="docs/content/docs/overview/quick-start.mdx">快速开始</a> · <a href="docs/content/docs/overview/features.mdx">功能介绍</a> · <a href="docs/content/docs/overview/render.mdx">Render 部署</a> · <a href="docs/content/docs/overview/docker.mdx">Docker 部署</a> · <a href="docs/content/docs/canvas/canvas-node-manual.mdx">画布节点操作手册</a> · <a href="docs/content/docs/canvas/canvas-shortcuts.mdx">画布快捷键</a> · <a href="CLA.md">贡献者协议</a> · <a href="SECURITY.md">漏洞提交</a> · <a href="docs/content/docs/progress/todo.mdx">待办事项</a> · <a href="canvas-agent/README.md">本地 Canvas Agent</a> · <a href="plugins/infinite-canvas">Codex app 插件</a>
+</p>
+
 无限画布是一款面向图片创作的开源工作台。它把画布编排、AI 图片生成、参考图编辑、对话助手、提示词库和素材沉淀放在同一个界面里，适合用来探索视觉方案并连续迭代图片结果。
 
 > [!CAUTION]
-> 项目目前处于开发阶段，不保证历史数据兼容。各种数据库结构和存储格式都可能直接调整，欢迎关注后续更新，当前更适合个人/本地部署，不建议直接公网多人共用。
+> 项目目前处于开发阶段，不保证历史数据兼容。各种本地存储格式都可能直接调整，欢迎关注后续更新，当前更适合个人/本地部署，不建议直接公网多人共用。
 >
 > 如果你需要稳定维护自己的分支，建议自行 fork 后独立开发。二次开发与 PR 请保留原作者信息和前端页面标识。
 
@@ -34,15 +42,11 @@
 
 如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
 
-## 技术栈
-
-- 前端：Vite、React、React Router、TypeScript、Tailwind CSS、Ant Design、Zustand、TanStack Query。
-- 前端：提示词库、WebDAV 和 AI 接口都由浏览器前端直连。
-- 部署：静态站点托管或 Docker。
-
 ## 快速开始
 
 AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器本地。
+
+### 本地开发
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
@@ -52,11 +56,12 @@ bun install
 bun run dev
 ```
 
-Docker 运行：
+### Docker 运行
 
 ```bash
-docker build -t infinite-canvas .
-docker run --rm -p 3000:3000 infinite-canvas
+git clone git@github.com:basketikun/infinite-canvas.git
+cd infinite-canvas
+docker compose up -d
 ```
 
 运行后默认端口3000，可访问 `http://localhost:3000`。
@@ -95,19 +100,11 @@ https://canvas.best?apiKey={key}&baseUrl={address}
   </tr>
 </table>
 
-## 文档
+## 联系方式
 
-- [快速开始](docs/content/docs/overview/quick-start.mdx)
-- [功能介绍](docs/content/docs/overview/features.mdx)
-- [Render 部署](docs/content/docs/overview/render.mdx)
-- [Docker 部署](docs/content/docs/overview/docker.mdx)
-- [画布节点操作手册](docs/content/docs/canvas/canvas-node-manual.mdx)
-- [画布快捷键](docs/content/docs/canvas/canvas-shortcuts.mdx)
-- [贡献者协议](CLA.md)
-- [漏洞提交](SECURITY.md)
-- [待办事项](docs/content/docs/progress/todo.mdx)
-- [本地 Canvas Agent](canvas-agent/README.md)
-- [Codex app 插件](plugins/infinite-canvas)
+项目定制二次开发需求 / 生图 API 需求可联系。
+
+邮箱：1844025705@qq.com · QQ：1844025705
 
 ## 赞助支持
 

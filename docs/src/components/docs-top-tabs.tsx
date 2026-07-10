@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn';
 const tabs = [
   { title: '项目介绍', href: '/docs/overview/quick-start', prefix: '/docs/overview' },
   { title: '操作手册', href: '/docs/canvas/canvas-node-manual', prefix: '/docs/canvas' },
-  { title: '开发文档', href: '/docs/backend/local-development', prefix: '/docs/backend' },
+  { title: '开发文档', href: '/docs/development/local-development', prefix: '/docs/development' },
   { title: '项目进度', href: '/docs/progress/changelog', prefix: '/docs/progress' },
   { title: '商务合作', href: '/docs/business/business', prefix: '/docs/business' },
   { title: '赞助支持', href: '/docs/support/donate', prefix: '/docs/support' },

@@ -1,8 +1,8 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import { DEFAULT_PORT, ensureCanvasWorkspace, loadConfig, saveConfig, updateCanvasWorkspace, type CanvasAgentConfig } from "./config.js";
+import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "./config.js";
 import { CanvasSession } from "./canvas-session.js";
-import { archiveCodexThread, listCodexThreads, readCodexThread, resumeCodexThread, runClaudeTurn, runCodexTurn, startCodexThread, summarizeCodexThread, verifyCodexThreadWorkspace, withAgentPrompt } from "./agents.js";
+import { archiveCodexThread, interruptCodexTurn, listCodexThreads, readCodexThread, resumeCodexThread, runClaudeTurn, runCodexTurn, startCodexThread, summarizeCodexThread, verifyCodexThreadWorkspace, withAgentPrompt } from "./agents.js";
 import type { AgentAttachment } from "./types.js";
 
 export function startHttpServer() {
@@ -38,56 +38,60 @@ export function startHttpServer() {
         res.json({ ok: true });
     });
     app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
-    app.get("/agent/codex/workspace", (req, res) => {
-        const workspace = ensureCanvasWorkspace(config, String(req.query.canvasId || ""));
+    app.get("/agent/codex/workspace", (_req, res) => {
+        const workspace = ensureSiteWorkspace(config);
         res.json({ ok: true, workspace });
     });
     app.get("/agent/codex/threads", route(async (req, res) => {
-        const workspace = ensureCanvasWorkspace(config, String(req.query.canvasId || ""));
+        const workspace = ensureSiteWorkspace(config);
         const result = await listCodexThreads(emit, { cwd: workspace.workspacePath, searchTerm: String(req.query.searchTerm || "") });
         res.json({ ok: true, workspace, ...result });
     }));
-    app.post("/agent/codex/threads/new", route(async (req, res) => {
-        const workspace = ensureCanvasWorkspace(config, String(req.body?.canvasId || ""));
+    app.post("/agent/codex/threads/new", route(async (_req, res) => {
+        const workspace = ensureSiteWorkspace(config);
         const thread = await startCodexThread(emit, workspace.workspacePath);
         const activeThreadId = String((thread as Record<string, unknown>).id || "");
-        updateCanvasWorkspace(config, workspace.canvasId, { activeThreadId });
+        updateSiteWorkspace(config, { activeThreadId });
         res.json({ ok: true, workspace: { ...workspace, activeThreadId }, thread: summarizeCodexThread(thread), messages: [] });
     }));
     app.get("/agent/codex/threads/:threadId", route(async (req, res) => {
-        const workspace = ensureCanvasWorkspace(config, String(req.query.canvasId || ""));
+        const workspace = ensureSiteWorkspace(config);
         const threadId = routeParam(req.params.threadId);
         res.json({ ok: true, workspace, ...(await readCodexThread(emit, threadId, workspace.workspacePath)) });
     }));
     app.post("/agent/codex/threads/:threadId/resume", route(async (req, res) => {
-        const workspace = ensureCanvasWorkspace(config, String(req.body?.canvasId || ""));
+        const workspace = ensureSiteWorkspace(config);
         const threadId = routeParam(req.params.threadId);
         const result = await resumeCodexThread(emit, threadId, workspace.workspacePath);
-        updateCanvasWorkspace(config, workspace.canvasId, { activeThreadId: threadId });
+        updateSiteWorkspace(config, { activeThreadId: threadId });
         res.json({ ok: true, workspace: { ...workspace, activeThreadId: threadId }, ...result });
     }));
     app.post("/agent/codex/threads/:threadId/delete", route(async (req, res) => {
-        const workspace = ensureCanvasWorkspace(config, String(req.body?.canvasId || ""));
+        const workspace = ensureSiteWorkspace(config);
         const threadId = routeParam(req.params.threadId);
         await archiveCodexThread(emit, threadId, workspace.workspacePath);
-        if (workspace.activeThreadId === threadId) updateCanvasWorkspace(config, workspace.canvasId, { activeThreadId: undefined });
+        if (workspace.activeThreadId === threadId) updateSiteWorkspace(config, { activeThreadId: undefined });
         res.json({ ok: true });
     }));
     app.post("/agent/codex/turn", route(async (req, res) => {
         const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as AgentAttachment[]) : [];
-        const workspace = ensureCanvasWorkspace(config, String(req.body?.canvasId || ""));
+        const workspace = ensureSiteWorkspace(config);
         let threadId = String(req.body?.threadId || workspace.activeThreadId || "");
         if (!threadId) {
             const thread = await startCodexThread(emit, workspace.workspacePath);
             threadId = String((thread as Record<string, unknown>).id || "");
-            updateCanvasWorkspace(config, workspace.canvasId, { activeThreadId: threadId });
+            updateSiteWorkspace(config, { activeThreadId: threadId });
         } else if (threadId !== workspace.activeThreadId) {
             await verifyCodexThreadWorkspace(emit, threadId, workspace.workspacePath);
-            updateCanvasWorkspace(config, workspace.canvasId, { activeThreadId: threadId });
+            updateSiteWorkspace(config, { activeThreadId: threadId });
         }
         void runCodexTurn(withAgentPrompt(String(req.body?.prompt || "")), emit, attachments, { threadId, cwd: workspace.workspacePath });
         res.json({ ok: true, threadId });
     }));
+    app.post("/agent/codex/interrupt", (_req, res) => {
+        const ok = interruptCodexTurn();
+        res.json({ ok });
+    });
     app.post("/agent/claude/turn", (req, res) => {
         runClaudeTurn(withAgentPrompt(String(req.body?.prompt || "")), emit);
         res.json({ ok: true });
@@ -99,7 +103,9 @@ export function startHttpServer() {
         console.log("Infinite Canvas Agent");
         console.log(`Local URL: ${config.url}`);
         console.log(`Connect token: ${config.token}`);
-        console.log("Codex MCP: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp");
+        console.log("Codex MCP is not installed by this command.");
+        console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp");
+        console.log("Remove manually added MCP: codex mcp remove infinite-canvas");
     });
 }
 
