@@ -12,7 +12,11 @@ const DEFAULTS = {
     audio: "gpt-4o-audio-preview",
 } as const;
 
-const IMAGE_MODELS = ["gpt-image-2", "gemini-3.1-flash-image"];
+type ImageGroupPrice = {
+    "1k": number;
+    "2k": number;
+    "4k": number;
+};
 
 type PricingItem = {
     model_name?: string;
@@ -26,8 +30,13 @@ export async function GET() {
     if (!session) return NextResponse.json({ error: "登录已失效，请重新登录" }, { status: 401 });
 
     try {
-        const [imageModels, videoModels, textModels, pricing] = await Promise.all([fetchModels(session.accessTokens.image), fetchModels(session.accessTokens.video), fetchModels(session.accessTokens.text), fetchPricing()]);
-        const imageSet = new Set(imageModels);
+        const [imageModels, videoModels, textModels, pricing, imageGroupPrice] = await Promise.all([
+            fetchModels(session.accessTokens.image),
+            fetchModels(session.accessTokens.video),
+            fetchModels(session.accessTokens.text),
+            fetchPricing().catch(() => []),
+            fetchImageGroupPricing(session.accessTokens.image),
+        ]);
         const pricingMap = videoPricingMap(pricing);
         const video = prioritize(videoModels, DEFAULTS.video).map((id) => ({ id, priceLabel: videoPriceLabel(pricingMap.get(id)) }));
         const text = prioritize(textModels.filter(isTextModel), DEFAULTS.text).map((id) => ({ id }));
@@ -35,7 +44,7 @@ export async function GET() {
 
         return NextResponse.json(
             {
-                image: IMAGE_MODELS.filter((id) => imageSet.has(id)).map((id) => ({ id, priceLabel: "1K $0.10 · 2K $0.14 · 4K $0.20" })),
+                image: prioritize(imageModels, DEFAULTS.image).map((id) => ({ id, priceLabel: imagePriceLabel(imageGroupPrice) })),
                 video,
                 text,
                 audio,
@@ -58,6 +67,29 @@ async function fetchModels(token: string) {
     const payload = (await response.json()) as { data?: Array<{ id?: string }>; error?: { message?: string } };
     if (!response.ok) throw new Error(payload.error?.message || "model list request failed");
     return Array.from(new Set((payload.data || []).map((item) => item.id?.trim()).filter((id): id is string => Boolean(id))));
+}
+
+async function fetchImageGroupPricing(token: string): Promise<ImageGroupPrice> {
+    const response = await fetch(new URL("/v1/image-group-pricing", getCanvasTokenOrigin()), {
+        headers: { Authorization: "Bearer " + token, Accept: "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
+    });
+    const payload = (await response.json()) as { data?: Partial<ImageGroupPrice>; error?: { message?: string } };
+    if (!response.ok) throw new Error(payload.error?.message || "image group pricing request failed");
+    const prices = payload.data;
+    if (!prices || !Number.isFinite(prices["1k"]) || !Number.isFinite(prices["2k"]) || !Number.isFinite(prices["4k"])) {
+        throw new Error("invalid image group pricing response");
+    }
+    return prices as ImageGroupPrice;
+}
+
+function imagePriceLabel(prices: ImageGroupPrice) {
+    return `1K $${formatImagePrice(prices["1k"])} · 2K $${formatImagePrice(prices["2k"])} · 4K $${formatImagePrice(prices["4k"])}`;
+}
+
+function formatImagePrice(value: number) {
+    return value.toFixed(2);
 }
 
 async function fetchPricing() {
