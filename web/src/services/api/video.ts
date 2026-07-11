@@ -4,6 +4,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { getVideoModelLimits, videoRatio, videoSizeFromRatio, VIDEO_PROMPT_MAX_CHARS, VIDEO_REFERENCE_IMAGE_MAX_BYTES, VIDEO_REFERENCE_IMAGE_MIME_TYPES } from "@/lib/video-model-limits";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -84,14 +85,31 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const modelName = modelOptionName(model);
+    const limits = getVideoModelLimits(modelName);
+    const seconds = Number(config.videoSeconds);
+    const ratio = videoRatio(config.size);
+    const resolution = normalizeVideoResolution(config.vquality);
+    if (limits) {
+        if (prompt.length > VIDEO_PROMPT_MAX_CHARS) throw new Error(`视频提示词不能超过 ${VIDEO_PROMPT_MAX_CHARS} 字符`);
+        if (!limits.durations.includes(seconds)) throw new Error(`当前模型仅支持 ${limits.durations.join("、")} 秒`);
+        if (!ratio || !limits.ratios.includes(ratio)) throw new Error(`当前模型仅支持 ${limits.ratios.join("、")}`);
+        if (!limits.resolutions.includes(resolution)) throw new Error(`当前模型仅支持 ${limits.resolutions.join("、")} 分辨率`);
+        if (references.length > limits.maxReferenceImages) throw new Error(`参考图最多 ${limits.maxReferenceImages} 张`);
+    }
+    const files = await Promise.all((limits ? references : references.slice(0, 7)).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+    if (limits) {
+        if (files.some((file) => !VIDEO_REFERENCE_IMAGE_MIME_TYPES.includes(file.type as (typeof VIDEO_REFERENCE_IMAGE_MIME_TYPES)[number]))) throw new Error("参考图仅支持 PNG、JPEG、WebP");
+        if (files.some((file) => file.size > VIDEO_REFERENCE_IMAGE_MAX_BYTES)) throw new Error("参考图不能超过 10MB");
+    }
     const body = new FormData();
-    body.append("model", modelOptionName(model));
+    body.append("model", modelName);
     body.append("prompt", prompt);
-    body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
-    body.append("resolution_name", normalizeVideoResolution(config.vquality));
+    body.append("seconds", limits ? String(seconds) : normalizeVideoSeconds(config.videoSeconds));
+    const size = limits ? videoSizeFromRatio(config.size) : normalizeVideoSize(config.size);
+    if (size) body.append("size", size);
+    body.append("resolution_name", resolution);
     body.append("preset", "normal");
-    const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => body.append("input_reference[]", file));
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
