@@ -7,7 +7,6 @@ import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { modelOptionName, type AiConfig } from "@/stores/use-config-store";
-import { getVideoModelLimits, videoRatio } from "@/lib/video-model-limits";
 
 const resolutionOptions = [
     { value: "720", label: "720p" },
@@ -34,10 +33,6 @@ type VideoSettingsPanelProps = {
 };
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
-    const modelLimits = getVideoModelLimits(modelOptionName(config.model || config.videoModel));
-    if (modelLimits) {
-        return <LimitedVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
-    }
     if (isSeedanceVideoConfig(config)) {
         return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
@@ -102,59 +97,6 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
                     </div>
                 </SettingGroup>
-            </div>
-        </ImageSettingsTheme>
-    );
-}
-
-function LimitedVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
-    const limits = getVideoModelLimits(modelOptionName(config.model || config.videoModel))!;
-    const resolution = `${normalizeVideoResolutionValue(config.vquality)}p`;
-    const ratio = videoRatio(config.size);
-    const seconds = Number(config.videoSeconds);
-    const ratioLabels: Record<string, string> = { "16:9": "横屏", "9:16": "竖屏", "1:1": "方形" };
-
-    return (
-        <ImageSettingsTheme theme={theme}>
-            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
-                {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
-                <SettingGroup title="分辨率" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {limits.resolutions.map((value) => (
-                            <OptionPill key={value} selected={resolution === value} theme={theme} onClick={() => onConfigChange("vquality", value)}>
-                                {value}
-                            </OptionPill>
-                        ))}
-                    </div>
-                </SettingGroup>
-                <SettingGroup title="比例" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {limits.ratios.map((value) => (
-                            <button
-                                key={value}
-                                type="button"
-                                className="flex h-[68px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-1 text-sm transition hover:opacity-80"
-                                style={{ borderColor: ratio === value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => onConfigChange("size", value)}
-                            >
-                                <SizePreview width={ratioPreview(value).width} height={ratioPreview(value).height} color={theme.node.text} />
-                                <span>{ratioLabels[value]}</span>
-                                <span className="text-[10px] leading-none opacity-55">{value}</span>
-                            </button>
-                        ))}
-                    </div>
-                </SettingGroup>
-                <SettingGroup title="时长" color={theme.node.muted}>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {limits.durations.map((value) => (
-                            <OptionPill key={value} selected={seconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
-                                {value}s
-                            </OptionPill>
-                        ))}
-                    </div>
-                </SettingGroup>
-                <div className="text-[11px] leading-4 opacity-55">提示词最多 4000 字符，参考图最多 1 张且不超过 10MB，仅支持 PNG、JPEG、WebP。</div>
             </div>
         </ImageSettingsTheme>
     );

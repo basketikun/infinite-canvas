@@ -14,12 +14,11 @@ import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeVa
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { getVideoModelLimits, VIDEO_PROMPT_MAX_CHARS, VIDEO_REFERENCE_IMAGE_MAX_BYTES, VIDEO_REFERENCE_IMAGE_MIME_TYPES } from "@/lib/video-model-limits";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
-import { modelOptionLabel, modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -98,9 +97,6 @@ export default function VideoPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
-    const modelLimits = getVideoModelLimits(modelOptionName(model));
-    const imageReferenceLimit = modelLimits?.maxReferenceImages || SEEDANCE_REFERENCE_LIMITS.images;
-    const imageReferenceMaxBytes = modelLimits ? VIDEO_REFERENCE_IMAGE_MAX_BYTES : SEEDANCE_REFERENCE_LIMITS.imageMaxBytes;
     const canGenerate = Boolean(prompt.trim());
 
     useEffect(() => {
@@ -117,13 +113,10 @@ export default function VideoPage() {
         const selectedFiles = Array.from(files || []);
         const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/") && !isSupportedAudioFile(file));
         if (unsupported.length) message.warning("已忽略不支持的参考素材，请使用图片、mp4/mov 视频或 mp3/wav 音频");
-        const imageFiles = selectedFiles
-            .filter((file) => file.type.startsWith("image/") && file.size <= imageReferenceMaxBytes && (!modelLimits || VIDEO_REFERENCE_IMAGE_MIME_TYPES.includes(file.type as (typeof VIDEO_REFERENCE_IMAGE_MIME_TYPES)[number])))
-            .slice(0, Math.max(0, imageReferenceLimit - references.length));
+        const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= SEEDANCE_REFERENCE_LIMITS.imageMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length);
         const videoFiles = selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= SEEDANCE_REFERENCE_LIMITS.videoMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.videos - videoReferences.length);
         const audioFiles = selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= SEEDANCE_REFERENCE_LIMITS.audioMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.audios - audioReferences.length);
-        if (modelLimits && selectedFiles.some((file) => file.type.startsWith("image/") && !VIDEO_REFERENCE_IMAGE_MIME_TYPES.includes(file.type as (typeof VIDEO_REFERENCE_IMAGE_MIME_TYPES)[number]))) message.warning("已忽略非 PNG、JPEG、WebP 格式的参考图");
-        if (selectedFiles.some((file) => file.type.startsWith("image/") && file.size > imageReferenceMaxBytes)) message.warning(`已忽略超过 ${modelLimits ? "10MB" : "30MB"} 的参考图`);
+        if (selectedFiles.some((file) => file.type.startsWith("image/") && file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
         if (selectedFiles.some((file) => file.type.startsWith("video/") && file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 50MB 的参考视频");
         if (selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 15MB 的参考音频");
         const nextReferences = await Promise.all(
@@ -148,7 +141,7 @@ export default function VideoPage() {
             ),
             message.warning,
         );
-        setReferences((value) => [...value, ...nextReferences].slice(0, imageReferenceLimit));
+        setReferences((value) => [...value, ...nextReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
         setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
         setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.audios));
     };
@@ -161,17 +154,13 @@ export default function VideoPage() {
                 message.error("剪切板里没有可读取的图片");
                 return;
             }
-            const acceptedBlobs = blobs
-                .filter((blob) => blob.size <= imageReferenceMaxBytes && (!modelLimits || VIDEO_REFERENCE_IMAGE_MIME_TYPES.includes(blob.type as (typeof VIDEO_REFERENCE_IMAGE_MIME_TYPES)[number])))
-                .slice(0, Math.max(0, imageReferenceLimit - references.length));
-            if (acceptedBlobs.length < blobs.length) message.warning(modelLimits ? "已忽略不符合 10MB 或 PNG/JPEG/WebP 限制的参考图" : "已忽略超过 30MB 的参考图");
             const nextReferences = await Promise.all(
-                acceptedBlobs.map(async (blob, index) => {
+                blobs.slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length).map(async (blob, index) => {
                     const image = await uploadImage(blob);
                     return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
             );
-            setReferences((value) => [...value, ...nextReferences].slice(0, imageReferenceLimit));
+            setReferences((value) => [...value, ...nextReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
             message.success(`已读取 ${nextReferences.length} 张参考图`);
         } catch {
             message.error("剪切板里没有可读取的图片");
@@ -245,7 +234,7 @@ export default function VideoPage() {
             setPrompt(payload.content);
         } else if (payload.kind === "image") {
             const stored = await uploadImage(payload.dataUrl);
-            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, imageReferenceLimit));
+            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
         } else if (payload.kind === "video") {
             setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
         }
@@ -391,7 +380,7 @@ export default function VideoPage() {
                                         </Button>
                                     </div>
                                 </div>
-                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} maxLength={modelLimits ? VIDEO_PROMPT_MAX_CHARS : undefined} showCount={Boolean(modelLimits)} placeholder="描述镜头运动、主体动作、场景氛围和画面风格" />
+                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述镜头运动、主体动作、场景氛围和画面风格" />
                             </div>
 
                             <div className="min-w-0">
@@ -417,7 +406,7 @@ export default function VideoPage() {
                                             </button>
                                         </div>
                                     ))}
-                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 {imageReferenceLimit} 张</div> : null}
+                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 9 张</div> : null}
                                 </div>
                             </div>
 
