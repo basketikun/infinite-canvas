@@ -183,6 +183,9 @@ function resolveImageDataUrl(item: Record<string, unknown>) {
 }
 
 function parseImagePayload(payload: ImageApiResponse) {
+    if (payload.error?.message) {
+        throw new Error(payload.error.message);
+    }
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
