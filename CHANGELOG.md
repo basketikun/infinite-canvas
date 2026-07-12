@@ -3,6 +3,7 @@
 ## Unreleased
 
 - [新增] Canvas 支持使用 Token/New API 账号一键登录，并自动创建或复用 `Image`、`Video`、`ChatGPT` 分组令牌。
+- [新增] Canvas 右上角显示 Token 账号余额，点击余额可跳转 Token 钱包充值页面。
 - [安全] 真实 Token API Key 仅加密保存在服务端会话数据库中，浏览器统一通过固定的同源 AI 代理访问模型服务。
 - [调整] 配置页移除 Base URL、API Key、渠道和调用格式输入；登录后按生图、视频、文本、音频能力自动更新模型，生图模型及 1K/2K/4K 价格自动同步 Token `Image` 分组与系统设置，视频展示按秒/按条价格。
 - [修复] 修复视频创作台长耗时任务过早显示失败，并兼容 New API 返回的 `done` 状态与视频直链结果。
