@@ -113,7 +113,7 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
             await assertVideoBlob(content.data);
             return { status: "completed", result: { blob: content.data } };
         }
-        if (["failed", "failure", "cancelled", "canceled", "expired"].includes(status || "")) return { status: "failed", error: video.error?.message || "视频生成失败" };
+        if (["failed", "failure", "cancelled", "canceled", "expired"].includes(status || "")) return { status: "failed", error: localizeUpstreamError(video.error?.message || "视频生成失败") };
         return { status: "pending" };
     } catch (error) {
         throw new Error(readAxiosError(error, "视频任务查询失败"));
@@ -166,7 +166,7 @@ async function pollSeedanceTask(config: AiConfig, task: VideoGenerationTask, opt
             if (!url) return { status: "failed", error: "Seedance 任务成功但没有返回视频 URL" };
             return { status: "completed", result: await videoResultFromUrl(url, options) };
         }
-        if (state.status === "failed" || state.status === "cancelled" || state.status === "expired") return { status: "failed", error: state.error?.message || `Seedance 视频生成${state.status === "expired" ? "超时" : "失败"}` };
+        if (state.status === "failed" || state.status === "cancelled" || state.status === "expired") return { status: "failed", error: localizeUpstreamError(state.error?.message || `Seedance 视频生成${state.status === "expired" ? "超时" : "失败"}`) };
         return { status: "pending" };
     } catch (error) {
         throw new Error(readAxiosError(error, "Seedance 任务查询失败"));
@@ -301,10 +301,28 @@ function readAxiosError(error: unknown, fallback: string) {
     if (axios.isAxiosError<{ error?: { message?: string }; message?: string; msg?: string; code?: number }>(error)) {
         const responseData = error.response?.data;
         const message = responseData?.error?.message || responseData?.message || responseData?.msg;
-        return message ? unwrapUpstreamError(message) : statusMessage(error.response?.status, fallback);
+        return message ? localizeUpstreamError(unwrapUpstreamError(message)) : statusMessage(error.response?.status, fallback);
     }
     if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
-    return error instanceof Error ? error.message : fallback;
+    return error instanceof Error ? localizeUpstreamError(error.message) : fallback;
+}
+
+function localizeUpstreamError(message: string) {
+    const normalized = message.trim();
+    const translations: Array<[RegExp, string]> = [
+        [/Prompt length exceeds the maximum allowed length of (\d+)/i, "提示词长度超过最大限制（$1 个字符），请缩短提示词后重试"],
+        [/this model requires exactly one reference image/i, "该模型必须且只能上传 1 张参考图"],
+        [/Could not verify JWT:\s*JWTExpired/i, "上游登录凭证已过期，请刷新该模型通道的 JWT/token 后重试"],
+        [/JWTExpired/i, "上游登录凭证已过期，请刷新该模型通道的 JWT/token 后重试"],
+        [/Invalid URL \(POST ([^)]+)\)/i, "上游接口地址无效（POST $1），请检查模型通道配置"],
+        [/insufficient (?:balance|credits?)/i, "上游账号余额或积分不足"],
+        [/rate limit/i, "请求过于频繁，已触发上游限流，请稍后重试"],
+        [/unauthorized|invalid api key/i, "上游鉴权失败，请检查模型通道的 API Key/token"],
+    ];
+    for (const [pattern, translation] of translations) {
+        if (pattern.test(normalized)) return normalized.replace(pattern, translation);
+    }
+    return normalized || "视频生成失败";
 }
 
 function unwrapUpstreamError(message: string) {
