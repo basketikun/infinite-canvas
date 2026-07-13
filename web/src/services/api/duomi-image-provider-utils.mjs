@@ -9,6 +9,7 @@ export function mergeFetchedImageModels(imageApiFormat, currentModels, fetchedMo
 }
 
 const DUOMI_NANO_BANANA_MODELS = DUOMI_IMAGE_MODELS.slice(1);
+const DUOMI_NANO_BANANA_ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
 const DUOMI_IMAGE_SIZE_BY_QUALITY = {
     low: "1K",
     medium: "2K",
@@ -56,6 +57,19 @@ export function isDuomiNanoBananaModel(model) {
     return DUOMI_NANO_BANANA_MODELS.includes(String(model || "").trim());
 }
 
+export function duomiImageRequestSize(model, size) {
+    const normalizedSize = String(size || "").trim();
+    if (!isDuomiNanoBananaModel(model)) return normalizedSize;
+    const dimensions = normalizedSize.match(/^(\d+)x(\d+)$/i);
+    if (!dimensions) return normalizedSize;
+    const target = Number(dimensions[1]) / Number(dimensions[2]);
+    return DUOMI_NANO_BANANA_ASPECT_RATIOS.reduce((best, item) => {
+        const [width, height] = item.split(":").map(Number);
+        const [bestWidth, bestHeight] = best.split(":").map(Number);
+        return Math.abs(width / height - target) < Math.abs(bestWidth / bestHeight - target) ? item : best;
+    });
+}
+
 export function duomiCreatePath(model, referenceUrls) {
     if (!isDuomiNanoBananaModel(model)) return "/v1/images/generations";
     return referenceUrls.length ? "/api/gemini/nano-banana-edit" : "/api/gemini/nano-banana";
@@ -85,7 +99,7 @@ export function isDuomiRequestTimeout(error) {
 }
 
 export function duomiImageRequestBody({ model, prompt, size, quality, referenceUrls }) {
-    const normalizedSize = String(size || "").trim();
+    const normalizedSize = duomiImageRequestSize(model, size);
     const normalizedQuality = String(quality || "")
         .trim()
         .toLowerCase();

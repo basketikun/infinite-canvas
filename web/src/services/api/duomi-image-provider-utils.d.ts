@@ -27,6 +27,7 @@ export interface DuomiImageRequestBody {
 
 export function isDuomiImageModel(model: string): boolean;
 export function isDuomiNanoBananaModel(model: string): boolean;
+export function duomiImageRequestSize(model: string, size: string): string;
 export function duomiCreatePath(model: string, referenceUrls: string[]): string;
 export function duomiTaskPath(model: string, id: string): string;
 export function duomiRequestUrl(baseUrl: string, path: string, useProxy: boolean, proxyUrl: string): string;

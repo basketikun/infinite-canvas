@@ -141,6 +141,21 @@ test("builds Nano Banana request bodies and maps image quality", () => {
     });
 });
 
+test("maps Nano Banana pixel sizes to the nearest supported aspect ratio", () => {
+    assert.deepEqual(duomiImageRequestBody({ model: "gemini-2.5-flash-image", prompt: "wide scene", size: "1536x1024", quality: "medium", referenceUrls: [] }), {
+        model: "gemini-2.5-flash-image",
+        prompt: "wide scene",
+        aspect_ratio: "3:2",
+        image_size: "2K",
+    });
+    assert.deepEqual(duomiImageRequestBody({ model: "gemini-3-pro-image-preview", prompt: "portrait", size: "1000x1250", quality: "high", referenceUrls: [] }), {
+        model: "gemini-3-pro-image-preview",
+        prompt: "portrait",
+        aspect_ratio: "4:5",
+        image_size: "4K",
+    });
+});
+
 test("omits Nano Banana aspect_ratio for one auto-sized reference image", () => {
     assert.deepEqual(duomiImageRequestBody({ model: "gemini-3.1-flash-image-preview", prompt: "增强细节", size: "auto", quality: "high", referenceUrls: ["https://assets.example.com/a.png"] }), {
         model: "gemini-3.1-flash-image-preview",
