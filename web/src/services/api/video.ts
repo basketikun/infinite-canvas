@@ -3,7 +3,7 @@ import axios from "axios";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -139,6 +139,17 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
     };
 
     try {
+        if (!isArkPlanBaseUrl(config.baseUrl)) {
+            const relayPrompt = String(content.find((item) => item.type === "text")?.text || prompt).trim();
+            const response = await axios.post<ApiVideoResponse>(
+                aiApiUrl(config, "/videos"),
+                { model: payload.model, prompt: relayPrompt, duration: payload.duration, seconds: String(payload.duration), metadata: payload },
+                { headers: aiHeaders(config, "application/json"), signal: options?.signal },
+            );
+            const created = unwrapVideoResponse(response.data);
+            if (!created.id) throw new Error("视频接口没有返回任务 ID");
+            return { id: created.id, provider: "openai", model };
+        }
         const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
         if (!created.id) throw new Error("Seedance 接口没有返回任务 ID");
         return { id: created.id, provider: "seedance", model };
