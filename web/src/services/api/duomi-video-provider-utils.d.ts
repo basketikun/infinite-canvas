@@ -36,6 +36,7 @@ export function isDuomiVideoModel(model: string): boolean;
 export function normalizeVideoApiFormat(value: unknown): VideoApiFormat;
 export function mergeFetchedVideoModels(videoApiFormat: VideoApiFormat, currentModels: string[], fetchedModels: string[]): string[];
 export function mergeFetchedChannelModels(options: ChannelModelRefreshOptions): string[];
+export function successfulChannelModelEntries(results: PromiseSettledResult<readonly [string, string[]]>[]): Array<readonly [string, string[]]>;
 export function duomiVideoCreatePath(): string;
 export function duomiVideoTaskPath(id: string | number): string;
 export function duomiVideoRequestBody(request: DuomiVideoRequest): DuomiVideoRequestBody;

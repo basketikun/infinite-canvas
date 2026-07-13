@@ -1,4 +1,4 @@
-import { duomiPublicReferenceUrls, duomiRequestHeaders, duomiRequestUrl, isDuomiRequestTimeout } from "./duomi-provider-utils.mjs";
+import { duomiPublicReferenceUrls, duomiPublicUrlOrEmpty, duomiRequestHeaders, duomiRequestUrl, isDuomiRequestTimeout } from "./duomi-provider-utils.mjs";
 
 export { duomiRequestHeaders, duomiRequestUrl, isDuomiRequestTimeout };
 
@@ -107,7 +107,7 @@ export function duomiImageUrlsFromPayload(model, payload) {
     if (!isRecord(payload) || !isRecord(payload.data)) return [];
     const images = isDuomiNanoBananaModel(model) ? (isRecord(payload.data.data) ? payload.data.data.images : undefined) : payload.data.images;
     if (!Array.isArray(images)) return [];
-    return images.map((image) => (isRecord(image) && typeof image.url === "string" ? image.url.trim() : "")).filter(Boolean);
+    return images.map((image) => (isRecord(image) ? duomiPublicUrlOrEmpty(image.url) : "")).filter(Boolean);
 }
 
 export function duomiTaskErrorMessage(model, payload) {

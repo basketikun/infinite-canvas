@@ -1,4 +1,4 @@
-import { duomiPublicReferenceUrls } from "./duomi-provider-utils.mjs";
+import { duomiPublicReferenceUrls, duomiPublicUrlOrEmpty } from "./duomi-provider-utils.mjs";
 import { DUOMI_IMAGE_MODEL_SUGGESTIONS, mergeFetchedImageModels } from "./duomi-image-provider-utils.mjs";
 import { xaiVideoAspectRatioFromSize } from "./video-provider-utils.mjs";
 
@@ -27,6 +27,10 @@ export function mergeFetchedVideoModels(videoApiFormat, currentModels, fetchedMo
 export function mergeFetchedChannelModels({ imageApiFormat, videoApiFormat, currentModels, fetchedModels }) {
     const imageMergedModels = mergeFetchedImageModels(imageApiFormat, currentModels, fetchedModels);
     return mergeFetchedVideoModels(videoApiFormat, currentModels, imageMergedModels);
+}
+
+export function successfulChannelModelEntries(results) {
+    return results.filter((result) => result?.status === "fulfilled").map((result) => result.value);
 }
 
 export function duomiVideoCreatePath() {
@@ -102,13 +106,7 @@ function errorMessage(value) {
 }
 
 function publicVideoUrl(value) {
-    if (typeof value !== "string") return "";
-    const normalized = value.trim();
-    try {
-        return duomiPublicReferenceUrls([normalized], { min: 1, max: 1 })[0] || "";
-    } catch {
-        return "";
-    }
+    return duomiPublicUrlOrEmpty(value);
 }
 
 function isNonEmptyString(value) {

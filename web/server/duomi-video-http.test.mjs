@@ -79,7 +79,7 @@ test("selects and resolves a channel-qualified Duomi video model over config.mod
     const vite = await createServer({ root: process.cwd(), server: { middlewareMode: true }, appType: "custom", logLevel: "silent" });
 
     try {
-        const { defaultConfig, modelOptionName, resolveModelRequestConfig } = await vite.ssrLoadModule("/src/stores/use-config-store.ts");
+        const { defaultConfig, modelOptionName, resolveExistingModelRequestConfig, resolveModelRequestConfig } = await vite.ssrLoadModule("/src/stores/use-config-store.ts");
         const encodedModel = "channel-1::grok-video-1.5";
         const config = {
             ...defaultConfig,
@@ -104,6 +104,8 @@ test("selects and resolves a channel-qualified Duomi video model over config.mod
 
         assert.equal(modelOptionName(encodedModel), "grok-video-1.5");
         assert.equal(resolveModelRequestConfig(config, encodedModel).videoApiFormat, "duomi");
+        assert.equal(resolveExistingModelRequestConfig(config, encodedModel)?.videoApiFormat, "duomi");
+        assert.equal(resolveExistingModelRequestConfig(config, "deleted-channel::grok-video-1.5"), null);
     } finally {
         await vite.close();
     }

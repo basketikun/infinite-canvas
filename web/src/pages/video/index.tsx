@@ -15,11 +15,11 @@ import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedan
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { DUOMI_VIDEO_POLL_INTERVAL_MS, DUOMI_VIDEO_POLL_MAX_ATTEMPTS } from "@/services/api/duomi-video-provider-utils.mjs";
-import { effectiveVideoResolution } from "@/services/api/video-provider-utils.mjs";
+import { effectiveVideoResolution, withEffectiveVideoResolution } from "@/services/api/video-provider-utils.mjs";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
-import { modelOptionLabel, resolveModelRequestConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionLabel, resolveExistingModelRequestConfig, resolveModelRequestConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -330,12 +330,16 @@ export default function VideoPage() {
         setRunning(true);
         setStartedAt((value) => value || performance.now());
         setResults((value) => (value.length ? value : [{ id: log.id, status: "pending" }]));
-        const taskConfig = buildVideoConfig({ ...effectiveConfig, ...log.config }, log.task.model || log.model);
+        const selectedTaskModel = log.task.model || log.model;
+        const restoredConfig = { ...effectiveConfig, ...log.config };
+        const existingRequestConfig = configOverride || resolveExistingModelRequestConfig(restoredConfig, selectedTaskModel);
         const maxAttempts = log.task.provider === "duomi" ? DUOMI_VIDEO_POLL_MAX_ATTEMPTS : 120;
         const delayMs = log.task.provider === "seedance" ? 5000 : log.task.provider === "duomi" ? DUOMI_VIDEO_POLL_INTERVAL_MS : 2500;
         try {
+            if (!existingRequestConfig) throw new Error("原视频渠道已删除，无法继续查询任务");
+            const taskConfig = buildVideoConfig(existingRequestConfig, selectedTaskModel);
             for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-                const state = await pollVideoGenerationTask(configOverride || taskConfig, log.task);
+                const state = await pollVideoGenerationTask(taskConfig, log.task);
                 if (state.status === "completed") {
                     const stored = await storeGeneratedVideo(state.result);
                     const nextVideo: GeneratedVideo = {
@@ -936,8 +940,10 @@ function buildLog({
 }
 
 function buildVideoConfig(config: AiConfig, model: string): AiConfig {
-    const seedance = isSeedanceVideoConfig({ ...config, model });
-    return {
+    const requestConfig = resolveModelRequestConfig(config, model);
+    const selectedModel = requestConfig.model;
+    const seedance = requestConfig.videoApiFormat === "standard" && isSeedanceVideoConfig({ model: selectedModel, videoModel: selectedModel, baseUrl: requestConfig.baseUrl });
+    const normalizedConfig = {
         ...config,
         model,
         videoModel: model,
@@ -947,6 +953,11 @@ function buildVideoConfig(config: AiConfig, model: string): AiConfig {
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
         videoWatermark: String(boolConfig(config.videoWatermark, false)),
     };
+    return withEffectiveVideoResolution(normalizedConfig, {
+        videoApiFormat: requestConfig.videoApiFormat,
+        isSeedance: seedance,
+        isSeedanceFast: seedance && isSeedanceFastModel(selectedModel),
+    });
 }
 
 function normalizeVideoSeconds(value: string) {

@@ -24,6 +24,12 @@ test("uses the effective Duomi resolution while preserving standard resolution v
     assert.equal(videoProviderUtils.effectiveVideoResolution("1440p", { videoApiFormat: "standard" }), "1440");
 });
 
+test("stores the effective provider resolution in generation config snapshots", () => {
+    assert.deepEqual(videoProviderUtils.withEffectiveVideoResolution({ vquality: "480p", marker: true }, { videoApiFormat: "duomi" }), { vquality: "720p", marker: true });
+    assert.deepEqual(videoProviderUtils.withEffectiveVideoResolution({ vquality: "1440p", marker: true }, { videoApiFormat: "standard" }), { vquality: "1440p", marker: true });
+    assert.deepEqual(videoProviderUtils.withEffectiveVideoResolution({ vquality: "1080p", marker: true }, { videoApiFormat: "standard", isSeedance: true, isSeedanceFast: true }), { vquality: "720p", marker: true });
+});
+
 test("recognizes xAI video models without treating ordinary Grok text models as video generators", () => {
     assert.equal(isXaiVideoModel("grok-imagine-video"), true);
     assert.equal(isXaiVideoModel("grok-imagine-video-1.5"), true);

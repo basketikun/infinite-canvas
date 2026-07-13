@@ -18,6 +18,7 @@ import {
     mergeFetchedChannelModels,
     mergeFetchedVideoModels,
     normalizeVideoApiFormat,
+    successfulChannelModelEntries,
 } from "../src/services/api/duomi-video-provider-utils.mjs";
 
 test("exports only the documented Duomi video model suggestions", () => {
@@ -102,6 +103,21 @@ test("merges both Duomi suggestion families in stable first-seen order", () => {
 
 test("exports the deduped Duomi channel template model union", () => {
     assert.deepEqual(DUOMI_CHANNEL_MODEL_SUGGESTIONS, ["gpt-image-2", "gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "grok-video-1.5"]);
+});
+
+test("keeps successful model refresh results when another channel fails", () => {
+    const failure = new Error("Duomi /models unavailable");
+    assert.deepEqual(
+        successfulChannelModelEntries([
+            { status: "fulfilled", value: ["standard", ["model-a"]] },
+            { status: "rejected", reason: failure },
+            { status: "fulfilled", value: ["secondary", ["model-b"]] },
+        ]),
+        [
+            ["standard", ["model-a"]],
+            ["secondary", ["model-b"]],
+        ],
+    );
 });
 
 test("builds the documented creation and encoded task paths", () => {

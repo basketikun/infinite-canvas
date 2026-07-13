@@ -6,6 +6,10 @@ export function effectiveVideoResolution(value, { videoApiFormat = "standard", i
     return isSeedanceFast && resolution === "1080" ? "720" : resolution;
 }
 
+export function withEffectiveVideoResolution(config, context = {}) {
+    return { ...config, vquality: `${effectiveVideoResolution(config?.vquality, context)}p` };
+}
+
 export function isXaiVideoModel(model) {
     const value = String(model || "")
         .trim()

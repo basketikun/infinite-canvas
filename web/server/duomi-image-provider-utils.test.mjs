@@ -243,6 +243,17 @@ test("reads image URLs from model-specific response shapes", () => {
     assert.deepEqual(duomiImageUrlsFromPayload("gpt-image-2", { data: { images: [{ url: "  https://cdn.example.com/trimmed.png  " }, { url: "   " }] } }), ["https://cdn.example.com/trimmed.png"]);
 });
 
+test("keeps only public HTTP or HTTPS image result URLs", () => {
+    assert.deepEqual(
+        duomiImageUrlsFromPayload("gpt-image-2", {
+            data: {
+                images: [{ url: "https://cdn.example.com/public.png" }, { url: "http://127.0.0.1/private.png" }, { url: "data:image/png;base64,AAAA" }, { url: "javascript:alert(1)" }],
+            },
+        }),
+        ["https://cdn.example.com/public.png"],
+    );
+});
+
 test("prefers Nano task messages, then top-level messages, then error messages", () => {
     assert.equal(duomiTaskErrorMessage("gemini-2.5-flash-image", { data: { msg: "   " }, msg: "top-level error", error: { message: "fallback error" } }), "top-level error");
     assert.equal(duomiTaskErrorMessage("gpt-image-2", { msg: "top-level error", error: { message: "fallback error" } }), "top-level error");

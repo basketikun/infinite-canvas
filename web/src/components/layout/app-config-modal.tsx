@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { DUOMI_IMAGE_MODEL_SUGGESTIONS } from "@/services/api/duomi-image-provider-utils.mjs";
-import { DUOMI_CHANNEL_MODEL_SUGGESTIONS, DUOMI_VIDEO_MODEL_SUGGESTIONS, mergeFetchedChannelModels } from "@/services/api/duomi-video-provider-utils.mjs";
+import { DUOMI_CHANNEL_MODEL_SUGGESTIONS, DUOMI_VIDEO_MODEL_SUGGESTIONS, mergeFetchedChannelModels, successfulChannelModelEntries } from "@/services/api/duomi-video-provider-utils.mjs";
 import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -217,7 +217,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         }
         setLoadingChannelId("all");
         try {
-            const entries = await Promise.all(runnable.map(async (channel) => [channel.id, await fetchChannelModels(channel)] as const));
+            const results = await Promise.allSettled(runnable.map(async (channel) => [channel.id, await fetchChannelModels(channel)] as const));
+            const entries = successfulChannelModelEntries(results);
+            const failures = results.filter((result) => result.status === "rejected");
+            if (!entries.length && failures.length) throw failures[0].reason;
             const modelMap = new Map(entries);
             const latestConfig = useConfigStore.getState().config;
             updateChannels(
@@ -230,7 +233,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 }),
                 latestConfig,
             );
-            message.success("模型列表已更新");
+            if (failures.length) message.warning(`已更新 ${entries.length} 个渠道，${failures.length} 个渠道读取失败`);
+            else message.success("模型列表已更新");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取模型失败");
         } finally {

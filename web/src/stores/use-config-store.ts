@@ -355,6 +355,12 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
     };
 }
 
+export function resolveExistingModelRequestConfig(config: AiConfig, value: string) {
+    const decoded = decodeChannelModel(value);
+    if (decoded && !config.channels.some((channel) => channel.id === decoded.channelId)) return null;
+    return resolveModelRequestConfig(config, value);
+}
+
 function normalizeChannels(config: AiConfig) {
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
     const channels = persistedChannels.map((channel, index) =>

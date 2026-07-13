@@ -52,6 +52,12 @@ export function duomiPublicReferenceUrls(urls, { min = 0, max = Infinity, errorM
     return [...urls];
 }
 
+export function duomiPublicUrlOrEmpty(value) {
+    if (typeof value !== "string") return "";
+    const normalized = value.trim();
+    return isPublicHttpUrl(normalized) ? normalized : "";
+}
+
 function isPublicHttpUrl(value) {
     if (typeof value !== "string") return false;
     try {
