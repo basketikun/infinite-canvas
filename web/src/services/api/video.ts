@@ -4,6 +4,8 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { createDuomiVideoGenerationTask, pollDuomiVideoGenerationTask, type DuomiVideoGenerationTask, type DuomiVideoGenerationTaskState } from "@/services/api/duomi-video";
+import { DUOMI_VIDEO_POLL_INTERVAL_MS, DUOMI_VIDEO_POLL_MAX_ATTEMPTS } from "@/services/api/duomi-video-provider-utils.mjs";
 import { buildAiProxyHeaders, buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig, type ApiVersion } from "@/stores/use-config-store";
 import { isUnsupportedXaiVideoModel, isXaiVideoModel, videoCreatePathForModel, videoResultUrlFromPayload, videoTaskIdFromPayload, videoTaskStatusFromPayload, xaiVideoAspectRatioFromSize, xaiVideoDuration, xaiVideoResolution } from "./video-provider-utils.mjs";
 import type { ReferenceImage } from "@/types/image";
@@ -24,8 +26,10 @@ type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: strin
 type RequestOptions = { signal?: AbortSignal };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance"; model: string };
-export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
+type OpenAIVideoGenerationTask = { id: string; provider: "openai"; model: string };
+type SeedanceVideoGenerationTask = { id: string; provider: "seedance"; model: string };
+export type VideoGenerationTask = OpenAIVideoGenerationTask | SeedanceVideoGenerationTask | DuomiVideoGenerationTask;
+export type VideoGenerationTaskState = Exclude<DuomiVideoGenerationTaskState, { status: "completed" }> | { status: "completed"; result: VideoGenerationResult };
 
 function aiApiUrl(config: AiConfig, path: string, apiVersion: ApiVersion = "v1") {
     return buildApiUrl(config.baseUrl, path, config.apiFormat === "openai" && config.useProxy, apiVersion);
@@ -41,13 +45,16 @@ function aiHeaders(config: AiConfig, contentType?: string, apiVersion: ApiVersio
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
     const task = await createVideoGenerationTask(config, prompt, references, videoReferences, audioReferences, options);
-    const delayMs = task.provider === "seedance" ? 5000 : 2500;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    const maxAttempts = task.provider === "duomi" ? DUOMI_VIDEO_POLL_MAX_ATTEMPTS : 120;
+    const delayMs = task.provider === "seedance" ? 5000 : task.provider === "duomi" ? DUOMI_VIDEO_POLL_INTERVAL_MS : 2500;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
         if (state.status === "failed") throw new Error(state.error);
-        if (attempt === 119) throw new Error(`${task.provider === "seedance" ? "Seedance " : ""}视频生成超时，请稍后重试`);
+        if (attempt === maxAttempts - 1) {
+            throw new Error(task.provider === "duomi" ? "多米视频生成超时，请稍后重试" : `${task.provider === "seedance" ? "Seedance " : ""}视频生成超时，请稍后重试`);
+        }
         await delay(delayMs, options?.signal);
     }
     throw new Error("视频生成超时，请稍后重试");
@@ -57,6 +64,12 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (requestConfig.videoApiFormat === "duomi") {
+        if (videoReferences.length || audioReferences.length) {
+            throw new Error("多米 Grok 视频暂不支持参考视频或参考音频，请移除后重试");
+        }
+        return createDuomiVideoGenerationTask(requestConfig, selectedModel, prompt, references, requestConfig.size, requestConfig.videoSeconds, options);
+    }
     if (isSeedanceVideoConfig(requestConfig)) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
@@ -69,6 +82,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (task.provider === "duomi") return pollDuomiVideoGenerationTask(requestConfig, task, options);
     return task.provider === "seedance" ? pollSeedanceTask(requestConfig, task, options) : pollOpenAIVideoTask(requestConfig, task, options);
 }
 
@@ -84,7 +98,7 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     throw new Error("视频接口没有返回可播放的视频");
 }
 
-async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<OpenAIVideoGenerationTask> {
     const modelName = modelOptionName(model);
     if (isUnsupportedXaiVideoModel(modelName)) {
         throw new Error(`${modelName} 是 Grok 文本/图像理解模型，不是视频生成模型；请在视频模型里选择 grok-imagine-video`);
@@ -111,7 +125,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     }
 }
 
-async function createXaiVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+async function createXaiVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<OpenAIVideoGenerationTask> {
     if (references.length) throw new Error("xAI Grok 视频暂不支持参考图，请先移除参考图");
     try {
         const payload = {
@@ -132,7 +146,7 @@ async function createXaiVideoTask(config: AiConfig, model: string, prompt: strin
     }
 }
 
-async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+async function pollOpenAIVideoTask(config: AiConfig, task: OpenAIVideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     try {
         const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(config, `/videos/${task.id}`), { headers: aiHeaders(config), signal: options?.signal })).data);
         const status = normalizeVideoTaskStatus(video.status);
@@ -150,7 +164,7 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
     }
 }
 
-async function createSeedanceTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
+async function createSeedanceTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<SeedanceVideoGenerationTask> {
     if (audioReferences.length && !references.length && !videoReferences.length) {
         throw new Error("Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
     }
@@ -178,7 +192,7 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
     }
 }
 
-async function pollSeedanceTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+async function pollSeedanceTask(config: AiConfig, task: SeedanceVideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     try {
         const state = unwrapSeedanceTask((await axios.get<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config, task.id), { headers: aiHeaders(config, undefined, "v3"), signal: options?.signal })).data);
         const status = videoTaskStatusFromPayload(state);

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createServer } from "vite";
 
 import { buildDuomiVideoHttpRequest, duomiVideoRequestFromInputs, translateDuomiVideoRequestError, withDuomiVideoTaskModel } from "../src/services/api/duomi-video-http.mjs";
 
@@ -72,6 +73,18 @@ test("composes a decoded model request and restores the encoded task model", () 
         model: encodedModel,
         deadlineAt: 301000,
     });
+});
+
+test("decodes a channel-qualified Duomi video model with the real config helper", async () => {
+    const vite = await createServer({ root: process.cwd(), server: { middlewareMode: true }, appType: "custom", logLevel: "silent" });
+
+    try {
+        const { modelOptionName } = await vite.ssrLoadModule("/src/stores/use-config-store.ts");
+
+        assert.equal(modelOptionName("channel-1::grok-video-1.5"), "grok-video-1.5");
+    } finally {
+        await vite.close();
+    }
 });
 
 test("translates authentication and rate-limit responses with provider detail", () => {
