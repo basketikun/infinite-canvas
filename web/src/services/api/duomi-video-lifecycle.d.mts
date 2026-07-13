@@ -4,6 +4,7 @@ export interface DuomiVideoGenerationTask {
     id: string;
     provider: "duomi";
     model: string;
+    deadlineAt: number;
 }
 
 export type DuomiVideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: { url: string; mimeType: "video/mp4" } } | { status: "failed"; error: string };
@@ -12,11 +13,15 @@ export interface DuomiVideoCreateInput {
     path: string;
     body: DuomiVideoRequestBody;
     signal?: AbortSignal;
+    deadlineAt: number;
+    timeout: number;
 }
 
 export interface DuomiVideoPollInput {
     path: string;
     signal?: AbortSignal;
+    deadlineAt: number;
+    timeout: number;
 }
 
 export interface CreateDuomiVideoLifecycleOptions {
@@ -24,12 +29,14 @@ export interface CreateDuomiVideoLifecycleOptions {
     request: DuomiVideoRequest;
     create: (input: DuomiVideoCreateInput) => Promise<unknown>;
     signal?: AbortSignal;
+    now?: () => number;
 }
 
 export interface PollDuomiVideoLifecycleOptions {
     task: DuomiVideoGenerationTask;
     poll: (input: DuomiVideoPollInput) => Promise<unknown>;
     signal?: AbortSignal;
+    now?: () => number;
 }
 
 export function createDuomiVideoLifecycleTask(options: CreateDuomiVideoLifecycleOptions): Promise<DuomiVideoGenerationTask>;
