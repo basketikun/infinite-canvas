@@ -1,8 +1,10 @@
 import { duomiPublicReferenceUrls } from "./duomi-provider-utils.mjs";
+import { DUOMI_IMAGE_MODEL_SUGGESTIONS, mergeFetchedImageModels } from "./duomi-image-provider-utils.mjs";
 import { xaiVideoAspectRatioFromSize } from "./video-provider-utils.mjs";
 
 export const DUOMI_VIDEO_MODELS = ["grok-video-1.5"];
 export const DUOMI_VIDEO_MODEL_SUGGESTIONS = [...DUOMI_VIDEO_MODELS];
+export const DUOMI_CHANNEL_MODEL_SUGGESTIONS = uniqueModels([...DUOMI_IMAGE_MODEL_SUGGESTIONS, ...DUOMI_VIDEO_MODEL_SUGGESTIONS]);
 export const DUOMI_VIDEO_POLL_INTERVAL_MS = 2500;
 export const DUOMI_VIDEO_POLL_MAX_ATTEMPTS = 120;
 
@@ -20,6 +22,11 @@ export function normalizeVideoApiFormat(value) {
 export function mergeFetchedVideoModels(videoApiFormat, currentModels, fetchedModels) {
     if (videoApiFormat !== "duomi") return uniqueModels(fetchedModels);
     return uniqueModels([...currentModels, ...fetchedModels, ...DUOMI_VIDEO_MODEL_SUGGESTIONS]);
+}
+
+export function mergeFetchedChannelModels({ imageApiFormat, videoApiFormat, currentModels, fetchedModels }) {
+    const imageMergedModels = mergeFetchedImageModels(imageApiFormat, currentModels, fetchedModels);
+    return mergeFetchedVideoModels(videoApiFormat, currentModels, imageMergedModels);
 }
 
 export function duomiVideoCreatePath() {

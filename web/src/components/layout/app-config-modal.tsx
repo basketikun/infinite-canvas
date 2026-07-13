@@ -3,8 +3,8 @@ import { CircleAlert, Cloud, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Tras
 import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
-import { DUOMI_IMAGE_MODEL_SUGGESTIONS, mergeFetchedImageModels } from "@/services/api/duomi-image-provider-utils.mjs";
-import { DUOMI_VIDEO_MODEL_SUGGESTIONS, mergeFetchedVideoModels } from "@/services/api/duomi-video-provider-utils.mjs";
+import { DUOMI_IMAGE_MODEL_SUGGESTIONS } from "@/services/api/duomi-image-provider-utils.mjs";
+import { DUOMI_CHANNEL_MODEL_SUGGESTIONS, DUOMI_VIDEO_MODEL_SUGGESTIONS, mergeFetchedChannelModels } from "@/services/api/duomi-video-provider-utils.mjs";
 import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -168,7 +168,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 apiFormat: "openai",
                 imageApiFormat: "duomi",
                 videoApiFormat: "duomi",
-                models: uniqueModels([...DUOMI_IMAGE_MODEL_SUGGESTIONS, ...DUOMI_VIDEO_MODEL_SUGGESTIONS]),
+                models: DUOMI_CHANNEL_MODEL_SUGGESTIONS,
             }),
         ]);
     };
@@ -191,7 +191,14 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             const fetchedModels = await fetchChannelModels(channel);
             const latestConfig = useConfigStore.getState().config;
             updateChannels(
-                latestConfig.channels.map((item) => (item.id === channel.id ? { ...item, models: mergeFetchedChannelModels(item, fetchedModels) } : item)),
+                latestConfig.channels.map((item) =>
+                    item.id === channel.id
+                        ? {
+                              ...item,
+                              models: mergeFetchedChannelModels({ imageApiFormat: item.imageApiFormat, videoApiFormat: item.videoApiFormat, currentModels: item.models, fetchedModels }),
+                          }
+                        : item,
+                ),
                 latestConfig,
             );
             message.success(`${channel.name} 模型列表已更新`);
@@ -216,7 +223,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             updateChannels(
                 latestConfig.channels.map((channel) => {
                     if (!modelMap.has(channel.id)) return channel;
-                    return { ...channel, models: mergeFetchedChannelModels(channel, modelMap.get(channel.id) || []) };
+                    return {
+                        ...channel,
+                        models: mergeFetchedChannelModels({ imageApiFormat: channel.imageApiFormat, videoApiFormat: channel.videoApiFormat, currentModels: channel.models, fetchedModels: modelMap.get(channel.id) || [] }),
+                    };
                 }),
                 latestConfig,
             );
@@ -649,11 +659,6 @@ function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
         textModel: normalizeDefaultModel(config.textModel, textModels),
         audioModel: normalizeDefaultModel(config.audioModel, audioModels),
     };
-}
-
-function mergeFetchedChannelModels(channel: ModelChannel, fetchedModels: string[]) {
-    const imageMergedModels = mergeFetchedImageModels(channel.imageApiFormat, channel.models, fetchedModels);
-    return mergeFetchedVideoModels(channel.videoApiFormat, imageMergedModels, imageMergedModels);
 }
 
 function keepOrSuggest(current: string[], suggested: string[], allModels: string[]) {

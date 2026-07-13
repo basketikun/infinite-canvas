@@ -19,14 +19,23 @@ export interface DuomiVideoRequestBody {
     oversea: false;
 }
 
+export interface ChannelModelRefreshOptions {
+    imageApiFormat: "standard" | "duomi";
+    videoApiFormat: VideoApiFormat;
+    currentModels: string[];
+    fetchedModels: string[];
+}
+
 export const DUOMI_VIDEO_MODELS: string[];
 export const DUOMI_VIDEO_MODEL_SUGGESTIONS: string[];
+export const DUOMI_CHANNEL_MODEL_SUGGESTIONS: string[];
 export const DUOMI_VIDEO_POLL_INTERVAL_MS: number;
 export const DUOMI_VIDEO_POLL_MAX_ATTEMPTS: number;
 
 export function isDuomiVideoModel(model: string): boolean;
 export function normalizeVideoApiFormat(value: unknown): VideoApiFormat;
 export function mergeFetchedVideoModels(videoApiFormat: VideoApiFormat, currentModels: string[], fetchedModels: string[]): string[];
+export function mergeFetchedChannelModels(options: ChannelModelRefreshOptions): string[];
 export function duomiVideoCreatePath(): string;
 export function duomiVideoTaskPath(id: string | number): string;
 export function duomiVideoRequestBody(request: DuomiVideoRequest): DuomiVideoRequestBody;

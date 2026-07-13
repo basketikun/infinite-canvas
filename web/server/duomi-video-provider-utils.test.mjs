@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    DUOMI_CHANNEL_MODEL_SUGGESTIONS,
     DUOMI_VIDEO_MODELS,
     DUOMI_VIDEO_MODEL_SUGGESTIONS,
     DUOMI_VIDEO_POLL_INTERVAL_MS,
@@ -14,6 +15,7 @@ import {
     duomiVideoTaskStatusFromPayload,
     duomiVideoUrlsFromPayload,
     isDuomiVideoModel,
+    mergeFetchedChannelModels,
     mergeFetchedVideoModels,
     normalizeVideoApiFormat,
 } from "../src/services/api/duomi-video-provider-utils.mjs";
@@ -48,6 +50,58 @@ test("merges Duomi current, fetched, and suggested models in first-seen order", 
 
 test("returns unique trimmed fetched models for standard video channels", () => {
     assert.deepEqual(mergeFetchedVideoModels("standard", ["current-model"], [" fetched-model ", "fetched-model", "", " second-model "]), ["fetched-model", "second-model"]);
+});
+
+test("keeps fetched semantics for standard image and video protocols", () => {
+    assert.deepEqual(
+        mergeFetchedChannelModels({
+            imageApiFormat: "standard",
+            videoApiFormat: "standard",
+            currentModels: ["manual-model"],
+            fetchedModels: [" fetched-model ", "fetched-model", " second-model "],
+        }),
+        ["fetched-model", "second-model"],
+    );
+});
+
+test("preserves current models and image suggestions for Duomi image with standard video", () => {
+    assert.deepEqual(
+        mergeFetchedChannelModels({
+            imageApiFormat: "duomi",
+            videoApiFormat: "standard",
+            currentModels: ["custom-image", "shared-model"],
+            fetchedModels: ["fetched-model", "shared-model"],
+        }),
+        ["custom-image", "shared-model", "fetched-model", "gpt-image-2", "gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"],
+    );
+});
+
+test("preserves manual video models for standard image with Duomi video", () => {
+    assert.deepEqual(
+        mergeFetchedChannelModels({
+            imageApiFormat: "standard",
+            videoApiFormat: "duomi",
+            currentModels: [" manual-video ", "shared-model", "manual-video"],
+            fetchedModels: ["fetched-model", "shared-model", "fetched-model"],
+        }),
+        ["manual-video", "shared-model", "fetched-model", "grok-video-1.5"],
+    );
+});
+
+test("merges both Duomi suggestion families in stable first-seen order", () => {
+    assert.deepEqual(
+        mergeFetchedChannelModels({
+            imageApiFormat: "duomi",
+            videoApiFormat: "duomi",
+            currentModels: ["manual-video", "custom-image", "manual-video"],
+            fetchedModels: ["fetched-model", "custom-image", "fetched-model"],
+        }),
+        ["manual-video", "custom-image", "fetched-model", "gpt-image-2", "gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "grok-video-1.5"],
+    );
+});
+
+test("exports the deduped Duomi channel template model union", () => {
+    assert.deepEqual(DUOMI_CHANNEL_MODEL_SUGGESTIONS, ["gpt-image-2", "gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "grok-video-1.5"]);
 });
 
 test("builds the documented creation and encoded task paths", () => {
