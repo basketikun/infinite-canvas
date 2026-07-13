@@ -104,8 +104,16 @@ function isNonPublicIpv4(hostname) {
 }
 
 function isNonPublicIpv6(hostname) {
+    const nat64Ipv4 = nat64Ipv4FromHostname(hostname);
+    if (nat64Ipv4) return isNonPublicIpv4(nat64Ipv4);
     if (PUBLIC_IPV6_CIDRS.some(({ prefix, bits }) => isIpv6InCidr(hostname, prefix, bits))) return false;
     return NON_PUBLIC_IPV6_CIDRS.some(({ prefix, bits }) => isIpv6InCidr(hostname, prefix, bits));
+}
+
+function nat64Ipv4FromHostname(hostname) {
+    const address = ipv6Hextets(hostname);
+    if (address.length !== 8 || address[0] !== 0x64 || address[1] !== 0xff9b || address.slice(2, 6).some(Boolean)) return "";
+    return [address[6] >> 8, address[6] & 255, address[7] >> 8, address[7] & 255].join(".");
 }
 
 function isIpv6InCidr(hostname, prefix, bits) {

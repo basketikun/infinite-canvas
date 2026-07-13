@@ -33,11 +33,17 @@ test("allows IANA globally reachable IPv6 exceptions", () => {
         "https://[2001:4:112::1]/e.png",
         "https://[2001:2f:ffff::1]/f.png",
         "https://[2001:3f:ffff::1]/g.png",
-        "https://[64:ff9b::1]/h.png",
+        "https://[64:ff9b::808:808]/h.png",
         "https://[2620:4f:8000::1]/i.png",
     ];
 
     assert.deepEqual(duomiPublicReferenceUrls(urls), urls);
+});
+
+test("rejects NAT64 addresses that embed non-public IPv4", () => {
+    for (const url of ["http://[64:ff9b::7f00:1]/loopback.png", "http://[64:ff9b::a00:1]/private.png", "http://[64:ff9b::a9fe:a9fe]/metadata.png"]) {
+        assert.throws(() => duomiPublicReferenceUrls([url]), /参考图必须是公网图片 URL/);
+    }
 });
 
 test("rejects invalid and non-public reference URLs", () => {
