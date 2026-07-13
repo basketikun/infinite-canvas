@@ -14,10 +14,11 @@ import {
     xaiVideoResolution,
 } from "../src/services/api/video-provider-utils.mjs";
 
-test("selects the dedicated video model unless config.model is already a video model", () => {
-    assert.equal(typeof videoProviderUtils.videoModelOptionValue, "function");
-    assert.equal(videoProviderUtils.videoModelOptionValue({ model: "default::gpt-image-2", videoModel: "channel-1::grok-video-1.5" }, false), "channel-1::grok-video-1.5");
-    assert.equal(videoProviderUtils.videoModelOptionValue({ model: "channel-2::seedance-2.0", videoModel: "channel-1::grok-video-1.5" }, true), "channel-2::seedance-2.0");
+test("uses the effective Duomi resolution while preserving standard resolution values", () => {
+    assert.equal(typeof videoProviderUtils.effectiveVideoResolution, "function");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("480", "duomi"), "720");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("480", "standard"), "480");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("1440p", "standard"), "1440");
 });
 
 test("recognizes xAI video models without treating ordinary Grok text models as video generators", () => {

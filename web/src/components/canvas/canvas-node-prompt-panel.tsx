@@ -90,7 +90,12 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} />
-                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            <CanvasVideoSettingsPopover
+                                config={config}
+                                selectedModel={config.model}
+                                buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3"
+                                onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))}
+                            />
                         </>
                     ) : mode === "audio" ? (
                         <>
@@ -134,11 +139,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
     const defaultModel = mode === "image" ? globalConfig.imageModel : mode === "video" ? globalConfig.videoModel : mode === "audio" ? globalConfig.audioModel : globalConfig.textModel;
     const fallbackModel = mode === "image" ? defaultConfig.imageModel : mode === "video" ? defaultConfig.videoModel : mode === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
     const currentModel = node.metadata?.model;
-    const model = currentModel && modelMatchesCapability(currentModel, mode)
-        ? currentModel
-        : defaultModel && modelMatchesCapability(defaultModel, mode)
-            ? defaultModel
-            : fallbackModel;
+    const model = currentModel && modelMatchesCapability(currentModel, mode) ? currentModel : defaultModel && modelMatchesCapability(defaultModel, mode) ? defaultModel : fallbackModel;
     return {
         ...globalConfig,
         model,

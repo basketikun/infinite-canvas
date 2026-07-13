@@ -15,8 +15,8 @@ import {
     seedanceResolutionOptions,
 } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { videoModelOptionValue } from "@/services/api/video-provider-utils.mjs";
-import { modelMatchesCapability, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { effectiveVideoResolution } from "@/services/api/video-provider-utils.mjs";
+import { modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
     { value: "720", label: "720p" },
@@ -40,25 +40,25 @@ export const videoSecondOptions = secondOptions.map((value) => String(value));
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
+    selectedModel: string;
     onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
 };
 
-export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
-    const selectedModel = videoModelOptionValue(config, modelMatchesCapability(config.model, "video"));
+export function VideoSettingsPanel({ config, selectedModel, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     const isDuomiVideo = requestConfig.videoApiFormat === "duomi";
     const isSeedanceVideo = isSeedanceVideoConfig({ model: requestConfig.model, videoModel: requestConfig.videoModel, baseUrl: requestConfig.baseUrl });
     if (!isDuomiVideo && isSeedanceVideo) {
-        return <SeedanceVideoSettingsPanel config={requestConfig} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
+        return <SeedanceVideoSettingsPanel config={requestConfig} selectedModel={selectedModel} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
     const seconds = config.videoSeconds || "6";
     const size = normalizeVideoSizeValue(config.size);
     const dimensions = readSizeDimensions(size);
-    const resolution = normalizeVideoResolutionValue(config.vquality);
+    const resolution = effectiveVideoResolution(config.vquality, requestConfig.videoApiFormat);
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
         onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
@@ -72,7 +72,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     {isDuomiVideo ? (
                         <>
                             <div className="grid grid-cols-3 gap-2.5">
-                                <OptionPill selected theme={theme} onClick={() => onConfigChange("vquality", "720")}>
+                                <OptionPill selected={resolution === "720"} theme={theme} onClick={() => onConfigChange("vquality", "720")}>
                                     720p
                                 </OptionPill>
                             </div>
@@ -191,8 +191,8 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
     );
 }
 
-export function videoResolutionLabel(value: string) {
-    return `${normalizeVideoResolutionValue(value)}p`;
+export function videoResolutionLabel(value: string, videoApiFormat: "standard" | "duomi" = "standard") {
+    return `${effectiveVideoResolution(value, videoApiFormat)}p`;
 }
 
 export function videoSizeLabel(value: string) {
@@ -215,9 +215,7 @@ export function normalizeVideoSizeValue(value: string) {
 }
 
 export function normalizeVideoResolutionValue(value: string) {
-    if (value === "480p" || value === "low") return "480";
-    if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
-    return value.replace(/p$/i, "") || "720";
+    return effectiveVideoResolution(value, "standard");
 }
 
 function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
