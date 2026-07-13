@@ -13,6 +13,18 @@ const DUOMI_IMAGE_SIZE_BY_QUALITY = {
 const COMPLETED_STATUSES = new Set(["succeeded", "completed", "success", "done"]);
 const FAILED_STATUSES = new Set(["error", "failed", "cancelled", "canceled", "expired"]);
 const REFERENCE_URL_ERROR = "参考图必须是 1 至 10 个公网图片 URL";
+const NON_PUBLIC_IPV6_CIDRS = [
+    { prefix: "::", bits: 96 },
+    { prefix: "100::", bits: 64 },
+    { prefix: "64:ff9b:1::", bits: 48 },
+    { prefix: "2001:2::", bits: 48 },
+    { prefix: "2001:db8::", bits: 32 },
+    { prefix: "3fff::", bits: 20 },
+    { prefix: "fc00::", bits: 7 },
+    { prefix: "fe80::", bits: 10 },
+    { prefix: "fec0::", bits: 10 },
+    { prefix: "ff00::", bits: 8 },
+];
 
 export function isDuomiImageModel(model) {
     return DUOMI_IMAGE_MODELS.includes(String(model || "").trim());
@@ -121,7 +133,7 @@ function mappedIpv4FromHostname(hostname) {
 function isNonPublicIpv4(hostname) {
     const octets = hostname.split(".");
     if (octets.length !== 4 || octets.some((value) => !/^\d+$/.test(value) || Number(value) > 255)) return false;
-    const [first, second, third] = octets.map(Number);
+    const [first, second, third, fourth] = octets.map(Number);
     return (
         first === 0 ||
         first === 10 ||
@@ -130,7 +142,8 @@ function isNonPublicIpv4(hostname) {
         (first === 169 && second === 254) ||
         (first === 172 && second >= 16 && second <= 31) ||
         (first === 192 && second === 168) ||
-        (first === 192 && second === 0 && (third === 0 || third === 2)) ||
+        (first === 192 && second === 0 && third === 0 && fourth !== 9 && fourth !== 10) ||
+        (first === 192 && second === 0 && third === 2) ||
         (first === 192 && second === 88 && third === 99) ||
         (first === 198 && (second === 18 || second === 19)) ||
         (first === 198 && second === 51 && third === 100) ||
@@ -140,10 +153,32 @@ function isNonPublicIpv4(hostname) {
 }
 
 function isNonPublicIpv6(hostname) {
+    return NON_PUBLIC_IPV6_CIDRS.some(({ prefix, bits }) => isIpv6InCidr(hostname, prefix, bits));
+}
+
+function isIpv6InCidr(hostname, prefix, bits) {
+    const address = ipv6Hextets(hostname);
+    const network = ipv6Hextets(prefix);
+    if (address.length !== 8 || network.length !== 8) return false;
+    const wholeHextets = Math.floor(bits / 16);
+    for (let index = 0; index < wholeHextets; index += 1) {
+        if (address[index] !== network[index]) return false;
+    }
+    const remainingBits = bits % 16;
+    if (!remainingBits) return true;
+    const mask = (0xffff << (16 - remainingBits)) & 0xffff;
+    return (address[wholeHextets] & mask) === (network[wholeHextets] & mask);
+}
+
+function ipv6Hextets(hostname) {
     const value = hostname.replace(/^\[|\]$/g, "");
-    if (value.startsWith("::")) return true;
-    const first = Number.parseInt(value.split(":", 1)[0], 16);
-    return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xffc0) === 0xfec0 || (first & 0xff00) === 0xff00;
+    const separatorIndex = value.indexOf("::");
+    const left = (separatorIndex < 0 ? value : value.slice(0, separatorIndex)).split(":").filter(Boolean);
+    const right = (separatorIndex < 0 ? "" : value.slice(separatorIndex + 2)).split(":").filter(Boolean);
+    const missing = separatorIndex < 0 ? 0 : 8 - left.length - right.length;
+    const parts = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
+    if (parts.length !== 8 || parts.some((part) => !/^[\da-f]{1,4}$/.test(part))) return [];
+    return parts.map((part) => Number.parseInt(part, 16));
 }
 
 function isRecord(value) {
