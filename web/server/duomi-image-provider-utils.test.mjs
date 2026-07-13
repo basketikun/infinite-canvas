@@ -144,7 +144,7 @@ test("prefers Nano task messages, then top-level messages, then error messages",
 });
 
 test("accepts one through ten public HTTP or HTTPS reference URLs", () => {
-    const urls = ["https://assets.example.com/a.png", "http://8.8.8.8/b.png"];
+    const urls = ["https://assets.example.com/a.png", "http://8.8.8.8/b.png", "https://[2001:4860:4860::8888]/c.png", "https://[::ffff:8.8.4.4]/d.png"];
     assert.deepEqual(duomiReferenceUrls(urls), urls);
     assert.notEqual(duomiReferenceUrls(urls), urls);
     assert.deepEqual(duomiReferenceUrls(Array.from({ length: 10 }, (_, index) => `https://assets.example.com/${index}.png`)).length, 10);
@@ -160,15 +160,38 @@ test("rejects invalid, local, loopback, and private reference URLs", () => {
         ["http://localhost/a.png"],
         ["http://preview.localhost/a.png"],
         ["http://127.0.0.1/a.png"],
+        ["http://0.1.2.3/a.png"],
+        ["http://100.64.0.1/a.png"],
+        ["http://100.127.255.255/a.png"],
+        ["http://169.254.1.1/a.png"],
         ["http://[::1]/a.png"],
+        ["http://[::]/a.png"],
+        ["http://[fc00::1]/a.png"],
+        ["http://[fdff::1]/a.png"],
+        ["http://[fe80::1]/a.png"],
+        ["http://[febf::1]/a.png"],
+        ["http://[ff02::1]/a.png"],
         ["http://10.0.0.1/a.png"],
         ["http://172.16.0.1/a.png"],
         ["http://172.31.255.255/a.png"],
         ["http://192.168.1.1/a.png"],
+        ["http://192.0.2.1/a.png"],
+        ["http://198.18.0.1/a.png"],
+        ["http://198.51.100.1/a.png"],
+        ["http://203.0.113.1/a.png"],
+        ["http://224.0.0.1/a.png"],
+        ["http://239.255.255.255/a.png"],
+        ["http://240.0.0.1/a.png"],
+        ["http://255.255.255.255/a.png"],
         ["http://[::ffff:127.0.0.1]/a.png"],
+        ["http://[::ffff:0.1.2.3]/a.png"],
+        ["http://[::ffff:100.64.0.1]/a.png"],
+        ["http://[::ffff:169.254.1.1]/a.png"],
         ["http://[::ffff:10.0.0.1]/a.png"],
         ["http://[::ffff:172.16.0.1]/a.png"],
         ["http://[::ffff:192.168.1.1]/a.png"],
+        ["http://[::ffff:224.0.0.1]/a.png"],
+        ["http://[::ffff:255.255.255.255]/a.png"],
         ["not a URL"],
     ]) {
         assert.throws(() => duomiReferenceUrls(urls), /公网图片 URL|1 至 10/);

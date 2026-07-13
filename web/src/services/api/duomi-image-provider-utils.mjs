@@ -101,8 +101,10 @@ function isPublicHttpUrl(value) {
         const url = new URL(value);
         if (url.protocol !== "http:" && url.protocol !== "https:") return false;
         const hostname = url.hostname.toLowerCase().replace(/\.+$/, "");
-        if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "::1" || hostname === "[::1]") return false;
-        return !isPrivateOrLoopbackIpv4(mappedIpv4FromHostname(hostname) || hostname);
+        if (hostname === "localhost" || hostname.endsWith(".localhost")) return false;
+        const mappedIpv4 = mappedIpv4FromHostname(hostname);
+        if (mappedIpv4) return !isNonPublicIpv4(mappedIpv4);
+        return hostname.includes(":") ? !isNonPublicIpv6(hostname) : !isNonPublicIpv4(hostname);
     } catch {
         return false;
     }
@@ -116,11 +118,32 @@ function mappedIpv4FromHostname(hostname) {
     return [high >> 8, high & 255, low >> 8, low & 255].join(".");
 }
 
-function isPrivateOrLoopbackIpv4(hostname) {
+function isNonPublicIpv4(hostname) {
     const octets = hostname.split(".");
     if (octets.length !== 4 || octets.some((value) => !/^\d+$/.test(value) || Number(value) > 255)) return false;
-    const [first, second] = octets.map(Number);
-    return first === 127 || first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
+    const [first, second, third] = octets.map(Number);
+    return (
+        first === 0 ||
+        first === 10 ||
+        (first === 100 && second >= 64 && second <= 127) ||
+        first === 127 ||
+        (first === 169 && second === 254) ||
+        (first === 172 && second >= 16 && second <= 31) ||
+        (first === 192 && second === 168) ||
+        (first === 192 && second === 0 && (third === 0 || third === 2)) ||
+        (first === 192 && second === 88 && third === 99) ||
+        (first === 198 && (second === 18 || second === 19)) ||
+        (first === 198 && second === 51 && third === 100) ||
+        (first === 203 && second === 0 && third === 113) ||
+        first >= 224
+    );
+}
+
+function isNonPublicIpv6(hostname) {
+    const value = hostname.replace(/^\[|\]$/g, "");
+    if (value.startsWith("::")) return true;
+    const first = Number.parseInt(value.split(":", 1)[0], 16);
+    return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xffc0) === 0xfec0 || (first & 0xff00) === 0xff00;
 }
 
 function isRecord(value) {
