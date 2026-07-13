@@ -171,6 +171,18 @@ test("treats every explicit provider error message as a failed task", () => {
     assert.equal(duomiVideoTaskStatusFromPayload({ state: "succeeded", data: { error: { message: "结果失效" } } }), "failed");
 });
 
+test("treats trimmed top-level and nested error strings as provider failures", () => {
+    const topLevelError = { state: "running", error: "  quota exceeded  " };
+    const nestedError = { state: "running", data: { error: "  content rejected  " } };
+
+    assert.equal(duomiVideoTaskErrorMessage(topLevelError), "quota exceeded");
+    assert.equal(duomiVideoTaskStatusFromPayload(topLevelError), "failed");
+    assert.equal(duomiVideoTaskErrorMessage(nestedError), "content rejected");
+    assert.equal(duomiVideoTaskStatusFromPayload(nestedError), "failed");
+    assert.equal(duomiVideoTaskErrorMessage({ error: "   ", data: { error: "  " } }), "");
+    assert.equal(duomiVideoTaskStatusFromPayload({ state: "running", error: "   ", data: { error: "  " } }), "pending");
+});
+
 test("extracts provider errors with deterministic top-level then data precedence", () => {
     const payload = {
         msg: "  top msg  ",

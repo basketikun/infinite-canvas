@@ -65,8 +65,8 @@ export function duomiVideoTaskStatusFromPayload(payload) {
 export function duomiVideoTaskErrorMessage(payload) {
     if (!isRecord(payload)) return "";
     const data = isRecord(payload.data) ? payload.data : undefined;
-    const topLevelError = isRecord(payload.error) ? payload.error.message : undefined;
-    const dataError = isRecord(data?.error) ? data.error.message : undefined;
+    const topLevelError = errorMessage(payload.error);
+    const dataError = errorMessage(data?.error);
     return [payload.msg, payload.message, topLevelError, data?.msg, data?.message, dataError].find(isNonEmptyString)?.trim() || "";
 }
 
@@ -87,6 +87,11 @@ function normalizeDuration(value) {
 function normalizedId(value) {
     if (typeof value === "string") return value.trim();
     return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function errorMessage(value) {
+    if (typeof value === "string") return value;
+    return isRecord(value) ? value.message : undefined;
 }
 
 function isNonEmptyString(value) {
