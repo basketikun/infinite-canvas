@@ -18,6 +18,7 @@ const DUOMI_IMAGE_SIZE_BY_QUALITY = {
 };
 const COMPLETED_STATUSES = new Set(["succeeded", "completed", "success", "done"]);
 const FAILED_STATUSES = new Set(["error", "failed", "cancelled", "canceled", "expired"]);
+const PENDING_STATUSES = new Set(["pending", "running", "queued", "processing"]);
 const REFERENCE_URL_ERROR = "参考图必须是 1 至 10 个公网图片 URL";
 const PUBLIC_IPV6_CIDRS = [
     { prefix: "2001:1::1", bits: 128 },
@@ -79,6 +80,10 @@ export function duomiRequestHeaders(baseUrl, apiKey, useProxy, proxyHeaders = {}
     };
 }
 
+export function isDuomiRequestTimeout(error) {
+    return isRecord(error) && (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT");
+}
+
 export function duomiImageRequestBody({ model, prompt, size, quality, referenceUrls }) {
     const normalizedSize = String(size || "").trim();
     const normalizedQuality = String(quality || "")
@@ -106,25 +111,26 @@ export function duomiImageRequestBody({ model, prompt, size, quality, referenceU
 export function duomiTaskIdFromPayload(model, payload) {
     if (!isRecord(payload)) return "";
     const value = isDuomiNanoBananaModel(model) && isRecord(payload.data) ? payload.data.task_id : payload.id;
-    return String(value ?? "");
+    if (typeof value === "string") return value.trim();
+    return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
 export function duomiTaskStatusFromPayload(model, payload) {
-    if (!isRecord(payload)) return "pending";
+    if (!isRecord(payload) || duomiTaskErrorMessage(model, payload)) return "failed";
     const value = isDuomiNanoBananaModel(model) && isRecord(payload.data) ? payload.data.state : payload.state;
     const normalized = String(value || "")
         .trim()
         .toLowerCase();
     if (COMPLETED_STATUSES.has(normalized)) return "completed";
     if (FAILED_STATUSES.has(normalized)) return "failed";
-    return "pending";
+    return PENDING_STATUSES.has(normalized) ? "pending" : "failed";
 }
 
 export function duomiImageUrlsFromPayload(model, payload) {
     if (!isRecord(payload) || !isRecord(payload.data)) return [];
     const images = isDuomiNanoBananaModel(model) ? (isRecord(payload.data.data) ? payload.data.data.images : undefined) : payload.data.images;
     if (!Array.isArray(images)) return [];
-    return images.map((image) => (isRecord(image) ? image.url : undefined)).filter((url) => typeof url === "string" && url.length > 0);
+    return images.map((image) => (isRecord(image) && typeof image.url === "string" ? image.url.trim() : "")).filter(Boolean);
 }
 
 export function duomiTaskErrorMessage(model, payload) {
@@ -223,5 +229,6 @@ function isRecord(value) {
 function normalizedBaseUrl(baseUrl) {
     return String(baseUrl || "")
         .trim()
-        .replace(/\/+$/, "");
+        .replace(/\/+$/, "")
+        .replace(/\/v1$/i, "");
 }

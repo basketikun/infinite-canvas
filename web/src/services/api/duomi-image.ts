@@ -1,19 +1,8 @@
 import axios from "axios";
 import { nanoid } from "nanoid";
 
-import {
-    DUOMI_POLL_INTERVAL_MS,
-    DUOMI_POLL_MAX_ATTEMPTS,
-    duomiCreatePath,
-    duomiImageRequestBody,
-    duomiImageUrlsFromPayload,
-    duomiRequestHeaders,
-    duomiRequestUrl,
-    duomiTaskErrorMessage,
-    duomiTaskIdFromPayload,
-    duomiTaskPath,
-    duomiTaskStatusFromPayload,
-} from "@/services/api/duomi-image-provider-utils.mjs";
+import { runDuomiImageLifecycle } from "@/services/api/duomi-image-lifecycle.mjs";
+import { DUOMI_POLL_INTERVAL_MS, DUOMI_POLL_MAX_ATTEMPTS, duomiCreatePath, duomiImageRequestBody, duomiRequestHeaders, duomiRequestUrl, duomiTaskPath, duomiTaskErrorMessage, isDuomiRequestTimeout } from "@/services/api/duomi-image-provider-utils.mjs";
 import { AI_PROXY_TARGET_HEADER, buildAiProxyHeaders, buildApiUrl, type AiConfig } from "@/stores/use-config-store";
 
 type DuomiConfig = Pick<AiConfig, "baseUrl" | "apiKey" | "useProxy">;
@@ -22,33 +11,28 @@ type RequestOptions = { signal?: AbortSignal };
 type GeneratedImage = { id: string; dataUrl: string };
 
 const DUOMI_IMAGE_ERROR = "多米图片生成失败";
+const DUOMI_TIMEOUT_ERROR = "多米图片生成超时，请稍后重试";
 
 export async function requestDuomiImages(config: DuomiConfig, request: DuomiImageRequest, options?: RequestOptions): Promise<GeneratedImage[]> {
     const signal = options?.signal;
+    const createPath = duomiCreatePath(request.model, request.referenceUrls);
 
     try {
-        const createPath = duomiCreatePath(request.model, request.referenceUrls);
-        const created = await axios.post<unknown>(duomiApiUrl(config, createPath), duomiImageRequestBody(request), { headers: duomiHeaders(config), signal });
-        const taskId = duomiTaskIdFromPayload(request.model, created.data).trim();
-        if (!taskId) throw new Error("多米图片任务创建响应缺少任务 ID");
-
-        for (let attempt = 0; attempt < DUOMI_POLL_MAX_ATTEMPTS; attempt += 1) {
-            await delay(DUOMI_POLL_INTERVAL_MS, signal);
-            const taskPath = duomiTaskPath(request.model, taskId);
-            const task = await axios.get<unknown>(duomiApiUrl(config, taskPath), { headers: duomiHeaders(config), signal });
-            const status = duomiTaskStatusFromPayload(request.model, task.data);
-
-            if (status === "completed") {
-                const urls = duomiImageUrlsFromPayload(request.model, task.data);
-                if (!urls.length) throw new Error(`多米图片任务 ${taskId} 已完成但没有返回图片 URL`);
-                return urls.map((url) => ({ id: nanoid(), dataUrl: url }));
-            }
-            if (status === "failed") throw new Error(duomiTaskErrorMessage(request.model, task.data) || DUOMI_IMAGE_ERROR);
-        }
-
-        throw new Error("多米图片生成超时，请稍后重试");
+        return await runDuomiImageLifecycle({
+            model: request.model,
+            signal,
+            interval: DUOMI_POLL_INTERVAL_MS,
+            maxAttempts: DUOMI_POLL_MAX_ATTEMPTS,
+            timeout: DUOMI_POLL_INTERVAL_MS * DUOMI_POLL_MAX_ATTEMPTS,
+            now: Date.now,
+            makeId: nanoid,
+            wait: delay,
+            create: async ({ signal: requestSignal, timeout }) => (await axios.post<unknown>(duomiApiUrl(config, createPath), duomiImageRequestBody(request), { headers: duomiHeaders(config), signal: requestSignal, timeout })).data,
+            poll: async (taskId, { signal: requestSignal, timeout }) => (await axios.get<unknown>(duomiApiUrl(config, duomiTaskPath(request.model, taskId)), { headers: duomiHeaders(config), signal: requestSignal, timeout })).data,
+        });
     } catch (error) {
         if (isAbort(error, signal)) throw abortError(error);
+        if (isDuomiRequestTimeout(error)) throw new Error(DUOMI_TIMEOUT_ERROR);
         if (axios.isAxiosError(error)) throw new Error(duomiHttpErrorMessage(error, request.model));
         if (error instanceof Error) throw error;
         throw new Error(DUOMI_IMAGE_ERROR);

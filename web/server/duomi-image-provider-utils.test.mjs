@@ -16,6 +16,7 @@ import {
     duomiTaskIdFromPayload,
     duomiTaskPath,
     duomiTaskStatusFromPayload,
+    isDuomiRequestTimeout,
     isDuomiImageModel,
     isDuomiNanoBananaModel,
     mergeFetchedImageModels,
@@ -81,8 +82,11 @@ test("builds direct and proxied Duomi URLs without adding API path segments", ()
     const gptPath = "/v1/images/generations";
     const nanoPath = "/api/gemini/nano-banana";
 
+    assert.equal(duomiRequestUrl("https://duomi.example.com", gptPath, false, ""), "https://duomi.example.com/v1/images/generations");
     assert.equal(duomiRequestUrl("https://duomi.example.com/", gptPath, false, ""), "https://duomi.example.com/v1/images/generations");
+    assert.equal(duomiRequestUrl("https://duomi.example.com/v1/", gptPath, false, ""), "https://duomi.example.com/v1/images/generations");
     assert.equal(duomiRequestUrl("https://duomi.example.com/", nanoPath, false, ""), "https://duomi.example.com/api/gemini/nano-banana");
+    assert.equal(duomiRequestUrl("https://duomi.example.com/v1", nanoPath, false, ""), "https://duomi.example.com/api/gemini/nano-banana");
     assert.equal(duomiRequestUrl("https://duomi.example.com/", gptPath, true, `/api/ai-proxy${gptPath}`), "/api/ai-proxy/v1/images/generations");
     assert.equal(duomiRequestUrl("https://duomi.example.com/", nanoPath, true, `/api/ai-proxy${nanoPath}`), "/api/ai-proxy/api/gemini/nano-banana");
 });
@@ -100,6 +104,14 @@ test("keeps raw authorization and the original Duomi proxy target", () => {
         [targetHeader]: "https://duomi.example.com",
         "x-extra": "kept",
     });
+    assert.equal(duomiRequestHeaders("https://duomi.example.com/v1/", "secret-key", true, { [targetHeader]: "https://duomi.example.com/v1" }, targetHeader)[targetHeader], "https://duomi.example.com");
+});
+
+test("distinguishes Axios deadline timeouts from user cancellation", () => {
+    assert.equal(isDuomiRequestTimeout({ code: "ECONNABORTED" }), true);
+    assert.equal(isDuomiRequestTimeout({ code: "ETIMEDOUT" }), true);
+    assert.equal(isDuomiRequestTimeout({ code: "ERR_CANCELED" }), false);
+    assert.equal(isDuomiRequestTimeout(null), false);
 });
 
 test("builds Nano Banana request bodies and maps image quality", () => {
@@ -161,6 +173,12 @@ test("keeps gpt-image-2 request bodies limited to documented fields", () => {
 test("reads model-specific task ids", () => {
     assert.equal(duomiTaskIdFromPayload("gpt-image-2", { id: "openai-task", data: { task_id: "wrong" } }), "openai-task");
     assert.equal(duomiTaskIdFromPayload("gemini-2.5-flash-image", { id: "wrong", data: { task_id: "nano-task" } }), "nano-task");
+    assert.equal(duomiTaskIdFromPayload("gpt-image-2", { id: "  trimmed-task  " }), "trimmed-task");
+    assert.equal(duomiTaskIdFromPayload("gpt-image-2", { id: 0 }), "0");
+    assert.equal(duomiTaskIdFromPayload("gpt-image-2", { id: 42 }), "42");
+    assert.equal(duomiTaskIdFromPayload("gpt-image-2", { id: {} }), "");
+    assert.equal(duomiTaskIdFromPayload("gpt-image-2", { id: Number.NaN }), "");
+    assert.equal(duomiTaskIdFromPayload("gpt-image-2", { id: Number.POSITIVE_INFINITY }), "");
     assert.equal(duomiTaskIdFromPayload("gpt-image-2", null), "");
 });
 
@@ -173,8 +191,13 @@ test("normalizes completed, failed, and pending task statuses", () => {
         assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { state: status }), "failed");
         assert.equal(duomiTaskStatusFromPayload("gemini-3-pro-image-preview", { data: { state: status.toUpperCase() } }), "failed");
     }
-    assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { state: "running" }), "pending");
-    assert.equal(duomiTaskStatusFromPayload("gemini-2.5-flash-image", {}), "pending");
+    for (const status of ["pending", "running", "queued", "processing"]) {
+        assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { state: status }), "pending");
+    }
+    assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { state: "running", msg: "内容被拒绝" }), "failed");
+    assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { state: "unexpected-provider-state" }), "failed");
+    assert.equal(duomiTaskStatusFromPayload("gemini-2.5-flash-image", {}), "failed");
+    assert.equal(duomiTaskStatusFromPayload("gemini-2.5-flash-image", { data: { state: null } }), "failed");
 });
 
 test("reads image URLs from model-specific response shapes", () => {
@@ -184,6 +207,7 @@ test("reads image URLs from model-specific response shapes", () => {
     ]);
     assert.deepEqual(duomiImageUrlsFromPayload("gemini-2.5-flash-image", { data: { data: { images: [{ url: "https://cdn.example.com/nano.png" }] } } }), ["https://cdn.example.com/nano.png"]);
     assert.deepEqual(duomiImageUrlsFromPayload("gemini-2.5-flash-image", { data: { images: [{ url: "https://cdn.example.com/wrong-shape.png" }] } }), []);
+    assert.deepEqual(duomiImageUrlsFromPayload("gpt-image-2", { data: { images: [{ url: "  https://cdn.example.com/trimmed.png  " }, { url: "   " }] } }), ["https://cdn.example.com/trimmed.png"]);
 });
 
 test("prefers Nano task messages, then top-level messages, then error messages", () => {

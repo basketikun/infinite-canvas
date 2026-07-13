@@ -31,6 +31,7 @@ export function duomiCreatePath(model: string, referenceUrls: string[]): string;
 export function duomiTaskPath(model: string, id: string): string;
 export function duomiRequestUrl(baseUrl: string, path: string, useProxy: boolean, proxyUrl: string): string;
 export function duomiRequestHeaders(baseUrl: string, apiKey: string, useProxy: boolean, proxyHeaders?: Record<string, string>, proxyTargetHeader?: string): Record<string, string>;
+export function isDuomiRequestTimeout(error: unknown): boolean;
 export function duomiImageRequestBody(request: DuomiImageRequest): DuomiImageRequestBody;
 export function duomiTaskIdFromPayload(model: string, payload: unknown): string;
 export function duomiTaskStatusFromPayload(model: string, payload: unknown): DuomiTaskStatus;
