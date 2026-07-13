@@ -31,9 +31,10 @@ export function duomiVideoTaskPath(id) {
 }
 
 export function duomiVideoRequestBody({ model, prompt, size, seconds, referenceUrls }) {
-    if (!isDuomiVideoModel(model)) throw new Error(`${model} 不是已确认的多米视频模型`);
+    const normalizedModel = String(model || "").trim();
+    if (!DUOMI_VIDEO_MODELS.includes(normalizedModel)) throw new Error(`${normalizedModel || model} 不是已确认的多米视频模型`);
     return {
-        model,
+        model: normalizedModel,
         prompt,
         aspect_ratio: xaiVideoAspectRatioFromSize(size),
         duration: normalizeDuration(seconds),
@@ -53,8 +54,7 @@ export function duomiVideoTaskIdFromPayload(payload) {
 export function duomiVideoTaskStatusFromPayload(payload) {
     if (!isRecord(payload)) return "pending";
     if (duomiVideoTaskErrorMessage(payload)) return "failed";
-    const data = isRecord(payload.data) ? payload.data : undefined;
-    const normalized = String(payload.state ?? payload.status ?? data?.state ?? data?.status ?? "")
+    const normalized = String(payload.state ?? "")
         .trim()
         .toLowerCase();
     if (COMPLETED_STATUSES.has(normalized)) return "completed";
@@ -72,7 +72,7 @@ export function duomiVideoTaskErrorMessage(payload) {
 
 export function duomiVideoUrlsFromPayload(payload) {
     if (!isRecord(payload) || !isRecord(payload.data) || !Array.isArray(payload.data.videos)) return [];
-    return payload.data.videos.map((video) => (isRecord(video) && typeof video.url === "string" ? video.url.trim() : "")).filter(Boolean);
+    return payload.data.videos.map((video) => (isRecord(video) ? publicVideoUrl(video.url) : "")).filter(Boolean);
 }
 
 function uniqueModels(models) {
@@ -92,6 +92,16 @@ function normalizedId(value) {
 function errorMessage(value) {
     if (typeof value === "string") return value;
     return isRecord(value) ? value.message : undefined;
+}
+
+function publicVideoUrl(value) {
+    if (typeof value !== "string") return "";
+    const normalized = value.trim();
+    try {
+        return duomiPublicReferenceUrls([normalized], { min: 1, max: 1 })[0] || "";
+    } catch {
+        return "";
+    }
 }
 
 function isNonEmptyString(value) {

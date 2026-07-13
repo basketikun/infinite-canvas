@@ -57,7 +57,7 @@ test("builds the documented creation and encoded task paths", () => {
 test("builds the exact Duomi video request shape", () => {
     assert.deepEqual(
         duomiVideoRequestBody({
-            model: "grok-video-1.5",
+            model: "  grok-video-1.5  ",
             prompt: "海边灯塔",
             size: "1280x720",
             seconds: "6",
@@ -166,6 +166,20 @@ test("normalizes completed, failed, and unknown Duomi task statuses", () => {
     assert.equal(duomiVideoTaskStatusFromPayload({}), "pending");
 });
 
+test("ignores undocumented status aliases outside top-level state", () => {
+    assert.equal(duomiVideoTaskStatusFromPayload({ status: "succeeded" }), "pending");
+    assert.equal(duomiVideoTaskStatusFromPayload({ data: { state: "succeeded" } }), "pending");
+    assert.equal(duomiVideoTaskStatusFromPayload({ data: { status: "succeeded" } }), "pending");
+    assert.equal(
+        duomiVideoTaskStatusFromPayload({
+            state: "provider-new-running-state",
+            status: "succeeded",
+            data: { state: "succeeded", status: "succeeded" },
+        }),
+        "pending",
+    );
+});
+
 test("treats every explicit provider error message as a failed task", () => {
     assert.equal(duomiVideoTaskStatusFromPayload({ state: "running", message: "内容被拒绝" }), "failed");
     assert.equal(duomiVideoTaskStatusFromPayload({ state: "succeeded", data: { error: { message: "结果失效" } } }), "failed");
@@ -215,6 +229,33 @@ test("reads and trims only data.videos URL results", () => {
         }),
         ["https://cdn.example.com/a.mp4", "https://cdn.example.com/b.mp4"],
     );
+});
+
+test("keeps only public HTTP or HTTPS video result URLs in provider order", () => {
+    const signedUrl = "https://cdn.example.com/video.mp4?X-Amz-Signature=a%2Fb&response-content-type=video%2Fmp4";
+    const publicIpv4Url = "http://8.8.8.8/video.mp4?token=public";
+    const payload = {
+        data: {
+            videos: [
+                { url: `  ${signedUrl}  ` },
+                { url: "not a url" },
+                { url: "javascript:alert(1)" },
+                { url: "file:///C:/video.mp4" },
+                { url: "http://localhost/video.mp4" },
+                { url: "http://127.0.0.1/video.mp4" },
+                { url: "http://10.0.0.1/video.mp4" },
+                { url: "http://172.16.0.1/video.mp4" },
+                { url: "http://192.168.0.1/video.mp4" },
+                { url: "http://169.254.1.1/video.mp4" },
+                { url: "http://203.0.113.1/video.mp4" },
+                { url: "http://[::1]/video.mp4" },
+                { url: "http://[fe80::1]/video.mp4" },
+                { url: publicIpv4Url },
+            ],
+        },
+    };
+
+    assert.deepEqual(duomiVideoUrlsFromPayload(payload), [signedUrl, publicIpv4Url]);
 });
 
 test("returns empty results for unrelated or empty response shapes", () => {
