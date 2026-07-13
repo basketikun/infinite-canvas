@@ -5,8 +5,9 @@ import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
+import { requestDuomiImageBatch } from "@/services/api/duomi-image-batch.mjs";
 import { requestDuomiImages } from "@/services/api/duomi-image";
-import { duomiReferenceUrls, isDuomiImageModel, isDuomiNanoBananaModel } from "@/services/api/duomi-image-provider-utils.mjs";
+import { duomiImageRequestSize, duomiReferenceUrls, isDuomiImageModel, isDuomiNanoBananaModel } from "@/services/api/duomi-image-provider-utils.mjs";
 import type { ReferenceImage } from "@/types/image";
 
 export type AiTextMessage = {
@@ -641,21 +642,23 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     if (requestConfig.imageApiFormat === "duomi") {
         if (!isDuomiImageModel(requestConfig.model)) throw new Error("当前模型不是已确认的多米图片模型");
         const quality = normalizeQuality(config.quality);
-        const size = isDuomiNanoBananaModel(requestConfig.model) ? config.size : resolveRequestSize(quality, config.size) || "auto";
-        const requests = Array.from({ length: n }, () =>
-            requestDuomiImages(
-                requestConfig,
-                {
-                    model: requestConfig.model,
-                    prompt: withSystemPrompt(requestConfig, prompt),
-                    size,
-                    quality: quality || "auto",
-                    referenceUrls: [],
-                },
-                options,
-            ),
-        );
-        return (await Promise.all(requests)).flat();
+        const size = isDuomiNanoBananaModel(requestConfig.model) ? duomiImageRequestSize(requestConfig.model, config.size) : resolveRequestSize(quality, config.size) || "auto";
+        return requestDuomiImageBatch({
+            count: n,
+            signal: options?.signal,
+            request: (_index, { signal }) =>
+                requestDuomiImages(
+                    requestConfig,
+                    {
+                        model: requestConfig.model,
+                        prompt: withSystemPrompt(requestConfig, prompt),
+                        size,
+                        quality: quality || "auto",
+                        referenceUrls: [],
+                    },
+                    { signal },
+                ),
+        });
     }
     if (requestConfig.apiFormat === "gemini") {
         try {
@@ -700,20 +703,23 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         if (mask) throw new Error("多米图片编辑暂不支持蒙版");
         const referenceUrls = duomiReferenceUrls(references.map((image) => image.url || image.dataUrl));
         const quality = normalizeQuality(config.quality);
-        const requests = Array.from({ length: n }, () =>
-            requestDuomiImages(
-                requestConfig,
-                {
-                    model: requestConfig.model,
-                    prompt: withSystemPrompt(requestConfig, requestPrompt),
-                    size: config.size,
-                    quality: quality || "auto",
-                    referenceUrls,
-                },
-                options,
-            ),
-        );
-        return (await Promise.all(requests)).flat();
+        const size = duomiImageRequestSize(requestConfig.model, config.size);
+        return requestDuomiImageBatch({
+            count: n,
+            signal: options?.signal,
+            request: (_index, { signal }) =>
+                requestDuomiImages(
+                    requestConfig,
+                    {
+                        model: requestConfig.model,
+                        prompt: withSystemPrompt(requestConfig, requestPrompt),
+                        size,
+                        quality: quality || "auto",
+                        referenceUrls,
+                    },
+                    { signal },
+                ),
+        });
     }
     if (requestConfig.apiFormat === "gemini") {
         if (mask) throw new Error("Gemini 调用格式暂不支持蒙版编辑");

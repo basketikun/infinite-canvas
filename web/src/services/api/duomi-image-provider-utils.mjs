@@ -10,6 +10,7 @@ export function mergeFetchedImageModels(imageApiFormat, currentModels, fetchedMo
 
 const DUOMI_NANO_BANANA_MODELS = DUOMI_IMAGE_MODELS.slice(1);
 const DUOMI_NANO_BANANA_ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+const DUOMI_NANO_BANANA_SIZE_ERROR = `多米 NANO 图片尺寸仅支持 auto、${DUOMI_NANO_BANANA_ASPECT_RATIOS.join("、")} 或正整数 WIDTHxHEIGHT`;
 const DUOMI_IMAGE_SIZE_BY_QUALITY = {
     low: "1K",
     medium: "2K",
@@ -61,9 +62,13 @@ export function isDuomiNanoBananaModel(model) {
 export function duomiImageRequestSize(model, size) {
     const normalizedSize = String(size || "").trim();
     if (!isDuomiNanoBananaModel(model)) return normalizedSize;
+    if (normalizedSize.toLowerCase() === "auto") return "auto";
+    if (DUOMI_NANO_BANANA_ASPECT_RATIOS.includes(normalizedSize)) return normalizedSize;
     const dimensions = normalizedSize.match(/^(\d+)x(\d+)$/i);
-    if (!dimensions) return normalizedSize;
-    const target = Number(dimensions[1]) / Number(dimensions[2]);
+    const width = Number(dimensions?.[1]);
+    const height = Number(dimensions?.[2]);
+    if (!dimensions || width <= 0 || height <= 0) throw new Error(DUOMI_NANO_BANANA_SIZE_ERROR);
+    const target = width / height;
     return DUOMI_NANO_BANANA_ASPECT_RATIOS.reduce((best, item) => {
         const [width, height] = item.split(":").map(Number);
         const [bestWidth, bestHeight] = best.split(":").map(Number);

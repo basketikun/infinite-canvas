@@ -8,6 +8,7 @@ import {
     DUOMI_POLL_MAX_ATTEMPTS,
     duomiCreatePath,
     duomiImageRequestBody,
+    duomiImageRequestSize,
     duomiImageUrlsFromPayload,
     duomiReferenceUrls,
     duomiRequestHeaders,
@@ -154,6 +155,23 @@ test("maps Nano Banana pixel sizes to the nearest supported aspect ratio", () =>
         aspect_ratio: "4:5",
         image_size: "4K",
     });
+});
+
+test("accepts only documented Nano Banana sizes and maps pixel ties consistently", () => {
+    for (const ratio of ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]) {
+        assert.equal(duomiImageRequestSize("gemini-2.5-flash-image", ratio), ratio);
+    }
+    assert.equal(duomiImageRequestSize("gemini-2.5-flash-image", "auto"), "auto");
+    assert.equal(duomiImageRequestSize("gemini-2.5-flash-image", "1536x1024"), "3:2");
+    assert.equal(duomiImageRequestSize("gemini-2.5-flash-image", "900x800"), "1:1");
+});
+
+test("rejects invalid or unsupported Nano Banana sizes without changing GPT sizes", () => {
+    for (const size of ["", "0x0", "1024x0", "0x1024", "bad", "1:4"]) {
+        assert.throws(() => duomiImageRequestSize("gemini-2.5-flash-image", size), /多米.*尺寸/);
+    }
+    assert.equal(duomiImageRequestSize("gpt-image-2", "bad"), "bad");
+    assert.equal(duomiImageRequestSize("gpt-image-2", "0x0"), "0x0");
 });
 
 test("omits Nano Banana aspect_ratio for one auto-sized reference image", () => {
