@@ -3,8 +3,11 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
+import { normalizeVideoApiFormat } from "@/services/api/duomi-video-provider-utils.mjs";
+
 export type ApiCallFormat = "openai" | "gemini";
 export type ImageApiFormat = "standard" | "duomi";
+export type VideoApiFormat = "standard" | "duomi";
 export type ApiVersion = "v1" | "v3";
 
 export type ModelChannel = {
@@ -14,6 +17,7 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     imageApiFormat: ImageApiFormat;
+    videoApiFormat: VideoApiFormat;
     useProxy: boolean;
     models: string[];
 };
@@ -81,6 +85,7 @@ export const defaultConfig: AiConfig = {
             apiKey: "",
             apiFormat: "openai",
             imageApiFormat: "standard",
+            videoApiFormat: "standard",
             useProxy: false,
             models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
         },
@@ -282,6 +287,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         imageApiFormat: channel?.imageApiFormat === "duomi" ? "duomi" : "standard",
+        videoApiFormat: normalizeVideoApiFormat(channel?.videoApiFormat),
         useProxy: apiFormat === "openai" ? Boolean(channel?.useProxy) : false,
         models: uniqueRawModels(channel?.models || []),
     };
@@ -344,6 +350,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
         imageApiFormat: channel.imageApiFormat,
+        videoApiFormat: channel.videoApiFormat,
         useProxy: channel.apiFormat === "openai" && channel.useProxy,
     };
 }

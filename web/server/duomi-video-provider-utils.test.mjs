@@ -37,6 +37,7 @@ test("recognizes only exact trimmed Duomi video model names", () => {
 test("normalizes only the exact duomi video API format", () => {
     assert.equal(normalizeVideoApiFormat("duomi"), "duomi");
     assert.equal(normalizeVideoApiFormat("standard"), "standard");
+    assert.equal(normalizeVideoApiFormat("legacy-duomi"), "standard");
     assert.equal(normalizeVideoApiFormat(" duomi "), "standard");
     assert.equal(normalizeVideoApiFormat(undefined), "standard");
 });

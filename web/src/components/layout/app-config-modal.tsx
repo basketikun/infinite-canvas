@@ -1,9 +1,10 @@
-import { App, Button, Form, Input, Modal, Progress, Select, Switch, Tabs } from "antd";
+import { App, Button, Dropdown, Form, Input, Modal, Progress, Select, Switch, Tabs } from "antd";
 import { CircleAlert, Cloud, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Trash2, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { DUOMI_IMAGE_MODEL_SUGGESTIONS, mergeFetchedImageModels } from "@/services/api/duomi-image-provider-utils.mjs";
+import { DUOMI_VIDEO_MODEL_SUGGESTIONS, mergeFetchedVideoModels } from "@/services/api/duomi-video-provider-utils.mjs";
 import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -23,6 +24,7 @@ import {
     type ImageApiFormat,
     type ModelCapability,
     type ModelChannel,
+    type VideoApiFormat,
 } from "@/stores/use-config-store";
 
 type ModelGroup = {
@@ -56,6 +58,11 @@ const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
 const imageApiFormatOptions: Array<{ label: string; value: ImageApiFormat }> = [
     { label: "标准 OpenAI / Gemini", value: "standard" },
     { label: "多米 API 异步图片", value: "duomi" },
+];
+
+const videoApiFormatOptions: Array<{ label: string; value: VideoApiFormat }> = [
+    { label: "标准 OpenAI / xAI / Seedance", value: "standard" },
+    { label: "多米 API 异步视频", value: "duomi" },
 ];
 
 const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench"];
@@ -142,8 +149,28 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         updateChannel(channel.id, { imageApiFormat, models });
     };
 
+    const updateChannelVideoApiFormat = (channel: ModelChannel, videoApiFormat: VideoApiFormat) => {
+        const models = videoApiFormat === "duomi" ? uniqueModels([...channel.models, ...DUOMI_VIDEO_MODEL_SUGGESTIONS]) : channel.models;
+        updateChannel(channel.id, { videoApiFormat, models });
+    };
+
     const addChannel = () => {
         updateChannels([...config.channels, createModelChannel({ name: `渠道 ${config.channels.length + 1}` })]);
+    };
+
+    const addDuomiChannel = () => {
+        updateChannels([
+            ...config.channels,
+            createModelChannel({
+                name: "多米 API",
+                baseUrl: "https://duomiapi.com",
+                apiKey: "",
+                apiFormat: "openai",
+                imageApiFormat: "duomi",
+                videoApiFormat: "duomi",
+                models: uniqueModels([...DUOMI_IMAGE_MODEL_SUGGESTIONS, ...DUOMI_VIDEO_MODEL_SUGGESTIONS]),
+            }),
+        ]);
     };
 
     const deleteChannel = (id: string) => {
@@ -164,7 +191,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             const fetchedModels = await fetchChannelModels(channel);
             const latestConfig = useConfigStore.getState().config;
             updateChannels(
-                latestConfig.channels.map((item) => (item.id === channel.id ? { ...item, models: mergeFetchedImageModels(item.imageApiFormat, item.models, fetchedModels) } : item)),
+                latestConfig.channels.map((item) => (item.id === channel.id ? { ...item, models: mergeFetchedChannelModels(item, fetchedModels) } : item)),
                 latestConfig,
             );
             message.success(`${channel.name} 模型列表已更新`);
@@ -189,7 +216,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             updateChannels(
                 latestConfig.channels.map((channel) => {
                     if (!modelMap.has(channel.id)) return channel;
-                    return { ...channel, models: mergeFetchedImageModels(channel.imageApiFormat, channel.models, modelMap.get(channel.id) || []) };
+                    return { ...channel, models: mergeFetchedChannelModels(channel, modelMap.get(channel.id) || []) };
                 }),
                 latestConfig,
             );
@@ -292,9 +319,19 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         <Button icon={<RefreshCw className="size-4" />} loading={Boolean(loadingChannelId)} onClick={() => void refreshAllModels()}>
                                             拉取全部
                                         </Button>
-                                        <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
-                                            新增渠道
-                                        </Button>
+                                        <Dropdown
+                                            trigger={["click"]}
+                                            menu={{
+                                                items: [
+                                                    { key: "blank", label: "空白渠道", onClick: addChannel },
+                                                    { key: "duomi", label: "多米 API", onClick: addDuomiChannel },
+                                                ],
+                                            }}
+                                        >
+                                            <Button type="primary" icon={<Plus className="size-4" />}>
+                                                新增渠道
+                                            </Button>
+                                        </Dropdown>
                                     </div>
                                 </div>
                                 <div className="space-y-3">
@@ -324,6 +361,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                 <Form.Item label="图片协议" className="mb-0">
                                                     <Select value={channel.imageApiFormat} options={imageApiFormatOptions} onChange={(value: ImageApiFormat) => updateChannelImageApiFormat(channel, value)} />
                                                 </Form.Item>
+                                                <Form.Item label="视频协议" className="mb-0">
+                                                    <Select value={channel.videoApiFormat} options={videoApiFormatOptions} onChange={(value: VideoApiFormat) => updateChannelVideoApiFormat(channel, value)} />
+                                                </Form.Item>
                                                 <Form.Item label="Base URL" className="mb-0">
                                                     <Input value={channel.baseUrl} onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })} />
                                                 </Form.Item>
@@ -346,7 +386,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                 <Form.Item
                                                     label="模型列表"
                                                     className="mb-0 md:col-span-2"
-                                                    extra={channel.imageApiFormat === "duomi" ? "多米图片模型需要手动添加；该渠道的 /v1/models 当前不提供模型列表。NANO-BANANA 图生图仅接受公网图片 URL。" : undefined}
+                                                    extra={
+                                                        channel.imageApiFormat === "duomi" || channel.videoApiFormat === "duomi"
+                                                            ? "多米渠道的 /v1/models 当前不提供可用模型列表，需要手动配置。NANO-BANANA 图生图与 Grok 视频的参考图均只接受公网图片 URL。"
+                                                            : undefined
+                                                    }
                                                 >
                                                     <Select mode="tags" showSearch allowClear maxTagCount="responsive" placeholder="输入模型名，或点击拉取模型" value={channel.models} onChange={(models) => updateChannel(channel.id, { models })} />
                                                 </Form.Item>
@@ -605,6 +649,11 @@ function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
         textModel: normalizeDefaultModel(config.textModel, textModels),
         audioModel: normalizeDefaultModel(config.audioModel, audioModels),
     };
+}
+
+function mergeFetchedChannelModels(channel: ModelChannel, fetchedModels: string[]) {
+    const imageMergedModels = mergeFetchedImageModels(channel.imageApiFormat, channel.models, fetchedModels);
+    return mergeFetchedVideoModels(channel.videoApiFormat, imageMergedModels, imageMergedModels);
 }
 
 function keepOrSuggest(current: string[], suggested: string[], allModels: string[]) {
