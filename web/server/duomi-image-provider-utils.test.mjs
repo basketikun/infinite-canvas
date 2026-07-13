@@ -116,14 +116,14 @@ test("reads model-specific task ids", () => {
 
 test("normalizes completed, failed, and pending task statuses", () => {
     for (const status of ["succeeded", "completed", "success", "done"]) {
-        assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { status }), "completed");
+        assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { state: status }), "completed");
         assert.equal(duomiTaskStatusFromPayload("gemini-2.5-flash-image", { data: { state: status.toUpperCase() } }), "completed");
     }
     for (const status of ["error", "failed", "cancelled", "canceled", "expired"]) {
-        assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { status }), "failed");
+        assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { state: status }), "failed");
         assert.equal(duomiTaskStatusFromPayload("gemini-3-pro-image-preview", { data: { state: status.toUpperCase() } }), "failed");
     }
-    assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { status: "running" }), "pending");
+    assert.equal(duomiTaskStatusFromPayload("gpt-image-2", { state: "running" }), "pending");
     assert.equal(duomiTaskStatusFromPayload("gemini-2.5-flash-image", {}), "pending");
 });
 
@@ -165,6 +165,10 @@ test("rejects invalid, local, loopback, and private reference URLs", () => {
         ["http://172.16.0.1/a.png"],
         ["http://172.31.255.255/a.png"],
         ["http://192.168.1.1/a.png"],
+        ["http://[::ffff:127.0.0.1]/a.png"],
+        ["http://[::ffff:10.0.0.1]/a.png"],
+        ["http://[::ffff:172.16.0.1]/a.png"],
+        ["http://[::ffff:192.168.1.1]/a.png"],
         ["not a URL"],
     ]) {
         assert.throws(() => duomiReferenceUrls(urls), /公网图片 URL|1 至 10/);

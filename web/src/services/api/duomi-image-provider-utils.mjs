@@ -64,7 +64,7 @@ export function duomiTaskIdFromPayload(model, payload) {
 
 export function duomiTaskStatusFromPayload(model, payload) {
     if (!isRecord(payload)) return "pending";
-    const value = isDuomiNanoBananaModel(model) && isRecord(payload.data) ? payload.data.state : payload.status;
+    const value = isDuomiNanoBananaModel(model) && isRecord(payload.data) ? payload.data.state : payload.state;
     const normalized = String(value || "")
         .trim()
         .toLowerCase();
@@ -102,10 +102,18 @@ function isPublicHttpUrl(value) {
         if (url.protocol !== "http:" && url.protocol !== "https:") return false;
         const hostname = url.hostname.toLowerCase().replace(/\.+$/, "");
         if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "::1" || hostname === "[::1]") return false;
-        return !isPrivateOrLoopbackIpv4(hostname);
+        return !isPrivateOrLoopbackIpv4(mappedIpv4FromHostname(hostname) || hostname);
     } catch {
         return false;
     }
+}
+
+function mappedIpv4FromHostname(hostname) {
+    const match = hostname.replace(/^\[|\]$/g, "").match(/^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/);
+    if (!match) return "";
+    const high = Number.parseInt(match[1], 16);
+    const low = Number.parseInt(match[2], 16);
+    return [high >> 8, high & 255, low >> 8, low & 255].join(".");
 }
 
 function isPrivateOrLoopbackIpv4(hostname) {
