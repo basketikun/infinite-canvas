@@ -1,4 +1,5 @@
 export const DUOMI_IMAGE_MODELS = ["gpt-image-2", "gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"];
+export const DUOMI_IMAGE_MODEL_SUGGESTIONS = [...DUOMI_IMAGE_MODELS];
 export const DUOMI_POLL_INTERVAL_MS = 2000;
 export const DUOMI_POLL_MAX_ATTEMPTS = 150;
 

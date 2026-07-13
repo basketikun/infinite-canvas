@@ -1,4 +1,5 @@
 export const DUOMI_IMAGE_MODELS: string[];
+export const DUOMI_IMAGE_MODEL_SUGGESTIONS: string[];
 export const DUOMI_POLL_INTERVAL_MS: number;
 export const DUOMI_POLL_MAX_ATTEMPTS: number;
 

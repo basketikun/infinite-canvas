@@ -3,12 +3,27 @@ import { CircleAlert, Cloud, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Tras
 import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
+import { DUOMI_IMAGE_MODEL_SUGGESTIONS } from "@/services/api/duomi-image-provider-utils.mjs";
 import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionLabel, modelOptionsFromChannels, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import {
+    createModelChannel,
+    defaultBaseUrlForApiFormat,
+    filterModelsByCapability,
+    modelOptionLabel,
+    modelOptionsFromChannels,
+    normalizeModelOptionValue,
+    useConfigStore,
+    type AiConfig,
+    type ApiCallFormat,
+    type ConfigTabKey,
+    type ImageApiFormat,
+    type ModelCapability,
+    type ModelChannel,
+} from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -36,6 +51,11 @@ const modelGroups: ModelGroup[] = [
 const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
     { label: "OpenAI", value: "openai" },
     { label: "Gemini", value: "gemini" },
+];
+
+const imageApiFormatOptions: Array<{ label: string; value: ImageApiFormat }> = [
+    { label: "标准 OpenAI / Gemini", value: "standard" },
+    { label: "多米 API 异步图片", value: "duomi" },
 ];
 
 const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench"];
@@ -115,6 +135,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const updateChannelApiFormat = (channel: ModelChannel, apiFormat: ApiCallFormat) => {
         const baseUrl = !channel.baseUrl.trim() || channel.baseUrl.trim() === defaultBaseUrlForApiFormat(channel.apiFormat) ? defaultBaseUrlForApiFormat(apiFormat) : channel.baseUrl;
         updateChannel(channel.id, { apiFormat, baseUrl, useProxy: apiFormat === "openai" ? channel.useProxy : false });
+    };
+
+    const updateChannelImageApiFormat = (channel: ModelChannel, imageApiFormat: ImageApiFormat) => {
+        const models = imageApiFormat === "duomi" ? uniqueModels([...channel.models, ...DUOMI_IMAGE_MODEL_SUGGESTIONS]) : channel.models;
+        updateChannel(channel.id, { imageApiFormat, models });
     };
 
     const addChannel = () => {
@@ -285,6 +310,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                 <Form.Item label="调用格式" className="mb-0">
                                                     <Select value={channel.apiFormat} options={apiFormatOptions} onChange={(value: ApiCallFormat) => updateChannelApiFormat(channel, value)} />
                                                 </Form.Item>
+                                                <Form.Item label="图片协议" className="mb-0">
+                                                    <Select value={channel.imageApiFormat} options={imageApiFormatOptions} onChange={(value: ImageApiFormat) => updateChannelImageApiFormat(channel, value)} />
+                                                </Form.Item>
                                                 <Form.Item label="Base URL" className="mb-0">
                                                     <Input value={channel.baseUrl} onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })} />
                                                 </Form.Item>
@@ -304,7 +332,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                         <span className="text-xs text-stone-500">用于第三方中转站 CORS；直连官方或厂商接口可关闭</span>
                                                     </div>
                                                 </Form.Item>
-                                                <Form.Item label="模型列表" className="mb-0 md:col-span-2">
+                                                <Form.Item
+                                                    label="模型列表"
+                                                    className="mb-0 md:col-span-2"
+                                                    extra={channel.imageApiFormat === "duomi" ? "多米图片模型需要手动添加；该渠道的 /v1/models 当前不提供模型列表。NANO-BANANA 图生图仅接受公网图片 URL。" : undefined}
+                                                >
                                                     <Select mode="tags" showSearch allowClear maxTagCount="responsive" placeholder="输入模型名，或点击拉取模型" value={channel.models} onChange={(models) => updateChannel(channel.id, { models })} />
                                                 </Form.Item>
                                             </div>
@@ -474,7 +506,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             <Input prefix={<Link2 className="mr-1 size-4 text-stone-400" />} value={agentUrl} placeholder="http://127.0.0.1:17371" onChange={(event) => updateAgentConfig({ url: event.target.value })} />
                                         </Form.Item>
                                         <Form.Item label="Connect token" className="mb-4">
-                                            <Input.Password prefix={<KeyRound className="mr-1 size-4 text-stone-400" />} value={agentToken} placeholder="自动发现，或手动填入 Connect token" onChange={(event) => updateAgentConfig({ token: event.target.value })} />
+                                            <Input.Password
+                                                prefix={<KeyRound className="mr-1 size-4 text-stone-400" />}
+                                                value={agentToken}
+                                                placeholder="自动发现，或手动填入 Connect token"
+                                                onChange={(event) => updateAgentConfig({ token: event.target.value })}
+                                            />
                                         </Form.Item>
                                     </div>
                                     {agentConnectError ? <div className="mb-3 rounded-md border border-red-200 px-3 py-2 text-xs text-red-600 dark:border-red-900/60">{agentConnectError}</div> : null}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    DUOMI_IMAGE_MODEL_SUGGESTIONS,
     DUOMI_IMAGE_MODELS,
     DUOMI_POLL_INTERVAL_MS,
     DUOMI_POLL_MAX_ATTEMPTS,
@@ -16,6 +17,10 @@ import {
     isDuomiImageModel,
     isDuomiNanoBananaModel,
 } from "../src/services/api/duomi-image-provider-utils.mjs";
+
+test("exports Duomi image model suggestions", () => {
+    assert.deepEqual(DUOMI_IMAGE_MODEL_SUGGESTIONS, ["gpt-image-2", "gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]);
+});
 
 test("exports the documented Duomi image models and polling constants", () => {
     assert.deepEqual(DUOMI_IMAGE_MODELS, ["gpt-image-2", "gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]);
