@@ -27,7 +27,7 @@ export const seedanceRatioOptions = [
     { value: "adaptive", label: "自适应" },
 ] as const;
 
-export const seedanceDurationOptions = [-1, 4, 5, 6, 8, 10, 12, 15] as const;
+export const seedanceDurationOptions = [4, 6, 8, 12, 15] as const;
 
 const seedancePixels = {
     "480p": {
@@ -89,8 +89,7 @@ export function normalizeResolutionToken(value: string) {
 }
 
 export function normalizeSeedanceDuration(value: string) {
-    if (String(value).trim() === "-1") return -1;
-    const seconds = Math.floor(Number(value) || 5);
+    const seconds = Math.floor(Number(value) || 4);
     return Math.max(4, Math.min(15, seconds));
 }
 
