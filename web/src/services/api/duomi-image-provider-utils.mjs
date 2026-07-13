@@ -21,6 +21,7 @@ const COMPLETED_STATUSES = new Set(["succeeded", "completed", "success", "done"]
 const FAILED_STATUSES = new Set(["error", "failed", "cancelled", "canceled", "expired"]);
 const PENDING_STATUSES = new Set(["pending", "running", "queued", "processing"]);
 const REFERENCE_URL_ERROR = "参考图必须是 1 至 10 个公网图片 URL";
+const NON_PUBLIC_HOST_SUFFIXES = ["localhost", "local", "localdomain", "home.arpa", "test", "invalid"];
 const PUBLIC_IPV6_CIDRS = [
     { prefix: "2001:1::1", bits: 128 },
     { prefix: "2001:1::2", bits: 128 },
@@ -167,13 +168,19 @@ function isPublicHttpUrl(value) {
         const url = new URL(value);
         if (url.protocol !== "http:" && url.protocol !== "https:") return false;
         const hostname = url.hostname.toLowerCase().replace(/\.+$/, "");
-        if (hostname === "localhost" || hostname.endsWith(".localhost")) return false;
         const mappedIpv4 = mappedIpv4FromHostname(hostname);
         if (mappedIpv4) return !isNonPublicIpv4(mappedIpv4);
-        return hostname.includes(":") ? !isNonPublicIpv6(hostname) : !isNonPublicIpv4(hostname);
+        if (hostname.includes(":")) return !isNonPublicIpv6(hostname);
+        if (isNonPublicHostname(hostname)) return false;
+        return !isNonPublicIpv4(hostname);
     } catch {
         return false;
     }
+}
+
+function isNonPublicHostname(hostname) {
+    if (!hostname.includes(".")) return true;
+    return NON_PUBLIC_HOST_SUFFIXES.some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`));
 }
 
 function mappedIpv4FromHostname(hostname) {
