@@ -3,6 +3,7 @@ import test from "node:test";
 import { createServer } from "vite";
 
 import { buildDuomiVideoHttpRequest, duomiVideoRequestFromInputs, translateDuomiVideoRequestError, withDuomiVideoTaskModel } from "../src/services/api/duomi-video-http.mjs";
+import * as videoProviderUtils from "../src/services/api/video-provider-utils.mjs";
 
 test("builds direct request metadata with raw authorization and remaining timeout", () => {
     assert.deepEqual(
@@ -75,13 +76,38 @@ test("composes a decoded model request and restores the encoded task model", () 
     });
 });
 
-test("decodes a channel-qualified Duomi video model with the real config helper", async () => {
+test("selects and resolves a channel-qualified Duomi video model over config.model", async () => {
     const vite = await createServer({ root: process.cwd(), server: { middlewareMode: true }, appType: "custom", logLevel: "silent" });
 
     try {
-        const { modelOptionName } = await vite.ssrLoadModule("/src/stores/use-config-store.ts");
+        const { defaultConfig, modelMatchesCapability, modelOptionName, resolveModelRequestConfig } = await vite.ssrLoadModule("/src/stores/use-config-store.ts");
+        const encodedModel = "channel-1::grok-video-1.5";
+        const config = {
+            ...defaultConfig,
+            model: "default::gpt-image-2",
+            videoModel: encodedModel,
+            videoModels: [encodedModel],
+            channels: [
+                ...defaultConfig.channels,
+                {
+                    id: "channel-1",
+                    name: "多米",
+                    baseUrl: "https://duomiapi.com",
+                    apiKey: "secret",
+                    apiFormat: "openai",
+                    imageApiFormat: "standard",
+                    videoApiFormat: "duomi",
+                    useProxy: false,
+                    models: ["grok-video-1.5"],
+                },
+            ],
+        };
 
-        assert.equal(modelOptionName("channel-1::grok-video-1.5"), "grok-video-1.5");
+        assert.equal(typeof videoProviderUtils.videoModelOptionValue, "function");
+        const selectedModel = videoProviderUtils.videoModelOptionValue(config, modelMatchesCapability(config.model, "video"));
+        assert.equal(selectedModel, encodedModel);
+        assert.equal(modelOptionName(selectedModel), "grok-video-1.5");
+        assert.equal(resolveModelRequestConfig(config, selectedModel).videoApiFormat, "duomi");
     } finally {
         await vite.close();
     }

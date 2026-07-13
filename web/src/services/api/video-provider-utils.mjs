@@ -1,10 +1,20 @@
+export function videoModelOptionValue(config, modelIsVideo = false) {
+    const model = String(config?.model || "").trim();
+    const videoModel = String(config?.videoModel || "").trim();
+    return modelIsVideo && model ? model : videoModel || model;
+}
+
 export function isXaiVideoModel(model) {
-    const value = String(model || "").trim().toLowerCase();
+    const value = String(model || "")
+        .trim()
+        .toLowerCase();
     return value.includes("grok-imagine-video");
 }
 
 export function isUnsupportedXaiVideoModel(model) {
-    const value = String(model || "").trim().toLowerCase();
+    const value = String(model || "")
+        .trim()
+        .toLowerCase();
     return value.startsWith("grok-") && !isXaiVideoModel(value);
 }
 
@@ -18,12 +28,17 @@ export function xaiVideoDuration(value) {
 }
 
 export function xaiVideoResolution(value) {
-    const normalized = String(value || "").trim().toLowerCase().replace(/p$/, "");
+    const normalized = String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/p$/, "");
     return normalized === "480" || normalized === "low" ? "480p" : "720p";
 }
 
 export function xaiVideoAspectRatioFromSize(value) {
-    const normalized = String(value || "").trim().toLowerCase();
+    const normalized = String(value || "")
+        .trim()
+        .toLowerCase();
     if (["16:9", "9:16", "1:1"].includes(normalized)) return normalized;
     const match = normalized.match(/^(\d+)x(\d+)$/);
     if (!match) return "16:9";
@@ -71,7 +86,9 @@ export function videoResultUrlFromPayload(payload) {
 export function videoTaskStatusFromPayload(payload) {
     if (!payload || typeof payload !== "object") return "pending";
     const rawStatus = payload.status || payload.data?.status || payload.data?.state || payload.state;
-    const value = String(rawStatus || "").trim().toLowerCase();
+    const value = String(rawStatus || "")
+        .trim()
+        .toLowerCase();
     if (["completed", "succeeded", "success", "done"].includes(value)) return "completed";
     if (["failed", "cancelled", "canceled", "expired", "error"].includes(value)) return "failed";
     return "pending";

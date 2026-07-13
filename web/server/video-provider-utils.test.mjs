@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isUnsupportedXaiVideoModel, isXaiVideoModel, videoCreatePathForModel, videoResultUrlFromPayload, videoTaskIdFromPayload, videoTaskStatusFromPayload, xaiVideoAspectRatioFromSize, xaiVideoDuration, xaiVideoResolution } from "../src/services/api/video-provider-utils.mjs";
+import * as videoProviderUtils from "../src/services/api/video-provider-utils.mjs";
+import {
+    isUnsupportedXaiVideoModel,
+    isXaiVideoModel,
+    videoCreatePathForModel,
+    videoResultUrlFromPayload,
+    videoTaskIdFromPayload,
+    videoTaskStatusFromPayload,
+    xaiVideoAspectRatioFromSize,
+    xaiVideoDuration,
+    xaiVideoResolution,
+} from "../src/services/api/video-provider-utils.mjs";
+
+test("selects the dedicated video model unless config.model is already a video model", () => {
+    assert.equal(typeof videoProviderUtils.videoModelOptionValue, "function");
+    assert.equal(videoProviderUtils.videoModelOptionValue({ model: "default::gpt-image-2", videoModel: "channel-1::grok-video-1.5" }, false), "channel-1::grok-video-1.5");
+    assert.equal(videoProviderUtils.videoModelOptionValue({ model: "channel-2::seedance-2.0", videoModel: "channel-1::grok-video-1.5" }, true), "channel-2::seedance-2.0");
+});
 
 test("recognizes xAI video models without treating ordinary Grok text models as video generators", () => {
     assert.equal(isXaiVideoModel("grok-imagine-video"), true);

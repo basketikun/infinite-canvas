@@ -7,11 +7,24 @@ import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSe
 import { createDuomiVideoGenerationTask, pollDuomiVideoGenerationTask, type DuomiVideoGenerationTask, type DuomiVideoGenerationTaskState } from "@/services/api/duomi-video";
 import { DUOMI_VIDEO_POLL_INTERVAL_MS, DUOMI_VIDEO_POLL_MAX_ATTEMPTS } from "@/services/api/duomi-video-provider-utils.mjs";
 import { buildAiProxyHeaders, buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig, type ApiVersion } from "@/stores/use-config-store";
-import { isUnsupportedXaiVideoModel, isXaiVideoModel, videoCreatePathForModel, videoResultUrlFromPayload, videoTaskIdFromPayload, videoTaskStatusFromPayload, xaiVideoAspectRatioFromSize, xaiVideoDuration, xaiVideoResolution } from "./video-provider-utils.mjs";
+import {
+    isUnsupportedXaiVideoModel,
+    isXaiVideoModel,
+    videoCreatePathForModel,
+    videoResultUrlFromPayload,
+    videoTaskIdFromPayload,
+    videoTaskStatusFromPayload,
+    xaiVideoAspectRatioFromSize,
+    xaiVideoDuration,
+    xaiVideoResolution,
+} from "./video-provider-utils.mjs";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
-type VideoResponse = { id?: string; request_id?: string; task_id?: string; status?: string; error?: { message?: string } | string; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null } & Record<string, unknown>;
+type VideoResponse = { id?: string; request_id?: string; task_id?: string; status?: string; error?: { message?: string } | string; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null } & Record<
+    string,
+    unknown
+>;
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
 type SeedanceTask = {
     id: string;
@@ -135,9 +148,7 @@ async function createXaiVideoTask(config: AiConfig, model: string, prompt: strin
             aspect_ratio: xaiVideoAspectRatioFromSize(config.size),
             resolution: xaiVideoResolution(config.vquality),
         };
-        const created = unwrapVideoResponse(
-            (await axios.post<ApiVideoResponse>(aiApiUrl(config, videoCreatePathForModel(model)), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data,
-        );
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, videoCreatePathForModel(model)), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
         const taskId = videoTaskIdFromPayload(created);
         if (!taskId) throw new Error("xAI 视频接口没有返回任务 ID");
         return { id: taskId, provider: "openai", model };
