@@ -298,12 +298,22 @@ function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
 
 function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return "请求已取消";
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
+    if (axios.isAxiosError<{ error?: { message?: string }; message?: string; msg?: string; code?: number }>(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || statusMessage(error.response?.status, fallback);
+        const message = responseData?.error?.message || responseData?.message || responseData?.msg;
+        return message ? unwrapUpstreamError(message) : statusMessage(error.response?.status, fallback);
     }
     if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
     return error instanceof Error ? error.message : fallback;
+}
+
+function unwrapUpstreamError(message: string) {
+    try {
+        const payload = JSON.parse(message) as { error?: string | { message?: string }; message?: string };
+        return typeof payload.error === "string" ? payload.error : payload.error?.message || payload.message || message;
+    } catch {
+        return message;
+    }
 }
 
 function statusMessage(status: number | undefined, fallback: string) {
