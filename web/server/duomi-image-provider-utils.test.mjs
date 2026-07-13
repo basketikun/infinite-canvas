@@ -10,6 +10,8 @@ import {
     duomiImageRequestBody,
     duomiImageUrlsFromPayload,
     duomiReferenceUrls,
+    duomiRequestHeaders,
+    duomiRequestUrl,
     duomiTaskErrorMessage,
     duomiTaskIdFromPayload,
     duomiTaskPath,
@@ -73,6 +75,31 @@ test("selects documented create routes for gpt-image-2 and Nano Banana", () => {
 test("encodes task ids in the model-specific task routes", () => {
     assert.equal(duomiTaskPath("gpt-image-2", "id/with space"), "/v1/tasks/id%2Fwith%20space");
     assert.equal(duomiTaskPath("gemini-3.1-flash-image-preview", "id/with space"), "/api/gemini/nano-banana/id%2Fwith%20space");
+});
+
+test("builds direct and proxied Duomi URLs without adding API path segments", () => {
+    const gptPath = "/v1/images/generations";
+    const nanoPath = "/api/gemini/nano-banana";
+
+    assert.equal(duomiRequestUrl("https://duomi.example.com/", gptPath, false, ""), "https://duomi.example.com/v1/images/generations");
+    assert.equal(duomiRequestUrl("https://duomi.example.com/", nanoPath, false, ""), "https://duomi.example.com/api/gemini/nano-banana");
+    assert.equal(duomiRequestUrl("https://duomi.example.com/", gptPath, true, `/api/ai-proxy${gptPath}`), "/api/ai-proxy/v1/images/generations");
+    assert.equal(duomiRequestUrl("https://duomi.example.com/", nanoPath, true, `/api/ai-proxy${nanoPath}`), "/api/ai-proxy/api/gemini/nano-banana");
+});
+
+test("keeps raw authorization and the original Duomi proxy target", () => {
+    const targetHeader = "x-ai-proxy-target-base-url";
+
+    assert.deepEqual(duomiRequestHeaders("https://duomi.example.com/", "secret-key", false, {}, targetHeader), {
+        Authorization: "secret-key",
+        "Content-Type": "application/json",
+    });
+    assert.deepEqual(duomiRequestHeaders("https://duomi.example.com/", "secret-key", true, { [targetHeader]: "https://duomi.example.com/v1", "x-extra": "kept" }, targetHeader), {
+        Authorization: "secret-key",
+        "Content-Type": "application/json",
+        [targetHeader]: "https://duomi.example.com",
+        "x-extra": "kept",
+    });
 });
 
 test("builds Nano Banana request bodies and maps image quality", () => {
@@ -160,6 +187,8 @@ test("reads image URLs from model-specific response shapes", () => {
 });
 
 test("prefers Nano task messages, then top-level messages, then error messages", () => {
+    assert.equal(duomiTaskErrorMessage("gemini-2.5-flash-image", { data: { msg: "   " }, msg: "top-level error", error: { message: "fallback error" } }), "top-level error");
+    assert.equal(duomiTaskErrorMessage("gpt-image-2", { msg: "top-level error", error: { message: "fallback error" } }), "top-level error");
     assert.equal(duomiTaskErrorMessage("gemini-2.5-flash-image", { data: { msg: "内容被拒绝" }, msg: "顶层错误", error: { message: "通用错误" } }), "内容被拒绝");
     assert.equal(duomiTaskErrorMessage("gemini-2.5-flash-image", { msg: "顶层错误", error: { message: "通用错误" } }), "顶层错误");
     assert.equal(duomiTaskErrorMessage("gpt-image-2", { data: { msg: "不应读取" }, error: { message: "余额不足" } }), "余额不足");

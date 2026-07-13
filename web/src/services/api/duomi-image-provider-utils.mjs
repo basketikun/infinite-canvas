@@ -65,6 +65,20 @@ export function duomiTaskPath(model, id) {
     return `${basePath}/${encodeURIComponent(id)}`;
 }
 
+export function duomiRequestUrl(baseUrl, path, useProxy, proxyUrl) {
+    if (useProxy) return proxyUrl;
+    return `${normalizedBaseUrl(baseUrl)}${path}`;
+}
+
+export function duomiRequestHeaders(baseUrl, apiKey, useProxy, proxyHeaders = {}, proxyTargetHeader = "x-ai-proxy-target-base-url") {
+    return {
+        ...proxyHeaders,
+        Authorization: apiKey,
+        "Content-Type": "application/json",
+        ...(useProxy ? { [proxyTargetHeader]: normalizedBaseUrl(baseUrl) } : {}),
+    };
+}
+
 export function duomiImageRequestBody({ model, prompt, size, quality, referenceUrls }) {
     const normalizedSize = String(size || "").trim();
     const normalizedQuality = String(quality || "")
@@ -117,8 +131,7 @@ export function duomiTaskErrorMessage(model, payload) {
     if (!isRecord(payload)) return "";
     const nestedMessage = isDuomiNanoBananaModel(model) && isRecord(payload.data) ? payload.data.msg : undefined;
     const errorMessage = isRecord(payload.error) ? payload.error.message : undefined;
-    const message = [nestedMessage, payload.msg, errorMessage].find((value) => typeof value === "string" && value.length > 0);
-    return message || "";
+    return [nestedMessage, payload.msg, errorMessage].find((value) => typeof value === "string" && value.trim())?.trim() || "";
 }
 
 export function duomiReferenceUrls(urls) {
@@ -205,4 +218,10 @@ function ipv6Hextets(hostname) {
 
 function isRecord(value) {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizedBaseUrl(baseUrl) {
+    return String(baseUrl || "")
+        .trim()
+        .replace(/\/+$/, "");
 }
