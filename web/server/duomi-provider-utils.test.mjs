@@ -17,7 +17,7 @@ test("builds direct and proxy requests with raw authorization", () => {
 test("accepts an empty reference list and preserves public URL order", () => {
     assert.deepEqual(duomiPublicReferenceUrls([], { min: 0, errorMessage: "多米 Grok 参考图仅支持公网图片 URL" }), []);
 
-    const urls = ["https://assets.example.com/a.png", "http://cdn.example.org/b.jpg", "http://8.8.8.8/c.png", "https://[2001:4860:4860::8888]/d.png", "https://[::ffff:8.8.4.4]/e.png"];
+    const urls = ["https://assets.example.com/a.png", "http://cdn.example.org/b.jpg", "http://8.8.8.8/c.png", "http://192.0.0.9/d.png", "http://192.0.0.10/e.png", "https://[2001:4860:4860::8888]/f.png", "https://[::ffff:8.8.4.4]/g.png"];
     const result = duomiPublicReferenceUrls(urls, { min: 0 });
 
     assert.deepEqual(result, urls);
