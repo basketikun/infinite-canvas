@@ -3,6 +3,11 @@ export const DUOMI_IMAGE_MODEL_SUGGESTIONS = [...DUOMI_IMAGE_MODELS];
 export const DUOMI_POLL_INTERVAL_MS = 2000;
 export const DUOMI_POLL_MAX_ATTEMPTS = 150;
 
+export function mergeFetchedImageModels(imageApiFormat, currentModels, fetchedModels) {
+    if (imageApiFormat !== "duomi") return fetchedModels;
+    return Array.from(new Set([...currentModels, ...fetchedModels, ...DUOMI_IMAGE_MODEL_SUGGESTIONS].map((model) => model.trim()).filter(Boolean)));
+}
+
 const DUOMI_NANO_BANANA_MODELS = DUOMI_IMAGE_MODELS.slice(1);
 const DUOMI_IMAGE_SIZE_BY_QUALITY = {
     low: "1K",

@@ -3,6 +3,8 @@ export const DUOMI_IMAGE_MODEL_SUGGESTIONS: string[];
 export const DUOMI_POLL_INTERVAL_MS: number;
 export const DUOMI_POLL_MAX_ATTEMPTS: number;
 
+export function mergeFetchedImageModels(imageApiFormat: "standard" | "duomi", currentModels: string[], fetchedModels: string[]): string[];
+
 export type DuomiTaskStatus = "pending" | "completed" | "failed";
 
 export interface DuomiImageRequest {

@@ -3,7 +3,7 @@ import { CircleAlert, Cloud, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Tras
 import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
-import { DUOMI_IMAGE_MODEL_SUGGESTIONS } from "@/services/api/duomi-image-provider-utils.mjs";
+import { DUOMI_IMAGE_MODEL_SUGGESTIONS, mergeFetchedImageModels } from "@/services/api/duomi-image-provider-utils.mjs";
 import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -123,8 +123,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         clearPromptContinue();
     };
 
-    const updateChannels = (channels: ModelChannel[]) => {
-        const nextConfig = withChannels(config, channels);
+    const updateChannels = (channels: ModelChannel[], sourceConfig: AiConfig = config) => {
+        const nextConfig = withChannels(sourceConfig, channels);
         saveConfig(nextConfig);
     };
 
@@ -161,8 +161,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         }
         setLoadingChannelId(channel.id);
         try {
-            const models = await fetchChannelModels(channel);
-            updateChannels(config.channels.map((item) => (item.id === channel.id ? { ...item, models } : item)));
+            const fetchedModels = await fetchChannelModels(channel);
+            const latestConfig = useConfigStore.getState().config;
+            updateChannels(
+                latestConfig.channels.map((item) => (item.id === channel.id ? { ...item, models: mergeFetchedImageModels(item.imageApiFormat, item.models, fetchedModels) } : item)),
+                latestConfig,
+            );
             message.success(`${channel.name} 模型列表已更新`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取模型失败");
@@ -181,7 +185,14 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         try {
             const entries = await Promise.all(runnable.map(async (channel) => [channel.id, await fetchChannelModels(channel)] as const));
             const modelMap = new Map(entries);
-            updateChannels(config.channels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: modelMap.get(channel.id) || [] } : channel)));
+            const latestConfig = useConfigStore.getState().config;
+            updateChannels(
+                latestConfig.channels.map((channel) => {
+                    if (!modelMap.has(channel.id)) return channel;
+                    return { ...channel, models: mergeFetchedImageModels(channel.imageApiFormat, channel.models, modelMap.get(channel.id) || []) };
+                }),
+                latestConfig,
+            );
             message.success("模型列表已更新");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取模型失败");

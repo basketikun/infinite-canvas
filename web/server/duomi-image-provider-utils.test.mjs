@@ -16,6 +16,7 @@ import {
     duomiTaskStatusFromPayload,
     isDuomiImageModel,
     isDuomiNanoBananaModel,
+    mergeFetchedImageModels,
 } from "../src/services/api/duomi-image-provider-utils.mjs";
 
 test("exports Duomi image model suggestions", () => {
@@ -27,6 +28,23 @@ test("exports the documented Duomi image models and polling constants", () => {
     assert.equal(DUOMI_IMAGE_MODELS.includes("gemini-3.1-flash-lite-image"), false);
     assert.equal(DUOMI_POLL_INTERVAL_MS, 2000);
     assert.equal(DUOMI_POLL_MAX_ATTEMPTS, 150);
+});
+
+test("merges current, fetched, and suggested models for Duomi image channels", () => {
+    assert.deepEqual(mergeFetchedImageModels("duomi", ["custom-image", "gpt-image-2", "custom-image"], ["fetched-image", "gemini-2.5-flash-image", "fetched-image"]), [
+        "custom-image",
+        "gpt-image-2",
+        "fetched-image",
+        "gemini-2.5-flash-image",
+        "gemini-3-pro-image-preview",
+        "gemini-3.1-flash-image-preview",
+    ]);
+});
+
+test("keeps fetched model results unchanged for standard image channels", () => {
+    const fetchedModels = [" fetched-image ", "fetched-image"];
+
+    assert.equal(mergeFetchedImageModels("standard", ["current-image"], fetchedModels), fetchedModels);
 });
 
 test("recognizes only documented Duomi image models", () => {
