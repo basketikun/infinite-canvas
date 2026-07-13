@@ -16,9 +16,12 @@ import {
 
 test("uses the effective Duomi resolution while preserving standard resolution values", () => {
     assert.equal(typeof videoProviderUtils.effectiveVideoResolution, "function");
-    assert.equal(videoProviderUtils.effectiveVideoResolution("480", "duomi"), "720");
-    assert.equal(videoProviderUtils.effectiveVideoResolution("480", "standard"), "480");
-    assert.equal(videoProviderUtils.effectiveVideoResolution("1440p", "standard"), "1440");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("1080p", { videoApiFormat: "standard", isSeedance: true, isSeedanceFast: false }), "1080");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("1080p", { videoApiFormat: "standard", isSeedance: true, isSeedanceFast: true }), "720");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("1440p", { videoApiFormat: "standard", isSeedance: true, isSeedanceFast: false }), "720");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("480", { videoApiFormat: "duomi" }), "720");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("480", { videoApiFormat: "standard" }), "480");
+    assert.equal(videoProviderUtils.effectiveVideoResolution("1440p", { videoApiFormat: "standard" }), "1440");
 });
 
 test("recognizes xAI video models without treating ordinary Grok text models as video generators", () => {

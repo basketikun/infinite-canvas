@@ -1,8 +1,9 @@
-export function effectiveVideoResolution(value, videoApiFormat = "standard") {
+export function effectiveVideoResolution(value, { videoApiFormat = "standard", isSeedance = false, isSeedanceFast = false } = {}) {
     if (videoApiFormat === "duomi") return "720";
-    if (value === "480p" || value === "low") return "480";
-    if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
-    return String(value || "").replace(/p$/i, "") || "720";
+    const resolution = value === "480p" || value === "low" ? "480" : value === "720p" || value === "auto" || value === "high" || value === "medium" ? "720" : String(value || "").replace(/p$/i, "") || "720";
+    if (!isSeedance) return resolution;
+    if (!new Set(["480", "720", "1080"]).has(resolution)) return "720";
+    return isSeedanceFast && resolution === "1080" ? "720" : resolution;
 }
 
 export function isXaiVideoModel(model) {

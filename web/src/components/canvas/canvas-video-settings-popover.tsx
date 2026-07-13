@@ -5,6 +5,7 @@ import { Button } from "antd";
 
 import { VideoSettingsPanel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isSeedanceFastModel, isSeedanceVideoConfig } from "@/lib/seedance-video";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
@@ -19,6 +20,12 @@ type CanvasVideoSettingsPopoverProps = {
 export function CanvasVideoSettingsPopover({ config, selectedModel, onConfigChange, buttonClassName, placement = "topLeft" }: CanvasVideoSettingsPopoverProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
+    const isSeedanceVideo = requestConfig.videoApiFormat === "standard" && isSeedanceVideoConfig({ model: requestConfig.model, videoModel: requestConfig.videoModel, baseUrl: requestConfig.baseUrl });
+    const resolutionContext = {
+        videoApiFormat: requestConfig.videoApiFormat,
+        isSeedance: isSeedanceVideo,
+        isSeedanceFast: isSeedanceVideo && isSeedanceFastModel(requestConfig.model || requestConfig.videoModel),
+    };
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
@@ -59,7 +66,7 @@ export function CanvasVideoSettingsPopover({ config, selectedModel, onConfigChan
                     onClick={() => setOpen((current) => !current)}
                 >
                     <span className="truncate">
-                        {videoResolutionLabel(config.vquality, requestConfig.videoApiFormat)} · {videoSizeLabel(config.size)} · {videoSecondsLabel(config.videoSeconds)}
+                        {videoResolutionLabel(config.vquality, resolutionContext)} · {videoSizeLabel(config.size)} · {videoSecondsLabel(config.videoSeconds)}
                     </span>
                 </Button>
             </span>

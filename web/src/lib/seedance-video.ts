@@ -1,4 +1,5 @@
 import { modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { effectiveVideoResolution } from "@/services/api/video-provider-utils.mjs";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
@@ -76,16 +77,11 @@ export function isArkPlanBaseUrl(baseUrl: string) {
 }
 
 export function normalizeSeedanceResolution(value: string, model = "") {
-    const normalized = normalizeResolutionToken(value);
-    if (isSeedanceFastModel(model) && normalized === "1080p") return "720p";
-    return seedanceResolutionOptions.some((item) => item.value === normalized) ? normalized : "720p";
+    return `${effectiveVideoResolution(value, { videoApiFormat: "standard", isSeedance: true, isSeedanceFast: isSeedanceFastModel(model) })}p`;
 }
 
 export function normalizeResolutionToken(value: string) {
-    if (value === "low") return "480p";
-    if (value === "auto" || value === "high" || value === "medium") return "720p";
-    const resolution = String(value || "").replace(/p$/i, "") || "720";
-    return `${resolution}p`;
+    return `${effectiveVideoResolution(value, { videoApiFormat: "standard" })}p`;
 }
 
 export function normalizeSeedanceDuration(value: string) {
@@ -134,11 +130,7 @@ export function seedanceReferenceLabel(kind: "image" | "video" | "audio", index:
 }
 
 export function buildSeedancePromptText(prompt: string, images: ReferenceImage[], videos: ReferenceVideo[], audios: ReferenceAudio[]) {
-    const labels = [
-        ...images.map((_, index) => seedanceReferenceLabel("image", index)),
-        ...videos.map((_, index) => seedanceReferenceLabel("video", index)),
-        ...audios.map((_, index) => seedanceReferenceLabel("audio", index)),
-    ];
+    const labels = [...images.map((_, index) => seedanceReferenceLabel("image", index)), ...videos.map((_, index) => seedanceReferenceLabel("video", index)), ...audios.map((_, index) => seedanceReferenceLabel("audio", index))];
     const text = prompt.trim();
     if (!labels.length) return text;
     return `参考素材编号：${labels.join("、")}。请按这些编号理解提示词中的图片、视频和音频引用。\n\n${text}`;

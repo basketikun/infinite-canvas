@@ -58,7 +58,7 @@ export function VideoSettingsPanel({ config, selectedModel, onConfigChange, them
     const seconds = config.videoSeconds || "6";
     const size = normalizeVideoSizeValue(config.size);
     const dimensions = readSizeDimensions(size);
-    const resolution = effectiveVideoResolution(config.vquality, requestConfig.videoApiFormat);
+    const resolution = effectiveVideoResolution(config.vquality, { videoApiFormat: requestConfig.videoApiFormat });
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
         onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
@@ -191,8 +191,8 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
     );
 }
 
-export function videoResolutionLabel(value: string, videoApiFormat: "standard" | "duomi" = "standard") {
-    return `${effectiveVideoResolution(value, videoApiFormat)}p`;
+export function videoResolutionLabel(value: string, context: { videoApiFormat: "standard" | "duomi"; isSeedance?: boolean; isSeedanceFast?: boolean } = { videoApiFormat: "standard" }) {
+    return `${effectiveVideoResolution(value, context)}p`;
 }
 
 export function videoSizeLabel(value: string) {
@@ -215,7 +215,7 @@ export function normalizeVideoSizeValue(value: string) {
 }
 
 export function normalizeVideoResolutionValue(value: string) {
-    return effectiveVideoResolution(value, "standard");
+    return effectiveVideoResolution(value, { videoApiFormat: "standard" });
 }
 
 function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {

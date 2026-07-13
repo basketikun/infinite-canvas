@@ -11,7 +11,7 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { DUOMI_VIDEO_POLL_INTERVAL_MS, DUOMI_VIDEO_POLL_MAX_ATTEMPTS } from "@/services/api/duomi-video-provider-utils.mjs";
@@ -103,7 +103,12 @@ export default function VideoPage() {
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
     const videoRequestConfig = resolveModelRequestConfig(effectiveConfig, model);
-    const effectiveResolution = effectiveVideoResolution(effectiveConfig.vquality, videoRequestConfig.videoApiFormat);
+    const isSeedanceVideo = videoRequestConfig.videoApiFormat === "standard" && isSeedanceVideoConfig({ model: videoRequestConfig.model, videoModel: videoRequestConfig.videoModel, baseUrl: videoRequestConfig.baseUrl });
+    const effectiveResolution = effectiveVideoResolution(effectiveConfig.vquality, {
+        videoApiFormat: videoRequestConfig.videoApiFormat,
+        isSeedance: isSeedanceVideo,
+        isSeedanceFast: isSeedanceVideo && isSeedanceFastModel(videoRequestConfig.model || videoRequestConfig.videoModel),
+    });
     const canGenerate = Boolean(prompt.trim());
 
     useEffect(() => {
