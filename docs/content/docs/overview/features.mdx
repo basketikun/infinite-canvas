@@ -66,18 +66,24 @@ OpenAI 兼容图像和文本能力继续复用现有接口：
 - `/v1/responses`：文本问答、带图问答和在线 Agent 工具调用。
 - `/v1/models`：读取模型列表；火山方舟 Agent Plan 专属 `/api/plan/v3` 当前未提供 OpenAI `/models` 模型列表接口，需要手动填写模型名。
 
-多米渠道还支持专用的异步图片协议：
+配置页“渠道”Tab 的“新增渠道”菜单提供“多米 API”模板。选择后会自动填写渠道名称和 `https://duomiapi.com`，API Key 保持为空，同时启用“多米 API 异步图片”和“多米 API 异步视频”协议，并加入以下模型建议且自动去重：
 
-- Base URL 推荐填写 `https://duomiapi.com`，图片协议选择“多米 API 异步图片”。
+- 图片：`gpt-image-2`、`gemini-2.5-flash-image`、`gemini-3-pro-image-preview`、`gemini-3.1-flash-image-preview`。
+- 视频：`grok-video-1.5`。
+
+多米渠道支持专用的异步图片协议：
+
 - 当前支持 `gpt-image-2`、`gemini-2.5-flash-image`、`gemini-3-pro-image-preview`、`gemini-3.1-flash-image-preview` 四个文生图模型，不包含 lite 模型。
 - 多米渠道的 `/v1/models` 当前不可用并会返回 404，需要在模型列表中手动添加上述模型名。
 - 三个 NANO-BANANA 模型支持参考图编辑；每次请求只接受 1 至 10 个公网可访问的 HTTP/HTTPS 图片 URL。
 - 浏览器本地图片、Base64、Blob、剪贴板图片和 IndexedDB 图片不会自动上传。本阶段不提供上传服务，需要先自行取得公网图片 URL 再作为参考图使用。
 
-视频能力支持两类接口：
+视频能力支持三类接口：
 
 - OpenAI 风格视频：`POST /v1/videos`、`GET /v1/videos/{id}`、`GET /v1/videos/{id}/content`。
 - 火山方舟 Agent Plan / Seedance 2.0：Base URL 使用 `https://ark.cn-beijing.volces.com/api/plan/v3`，创建任务为 `POST /contents/generations/tasks`，查询任务为 `GET /contents/generations/tasks/{id}`，成功结果读取 `content.video_url`。
+- 多米 Grok 视频：`grok-video-1.5` 支持文生视频，也支持使用公网可访问的 HTTP/HTTPS 图片 URL 进行参考图生视频。前端先通过 `POST /v1/videos/generations` 创建异步任务，再轮询 `GET /v1/videos/tasks/{id}`，完成后读取返回的视频 URL。
+- 多米 Grok 视频当前固定使用 `720p`。本地图片、Base64、Blob、剪贴板图片、浏览器本地存储图片和私有网络 URL 会在发出创建请求前被拒绝，也不会自动上传到公网。
 
 Base URL 如果已经以 `/v1`、`/api/v3` 或 `/api/plan/v3` 结尾，系统不会再追加 `/v1`。因此 cpa 反代或火山方舟 Agent Plan 可以继续通过现有 Base URL + API Key + Model 方式配置，不需要新增火山生图 Provider。
 
