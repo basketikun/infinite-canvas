@@ -150,6 +150,21 @@ test("accepts one through ten public HTTP or HTTPS reference URLs", () => {
     assert.deepEqual(duomiReferenceUrls(Array.from({ length: 10 }, (_, index) => `https://assets.example.com/${index}.png`)).length, 10);
 });
 
+test("allows IANA globally reachable IPv6 exceptions", () => {
+    const urls = [
+        "https://[2001:1::1]/a.png",
+        "https://[2001:1::2]/b.png",
+        "https://[2001:1::3]/c.png",
+        "https://[2001:3::1]/d.png",
+        "https://[2001:4:112::1]/e.png",
+        "https://[2001:2f:ffff::1]/f.png",
+        "https://[2001:3f:ffff::1]/g.png",
+        "https://[64:ff9b::1]/h.png",
+        "https://[2620:4f:8000::1]/i.png",
+    ];
+    assert.deepEqual(duomiReferenceUrls(urls), urls);
+});
+
 test("rejects invalid, local, loopback, and private reference URLs", () => {
     for (const urls of [
         [],
@@ -173,9 +188,18 @@ test("rejects invalid, local, loopback, and private reference URLs", () => {
         ["http://[ff02::1]/a.png"],
         ["http://[100::1]/a.png"],
         ["http://[100::ffff:ffff:ffff:ffff]/a.png"],
+        ["http://[100:0:0:1::1]/a.png"],
+        ["http://[100:0:0:1:ffff:ffff:ffff:ffff]/a.png"],
+        ["http://[5f00::1]/a.png"],
+        ["http://[5f00:ffff::1]/a.png"],
         ["http://[64:ff9b:1::1]/a.png"],
+        ["http://[2001::1]/a.png"],
+        ["http://[2001:1::4]/a.png"],
         ["http://[2001:2::1]/a.png"],
+        ["http://[2001:4:113::1]/a.png"],
+        ["http://[2001:40::1]/a.png"],
         ["http://[2001:db8::1]/a.png"],
+        ["http://[2002::1]/a.png"],
         ["http://[3fff::1]/a.png"],
         ["http://10.0.0.1/a.png"],
         ["http://172.16.0.1/a.png"],

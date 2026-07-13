@@ -13,12 +13,27 @@ const DUOMI_IMAGE_SIZE_BY_QUALITY = {
 const COMPLETED_STATUSES = new Set(["succeeded", "completed", "success", "done"]);
 const FAILED_STATUSES = new Set(["error", "failed", "cancelled", "canceled", "expired"]);
 const REFERENCE_URL_ERROR = "参考图必须是 1 至 10 个公网图片 URL";
+const PUBLIC_IPV6_CIDRS = [
+    { prefix: "2001:1::1", bits: 128 },
+    { prefix: "2001:1::2", bits: 128 },
+    { prefix: "2001:1::3", bits: 128 },
+    { prefix: "2001:3::", bits: 32 },
+    { prefix: "2001:4:112::", bits: 48 },
+    { prefix: "2001:20::", bits: 28 },
+    { prefix: "2001:30::", bits: 28 },
+    { prefix: "64:ff9b::", bits: 96 },
+    { prefix: "2620:4f:8000::", bits: 48 },
+];
 const NON_PUBLIC_IPV6_CIDRS = [
     { prefix: "::", bits: 96 },
     { prefix: "100::", bits: 64 },
+    { prefix: "100:0:0:1::", bits: 64 },
+    { prefix: "5f00::", bits: 16 },
     { prefix: "64:ff9b:1::", bits: 48 },
+    { prefix: "2001::", bits: 23 },
     { prefix: "2001:2::", bits: 48 },
     { prefix: "2001:db8::", bits: 32 },
+    { prefix: "2002::", bits: 16 },
     { prefix: "3fff::", bits: 20 },
     { prefix: "fc00::", bits: 7 },
     { prefix: "fe80::", bits: 10 },
@@ -153,6 +168,7 @@ function isNonPublicIpv4(hostname) {
 }
 
 function isNonPublicIpv6(hostname) {
+    if (PUBLIC_IPV6_CIDRS.some(({ prefix, bits }) => isIpv6InCidr(hostname, prefix, bits))) return false;
     return NON_PUBLIC_IPV6_CIDRS.some(({ prefix, bits }) => isIpv6InCidr(hostname, prefix, bits));
 }
 
