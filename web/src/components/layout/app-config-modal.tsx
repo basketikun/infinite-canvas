@@ -111,7 +111,15 @@ export function AppConfigModal() {
                     {!effectiveMode ? null : effectiveMode === "local" || effectiveMode === "newapi" ? (
                         <>
                             <div className="grid gap-4 md:grid-cols-2">
-                                <Form.Item label="Base URL" className="mb-4">
+                                <Form.Item
+                                    label="Base URL"
+                                    extra={
+                                        effectiveMode === "local"
+                                            ? "浏览器直连要求接口支持 CORS/OPTIONS；HTTPS 页面不能直连 HTTP 地址。若出现网络错误，可改用后端渠道。"
+                                            : "跨域免 Key 请求要求接口允许当前站点来源并支持携带 Cookie。"
+                                    }
+                                    className="mb-4"
+                                >
                                     <Input value={config.baseUrl} onChange={(event) => updateConfig("baseUrl", event.target.value)} />
                                 </Form.Item>
                                 {effectiveMode === "newapi" ? (

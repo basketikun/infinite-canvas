@@ -1,3 +1,6 @@
+import axios from "axios";
+
+import { networkFailureMessage } from "@/services/api/network-error";
 import { buildApiUrl, isNewApiConfig, resolveNewApiGroup, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -72,14 +75,20 @@ export function refreshRemoteUser(config: AiConfig) {
  * 从 axios 错误中提取可读信息。
  */
 export function readAxiosError(error: unknown, fallback: string) {
-    if (typeof error === "object" && error !== null && "response" in error) {
-        const response = (error as { response?: { data?: { error?: { message?: string }; msg?: string; code?: number }; status?: number } }).response;
-        if (response?.data) {
-            const msg = response.data.error?.message || response.data.msg;
-            if (msg) return msg;
-        }
-        return readStatusError(response?.status, fallback);
+    if (axios.isCancel(error)) return "请求已取消";
+    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
+        const responseData = error.response?.data;
+        const message = responseData?.error?.message || responseData?.msg;
+        if (message) return message;
+        if (error.response) return readStatusError(error.response.status, fallback);
+        return networkFailureMessage({
+            fallback,
+            code: error.code,
+            requestUrl: error.config?.url,
+            pageProtocol: typeof window === "undefined" ? undefined : window.location.protocol,
+        });
     }
+    if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
     return error instanceof Error ? error.message : fallback;
 }
 
