@@ -128,6 +128,8 @@ default_tools_approval_mode = "approve"
 
 新版 Agent 连接后，历史页会列出 Codex 最近任务使用过的本机工作空间，也可以输入一个已经存在的本机绝对目录。切换工作空间会清空当前 thread 引用并加载目标目录的历史，但不会删除原工作空间、对话或文件；连接不支持该接口的旧版 Agent 时仍保持原有的只读路径展示。
 
+对话栏会从 Codex 动态读取当前账号可用的模型和推理强度。切换选择不会清空当前消息；下一轮发送时会把选择传给 Codex，恢复历史对话时也会同步该会话的实际模型设置。
+
 MCP 可通过 `assets_add_file` 读取 Agent 所在电脑上的 PNG、JPEG、WebP、GIF 或 AVIF 图片，并把它加入当前网页的「我的素材」。路径必须是本机绝对路径，文件大小不能超过 30MB。
 
 侧边栏会展示 Codex 返回的 `thread.started`、`turn.started`、`item.*`、`turn.completed` 等结构化事件；收到 app-server 的 `item/agentMessage/delta` 时，Canvas Agent 会转成 `item.updated`，网页会用同一条消息做真实流式更新，并把工具细节收进运行日志。

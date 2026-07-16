@@ -9,6 +9,8 @@ export type AgentEventLog = { id: string; time: string; title: string; text: str
 export type AgentPendingToolCall = { requestId: string; name: string; input?: { ops?: CanvasAgentOp[]; path?: string } & Record<string, unknown> };
 export type AgentCanvasContext = { snapshot: CanvasAgentSnapshot; applyOps: (ops?: CanvasAgentOp[]) => CanvasAgentSnapshot; undoOps: () => CanvasAgentSnapshot | null; canUndo: boolean };
 export type AgentThreadSummary = { id: string; preview: string; name?: string | null; cwd?: string; status?: string; source?: unknown; createdAt?: number; updatedAt?: number };
+export type AgentReasoningEffort = { reasoningEffort: string; description: string };
+export type AgentCodexModel = { id: string; model: string; displayName: string; description: string; isDefault: boolean; defaultReasoningEffort: string; supportedReasoningEfforts: AgentReasoningEffort[] };
 export type AgentPanelTab = "chat" | "setup" | "history" | "log";
 
 const CONNECT_TIMEOUT_MS = 6000;
@@ -33,9 +35,13 @@ type AgentStore = {
     messages: AgentChatItem[];
     eventLogs: AgentEventLog[];
     threads: AgentThreadSummary[];
+    models: AgentCodexModel[];
+    selectedModel: string;
+    selectedEffort: string;
     activeThreadId: string;
     workspacePath: string;
     loadingThreads: boolean;
+    loadingModels: boolean;
     activeTab: AgentPanelTab;
     confirmTools: boolean;
     activity: string;
@@ -73,9 +79,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     messages: [],
     eventLogs: [],
     threads: [],
+    models: [],
+    selectedModel: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-codex-model") || "",
+    selectedEffort: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-codex-effort") || "",
     activeThreadId: "",
     workspacePath: "",
     loadingThreads: false,
+    loadingModels: false,
     activeTab: "setup",
     confirmTools: true,
     activity: "就绪",
