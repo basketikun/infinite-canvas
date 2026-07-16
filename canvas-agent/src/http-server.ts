@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, selectSiteWorkspace, updateSiteWorkspace, type CanvasAgentConfig } from "./config.js";
 import { CanvasSession } from "./canvas-session.js";
 import { archiveCodexThread, interruptCodexTurn, listCodexThreads, listCodexWorkspaces, readCodexThread, resumeCodexThread, runClaudeTurn, runCodexTurn, startCodexThread, summarizeCodexThread, verifyCodexThreadWorkspace, withAgentPrompt } from "./agents.js";
+import { copyPngToClipboard } from "./image-clipboard.js";
 import type { AgentAttachment } from "./types.js";
 
 export function startHttpServer() {
@@ -37,6 +38,11 @@ export function startHttpServer() {
         session.resolveResult(req.body);
         res.json({ ok: true });
     });
+    app.post("/clipboard/image", express.raw({ type: "image/png", limit: "30mb" }), route(async (req, res) => {
+        if (!Buffer.isBuffer(req.body) || !req.body.length) throw new Error("缺少 PNG 图片内容");
+        await copyPngToClipboard(req.body);
+        res.json({ ok: true });
+    }));
     app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
     app.get("/agent/codex/workspace", (_req, res) => {
         const workspace = ensureSiteWorkspace(config);

@@ -270,6 +270,8 @@ function InfiniteCanvasPage() {
     const [searchParams] = useSearchParams();
     const projectId = params.id || "";
     const localAgentConnected = useAgentStore((state) => state.connected);
+    const localAgentUrl = useAgentStore((state) => state.url);
+    const localAgentToken = useAgentStore((state) => state.token);
     const localAgentActivity = useAgentStore((state) => state.activity);
     const localAgentEnabled = useAgentStore((state) => state.enabled);
     const agentPanelOpen = useAgentStore((state) => state.panelOpen);
@@ -1758,6 +1760,52 @@ function InfiniteCanvasPage() {
         saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
     }, []);
 
+    const copyNodeImage = useCallback(
+        async (node: CanvasNodeData) => {
+            if (node.type !== CanvasNodeType.Image || !node.metadata?.content) {
+                message.warning("图片节点为空，无法复制");
+                return;
+            }
+            try {
+                const imageUrl = await resolveImageUrl(node.metadata.storageKey, node.metadata.content);
+                const sourceBlob = await fetch(imageUrl).then((response) => {
+                    if (!response.ok) throw new Error(`读取图片失败 (${response.status})`);
+                    return response.blob();
+                });
+                const blob = sourceBlob.type === "image/png" ? sourceBlob : await convertImageBlobToPng(sourceBlob);
+                if (window.isSecureContext && navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+                    try {
+                        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+                        message.success("图片已复制到剪贴板");
+                        return;
+                    } catch {
+                        // Continue with the local Agent or legacy selection fallback.
+                    }
+                }
+                let agentError: Error | null = null;
+                if (localAgentConnected && localAgentUrl && localAgentToken) {
+                    try {
+                        await copyImageBlobThroughAgent(blob, localAgentUrl, localAgentToken);
+                        message.success("图片已复制到剪贴板（本机 Agent）");
+                        return;
+                    } catch (error) {
+                        agentError = error instanceof Error ? error : new Error("本机 Agent 写入剪贴板失败");
+                    }
+                }
+                if (await copyImageBlobWithSelection(blob)) {
+                    message.success("图片已复制到剪贴板（兼容模式）");
+                    return;
+                }
+                if (agentError) throw agentError;
+                throw new Error("当前浏览器不允许在 HTTP 页面复制图片，请改用 HTTPS 访问");
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : "浏览器拒绝了剪贴板访问";
+                message.error(`复制图片失败：${reason}`);
+            }
+        },
+        [localAgentConnected, localAgentToken, localAgentUrl, message],
+    );
+
     const saveNodeAsset = useCallback(
         async (node: CanvasNodeData) => {
             if (node.type === CanvasNodeType.Text) {
@@ -2930,6 +2978,7 @@ function InfiniteCanvasPage() {
                     onToggleDialog={(node) => setDialogNodeId((current) => (current === node.id ? null : node.id))}
                     onGenerateImage={generateImageFromTextNode}
                     onUpload={(node) => handleUploadRequest(node.id)}
+                    onCopyImage={(node) => void copyNodeImage(node)}
                     onDownload={downloadNodeImage}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
                     onMaskEdit={(node) => setMaskEditNodeId(node.id)}
@@ -2975,10 +3024,17 @@ function InfiniteCanvasPage() {
                 {contextMenu ? (
                     <CanvasNodeContextMenu
                         menu={contextMenu}
+                        canCopyImage={contextMenu.type === "node" && nodeById.get(contextMenu.nodeId)?.type === CanvasNodeType.Image && Boolean(nodeById.get(contextMenu.nodeId)?.metadata?.content)}
                         onClose={() => setContextMenu(null)}
                         onDuplicate={() => {
                             if (contextMenu.type !== "node") return;
                             duplicateNode(contextMenu.nodeId);
+                            setContextMenu(null);
+                        }}
+                        onCopyImage={() => {
+                            if (contextMenu.type !== "node") return;
+                            const node = nodeById.get(contextMenu.nodeId);
+                            if (node) void copyNodeImage(node);
                             setContextMenu(null);
                         }}
                         onDelete={() => {
@@ -3508,6 +3564,76 @@ function sourceNodeReferenceImages(node: CanvasNodeData | null) {
             storageKey: node.metadata.storageKey,
         },
     ];
+}
+
+function convertImageBlobToPng(blob: Blob) {
+    return new Promise<Blob>((resolve, reject) => {
+        const url = URL.createObjectURL(blob);
+        const image = new Image();
+        image.onload = () => {
+            try {
+                const canvas = document.createElement("canvas");
+                canvas.width = image.naturalWidth;
+                canvas.height = image.naturalHeight;
+                const context = canvas.getContext("2d");
+                if (!context) throw new Error("无法创建图片画布");
+                context.drawImage(image, 0, 0);
+                canvas.toBlob((png) => {
+                    URL.revokeObjectURL(url);
+                    if (png) resolve(png);
+                    else reject(new Error("转换 PNG 失败"));
+                }, "image/png");
+            } catch (error) {
+                URL.revokeObjectURL(url);
+                reject(error);
+            }
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error("图片解码失败"));
+        };
+        image.src = url;
+    });
+}
+
+async function copyImageBlobWithSelection(blob: Blob) {
+    const url = URL.createObjectURL(blob);
+    const container = document.createElement("div");
+    const image = document.createElement("img");
+    container.contentEditable = "true";
+    container.setAttribute("aria-hidden", "true");
+    Object.assign(container.style, { position: "fixed", left: "-10000px", top: "0", opacity: "0", pointerEvents: "none" });
+    image.src = url;
+    container.appendChild(image);
+    document.body.appendChild(container);
+    try {
+        await image.decode();
+        const selection = window.getSelection();
+        if (!selection) return false;
+        const range = document.createRange();
+        range.selectNode(image);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const copied = document.execCommand("copy");
+        selection.removeAllRanges();
+        return copied;
+    } catch {
+        return false;
+    } finally {
+        container.remove();
+        URL.revokeObjectURL(url);
+    }
+}
+
+async function copyImageBlobThroughAgent(blob: Blob, endpoint: string, token: string) {
+    const response = await fetch(`${endpoint.replace(/\/$/, "")}/clipboard/image`, {
+        method: "POST",
+        headers: { "content-type": "image/png", "x-canvas-agent-token": token },
+        body: blob,
+    });
+    if (response.ok) return;
+    const result = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(result?.error || `本机 Agent 写入剪贴板失败 (${response.status})`);
 }
 
 function isAudioFile(file: File) {
