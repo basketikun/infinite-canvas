@@ -87,6 +87,36 @@ export async function listCodexThreads(emit: AgentEmit, options: { cwd: string; 
     return { data, nextCursor: field(result, "nextCursor") || null, backwardsCursor: field(result, "backwardsCursor") || null };
 }
 
+export async function listCodexWorkspaces(emit: AgentEmit, currentWorkspacePath: string) {
+    codexApp ||= await CodexAppClient.start(emit);
+    const result = await codexApp.listThreads({
+        limit: 100,
+        sortKey: "updated_at",
+        sortDirection: "desc",
+        sourceKinds: ["cli", "vscode", "appServer", "exec"],
+        useStateDbOnly: true,
+    });
+    const workspaces = new Map<string, { workspacePath: string; threadCount: number; updatedAt: number }>();
+    const addWorkspace = (workspacePath: string, updatedAt = 0, countThread = false) => {
+        if (!workspacePath.trim()) return;
+        const resolved = path.resolve(workspacePath);
+        const key = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+        const current = workspaces.get(key);
+        workspaces.set(key, {
+            workspacePath: current?.workspacePath || resolved,
+            threadCount: (current?.threadCount || 0) + Number(countThread),
+            updatedAt: Math.max(current?.updatedAt || 0, updatedAt),
+        });
+    };
+    addWorkspace(currentWorkspacePath);
+    arrayValue(field(result, "data")).forEach((thread) => addWorkspace(String(field(thread, "cwd") || ""), Number(field(thread, "updatedAt") || 0), true));
+    const currentKey = process.platform === "win32" ? path.resolve(currentWorkspacePath).toLowerCase() : path.resolve(currentWorkspacePath);
+    const data = [...workspaces.entries()]
+        .sort(([keyA, a], [keyB, b]) => Number(keyB === currentKey) - Number(keyA === currentKey) || b.updatedAt - a.updatedAt)
+        .map(([, workspace]) => workspace);
+    return { data };
+}
+
 export async function readCodexThread(emit: AgentEmit, threadId: string, cwd?: string) {
     const thread = await loadCodexThread(emit, threadId, cwd, true);
     return { thread: summarizeCodexThread(thread), messages: threadMessages(thread) };

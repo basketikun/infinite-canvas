@@ -51,6 +51,22 @@ export function updateSiteWorkspace(config: CanvasAgentConfig, patch: Partial<Si
     return config.workspace;
 }
 
+export function selectSiteWorkspace(config: CanvasAgentConfig, value: string) {
+    const input = value.trim();
+    if (!input) throw new Error("工作空间路径不能为空");
+    const expanded = input === "~" ? os.homedir() : /^~[\\/]/.test(input) ? path.join(os.homedir(), input.slice(2)) : input;
+    if (!path.isAbsolute(expanded)) throw new Error("请输入本机绝对路径");
+    const workspacePath = path.resolve(expanded);
+    let stat: fs.Stats;
+    try {
+        stat = fs.statSync(workspacePath);
+    } catch {
+        throw new Error("工作空间目录不存在或无法访问");
+    }
+    if (!stat.isDirectory()) throw new Error("工作空间路径必须是目录");
+    return updateSiteWorkspace(config, { workspacePath, activeThreadId: undefined });
+}
+
 function resolveWorkspacePath(value: string) {
     if (value === "~") return os.homedir();
     if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));

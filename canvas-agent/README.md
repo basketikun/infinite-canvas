@@ -126,6 +126,8 @@ default_tools_approval_mode = "approve"
 
 本地面板会把提示词发送给 Canvas Agent。Canvas Agent 使用官方 `@openai/codex` CLI 的 `codex app-server --stdio` 启动并复用同一个 Codex thread，启动时会注入 `infinite-canvas` MCP 配置并自动放行 MCP 审批，真正执行画布修改前仍由网页侧边栏二次确认。
 
+新版 Agent 连接后，历史页会列出 Codex 最近任务使用过的本机工作空间，也可以输入一个已经存在的本机绝对目录。切换工作空间会清空当前 thread 引用并加载目标目录的历史，但不会删除原工作空间、对话或文件；连接不支持该接口的旧版 Agent 时仍保持原有的只读路径展示。
+
 侧边栏会展示 Codex 返回的 `thread.started`、`turn.started`、`item.*`、`turn.completed` 等结构化事件；收到 app-server 的 `item/agentMessage/delta` 时，Canvas Agent 会转成 `item.updated`，网页会用同一条消息做真实流式更新，并把工具细节收进运行日志。
 
 侧边栏上传或粘贴的图片会先发到本机 Canvas Agent，再由 Canvas Agent 临时写入本机文件并作为 app-server `localImage` 输入传给 Codex；前端会提示附件体积，单次请求体限制为 30MB。

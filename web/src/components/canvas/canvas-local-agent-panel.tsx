@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { App, Button, Input, Segmented, Tooltip } from "antd";
+import { App, AutoComplete, Button, Input, Segmented, Tooltip } from "antd";
 import copyToClipboard from "copy-to-clipboard";
 import { Copy, FolderOpen, History, KeyRound, Link2, LoaderCircle, PlugZap, Plus, RefreshCw, Square, Terminal, Trash2 } from "lucide-react";
 
@@ -36,7 +36,9 @@ type AgentEventItem = { id?: string; type?: string; text?: unknown; message?: un
 
 type AgentLogContext = { endpoint: string; connected: boolean; enabled: boolean; activity: string; waiting: boolean; sending: boolean; messages: number; pendingTool?: string };
 type AgentWorkspace = { workspacePath: string; activeThreadId?: string };
+type AgentWorkspaceOption = { workspacePath: string; threadCount: number; updatedAt: number };
 type AgentThreadsResponse = { ok?: boolean; workspace?: AgentWorkspace; data?: AgentThreadSummary[] };
+type AgentWorkspacesResponse = { ok?: boolean; workspace?: AgentWorkspace; data?: AgentWorkspaceOption[]; error?: string; msg?: string };
 type AgentThreadResponse = { ok?: boolean; workspace?: AgentWorkspace; thread?: AgentThreadSummary; messages?: AgentChatItem[] };
 type AgentConfigResponse = { ok?: boolean; url?: string; token?: string; hasToken?: boolean };
 
@@ -56,6 +58,8 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
     const errorLoggedRef = useRef(false);
     const attachmentUrlsRef = useRef(new Set<string>());
     const clientIdRef = useRef(randomId());
+    const [workspaces, setWorkspaces] = useState<AgentWorkspaceOption[]>([]);
+    const [workspaceSwitchingSupported, setWorkspaceSwitchingSupported] = useState<boolean | null>(null);
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
     const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
     const loadThreads = useCallback(async () => {
@@ -80,6 +84,30 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
             setAgentState({ loadingThreads: false });
         }
     }, [endpoint, setAgentState, token]);
+
+    const loadWorkspaces = useCallback(async () => {
+        if (!connectedRef.current && !useAgentStore.getState().connected) return;
+        try {
+            const res = await fetch(`${endpoint}/agent/codex/workspaces?token=${encodeURIComponent(token)}`);
+            const data = (await res.json().catch(() => ({}))) as AgentWorkspacesResponse;
+            if (res.status === 404) {
+                setWorkspaceSwitchingSupported(false);
+                setWorkspaces([]);
+                return;
+            }
+            if (!res.ok) throw new Error(data.error || data.msg || "读取工作空间失败");
+            setWorkspaceSwitchingSupported(true);
+            setWorkspaces(data.data || []);
+        } catch (error) {
+            setWorkspaceSwitchingSupported(null);
+            addEventLog("读取工作空间失败", error);
+        }
+    }, [endpoint, token]);
+
+    useEffect(() => {
+        setWorkspaces([]);
+        setWorkspaceSwitchingSupported(null);
+    }, [endpoint, token]);
 
     useEffect(() => {
         canvasContextRef.current = canvasContext;
@@ -402,6 +430,31 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
         }
     };
 
+    const changeWorkspace = async (nextWorkspacePath: string) => {
+        const value = nextWorkspacePath.trim();
+        if (!connected || !value || value === workspacePath) return;
+        setAgentState({ loadingThreads: true });
+        try {
+            const data = await fetchAgentJson<{ ok?: boolean; workspace?: AgentWorkspace }>(endpoint, token, "/agent/codex/workspace", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ workspacePath: value }),
+            });
+            setAgentState({
+                workspacePath: data.workspace?.workspacePath || value,
+                activeThreadId: "",
+                messages: [],
+                activity: "已切换工作空间",
+            });
+            await Promise.all([loadThreads(), loadWorkspaces()]);
+        } catch (error) {
+            addEventLog("切换工作空间失败", error);
+            message.error(error instanceof Error ? error.message : "切换工作空间失败");
+        } finally {
+            setAgentState({ loadingThreads: false });
+        }
+    };
+
     const resumeThread = async (threadId: string) => {
         if (!connected || !threadId) return;
         setAgentState({ loadingThreads: true });
@@ -502,7 +555,10 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
                 ]}
                 onChange={(activeTab) => {
                     setAgentState({ activeTab });
-                    if (activeTab === "history") void loadThreads();
+                    if (activeTab === "history") {
+                        void loadThreads();
+                        void loadWorkspaces();
+                    }
                 }}
                 right={
                     <>
@@ -532,9 +588,15 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
                     threads={threads}
                     activeThreadId={activeThreadId}
                     workspacePath={workspacePath}
+                    workspaces={workspaces}
+                    workspaceSwitchingSupported={workspaceSwitchingSupported === true}
                     loading={loadingThreads}
                     connected={connected}
-                    onRefresh={() => void loadThreads()}
+                    onRefresh={() => {
+                        void loadThreads();
+                        if (workspaceSwitchingSupported !== false) void loadWorkspaces();
+                    }}
+                    onWorkspaceChange={(workspacePath) => void changeWorkspace(workspacePath)}
                     onNewThread={() => void startNewThread()}
                     onResumeThread={(threadId) => void resumeThread(threadId)}
                     onDeleteThread={confirmDeleteThread}
@@ -728,15 +790,51 @@ function AgentConnectView({ theme, url, token, enabled, connected, activity, con
     );
 }
 
-function AgentHistoryView({ theme, threads, activeThreadId, workspacePath, loading, connected, onRefresh, onNewThread, onResumeThread, onDeleteThread }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; threads: AgentThreadSummary[]; activeThreadId: string; workspacePath: string; loading: boolean; connected: boolean; onRefresh: () => void; onNewThread: () => void; onResumeThread: (threadId: string) => void; onDeleteThread: (thread: AgentThreadSummary) => void }) {
+function AgentHistoryView({ theme, threads, activeThreadId, workspacePath, workspaces, workspaceSwitchingSupported, loading, connected, onRefresh, onWorkspaceChange, onNewThread, onResumeThread, onDeleteThread }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; threads: AgentThreadSummary[]; activeThreadId: string; workspacePath: string; workspaces: AgentWorkspaceOption[]; workspaceSwitchingSupported: boolean; loading: boolean; connected: boolean; onRefresh: () => void; onWorkspaceChange: (workspacePath: string) => void; onNewThread: () => void; onResumeThread: (threadId: string) => void; onDeleteThread: (thread: AgentThreadSummary) => void }) {
+    const [draftWorkspacePath, setDraftWorkspacePath] = useState(workspacePath);
+    useEffect(() => setDraftWorkspacePath(workspacePath), [workspacePath]);
+    const workspaceOptions = workspaces.map((workspace) => ({
+        value: workspace.workspacePath,
+        label: workspace.threadCount ? `${workspace.workspacePath} (${workspace.threadCount})` : workspace.workspacePath,
+    }));
+    const switchWorkspace = () => {
+        const value = draftWorkspacePath.trim();
+        if (value && value !== workspacePath) onWorkspaceChange(value);
+    };
     return (
         <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
             <div className="space-y-3">
-                <div className="flex min-w-0 items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
-                    <FolderOpen className="size-3.5 shrink-0" />
-                    <span className="shrink-0">工作空间</span>
-                    <span className="min-w-0 truncate" title={workspacePath}>{workspacePath || "默认画布目录"}</span>
-                </div>
+                {workspaceSwitchingSupported ? (
+                    <div className="space-y-1.5">
+                        <div className="flex min-w-0 items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
+                            <FolderOpen className="size-3.5 shrink-0" />
+                            <span>工作空间</span>
+                        </div>
+                        <div className="flex min-w-0 gap-2">
+                            <AutoComplete
+                                className="min-w-0 flex-1"
+                                value={draftWorkspacePath}
+                                options={workspaceOptions}
+                                placeholder="输入或选择本机绝对路径"
+                                disabled={!connected || loading}
+                                onChange={setDraftWorkspacePath}
+                                onSelect={(value) => setDraftWorkspacePath(value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter") switchWorkspace();
+                                }}
+                            />
+                            <Button size="middle" disabled={!connected || loading || !draftWorkspacePath.trim() || draftWorkspacePath.trim() === workspacePath} onClick={switchWorkspace}>
+                                切换
+                            </Button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex min-w-0 items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
+                        <FolderOpen className="size-3.5 shrink-0" />
+                        <span className="shrink-0">工作空间</span>
+                        <span className="min-w-0 truncate" title={workspacePath}>{workspacePath || "默认画布目录"}</span>
+                    </div>
+                )}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm" style={{ color: theme.node.muted }}>
                         {threads.length ? `${threads.length} 条历史` : connected ? "暂无历史" : "未连接"}
