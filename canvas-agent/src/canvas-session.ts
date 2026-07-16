@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import type { ServerResponse } from "node:http";
+import path from "node:path";
 
 import { type ToolName } from "./schemas.js";
 import { compactCanvasState, compactNode, isToolName, nextCanvasX, parseToolInput } from "./tools.js";
@@ -61,6 +63,10 @@ export class CanvasSession {
         if (!isToolName(name)) throw new Error(`未知工具：${String(name)}`);
         let tool: ToolName = name;
         let input = parseToolInput(tool, rawInput) as Record<string, unknown>;
+        if (tool === "assets_add_file") {
+            input = await imageFileAssetInput(input);
+            tool = "assets_add";
+        }
         if (SITE_TOOLS.has(tool)) {
             if (!this.clients.size) throw new Error("当前没有已连接网页");
             return await this.requestCanvasTool(tool, input);
@@ -179,6 +185,34 @@ export class CanvasSession {
             this.pending.set(requestId, { resolve: (value) => (clearTimeout(timer), resolve(value)), reject: (error) => (clearTimeout(timer), reject(error)) });
         });
     }
+}
+
+async function imageFileAssetInput(input: Record<string, unknown>) {
+    const file = String(input.path || "");
+    if (!path.isAbsolute(file)) throw new Error("图片路径必须是绝对路径");
+    const mimeType = imageMimeType(file);
+    const stat = await fs.stat(file);
+    if (!stat.isFile()) throw new Error(`图片路径不是文件：${file}`);
+    if (stat.size > 30 * 1024 * 1024) throw new Error("图片不能超过 30MB");
+    const data = await fs.readFile(file);
+    return {
+        kind: "image",
+        title: String(input.title || path.basename(file)),
+        imageUrl: `data:${mimeType};base64,${data.toString("base64")}`,
+        tags: input.tags,
+        source: input.source,
+        note: input.note,
+    };
+}
+
+function imageMimeType(file: string) {
+    const ext = path.extname(file).toLowerCase();
+    if (ext === ".png") return "image/png";
+    if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+    if (ext === ".webp") return "image/webp";
+    if (ext === ".gif") return "image/gif";
+    if (ext === ".avif") return "image/avif";
+    throw new Error(`不支持的图片格式：${ext || "无扩展名"}`);
 }
 
 function sendEvent(res: ServerResponse, type: string, payload: unknown) {
