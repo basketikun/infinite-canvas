@@ -186,8 +186,17 @@ function firstMatch(value: string, pattern: RegExp) {
     return pattern.exec(value)?.[1] || "";
 }
 
+function isBadgeImage(src: string) {
+    return /shields\.io|img\.shields|\/badge\//i.test(src);
+}
+
 function extractMarkdownImages(baseUrl: string, markdown: string) {
-    return Array.from(markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g), (match) => absoluteImage(baseUrl, match[1])).filter(Boolean);
+    const markdownImages = Array.from(markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g), (match) => match[1]);
+    const htmlImages = Array.from(markdown.matchAll(/<img[^>]*\bsrc=["']([^"']+)["']/gi), (match) => match[1]);
+    return [...markdownImages, ...htmlImages]
+        .filter((src) => !isBadgeImage(src))
+        .map((src) => absoluteImage(baseUrl, src))
+        .filter(Boolean);
 }
 
 function absoluteImage(baseUrl: string, image: string) {
