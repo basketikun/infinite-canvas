@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Button, Modal } from "antd";
-import { Check, Lock, LockOpen, X } from "lucide-react";
+import { Button, Modal, Segmented, Tooltip } from "antd";
+import { Check, X, ZoomIn, ZoomOut } from "lucide-react";
 
+import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
 import { readImageMeta } from "@/lib/image-utils";
 
 export type CanvasImageCropRect = {
@@ -17,16 +18,32 @@ type ResizeHandle = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 const handles: ResizeHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const minSize = 0.06;
 const defaultCrop = { x: 0.12, y: 0.12, width: 0.76, height: 0.76 };
+const ratioOptions = [
+    { label: "自由", value: "free" },
+    { label: "固定", value: "fixed" },
+    { label: "原图", value: "original" },
+    { label: "1:1", value: "1:1" },
+    { label: "4:3", value: "4:3" },
+    { label: "16:9", value: "16:9" },
+    { label: "9:16", value: "9:16" },
+];
 
 export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (crop: CanvasImageCropRect) => void }) {
-    const boxRef = useRef<HTMLDivElement>(null);
     const [crop, setCrop] = useState<CanvasImageCropRect>(defaultCrop);
-    const [locked, setLocked] = useState(false);
+    const [ratioPreset, setRatioPreset] = useState("free");
+    const [fixedRatio, setFixedRatio] = useState<number | null>(null);
     const [image, setImage] = useState<{ width: number; height: number } | null>(null);
+    const dragAbortRef = useRef<AbortController | null>(null);
+    const viewport = useImageEditorViewport(image, open);
+    const boxRef = viewport.stageRef;
     const cropSize = image ? { width: Math.max(1, Math.round(crop.width * image.width)), height: Math.max(1, Math.round(crop.height * image.height)) } : null;
 
     useEffect(() => {
-        if (open) setCrop(defaultCrop);
+        if (open) {
+            setCrop(defaultCrop);
+            setRatioPreset("free");
+            setFixedRatio(null);
+        }
     }, [dataUrl, open]);
 
     useEffect(() => {
@@ -34,42 +51,74 @@ export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { da
         void readImageMeta(dataUrl).then(setImage);
     }, [dataUrl, open]);
 
+    useEffect(() => {
+        if (!open) dragAbortRef.current?.abort();
+        return () => dragAbortRef.current?.abort();
+    }, [open]);
+
     const startDrag = (mode: DragMode, event: ReactPointerEvent, handle?: ResizeHandle) => {
         const box = boxRef.current?.getBoundingClientRect();
         if (!box) return;
         event.preventDefault();
         event.stopPropagation();
+        dragAbortRef.current?.abort();
+        const controller = new AbortController();
+        dragAbortRef.current = controller;
         const start = { x: event.clientX, y: event.clientY, crop };
         const move = (event: PointerEvent) => {
             const dx = (event.clientX - start.x) / box.width;
             const dy = (event.clientY - start.y) / box.height;
-            setCrop(mode === "move" ? moveCrop(start.crop, dx, dy) : resizeCrop(start.crop, dx, dy, handle || "se", locked, box));
+            setCrop(mode === "move" ? moveCrop(start.crop, dx, dy) : resizeCrop(start.crop, dx, dy, handle || "se", resolveRatio(ratioPreset, image, fixedRatio), box));
         };
-        const up = () => {
-            document.removeEventListener("pointermove", move);
-            document.removeEventListener("pointerup", up);
-        };
-        document.addEventListener("pointermove", move);
-        document.addEventListener("pointerup", up);
+        const stop = () => controller.abort();
+        document.addEventListener("pointermove", move, { signal: controller.signal });
+        document.addEventListener("pointerup", stop, { signal: controller.signal });
+        document.addEventListener("pointercancel", stop, { signal: controller.signal });
     };
 
     return (
-        <Modal title="裁剪图片" open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={780} centered destroyOnHidden>
+        <Modal title="裁剪图片" open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={780} centered destroyOnHidden transitionName="" maskTransitionName="">
             <div className="space-y-4">
-                <div className="flex justify-center">
-                    <div ref={boxRef} className="relative inline-block max-w-full overflow-hidden rounded-lg bg-black select-none">
-                        <img src={dataUrl} alt="" className="block max-h-[62vh] max-w-full opacity-90" draggable={false} />
-                        <CropMask crop={crop} />
-                        <div className="absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.3),0_0_28px_rgba(0,0,0,.28)]" style={cropStyle(crop)} onPointerDown={(event) => startDrag("move", event)}>
-                            <div className="pointer-events-none absolute inset-x-0 top-1/3 border-t border-white/50" />
-                            <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-white/50" />
-                            <div className="pointer-events-none absolute inset-y-0 left-1/3 border-l border-white/50" />
-                            <div className="pointer-events-none absolute inset-y-0 left-2/3 border-l border-white/50" />
-                            {handles.map((handle) => (
-                                <button key={handle} type="button" className="absolute size-3 rounded-full border border-black bg-white" style={handleStyle(handle)} onPointerDown={(event) => startDrag("resize", event, handle)} aria-label="调整裁剪框" />
-                            ))}
+                <div
+                    ref={viewport.viewportRef}
+                    {...viewport.panHandlers}
+                    className={`relative h-[min(62vh,620px)] min-h-[340px] rounded-lg bg-black/5 ${viewport.scrollClassName} ${viewport.isPanning ? "cursor-grabbing" : viewport.spacePressed ? "cursor-grab" : ""}`}
+                >
+                    <div className="relative" style={viewport.contentStyle}>
+                        <div ref={boxRef} className="absolute isolate overflow-hidden rounded-lg bg-black select-none [backface-visibility:hidden] [contain:layout_paint] [transform:translateZ(0)]" style={viewport.stageStyle}>
+                            <img src={dataUrl} alt="" className="absolute inset-0 block h-full w-full object-contain opacity-90" draggable={false} />
+                            <CropMask crop={crop} />
+                            <div className="absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.3),0_0_28px_rgba(0,0,0,.28)]" style={cropStyle(crop)} onPointerDown={(event) => startDrag("move", event)}>
+                                <div className="pointer-events-none absolute inset-x-0 top-1/3 border-t border-white/50" />
+                                <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-white/50" />
+                                <div className="pointer-events-none absolute inset-y-0 left-1/3 border-l border-white/50" />
+                                <div className="pointer-events-none absolute inset-y-0 left-2/3 border-l border-white/50" />
+                                {handles.map((handle) => (
+                                    <button
+                                        key={handle}
+                                        type="button"
+                                        className="absolute size-3 rounded-full border border-black bg-white"
+                                        style={handleStyle(handle)}
+                                        onPointerDown={(event) => startDrag("resize", event, handle)}
+                                        aria-label="调整裁剪框"
+                                    />
+                                ))}
+                            </div>
                         </div>
                     </div>
+                </div>
+
+                <div className="flex items-center justify-center gap-1">
+                    <Tooltip title="缩小">
+                        <Button type="text" icon={<ZoomOut className="size-4" />} disabled={!viewport.canZoomOut} aria-label="缩小" onClick={viewport.zoomOut} />
+                    </Tooltip>
+                    <button type="button" className="min-w-14 text-center text-xs font-semibold tabular-nums opacity-70" onClick={viewport.resetZoom}>
+                        {Math.round(viewport.zoom * 100)}%
+                    </button>
+                    <Tooltip title="放大">
+                        <Button type="text" icon={<ZoomIn className="size-4" />} disabled={!viewport.canZoomIn} aria-label="放大" onClick={viewport.zoomIn} />
+                    </Tooltip>
+                    <span className="ml-2 text-xs opacity-55">滚轮缩放 · 中键或空格+左键拖动画面</span>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
@@ -82,9 +131,20 @@ export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { da
                             </span>
                         ) : null}
                     </div>
-                    <Button icon={locked ? <Lock className="size-4" /> : <LockOpen className="size-4" />} onClick={() => setLocked((value) => !value)}>
-                        {locked ? "锁定比例" : "自由比例"}
-                    </Button>
+                    <Segmented
+                        size="small"
+                        options={ratioOptions}
+                        value={ratioPreset}
+                        onChange={(value) => {
+                            const preset = String(value);
+                            setRatioPreset(preset);
+                            const currentRatio = image ? (crop.width * image.width) / Math.max(1, crop.height * image.height) : null;
+                            const nextFixedRatio = preset === "fixed" ? currentRatio : null;
+                            setFixedRatio(nextFixedRatio);
+                            const ratio = resolveRatio(preset, image, nextFixedRatio);
+                            if (ratio && image) setCrop((current) => fitCropToRatio(current, ratio, image));
+                        }}
+                    />
                 </div>
 
                 <div className="flex items-center justify-end gap-2">
@@ -116,7 +176,7 @@ function moveCrop(crop: CanvasImageCropRect, dx: number, dy: number): CanvasImag
     return { ...crop, x: clamp(crop.x + dx, 0, 1 - crop.width), y: clamp(crop.y + dy, 0, 1 - crop.height) };
 }
 
-function resizeCrop(crop: CanvasImageCropRect, dx: number, dy: number, handle: ResizeHandle, locked: boolean, box: DOMRect): CanvasImageCropRect {
+function resizeCrop(crop: CanvasImageCropRect, dx: number, dy: number, handle: ResizeHandle, aspectRatio: number | null, box: DOMRect): CanvasImageCropRect {
     let next = { ...crop };
     if (handle.includes("e")) next.width = crop.width + dx;
     if (handle.includes("s")) next.height = crop.height + dy;
@@ -128,18 +188,66 @@ function resizeCrop(crop: CanvasImageCropRect, dx: number, dy: number, handle: R
         next.y = crop.y + dy;
         next.height = crop.height - dy;
     }
-    if (locked) {
-        const size = Math.max(next.width * box.width, next.height * box.height);
-        next.width = size / box.width;
-        next.height = size / box.height;
+    if (aspectRatio) {
+        const normalizedRatio = aspectRatio * (box.height / box.width);
+        const horizontalOnly = (handle.includes("e") || handle.includes("w")) && !handle.includes("n") && !handle.includes("s");
+        const useWidth = horizontalOnly || (handle.length > 1 && Math.abs(dx * box.width) >= Math.abs(dy * box.height));
+        if (useWidth) next.height = next.width / normalizedRatio;
+        else next.width = next.height * normalizedRatio;
         if (handle.includes("w")) next.x = crop.x + crop.width - next.width;
         if (handle.includes("n")) next.y = crop.y + crop.height - next.height;
     }
-    next.width = clamp(next.width, minSize, 1);
-    next.height = clamp(next.height, minSize, 1);
+    if (aspectRatio) {
+        const normalizedRatio = aspectRatio * (box.height / box.width);
+        const scaleDown = Math.min(1, 1 / Math.max(next.width, 0.001), 1 / Math.max(next.height, 0.001));
+        next.width *= scaleDown;
+        next.height *= scaleDown;
+        if (next.width < minSize || next.height < minSize) {
+            const minimumScale = Math.max(minSize / Math.max(next.width, 0.001), minSize / Math.max(next.height, 0.001));
+            next.width *= minimumScale;
+            next.height *= minimumScale;
+        }
+        next.width = Math.min(next.width, next.height * normalizedRatio);
+        next.height = next.width / normalizedRatio;
+    } else {
+        next.width = clamp(next.width, minSize, 1);
+        next.height = clamp(next.height, minSize, 1);
+    }
     next.x = clamp(next.x, 0, 1 - next.width);
     next.y = clamp(next.y, 0, 1 - next.height);
     return next;
+}
+
+function resolveRatio(preset: string, image: { width: number; height: number } | null, fixedRatio: number | null) {
+    if (preset === "free" || !image) return null;
+    if (preset === "fixed") return fixedRatio;
+    if (preset === "original") return image.width / image.height;
+    const [width, height] = preset.split(":").map(Number);
+    return width > 0 && height > 0 ? width / height : null;
+}
+
+function fitCropToRatio(crop: CanvasImageCropRect, ratio: number, image: { width: number; height: number }): CanvasImageCropRect {
+    const normalizedRatio = ratio * (image.height / image.width);
+    let width = crop.width;
+    let height = width / normalizedRatio;
+    if (height > crop.height) {
+        height = crop.height;
+        width = height * normalizedRatio;
+    }
+    if (width > 1) {
+        width = 1;
+        height = width / normalizedRatio;
+    }
+    if (height > 1) {
+        height = 1;
+        width = height * normalizedRatio;
+    }
+    return {
+        x: clamp(crop.x + (crop.width - width) / 2, 0, 1 - width),
+        y: clamp(crop.y + (crop.height - height) / 2, 0, 1 - height),
+        width,
+        height,
+    };
 }
 
 function cropStyle(crop: CanvasImageCropRect) {
