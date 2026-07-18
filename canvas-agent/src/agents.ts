@@ -11,11 +11,12 @@ import type { AgentAttachment, AgentEmit } from "./types.js";
 type Json = Record<string, unknown>;
 type AgentEvent = Json & { type: string; usage?: unknown };
 type PendingRequest = { resolve: (value: unknown) => void; reject: (error: Error) => void };
-type CodexRunOptions = { threadId?: string; cwd?: string };
+type CodexRunOptions = { threadId?: string; cwd?: string; appEmit?: AgentEmit; onStart?: () => void; onThread?: (threadId: string) => void; onTurn?: (turnId: string) => void; onFinish?: () => void };
 type AgentHistoryMessage = { id: string; role: "user" | "assistant" | "tool" | "error"; title?: string; text: string; detail?: unknown; streamId?: string };
 
 let codexQueue: Promise<unknown> = Promise.resolve();
 let codexApp: CodexAppClient | null = null;
+let codexAppStart: Promise<CodexAppClient> | null = null;
 let codexThreadId = "";
 const canvasAgentMcp = canvasAgentMcpCommand();
 const require = createRequire(import.meta.url);
@@ -30,52 +31,56 @@ export async function runCodexTurn(prompt: string, emit: AgentEmit, attachments:
     await codexQueue;
 }
 
-export function interruptCodexTurn() {
-    if (!codexApp) return false;
+export function interruptCodexTurn(threadId?: string) {
+    if (!codexApp || (threadId && threadId !== codexThreadId)) return false;
     return codexApp.interruptCurrentTurn();
 }
 
 async function runCodexTurnNow(prompt: string, emit: AgentEmit, attachments: AgentAttachment[], options: CodexRunOptions) {
     let files: string[] = [];
     try {
+        options.onStart?.();
         files = await writeAttachmentFiles(attachments);
-        codexApp ||= await CodexAppClient.start(emit);
-        let threadId = await ensureCodexThread(codexApp, options, emit);
+        const app = await getCodexApp(options.appEmit || emit);
+        let threadId = await ensureCodexThread(app, options, emit);
+        options.onThread?.(threadId);
         try {
-            await codexApp.startTurn(threadId, prompt, files);
+            await app.startTurn(threadId, prompt, files, options.onTurn);
         } catch (error) {
             if (!isRecoverableThreadError(error)) throw error;
             emit("agent_log", { text: `Codex thread unavailable, starting a new thread: ${errorMessage(error)}` });
             codexThreadId = "";
-            threadId = await ensureCodexThread(codexApp, { cwd: options.cwd }, emit);
-            await codexApp.startTurn(threadId, prompt, files);
+            threadId = await ensureCodexThread(app, { cwd: options.cwd }, emit);
+            options.onThread?.(threadId);
+            await app.startTurn(threadId, prompt, files, options.onTurn);
         }
     } catch (error) {
         emit("agent_error", { message: errorMessage(error) });
     } finally {
+        options.onFinish?.();
         await Promise.all(files.map((file) => fs.unlink(file).catch(() => undefined)));
     }
 }
 
 export async function startCodexThread(emit: AgentEmit, cwd?: string) {
-    codexApp ||= await CodexAppClient.start(emit);
-    const thread = await codexApp.startThread(cwd);
+    const app = await getCodexApp(emit);
+    const thread = await app.startThread(cwd);
     codexThreadId = String(field(thread, "id") || "");
     return thread;
 }
 
 export async function resumeCodexThread(emit: AgentEmit, threadId: string, cwd?: string) {
-    codexApp ||= await CodexAppClient.start(emit);
+    const app = await getCodexApp(emit);
     await loadCodexThread(emit, threadId, cwd, false);
-    const thread = await codexApp.resumeThread(threadId, cwd);
+    const thread = await app.resumeThread(threadId, cwd);
     assertThreadWorkspace(thread, cwd);
     codexThreadId = String(field(thread, "id") || threadId);
     return { thread, messages: threadMessages(thread) };
 }
 
 export async function listCodexThreads(emit: AgentEmit, options: { cwd: string; searchTerm?: string; limit?: number }) {
-    codexApp ||= await CodexAppClient.start(emit);
-    const result = await codexApp.listThreads({
+    const app = await getCodexApp(emit);
+    const result = await app.listThreads({
         limit: options.limit || 40,
         sortKey: "updated_at",
         sortDirection: "desc",
@@ -97,9 +102,9 @@ export async function verifyCodexThreadWorkspace(emit: AgentEmit, threadId: stri
 }
 
 export async function archiveCodexThread(emit: AgentEmit, threadId: string, cwd?: string) {
-    codexApp ||= await CodexAppClient.start(emit);
+    const app = await getCodexApp(emit);
     await loadCodexThread(emit, threadId, cwd, false);
-    await codexApp.archiveThread(threadId);
+    await app.archiveThread(threadId);
 }
 
 export function runClaudeTurn(prompt: string, emit: AgentEmit) {
@@ -131,7 +136,7 @@ async function ensureCodexThread(app: CodexAppClient, options: CodexRunOptions, 
     return codexThreadId;
 }
 
-function isRecoverableThreadError(error: unknown) {
+export function isRecoverableThreadError(error: unknown) {
     return /thread not loaded|no rollout found/i.test(errorMessage(error));
 }
 
@@ -192,10 +197,11 @@ class CodexAppClient {
         return this.request("thread/archive", { threadId });
     }
 
-    async startTurn(threadId: string, prompt: string, images: string[]) {
+    async startTurn(threadId: string, prompt: string, images: string[], onTurn?: (turnId: string) => void) {
         const result = await this.request("turn/start", { threadId, input: codexInput(prompt, images), approvalPolicy: "never" });
         const turnId = String(field(field(result, "turn"), "id") || "");
         if (!turnId) throw new Error("Codex app-server 没有返回 turn id");
+        onTurn?.(turnId);
         const completed = this.completedTurns.get(turnId);
         if (this.completedTurns.has(turnId)) {
             this.completedTurns.delete(turnId);
@@ -267,9 +273,9 @@ class CodexAppClient {
             } else if (turnId) {
                 this.completedTurns.set(turnId, error ? new Error(String(field(error, "message") || "Codex turn failed")) : null);
             }
-            this.emit("agent_event", { agent: "codex", type: "stream.summary", delta_count: this.deltaCount });
+            this.emit("agent_event", { agent: "codex", type: "stream.summary", delta_count: this.deltaCount, ...codexEventScope(params) });
             this.deltaCount = 0;
-            this.emit("agent_done", { agent: "codex", usage: event.usage });
+            this.emit("agent_done", { agent: "codex", usage: event.usage, ...codexEventScope(params) });
         }
     }
 
@@ -278,7 +284,7 @@ class CodexAppClient {
         const text = `${this.textByItem.get(id) || ""}${String(field(params, "delta") || "")}`;
         this.deltaCount += 1;
         this.textByItem.set(id, text);
-        this.emit("agent_event", { agent: "codex", type: "item.updated", item: { id, type: "agent_message", text } });
+        this.emit("agent_event", { agent: "codex", type: "item.updated", item: { id, type: "agent_message", text }, ...codexEventScope(params) });
     }
 
     private answerServerRequest(message: Json) {
@@ -321,21 +327,39 @@ function codexInput(prompt: string, images: string[]) {
 }
 
 function normalizeCodexNotification(method: string, params: Json): AgentEvent | null {
-    if (method === "thread/started") return { type: "thread.started", thread_id: field(field(params, "thread"), "id") };
-    if (method === "turn/started") return { type: "turn.started" };
-    if (method === "turn/completed") return { type: "turn.completed", usage: null };
-    if (method === "item/started") return { type: "item.started", item: normalizeItem(field(params, "item")) };
-    if (method === "item/completed") return { type: "item.completed", item: normalizeItem(field(params, "item")) };
-    if (method === "error") return { type: "error", message: field(params, "message") };
+    const scope = codexEventScope(params);
+    if (method === "thread/started") return { type: "thread.started", ...scope };
+    if (method === "turn/started") return { type: "turn.started", ...scope };
+    if (method === "turn/completed") return { type: "turn.completed", usage: null, ...scope };
+    if (method === "item/started") return { type: "item.started", item: normalizeItem(field(params, "item")), ...scope };
+    if (method === "item/completed") return { type: "item.completed", item: normalizeItem(field(params, "item")), ...scope };
+    if (method === "error") return { type: "error", message: field(params, "message"), ...scope };
     return null;
 }
 
+function codexEventScope(params: Json) {
+    const threadId = String(field(params, "threadId") || field(field(params, "thread"), "id") || "");
+    const turnId = String(field(params, "turnId") || field(field(params, "turn"), "id") || "");
+    return { ...(threadId ? { thread_id: threadId } : {}), ...(turnId ? { turn_id: turnId } : {}) };
+}
+
 async function loadCodexThread(emit: AgentEmit, threadId: string, cwd: string | undefined, includeTurns: boolean) {
-    codexApp ||= await CodexAppClient.start(emit);
-    const result = await codexApp.readThread(threadId, includeTurns);
+    const app = await getCodexApp(emit);
+    const result = await app.readThread(threadId, includeTurns);
     const thread = field(result, "thread") || {};
     assertThreadWorkspace(thread, cwd);
     return thread;
+}
+
+async function getCodexApp(emit: AgentEmit) {
+    if (codexApp) return codexApp;
+    codexAppStart ||= CodexAppClient.start(emit);
+    try {
+        codexApp = await codexAppStart;
+        return codexApp;
+    } finally {
+        codexAppStart = null;
+    }
 }
 
 function assertThreadWorkspace(thread: unknown, cwd?: string) {

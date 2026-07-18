@@ -2,7 +2,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 
 import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "./config.js";
 import { CanvasSession } from "./canvas-session.js";
-import { archiveCodexThread, interruptCodexTurn, listCodexThreads, readCodexThread, resumeCodexThread, runClaudeTurn, runCodexTurn, startCodexThread, summarizeCodexThread, verifyCodexThreadWorkspace, withAgentPrompt } from "./agents.js";
+import { archiveCodexThread, interruptCodexTurn, isRecoverableThreadError, listCodexThreads, readCodexThread, resumeCodexThread, runClaudeTurn, runCodexTurn, startCodexThread, summarizeCodexThread, verifyCodexThreadWorkspace, withAgentPrompt } from "./agents.js";
 import type { AgentAttachment } from "./types.js";
 
 export function startHttpServer() {
@@ -12,7 +12,16 @@ export function startHttpServer() {
     saveConfig(config);
 
     const session = new CanvasSession();
-    const emit = (type: string, payload: unknown) => session.emitAll(type, payload);
+    const emit = (type: string, payload: unknown) => {
+        const data = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : { value: payload };
+        const threadId = String(data.threadId || data.thread_id || ensureSiteWorkspace(config).activeThreadId || "");
+        threadId ? session.emitThread(type, threadId, data) : session.emitAll(type, data);
+    };
+    const setActiveThread = (activeThreadId: string, payload: Record<string, unknown> = {}) => {
+        const workspace = updateSiteWorkspace(config, { activeThreadId: activeThreadId || undefined });
+        session.emitThread("workspace_changed", activeThreadId, { ...payload, activeThreadId });
+        return workspace;
+    };
     const app = express();
     app.disable("x-powered-by");
     app.use(express.json({ limit: "30mb" }));
@@ -33,9 +42,13 @@ export function startHttpServer() {
         session.updateState(req.body, String(req.query.clientId || "") || undefined);
         res.json({ ok: true });
     });
-    app.post("/canvas/result", (req, res) => {
-        session.resolveResult(req.body);
+    app.post("/canvas/activate", (req, res) => {
+        session.activateClient(String(req.query.clientId || ""));
         res.json({ ok: true });
+    });
+    app.post("/canvas/result", (req, res) => {
+        const ok = session.resolveResult(String(req.query.clientId || ""), req.body);
+        res.status(ok ? 200 : 409).json({ ok });
     });
     app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
     app.get("/agent/codex/workspace", (_req, res) => {
@@ -48,48 +61,100 @@ export function startHttpServer() {
         res.json({ ok: true, workspace, ...result });
     }));
     app.post("/agent/codex/threads/new", route(async (_req, res) => {
+        if (session.codexBusy) return res.status(409).json({ ok: false, error: "Codex 正在运行，请等待当前任务完成" });
         const workspace = ensureSiteWorkspace(config);
         const thread = await startCodexThread(emit, workspace.workspacePath);
         const activeThreadId = String((thread as Record<string, unknown>).id || "");
-        updateSiteWorkspace(config, { activeThreadId });
-        res.json({ ok: true, workspace: { ...workspace, activeThreadId }, thread: summarizeCodexThread(thread), messages: [] });
+        const nextWorkspace = setActiveThread(activeThreadId, { emptyThread: true });
+        res.json({ ok: true, workspace: nextWorkspace, thread: summarizeCodexThread(thread), messages: [] });
     }));
     app.get("/agent/codex/threads/:threadId", route(async (req, res) => {
         const workspace = ensureSiteWorkspace(config);
         const threadId = routeParam(req.params.threadId);
-        res.json({ ok: true, workspace, ...(await readCodexThread(emit, threadId, workspace.workspacePath)) });
+        try {
+            res.json({ ok: true, workspace, ...(await readCodexThread(emit, threadId, workspace.workspacePath)) });
+        } catch (error) {
+            if (workspace.activeThreadId !== threadId || !isRecoverableThreadError(error)) throw error;
+            res.json({ ok: true, workspace, thread: { id: threadId, preview: "", cwd: workspace.workspacePath }, messages: [] });
+        }
     }));
     app.post("/agent/codex/threads/:threadId/resume", route(async (req, res) => {
+        if (session.codexBusy) return res.status(409).json({ ok: false, error: "Codex 正在运行，请等待当前任务完成" });
         const workspace = ensureSiteWorkspace(config);
         const threadId = routeParam(req.params.threadId);
         const result = await resumeCodexThread(emit, threadId, workspace.workspacePath);
-        updateSiteWorkspace(config, { activeThreadId: threadId });
-        res.json({ ok: true, workspace: { ...workspace, activeThreadId: threadId }, ...result });
+        const nextWorkspace = setActiveThread(threadId);
+        res.json({ ok: true, workspace: nextWorkspace, ...result });
     }));
     app.post("/agent/codex/threads/:threadId/delete", route(async (req, res) => {
+        if (session.codexBusy) return res.status(409).json({ ok: false, error: "Codex 正在运行，请等待当前任务完成" });
         const workspace = ensureSiteWorkspace(config);
         const threadId = routeParam(req.params.threadId);
         await archiveCodexThread(emit, threadId, workspace.workspacePath);
-        if (workspace.activeThreadId === threadId) updateSiteWorkspace(config, { activeThreadId: undefined });
+        setActiveThread(workspace.activeThreadId === threadId ? "" : workspace.activeThreadId || "");
         res.json({ ok: true });
     }));
     app.post("/agent/codex/turn", route(async (req, res) => {
+        if (session.codexBusy) return res.status(409).json({ ok: false, error: "Codex 正在运行，请等待当前任务完成" });
         const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as AgentAttachment[]) : [];
         const workspace = ensureSiteWorkspace(config);
-        let threadId = String(req.body?.threadId || workspace.activeThreadId || "");
-        if (!threadId) {
-            const thread = await startCodexThread(emit, workspace.workspacePath);
-            threadId = String((thread as Record<string, unknown>).id || "");
-            updateSiteWorkspace(config, { activeThreadId: threadId });
-        } else if (threadId !== workspace.activeThreadId) {
-            await verifyCodexThreadWorkspace(emit, threadId, workspace.workspacePath);
-            updateSiteWorkspace(config, { activeThreadId: threadId });
+        const prompt = String(req.body?.prompt || "");
+        if (!prompt.trim()) return res.status(400).json({ ok: false, error: "请输入任务内容" });
+        const clientId = String(req.body?.clientId || "");
+        session.setCodexState({ busy: true, threadId: String(req.body?.threadId || workspace.activeThreadId || ""), turnId: "" });
+        try {
+            let threadId = String(req.body?.threadId || workspace.activeThreadId || "");
+            let turnId = "";
+            if (!threadId) {
+                const thread = await startCodexThread(emit, workspace.workspacePath);
+                threadId = String((thread as Record<string, unknown>).id || "");
+                setActiveThread(threadId, { emptyThread: true });
+            } else if (threadId !== workspace.activeThreadId) {
+                await verifyCodexThreadWorkspace(emit, threadId, workspace.workspacePath);
+                setActiveThread(threadId);
+            }
+            const chatMessage = {
+                sourceClientId: clientId,
+                message: { id: String(req.body?.messageId || Date.now()), role: "user", text: String(req.body?.messageText || prompt || `发送了 ${attachments.length} 张图片`) },
+            };
+            let chatThreadId = "";
+            const turnEmit = (type: string, payload: unknown) => {
+                const data = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : { value: payload };
+                session.emitThread(type, threadId, data);
+            };
+            void runCodexTurn(withAgentPrompt(prompt), turnEmit, attachments, {
+                threadId,
+                cwd: workspace.workspacePath,
+                appEmit: emit,
+                onStart: clientId ? () => session.bindClient(clientId) : undefined,
+                onThread: (actualThreadId) => {
+                    if (actualThreadId !== threadId) {
+                        threadId = actualThreadId;
+                        setActiveThread(threadId, { emptyThread: true });
+                    }
+                    session.setCodexState({ busy: true, threadId, turnId: "" });
+                    if (chatThreadId !== threadId) {
+                        chatThreadId = threadId;
+                        session.emitThread("chat_message", threadId, chatMessage);
+                    }
+                },
+                onTurn: (actualTurnId) => {
+                    turnId = actualTurnId;
+                    session.setCodexState({ busy: true, threadId, turnId });
+                },
+                onFinish: () => {
+                    if (clientId) session.releaseClient(clientId);
+                    session.setCodexState({ busy: false, threadId, turnId });
+                },
+            });
+            res.json({ ok: true, threadId });
+        } catch (error) {
+            session.setCodexState({ busy: false, threadId: String(req.body?.threadId || workspace.activeThreadId || ""), turnId: "" });
+            throw error;
         }
-        void runCodexTurn(withAgentPrompt(String(req.body?.prompt || "")), emit, attachments, { threadId, cwd: workspace.workspacePath });
-        res.json({ ok: true, threadId });
     }));
-    app.post("/agent/codex/interrupt", (_req, res) => {
-        const ok = interruptCodexTurn();
+    app.post("/agent/codex/interrupt", (req, res) => {
+        const ok = interruptCodexTurn(String(req.body?.threadId || ""));
         res.json({ ok });
     });
     app.post("/agent/claude/turn", (req, res) => {

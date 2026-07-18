@@ -13,6 +13,7 @@
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
+    "test": "tsx --test src/canvas-session.test.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "prepack": "npm run build"
