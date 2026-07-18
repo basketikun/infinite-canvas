@@ -8,6 +8,7 @@ data/
 *.tsbuildinfo
 .DS_Store
 .idea
+.playwright-cli/
 web/dist
 
 **/dist
