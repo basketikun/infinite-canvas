@@ -34,6 +34,20 @@
 - 截图：`output/playwright/seedance-video-success.png`
 - 样片：`output/qa/seedance-480p-4s-sample.mp4`
 
+## 视频故障修复复验（2026-07-18）
+
+- 故障根因 1：本机 AI 代理转发浏览器的压缩声明，并继续沿用上游响应长度；响应被自动解压后，浏览器可能因长度不一致而只返回网络错误。
+- 故障根因 2：火山返回的对象存储 MP4 不允许浏览器跨域读取，视频结果无法可靠保存为本地媒体。
+- 修复：代理不再转发 `Accept-Encoding` 或上游 `Content-Length`；远程视频结果改由本机 AI 代理下载。
+- 复验规格：`480p / 4 秒 / 9:16 / 无参考图 / 不生成音频`。
+- 火山任务：`cgt-20260718120952-mllkr`，状态 `succeeded`，只提交 1 次。
+- 真实 MP4：H.264，`496 x 864`，24 fps，`4.041667 秒`，`1,229,474 bytes`。
+- SHA-256：`928674fd70718644f8f7abb5f46c031b7a69d17af7f5dd94d35a3ad2a8d32a1b`。
+- 目视检查：0.5 秒、2.0 秒和 3.5 秒抽帧中橙猫主体一致，前行动作明确，无人物、文字或明显肢体畸变。
+- 样片：`output/qa/seedance-repair-test-480p-4s.mp4`。
+- 抽帧：`output/qa/seedance-repair-test-frame-0.5s.jpg`、`output/qa/seedance-repair-test-frame-2.0s.jpg`、`output/qa/seedance-repair-test-frame-3.5s.jpg`。
+- 说明：生成期间另一个 Agent 导航离开画布，页面轮询被取消，因此该次画布节点记录为“任务查询失败”；火山任务和落盘 MP4 均已独立核验成功。最终 MP4 代理下载修复使用该已完成任务验证，没有再次创建付费任务。
+
 ## 已知差异
 
 视频结果卡片显示 `1280 x 720`，但下载后的真实文件经 `ffprobe` 检查为 `640 x 640`。任务记录中的 `480p / 4s` 与真实文件相符，结果卡尺寸属于界面输入标签，不应作为真实媒体参数。

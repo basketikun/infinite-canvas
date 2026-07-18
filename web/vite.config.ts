@@ -114,13 +114,13 @@ function localAiProxy(): Plugin {
                     for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
                     const headers = new Headers();
                     for (const [name, value] of Object.entries(req.headers)) {
-                        if (!value || ["host", "connection", "content-length", "origin", "referer"].includes(name)) continue;
+                        if (!value || ["host", "connection", "content-length", "accept-encoding", "origin", "referer"].includes(name)) continue;
                         headers.set(name, Array.isArray(value) ? value.join(", ") : value);
                     }
                     const body = chunks.length ? Buffer.concat(chunks) : undefined;
                     const upstream = await fetch(target, { method: req.method, headers, body, redirect: "manual" });
                     res.statusCode = upstream.status;
-                    for (const name of ["content-type", "content-length", "content-disposition", "cache-control", "etag", "last-modified", "location"]) {
+                    for (const name of ["content-type", "content-disposition", "cache-control", "etag", "last-modified", "location"]) {
                         const value = upstream.headers.get(name);
                         if (value) res.setHeader(name, value);
                     }
