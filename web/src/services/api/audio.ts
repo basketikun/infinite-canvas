@@ -6,6 +6,7 @@ import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConf
 import { runModelPlugin } from "./model-plugin";
 
 type RequestOptions = { signal?: AbortSignal };
+type MimoAudioResponse = { choices?: Array<{ message?: { audio?: { data?: string } } }>; error?: { message?: string } };
 
 function aiApiUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path);
@@ -42,6 +43,7 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
         }
     }
     assertAudioConfig(requestConfig, model);
+    if (model.startsWith("mimo-v2.5-tts")) return requestMimoAudioGeneration(requestConfig, prompt, format, options);
     const instructions = config.audioInstructions.trim();
 
     try {
@@ -62,6 +64,39 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     } catch (error) {
         throw new Error(readAxiosError(error, "音频生成失败"));
     }
+}
+
+async function requestMimoAudioGeneration(config: AiConfig, prompt: string, format: string, options?: RequestOptions) {
+    const model = config.model.trim();
+    if (model === "mimo-v2.5-tts-voiceclone") throw new Error("MiMo 音色克隆需要上传参考音频，当前普通音频节点请改用 mimo-v2.5-tts");
+    const instructions = config.audioInstructions.trim();
+    const voiceDesign = model === "mimo-v2.5-tts-voicedesign";
+    const messages = [
+        ...(instructions || voiceDesign ? [{ role: "user", content: instructions || "自然、清晰、亲切的中文声音" }] : []),
+        { role: "assistant", content: prompt },
+    ];
+    const outputFormat = format === "wav" ? "wav" : "mp3";
+    try {
+        const response = await axios.post<MimoAudioResponse>(
+            aiApiUrl(config, "/chat/completions"),
+            {
+                model,
+                messages,
+                audio: voiceDesign ? { format: outputFormat, optimize_text_preview: false } : { format: outputFormat, voice: mimoVoice(config.audioVoice) },
+            },
+            { headers: aiHeaders(config), signal: options?.signal },
+        );
+        const data = response.data.choices?.[0]?.message?.audio?.data;
+        if (!data) throw new Error(response.data.error?.message || "MiMo 接口没有返回音频");
+        return audioPluginBlob(data, outputFormat);
+    } catch (error) {
+        throw new Error(readAxiosError(error, "MiMo 音频生成失败"));
+    }
+}
+
+function mimoVoice(value: string) {
+    const supported = ["mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"];
+    return supported.includes(value) ? value : "mimo_default";
 }
 
 async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {
