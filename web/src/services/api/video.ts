@@ -94,7 +94,7 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
             images: refs,
             params: {
                 seconds: normalizeVideoSeconds(config.videoSeconds),
-                size: normalizeVideoSize(config.size),
+                size: normalizeVideoSize(config.size, config.vquality),
                 resolution: normalizeVideoResolution(config.vquality),
                 ratio: config.size,
                 generateAudio: boolConfig(config.videoGenerateAudio, true),
@@ -137,7 +137,8 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
+    const size = normalizeVideoSize(config.size, config.vquality);
+    if (size) body.append("size", size);
     body.append("resolution_name", normalizeVideoResolution(config.vquality));
     body.append("preset", "normal");
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
@@ -299,9 +300,16 @@ function normalizeVideoSeconds(value: string) {
     return String(Math.max(1, Math.min(20, seconds)));
 }
 
-function normalizeVideoSize(value: string) {
+function normalizeVideoSize(value: string, resolution = "720p") {
     if (value === "auto") return null;
     const size = value || "1280x720";
+    if (normalizeVideoResolution(resolution) === "480p") {
+        const dimensions = size.match(/^(\d+)x(\d+)$/);
+        const ratio = dimensions ? Number(dimensions[1]) / Number(dimensions[2]) : size === "1:1" ? 1 : ["9:16", "2:3", "3:4"].includes(size) ? 0.5625 : 16 / 9;
+        if (ratio > 1.1) return "832x480";
+        if (ratio < 0.9) return "480x832";
+        return "624x624";
+    }
     if (/^\d+x\d+$/.test(size)) return size;
     return ["9:16", "2:3", "3:4"].includes(size) ? "720x1280" : "1280x720";
 }
