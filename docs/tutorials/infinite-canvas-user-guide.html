@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23d93d24'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-size='34' fill='white'%3E%E4%BD%B0%3C/text%3E%3C/svg%3E" />
+  <title>Infinite Canvas 本机版使用说明书｜佰小乐陪你从 0 到 1</title>
+  <style>
+    :root {
+      --ink: #252320;
+      --muted: #6f6a63;
+      --paper: #fffdf8;
+      --paper-2: #f8f4ec;
+      --red: #d93d24;
+      --red-dark: #a82919;
+      --blue: #2f609d;
+      --blue-soft: #eaf2fb;
+      --green: #3e7e55;
+      --green-soft: #eaf5ed;
+      --amber: #a96714;
+      --amber-soft: #fff3dc;
+      --line: #ded7cc;
+      --shadow: 0 16px 45px rgba(62, 48, 31, .09);
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 2%, rgba(217, 61, 36, .08), transparent 24rem),
+        radial-gradient(circle at 96% 17%, rgba(47, 96, 157, .07), transparent 28rem),
+        var(--paper);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      line-height: 1.75;
+    }
+    a { color: inherit; }
+    img, video { display: block; width: 100%; }
+    code, kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: #f0ece5;
+      border: 1px solid #e2dbd1;
+      border-radius: 7px;
+      padding: .12em .42em;
+      font-size: .92em;
+    }
+
+    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid rgba(222, 215, 204, .85);
+      background: rgba(255, 253, 248, .88);
+      backdrop-filter: blur(14px);
+    }
+    .topbar-inner {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+    .brand-badge {
+      width: 34px; height: 34px; display: grid; place-items: center;
+      color: #fff; background: var(--red); border-radius: 11px; transform: rotate(-3deg);
+    }
+    nav { display: flex; gap: 18px; color: var(--muted); font-size: 14px; }
+    nav a { text-decoration: none; }
+    nav a:hover { color: var(--red); }
+
+    .hero {
+      padding: 74px 0 42px;
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 48px;
+      align-items: center;
+    }
+    .eyebrow {
+      display: inline-flex; gap: 8px; align-items: center;
+      color: var(--red-dark); background: #fff0ec; border: 1px solid #f1c3b8;
+      border-radius: 999px; padding: 5px 12px; font-weight: 700; font-size: 14px;
+    }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(42px, 6vw, 74px); letter-spacing: -.045em; margin-top: 18px; }
+    h1 em { color: var(--red); font-style: normal; }
+    .hero-lead { color: var(--muted); font-size: 19px; max-width: 680px; margin: 22px 0 26px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .button {
+      text-decoration: none; border-radius: 14px; padding: 12px 18px;
+      font-weight: 750; display: inline-flex; align-items: center; gap: 8px;
+      border: 1px solid var(--ink); background: #fff;
+    }
+    .button.primary { background: var(--red); border-color: var(--red); color: white; }
+    .button:hover { transform: translateY(-1px); }
+    .hero-card {
+      background: white; border: 1px solid var(--line); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; padding: 12px;
+      transform: rotate(1deg);
+    }
+    .hero-card img { border-radius: 22px; }
+    .hero-note { padding: 10px 12px 4px; color: var(--muted); font-size: 13px; }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 8px 0 70px; }
+    .summary-card {
+      border: 1px solid var(--line); background: rgba(255,255,255,.72); border-radius: 18px; padding: 18px;
+    }
+    .summary-card strong { display: block; font-size: 20px; margin-top: 5px; }
+    .summary-card small { color: var(--muted); }
+
+    main section { padding: 70px 0; border-top: 1px dashed var(--line); }
+    .section-head { max-width: 820px; margin-bottom: 30px; }
+    .section-no { color: var(--red); font-weight: 900; letter-spacing: .08em; font-size: 13px; }
+    h2 { font-size: clamp(30px, 4vw, 45px); margin-top: 8px; letter-spacing: -.025em; }
+    .section-intro { color: var(--muted); font-size: 17px; margin: 14px 0 0; }
+
+    .callout {
+      border-radius: 18px; padding: 18px 20px; margin: 20px 0;
+      border: 1px solid #f0d19d; background: var(--amber-soft);
+    }
+    .callout.good { border-color: #bcd9c3; background: var(--green-soft); }
+    .callout.blue { border-color: #bfd2ea; background: var(--blue-soft); }
+    .callout strong { display: block; margin-bottom: 4px; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .panel {
+      background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 24px;
+      box-shadow: 0 8px 26px rgba(62, 48, 31, .04);
+    }
+    .panel h3 { font-size: 21px; margin-bottom: 12px; }
+    .checklist { margin: 0; padding: 0; list-style: none; }
+    .checklist li { position: relative; padding-left: 30px; margin: 10px 0; }
+    .checklist li::before {
+      content: "✓"; position: absolute; left: 0; top: .05em; width: 20px; height: 20px;
+      display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--green); font-size: 12px;
+    }
+    .cross li::before { content: "×"; background: #8c8580; }
+
+    .concepts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .concept { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+    .concept b { color: var(--blue); display: block; font-size: 18px; margin-bottom: 5px; }
+    .concept p { margin: 0; color: var(--muted); }
+
+    .visual-modules { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .visual-module { overflow: hidden; background: #fff; border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 8px 26px rgba(62, 48, 31, .05); }
+    .annotated-shot { position: relative; overflow: hidden; margin: 0; background: #111; }
+    .annotated-shot img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+    .overview-shot img { aspect-ratio: auto; }
+    .shot-note {
+      position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%);
+      z-index: 2; display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px;
+      border: 2px solid white; border-radius: 999px; color: white; background: var(--red);
+      box-shadow: 0 3px 14px rgba(0,0,0,.42); font-size: 12px; font-weight: 900; line-height: 1.15;
+      white-space: nowrap;
+    }
+    .shot-note.blue { background: var(--blue); }
+    .module-caption { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 17px 18px; }
+    .module-caption h3 { font-size: 21px; }
+    .module-caption p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+    .module-caption a { color: var(--red); font-weight: 850; text-decoration: none; white-space: nowrap; }
+    .module-caption a:hover { text-decoration: underline; }
+    .route-strip {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 22px 0 28px;
+      border: 1px dashed var(--line); border-radius: 18px; background: rgba(255,255,255,.7); padding: 16px;
+    }
+    .route-strip span { border-radius: 999px; background: #f0ece5; padding: 6px 11px; font-size: 14px; font-weight: 700; }
+    .route-strip i { color: var(--red); font-style: normal; font-weight: 900; }
+    .icon-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .icon-legend span { border-radius: 999px; padding: 5px 10px; background: #f0ece5; font-size: 13px; }
+
+    .workflow-figure { border: 1px solid var(--line); background: #fff; border-radius: 28px; padding: 14px; box-shadow: var(--shadow); }
+    .workflow-figure img { border-radius: 18px; }
+    figcaption { color: var(--muted); font-size: 13px; padding: 10px 4px 0; }
+
+    .steps { counter-reset: step; display: grid; gap: 18px; }
+    .step {
+      counter-increment: step; display: grid; grid-template-columns: 64px 1fr;
+      gap: 18px; border: 1px solid var(--line); background: #fff; border-radius: 22px; padding: 22px;
+    }
+    .step::before {
+      content: counter(step); width: 54px; height: 54px; display: grid; place-items: center;
+      border-radius: 18px; background: var(--red); color: #fff; font-size: 24px; font-weight: 900;
+      box-shadow: 5px 5px 0 #f3c3b9;
+    }
+    .step h3 { font-size: 22px; margin-top: 3px; }
+    .step p { margin: 7px 0; }
+    .step-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+    .signal { border-radius: 12px; padding: 12px 14px; background: var(--green-soft); color: #315f40; }
+    .rescue { border-radius: 12px; padding: 12px 14px; background: #f4f1ec; color: var(--muted); }
+    .signal b, .rescue b { display: block; color: var(--ink); }
+
+    .screenshot {
+      border-radius: 22px; overflow: hidden; border: 1px solid #2e2d2c; background: #111; box-shadow: var(--shadow);
+      margin: 24px 0 10px;
+    }
+    .media-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip { border-radius: 999px; padding: 5px 10px; font-size: 13px; background: #f0ece5; border: 1px solid var(--line); }
+    .chip.green { color: var(--green); background: var(--green-soft); border-color: #c8dfce; }
+
+    table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 18px; background: white; }
+    th, td { border: 1px solid var(--line); padding: 14px; text-align: left; vertical-align: top; }
+    th { background: var(--paper-2); }
+    td:first-child { font-weight: 750; width: 20%; }
+
+    details { border: 1px solid var(--line); background: #fff; border-radius: 16px; padding: 16px 18px; margin: 12px 0; }
+    summary { cursor: pointer; font-weight: 800; }
+    details p, details ol { color: var(--muted); }
+
+    .final-check { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .final-check label {
+      display: flex; gap: 12px; align-items: flex-start; background: white; border: 1px solid var(--line);
+      border-radius: 16px; padding: 15px;
+    }
+    .final-check input { width: 20px; height: 20px; accent-color: var(--green); margin-top: 3px; }
+
+    footer { padding: 48px 0 80px; color: var(--muted); }
+    .footer-card { border-top: 3px solid var(--red); padding-top: 20px; display: flex; justify-content: space-between; gap: 30px; }
+
+    @media (max-width: 840px) {
+      nav { display: none; }
+      .hero, .two-col { grid-template-columns: 1fr; }
+      .hero { padding-top: 48px; }
+      .hero-card { transform: none; }
+      .summary-grid, .concepts { grid-template-columns: 1fr 1fr; }
+      .visual-modules { grid-template-columns: 1fr; }
+      .step-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 20px, 1180px); }
+      .summary-grid, .concepts, .final-check { grid-template-columns: 1fr; }
+      .shot-note { min-height: 23px; padding: 3px 7px; border-width: 1px; font-size: 10px; }
+      .module-caption { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      .step::before { width: 44px; height: 44px; border-radius: 14px; }
+      th, td { padding: 10px; font-size: 14px; }
+      .footer-card { display: block; }
+    }
+    @media print {
+      .topbar, .actions { display: none; }
+      body { background: #fff; }
+      .hero, main section { padding: 28px 0; }
+      .panel, .step, .workflow-figure, .screenshot { break-inside: avoid; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <div class="brand"><span class="brand-badge">佰</span> Infinite Canvas 使用说明书</div>
+      <nav aria-label="页内导航">
+        <a href="#panels">功能面板</a>
+        <a href="#start">快速开始</a>
+        <a href="#image">生成图片</a>
+        <a href="#video">生成视频</a>
+        <a href="#sync">同步</a>
+        <a href="#faq">排错</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <span class="eyebrow">本机部署版 · v0.9.0 · 2026-07-18</span>
+        <h1>把灵感放进画布，<br><em>变成能保存的成果</em></h1>
+        <p class="hero-lead">这是一份给第一次使用者的实操说明书。跟着佰小乐走一遍，你会完成一个最小闭环：打开工具 → 写提示词 → 生成图片或视频 → 下载与同步。</p>
+        <div class="actions">
+          <a class="button primary" href="http://localhost:3000" target="_blank" rel="noreferrer">打开本机 Infinite Canvas ↗</a>
+          <a class="button" href="#start">从 10 分钟上手开始 ↓</a>
+        </div>
+      </div>
+      <figure class="hero-card">
+        <img src="assets/infinite-canvas-user-guide/baixiaole-four-step-flow.png" alt="佰小乐演示从写提示词、连接节点、开始生成到保存成果的四步流程" />
+        <figcaption class="hero-note">佰小乐四步法：先跑通一个成果，再学习更多功能。</figcaption>
+      </figure>
+    </section>
+
+    <div class="summary-grid" aria-label="今日部署能力摘要">
+      <div class="summary-card"><small>本机入口</small><strong>localhost:3000</strong></div>
+      <div class="summary-card"><small>图片模型</small><strong>gpt-image-2</strong></div>
+      <div class="summary-card"><small>视频模型</small><strong>Seedance 2.0 Mini</strong></div>
+      <div class="summary-card"><small>视频测试线</small><strong>480p · 4 秒</strong></div>
+    </div>
+  </div>
+
+  <main>
+    <section id="know">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">先看结论</div>
+          <h2>它适合把“一句话”变成一组可复用素材</h2>
+          <p class="section-intro">把 Infinite Canvas 想成一张不会用完的工作桌：提示词是便签，图片和视频是素材卡，线条表示它们之间的关系。</p>
+        </div>
+        <div class="two-col">
+          <div class="panel">
+            <h3>适合做什么</h3>
+            <ul class="checklist">
+              <li>边想边摆放图片、视频和文字</li>
+              <li>用图片模型生成单图或参考图新视角</li>
+              <li>用 480p / 4 秒小样验证视频创意</li>
+              <li>把满意成果下载或收入“我的资产”</li>
+              <li>把画布与媒体文件同步到 NAS WebDAV</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>今天没有承诺什么</h3>
+            <ul class="checklist cross">
+              <li>界面选择“4K”不等于接口返回真 4K</li>
+              <li>本次没有把长视频、高分辨率视频作为稳定测试线</li>
+              <li>没有把文本模型、音频模型列入今天的验收闭环</li>
+              <li>API Key 仍保存在本机浏览器，不会跟随 WebDAV 同步</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="concepts">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">6 个词先认脸</div>
+          <h2>像整理桌面一样理解画布</h2>
+        </div>
+        <div class="concepts">
+          <div class="concept"><b>画布</b><p>无限大的工作桌。你可以缩放、拖动并摆放多个任务。</p></div>
+          <div class="concept"><b>节点</b><p>桌上的一张卡片。文字、图片、视频都是不同节点。</p></div>
+          <div class="concept"><b>连线</b><p>素材之间的“传送带”，告诉系统谁给谁提供输入。</p></div>
+          <div class="concept"><b>渠道</b><p>连接模型服务的账号与地址，像选择哪家快递公司。</p></div>
+          <div class="concept"><b>模型</b><p>真正干活的 AI。图片与视频要选各自对应的模型。</p></div>
+          <div class="concept"><b>资产 / 同步</b><p>资产是成果仓库；同步是把仓库副本保存到 NAS。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panels">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">功能面板地图</div>
+          <h2>六个面板，各管生产线的一站</h2>
+          <p class="section-intro">顶部导航不是六套互不相关的工具，而是一条完整生产线：配置负责接通模型，工作台负责生产，画布负责组合，提示词和资产负责积累。</p>
+        </div>
+
+        <figure class="screenshot annotated-shot overview-shot">
+          <img src="assets/infinite-canvas-user-guide/image-workbench-success.png" alt="Infinite Canvas 顶部六个主功能面板的真实界面" />
+          <span class="shot-note" style="--x:34%;--y:4%">① 六个主面板</span>
+          <span class="shot-note blue" style="--x:90%;--y:4%">② 辅助工具</span>
+        </figure>
+
+        <div class="route-strip" aria-label="推荐使用顺序">
+          <b>推荐顺序：</b>
+          <span>配置一次</span><i>→</i>
+          <span>找提示词</span><i>→</i>
+          <span>图片 / 视频打样</span><i>→</i>
+          <span>画布组合</span><i>→</i>
+          <span>资产沉淀</span>
+        </div>
+
+        <div class="visual-modules">
+          <article class="visual-module">
+            <figure class="annotated-shot">
+              <img src="assets/infinite-canvas-user-guide/panel-canvas.png" alt="我的画布面板" />
+              <span class="shot-note" style="--x:83%;--y:18%">① 新建 / 导入</span>
+              <span class="shot-note blue" style="--x:50%;--y:47%">② 项目列表</span>
+            </figure>
+            <div class="module-caption"><div><h3>我的画布</h3><p>多素材连接、对比和连续推演。</p></div><a href="http://localhost:3000/canvas" target="_blank" rel="noreferrer">打开 →</a></div>
+          </article>
+
+          <article class="visual-module">
+            <figure class="annotated-shot">
+              <img src="assets/infinite-canvas-user-guide/image-workbench-success.png" alt="生图工作台" />
+              <span class="shot-note blue" style="--x:12%;--y:22%">① 生成记录</span>
+              <span class="shot-note" style="--x:48%;--y:46%">② 参数区</span>
+              <span class="shot-note" style="--x:73%;--y:71%">③ 结果图</span>
+            </figure>
+            <div class="module-caption"><div><h3>生图工作台</h3><p>输入提示词，快速得到图片。</p></div><a href="http://localhost:3000/image" target="_blank" rel="noreferrer">打开 →</a></div>
+          </article>
+
+          <article class="visual-module">
+            <figure class="annotated-shot">
+              <img src="assets/infinite-canvas-user-guide/video-workbench-success.png" alt="视频创作台" />
+              <span class="shot-note blue" style="--x:12%;--y:22%">① 任务记录</span>
+              <span class="shot-note" style="--x:49%;--y:43%">② 480p · 4秒</span>
+              <span class="shot-note" style="--x:73%;--y:71%">③ 视频预览</span>
+            </figure>
+            <div class="module-caption"><div><h3>视频创作台</h3><p>先用 480p / 4 秒验证镜头。</p></div><a href="http://localhost:3000/video" target="_blank" rel="noreferrer">打开 →</a></div>
+          </article>
+
+          <article class="visual-module">
+            <figure class="annotated-shot">
+              <img src="assets/infinite-canvas-user-guide/panel-prompts.png" alt="提示词库" />
+              <span class="shot-note" style="--x:50%;--y:23%">① 搜索</span>
+              <span class="shot-note blue" style="--x:28%;--y:39%">② 分类 / 标签</span>
+              <span class="shot-note" style="--x:50%;--y:84%">③ 提示词卡片</span>
+            </figure>
+            <div class="module-caption"><div><h3>提示词库</h3><p>搜索、复制并收藏成熟提示词。</p></div><a href="http://localhost:3000/prompts" target="_blank" rel="noreferrer">打开 →</a></div>
+          </article>
+
+          <article class="visual-module">
+            <figure class="annotated-shot">
+              <img src="assets/infinite-canvas-user-guide/panel-assets.png" alt="我的资产" />
+              <span class="shot-note" style="--x:50%;--y:23%">① 搜索资产</span>
+              <span class="shot-note blue" style="--x:22%;--y:31%">② 类型筛选</span>
+              <span class="shot-note" style="--x:82%;--y:31%">③ 导入 / 导出</span>
+              <span class="shot-note blue" style="--x:50%;--y:55%">④ 成果列表</span>
+            </figure>
+            <div class="module-caption"><div><h3>我的资产</h3><p>把好结果存成可搜索的素材库。</p></div><a href="http://localhost:3000/assets" target="_blank" rel="noreferrer">打开 →</a></div>
+          </article>
+
+          <article class="visual-module">
+            <figure class="annotated-shot">
+              <img src="assets/infinite-canvas-user-guide/panel-config.png" alt="配置与用户偏好" />
+              <span class="shot-note" style="--x:27%;--y:20%">① 四类设置</span>
+              <span class="shot-note blue" style="--x:45%;--y:34%">② 渠道列表</span>
+              <span class="shot-note" style="--x:84%;--y:25%">③ 新增渠道</span>
+            </figure>
+            <div class="module-caption"><div><h3>配置</h3><p>模型渠道、偏好和 WebDAV；截图不含密钥。</p></div><a href="http://localhost:3000/config" target="_blank" rel="noreferrer">打开 →</a></div>
+          </article>
+        </div>
+
+        <div class="icon-legend" aria-label="右上角辅助入口">
+          <span>🤖 Agent</span><span>📖 文档</span><span>☼ 明暗主题</span><span>v0.9.0 版本</span><span>◉ GitHub</span>
+        </div>
+
+        <div class="callout blue">
+          <strong>最容易混淆的两个面板</strong>
+          “生图工作台”适合一次快速出图；“我的画布”适合把多个提示词、参考图和结果连接起来反复推演。前者像单台机器，后者像整条生产线。
+        </div>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">10 分钟最小闭环</div>
+          <h2>第一次只做一张图</h2>
+          <p class="section-intro">先确认整条生产线通了，再做参考图、视频或复杂工作流。这样出错时最容易找到是哪一站的问题。</p>
+        </div>
+        <div class="steps">
+          <article class="step">
+            <div>
+              <h3>启动本机服务</h3>
+              <p>双击项目里的 <code>start-local.command</code>。终端窗口要保持打开，然后浏览器访问 <code>http://localhost:3000</code>。</p>
+              <div class="step-grid">
+                <div class="signal"><b>成功信号</b>能看到顶部“无限画布 / 生图工作台 / 视频创作台 / 配置”等导航。</div>
+                <div class="rescue"><b>没打开怎么办</b>先看终端最后一行错误；不要连续重复双击多个启动窗口。</div>
+              </div>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>确认图片渠道</h3>
+              <p>进入“配置 → 渠道”，确认图片渠道已存在，模型为 <code>gpt-image-2</code>。如果今天已经配置成功，不需要再次填写密钥。</p>
+              <div class="step-grid">
+                <div class="signal"><b>成功信号</b>模型列表里能选择 <code>gpt-image-2</code>。</div>
+                <div class="rescue"><b>读取模型失败</b>不要反复点拉取；可手动增加准确的模型名称再保存。</div>
+              </div>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>生成第一张图片</h3>
+              <p>打开“生图工作台”，输入一句清楚的提示词，例如“阳光下坐在木桌旁的一只橙色小猫”。先选 <b>1 张</b>、常规比例，再点“开始生成”。</p>
+              <div class="step-grid">
+                <div class="signal"><b>成功信号</b>左侧记录显示“成功 1”，右侧出现可预览结果。</div>
+                <div class="rescue"><b>先别做复杂设置</b>首次不要同时开参考图、透明背景、多张和 4K。</div>
+              </div>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>保存并确认原图</h3>
+              <p>在结果卡片点“下载”保存原图；需要继续创作时点“添加到…”或“加入参考”。不要只看页面里的预览尺寸。</p>
+              <div class="step-grid">
+                <div class="signal"><b>成功信号</b>下载目录中出现可正常打开的 PNG/JPG 文件。</div>
+                <div class="rescue"><b>关于 4K</b>下载后在 Finder“显示简介”查看真实像素；界面选中 4K 只是请求参数，不是结果保证。</div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="image">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">图片工作台</div>
+          <h2>文生图与参考图怎么用</h2>
+          <p class="section-intro">今天的图片链路已经实测成功。最稳的原则是：先单图、再加参考；先看真实文件、再谈分辨率。</p>
+        </div>
+        <figure class="screenshot">
+          <img src="assets/infinite-canvas-user-guide/image-workbench-success.png" alt="Infinite Canvas 图片工作台真实成功截图" />
+        </figure>
+        <div class="media-meta">
+          <span class="chip green">真实成功截图</span>
+          <span class="chip">模型：gpt-image-2</span>
+          <span class="chip">数量：1 张</span>
+          <span class="chip">当次耗时：约 33 秒</span>
+        </div>
+        <div class="two-col" style="margin-top: 24px">
+          <div class="panel">
+            <h3>文生图</h3>
+            <ol>
+              <li>输入“主体 + 场景 + 动作 + 构图”。</li>
+              <li>选比例、质量和张数。</li>
+              <li>点“开始生成”，等结果卡片出现。</li>
+              <li>下载原图或加入资产。</li>
+            </ol>
+          </div>
+          <div class="panel">
+            <h3>参考图生图</h3>
+            <ol>
+              <li>先把原图放进画布或“我的资产”。</li>
+              <li>在生成节点里添加为“参考图”。</li>
+              <li>提示词明确写“保持主体、颜色与材质，只改变视角/动作”。</li>
+              <li>如果返回 400，先确认参考图已上传完成，再重试。</li>
+            </ol>
+          </div>
+        </div>
+        <div class="callout">
+          <strong>分辨率验收规则</strong>
+          页面显示的宽高比、2K/4K 按钮是“你向模型提出的要求”；下载文件的实际像素才是“模型交付的货”。两者不一致时，以原文件为准。
+        </div>
+      </div>
+    </section>
+
+    <section id="video">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">视频创作台</div>
+          <h2>先用 480p / 4 秒做便宜的小样</h2>
+          <p class="section-intro">视频像打样：先花最少成本确认动作、画面和接口都正确，再决定是否制作更长、更高质量的版本。</p>
+        </div>
+        <div class="two-col">
+          <div>
+            <figure class="screenshot" style="margin-top: 0">
+              <img src="assets/infinite-canvas-user-guide/video-workbench-success.png" alt="Infinite Canvas 视频工作台真实成功截图" />
+            </figure>
+            <div class="media-meta">
+              <span class="chip green">任务真实完成</span>
+              <span class="chip">Seedance 2.0 Mini</span>
+              <span class="chip">480p</span>
+              <span class="chip">4 秒</span>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>推荐参数</h3>
+            <table>
+              <tbody>
+                <tr><td>模型</td><td><code>doubao-seedance-2-0-mini-260615</code></td></tr>
+                <tr><td>清晰度</td><td>480p</td></tr>
+                <tr><td>时长</td><td>4 秒</td></tr>
+                <tr><td>画幅</td><td>按用途选横屏或竖屏；首次测试可不加参考图</td></tr>
+                <tr><td>音频</td><td>首次关闭，减少变量</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel" style="margin-top: 24px">
+          <h3>真实 4 秒样片</h3>
+          <video controls preload="metadata" poster="assets/infinite-canvas-user-guide/seedance-480p-4s-poster.jpg">
+            <source src="assets/infinite-canvas-user-guide/seedance-480p-4s-sample.mp4" type="video/mp4" />
+            当前浏览器不支持播放此视频，请打开 assets 目录中的 MP4 文件。
+          </video>
+          <div class="media-meta">
+            <span class="chip green">真实返回 MP4</span>
+            <span class="chip">496 × 864</span>
+            <span class="chip">4.041 秒</span>
+            <span class="chip">H.264 · 24fps</span>
+          </div>
+        </div>
+        <div class="callout blue">
+          <strong>看到“Seedance 任务创建失败”时</strong>
+          先退回“无参考图 + 关闭音频 + 480p + 4 秒”重新测试。这个组合能把问题缩小到渠道、密钥或模型本身，而不是被复杂参数干扰。
+        </div>
+      </div>
+    </section>
+
+    <section id="canvas">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">我的画布</div>
+          <h2>把一次生成变成可复用流程</h2>
+        </div>
+        <div class="steps">
+          <article class="step"><div><h3>放入文字节点</h3><p>双击空白处或使用添加入口，创建文字节点，写下你的提示词。节点标题尽量用“用途 + 版本”，例如“橙猫主视觉 V1”。</p></div></article>
+          <article class="step"><div><h3>连接生成节点</h3><p>从文字节点的连接点拖线到生成配置节点。连线就像传送带：上游内容会成为下游生成的输入。</p></div></article>
+          <article class="step"><div><h3>选模型与参数</h3><p>图片选择 <code>gpt-image-2</code>；视频先选择 Seedance，并坚持 480p / 4 秒测试线。</p></div></article>
+          <article class="step"><div><h3>检查、命名、保存</h3><p>生成完成后先打开“信息”查看状态与错误详情，再把满意结果收入资产。一个画布只放同一主题，后续更容易找。</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="sync">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">WebDAV 同步</div>
+          <h2>把项目副本放进 NAS</h2>
+          <p class="section-intro">WebDAV 像一根连接浏览器与 NAS 的网线。它同步画布、资产、生成记录和媒体文件，但不会同步 AI API Key。</p>
+        </div>
+        <table>
+          <thead><tr><th>输入项</th><th>填写内容</th><th>注意</th></tr></thead>
+          <tbody>
+            <tr><td>WebDAV 地址</td><td><code>http://192.168.1.44:5005</code></td><td>本机要和 NAS 在可访问的网络内。</td></tr>
+            <tr><td>远程目录</td><td><code>home/infinite-canvas</code></td><td>保持固定，避免多个目录分散。</td></tr>
+            <tr><td>用户名</td><td>填写 NAS 用户名</td><td>只保存在当前浏览器本地。</td></tr>
+            <tr><td>密码 / 应用密码</td><td>填写 NAS 密码</td><td>不要写进代码、截图或 Git。</td></tr>
+          </tbody>
+        </table>
+        <div class="steps" style="margin-top: 22px">
+          <article class="step"><div><h3>先点“测试连接”</h3><p>只有出现连接成功，才说明地址、账户和浏览器代理链路都能访问。</p></div></article>
+          <article class="step"><div><h3>再点“立即同步”</h3><p>同步后在 NAS 对应目录应看到业务目录、<code>manifest.json</code> 和 <code>files/</code>。测试连接成功不等于文件已经同步。</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">遇到问题先看这里</div>
+          <h2>报错不是终点，它是在告诉你该查哪一站</h2>
+        </div>
+        <details open>
+          <summary>页面打不开或显示连接失败</summary>
+          <p>确认启动终端仍然打开，再访问 <code>http://localhost:3000</code>。如果 3000 端口被占用，先关闭重复启动的服务窗口，再只启动一次。</p>
+        </details>
+        <details>
+          <summary>读取模型失败 / 模型列表为空</summary>
+          <p>部分中转不提供标准模型列表接口。进入“选择模型”，手动输入准确模型 ID 后添加并保存，不需要一直点击“拉取模型列表”。</p>
+        </details>
+        <details>
+          <summary>图片请求返回 400</summary>
+          <p>先用纯文字、1 张、普通比例测试。如果纯文字成功而参考图失败，再检查参考图是否上传完成、是否使用对应的图片编辑能力。一次只增加一个变量。</p>
+        </details>
+        <details>
+          <summary>Seedance 任务创建失败</summary>
+          <p>退回已验收组合：Seedance 2.0 Mini、480p、4 秒、关闭音频、无参考图。仍失败时打开节点“信息 → JSON”，保留 <code>errorDetails</code> 作为排查证据。</p>
+        </details>
+        <details>
+          <summary>选择了 4K，下载后像素仍不够</summary>
+          <p>这是上游模型或中转服务没有按请求返回目标像素，不是浏览器预览缩小造成的。以下载原图的像素、文件大小和服务使用记录为准。</p>
+        </details>
+        <details>
+          <summary>WebDAV 测试成功，但 NAS 没看到文件</summary>
+          <p>“测试连接”只证明能通信；还要点击“立即同步”，并检查远程目录下是否出现 <code>manifest.json</code> 与 <code>files/</code>。</p>
+        </details>
+      </div>
+    </section>
+
+    <section id="check">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">完成验收</div>
+          <h2>勾完这 6 项，你就真的会用了</h2>
+        </div>
+        <div class="final-check">
+          <label><input type="checkbox" /> <span>我能通过 <code>start-local.command</code> 打开本机页面。</span></label>
+          <label><input type="checkbox" /> <span>我能在图片模型列表中选到 <code>gpt-image-2</code>。</span></label>
+          <label><input type="checkbox" /> <span>我已成功生成并下载 1 张图片。</span></label>
+          <label><input type="checkbox" /> <span>我知道 4K 要检查下载原图的真实像素。</span></label>
+          <label><input type="checkbox" /> <span>我已用 480p / 4 秒跑通 1 个视频小样。</span></label>
+          <label><input type="checkbox" /> <span>我能区分 WebDAV“连接成功”和“文件已同步”。</span></label>
+        </div>
+        <div class="callout good" style="margin-top: 28px">
+          <strong>下一步建议</strong>
+          复制今天跑通的最小流程，改一个提示词做第二个小样。重复成功两次后，再加入参考图、多张生成或更复杂的画布连接。
+        </div>
+      </div>
+    </section>
+
+    <section id="glossary">
+      <div class="shell">
+        <div class="section-head">
+          <div class="section-no">菜鸟编程术语表</div>
+          <h2>看得懂，就不怕排错</h2>
+        </div>
+        <table>
+          <thead><tr><th>词汇</th><th>作用</th><th>生活类比与注意</th></tr></thead>
+          <tbody>
+            <tr><td>本机服务</td><td>让你的电脑运行 Infinite Canvas 网页。</td><td>像在家里开一家只服务自己的小店；终端关掉，小店就打烊。</td></tr>
+            <tr><td>localhost</td><td>指向当前这台电脑。</td><td>像写给快递员的“送到我家”；别人电脑访问同一个地址不会进到你的电脑。</td></tr>
+            <tr><td>API</td><td>网页向模型服务提交任务的接口。</td><td>像餐厅点单窗口：你提交菜名和要求，后厨返回成品或报错。</td></tr>
+            <tr><td>API Key</td><td>证明你有权调用模型并承担费用。</td><td>像银行卡密码；不要放进代码、Git 或公开截图。</td></tr>
+            <tr><td>模型 ID</td><td>指定由哪一个 AI 模型完成任务。</td><td>像点单时写清厨师名字；少一个字符都可能找错人。</td></tr>
+            <tr><td>HTTP 400</td><td>服务认为请求参数不符合要求。</td><td>像订单格式不对被退回；先减少参数，一项一项加回去。</td></tr>
+            <tr><td>WebDAV</td><td>让浏览器按文件方式读写 NAS。</td><td>像一扇远程仓库门；能开门不代表货已经搬进去，还要执行同步。</td></tr>
+            <tr><td>Git</td><td>记录代码与文档的版本变化。</td><td>像项目的时间机器；密钥和密码不能被它记录。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-card">
+      <div><strong>Infinite Canvas 本机版使用说明书</strong><br />佰小乐陪你从 0 到 1 · 2026-07-18</div>
+      <div>依据本机实际部署与 QA 结果编写<br />参考：<a href="../../LOCAL_DEPLOYMENT.md">LOCAL_DEPLOYMENT.md</a> · <a href="../../QA_REPORT.md">QA_REPORT.md</a></div>
+    </div>
+  </footer>
+</body>
+</html>
