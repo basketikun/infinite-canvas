@@ -152,7 +152,9 @@ export async function runModelPlugin<T = unknown>(args: RunPluginArgs): Promise<
     } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") throw error;
         if (axios.isCancel(error)) throw error;
-        const message = error instanceof Error ? error.message : String(error);
+        const responseData = axios.isAxiosError(error) ? error.response?.data : undefined;
+        const responseError = responseData && typeof responseData === "object" ? (responseData as { msg?: unknown; message?: unknown; error?: { message?: unknown } }).error?.message || (responseData as { msg?: unknown }).msg || (responseData as { message?: unknown }).message : undefined;
+        const message = typeof responseError === "string" && responseError ? responseError : error instanceof Error ? error.message : String(error);
         throw new Error(`模型调用脚本执行失败：${message}`);
     }
 }

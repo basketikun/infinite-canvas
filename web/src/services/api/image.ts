@@ -194,6 +194,16 @@ function resolveRequestSize(quality: string | undefined, size: string) {
     throw new Error("图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024");
 }
 
+function resolveEditRequestSize(config: Pick<AiConfig, "baseUrl">, size: string | undefined) {
+    if (!size || !config.baseUrl.toLowerCase().includes("apifound.com")) return size;
+    const dimensions = parseImageDimensions(size);
+    if (!dimensions) return size;
+    const ratio = dimensions.width / dimensions.height;
+    if (ratio > 1.1) return "1536x1024";
+    if (ratio < 0.9) return "1024x1536";
+    return "1024x1024";
+}
+
 function resolveGeminiImageConfig(config: AiConfig) {
     const value = config.size.trim();
     const dimensions = parseImageDimensions(value);
@@ -725,6 +735,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (script) {
         const quality = normalizeQuality(config.quality);
         const requestSize = resolveRequestSize(quality, config.size);
+        const editRequestSize = resolveEditRequestSize(requestConfig, requestSize);
         const background = normalizeBackground(config.background);
         const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
         try {
@@ -734,7 +745,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                 config: requestConfig,
                 prompt: withSystemPrompt(requestConfig, requestPrompt),
                 images: refs,
-                params: { size: requestSize, quality, count: n, ...(background ? { background } : {}) },
+                params: { size: editRequestSize, quality, count: n, ...(background ? { background } : {}) },
                 signal: options?.signal,
             });
             return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
@@ -752,6 +763,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     }
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
+    const editRequestSize = resolveEditRequestSize(requestConfig, requestSize);
     const background = normalizeBackground(config.background);
     const formData = new FormData();
     formData.set("model", requestConfig.model);
@@ -762,8 +774,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (quality) {
         formData.set("quality", quality);
     }
-    if (requestSize) {
-        formData.set("size", requestSize);
+    if (editRequestSize) {
+        formData.set("size", editRequestSize);
     }
     if (background) {
         formData.set("background", background);
