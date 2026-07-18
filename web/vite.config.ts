@@ -88,9 +88,55 @@ function localWebdavProxy(): Plugin {
     };
 }
 
+function isAllowedAiTarget(value: string) {
+    try {
+        const url = new URL(value);
+        if (url.protocol !== "https:" || isIP(url.hostname) || url.hostname === "localhost" || url.hostname.endsWith(".local")) return false;
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function localAiProxy(): Plugin {
+    return {
+        name: "local-ai-proxy",
+        configureServer(server) {
+            server.middlewares.use("/api-proxy/ai", async (req, res) => {
+                try {
+                    const target = new URL(req.url || "", "http://localhost").searchParams.get("url") || "";
+                    if (!isAllowedAiTarget(target)) {
+                        res.statusCode = 403;
+                        res.end("Only public HTTPS AI targets are allowed");
+                        return;
+                    }
+                    const chunks: Buffer[] = [];
+                    for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                    const headers = new Headers();
+                    for (const [name, value] of Object.entries(req.headers)) {
+                        if (!value || ["host", "connection", "content-length", "origin", "referer"].includes(name)) continue;
+                        headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+                    }
+                    const body = chunks.length ? Buffer.concat(chunks) : undefined;
+                    const upstream = await fetch(target, { method: req.method, headers, body, redirect: "manual" });
+                    res.statusCode = upstream.status;
+                    for (const name of ["content-type", "content-length", "content-disposition", "cache-control", "etag", "last-modified", "location"]) {
+                        const value = upstream.headers.get(name);
+                        if (value) res.setHeader(name, value);
+                    }
+                    res.end(Buffer.from(await upstream.arrayBuffer()));
+                } catch (error) {
+                    res.statusCode = 502;
+                    res.end(error instanceof Error ? error.message : "AI proxy failed");
+                }
+            });
+        },
+    };
+}
+
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
-    plugins: [react(), localPluginsManifest(), localWebdavProxy()],
+    plugins: [react(), localPluginsManifest(), localWebdavProxy(), localAiProxy()],
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),

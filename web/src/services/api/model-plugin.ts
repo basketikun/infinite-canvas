@@ -1,6 +1,6 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
-import { buildApiUrl, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { buildApiUrl, localAiProxyUrl, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type RequestOptions = { signal?: AbortSignal };
 
@@ -37,7 +37,7 @@ function pluginHeaders(extra?: Record<string, string>, hasJsonBody = false): Rec
 }
 
 function pluginUrl(config: AiConfig, path: string) {
-    if (/^https?:/i.test(path)) return path;
+    if (/^https?:/i.test(path)) return localAiProxyUrl(path);
     return buildApiUrl(config.baseUrl, path.startsWith("/") ? path : `/${path}`);
 }
 

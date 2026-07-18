@@ -372,7 +372,17 @@ export function buildApiUrl(baseUrl: string, path: string) {
     normalizedBaseUrl = normalizeArkPlanBaseUrl(normalizedBaseUrl);
     const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
     const apiBaseUrl = lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/api/v3") || lowerBaseUrl.endsWith("/api/plan/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
-    return `${apiBaseUrl}${path}`;
+    return localAiProxyUrl(`${apiBaseUrl}${path}`);
+}
+
+export function localAiProxyUrl(targetUrl: string) {
+    if (!import.meta.env.DEV || typeof window === "undefined") return targetUrl;
+    try {
+        if (new URL(targetUrl).origin === window.location.origin) return targetUrl;
+        return `/api-proxy/ai?url=${encodeURIComponent(targetUrl)}`;
+    } catch {
+        return targetUrl;
+    }
 }
 
 function normalizeArkPlanBaseUrl(baseUrl: string) {
