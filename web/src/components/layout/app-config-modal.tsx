@@ -258,7 +258,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                 <Cloud className="size-4" />
                                                 WebDAV 同步
                                             </div>
-                                            <div className="mt-1 text-xs text-stone-500">同步画布、我的资产、生成记录和本地媒体文件，不包含 AI API Key；浏览器会直接连接 WebDAV 服务。</div>
+                                            <div className="mt-1 text-xs text-stone-500">同步画布、我的资产、生成记录和本地媒体文件，不包含 AI API Key；本机版连接内网 NAS 时会自动使用本地代理。</div>
                                         </div>
                                         <div className="text-xs text-stone-500">{webdav.lastSyncedAt ? `上次同步 ${formatWebdavTime(webdav.lastSyncedAt)}` : "尚未同步"}</div>
                                     </div>

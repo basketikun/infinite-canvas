@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
@@ -38,9 +39,58 @@ function localPluginsManifest(): Plugin {
     };
 }
 
+function isPrivateWebdavTarget(value: string) {
+    try {
+        const url = new URL(value);
+        if (!["http:", "https:"].includes(url.protocol)) return false;
+        if (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1") return true;
+        if (isIP(url.hostname) !== 4) return false;
+        const [first, second] = url.hostname.split(".").map(Number);
+        return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
+    } catch {
+        return false;
+    }
+}
+
+function localWebdavProxy(): Plugin {
+    return {
+        name: "local-webdav-proxy",
+        configureServer(server) {
+            server.middlewares.use("/api-proxy/webdav", async (req, res) => {
+                try {
+                    const target = new URL(req.url || "", "http://localhost").searchParams.get("url") || "";
+                    if (!isPrivateWebdavTarget(target)) {
+                        res.statusCode = 403;
+                        res.end("Only private-network WebDAV targets are allowed");
+                        return;
+                    }
+                    const chunks: Buffer[] = [];
+                    for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                    const headers = new Headers();
+                    for (const name of ["authorization", "content-type", "depth", "if-match", "if-none-match"]) {
+                        const value = req.headers[name];
+                        if (typeof value === "string") headers.set(name, value);
+                    }
+                    const body = chunks.length ? Buffer.concat(chunks) : undefined;
+                    const upstream = await fetch(target, { method: req.method, headers, body, redirect: "manual" });
+                    res.statusCode = upstream.status;
+                    for (const name of ["content-type", "content-length", "etag", "last-modified", "location"]) {
+                        const value = upstream.headers.get(name);
+                        if (value) res.setHeader(name, value);
+                    }
+                    res.end(Buffer.from(await upstream.arrayBuffer()));
+                } catch (error) {
+                    res.statusCode = 502;
+                    res.end(error instanceof Error ? error.message : "WebDAV proxy failed");
+                }
+            });
+        },
+    };
+}
+
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
-    plugins: [react(), localPluginsManifest()],
+    plugins: [react(), localPluginsManifest(), localWebdavProxy()],
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),

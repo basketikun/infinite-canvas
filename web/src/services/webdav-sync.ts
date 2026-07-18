@@ -76,7 +76,8 @@ async function webdavFetch(config: WebdavSyncConfig, path: string, init: Request
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), WEBDAV_REQUEST_TIMEOUT_MS);
     try {
-        const url = buildWebdavUrl(config, path);
+        const targetUrl = buildWebdavUrl(config, path);
+        const url = localWebdavProxyUrl(targetUrl);
         return await fetch(url, { ...init, headers, signal: controller.signal });
     } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw new Error("WebDAV 请求超时，请检查网络或远端服务状态");
@@ -84,6 +85,18 @@ async function webdavFetch(config: WebdavSyncConfig, path: string, init: Request
         throw error;
     } finally {
         window.clearTimeout(timer);
+    }
+}
+
+function localWebdavProxyUrl(targetUrl: string) {
+    if (!import.meta.env.DEV) return targetUrl;
+    try {
+        const hostname = new URL(targetUrl).hostname;
+        const privateIpv4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+        if (hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "::1" && !privateIpv4) return targetUrl;
+        return `/api-proxy/webdav?url=${encodeURIComponent(targetUrl)}`;
+    } catch {
+        return targetUrl;
     }
 }
 
