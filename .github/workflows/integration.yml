@@ -1,0 +1,20 @@
+name: Control Plane Integration
+
+on:
+  pull_request:
+  push:
+    branches: ["integration/**"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - run: cd server && go test ./...
+      - run: cd web && bun install --frozen-lockfile && bun test src/services/control-plane src/services/cloud-sync && bun run typecheck && bun run build
+      - run: cd legacy-admin && bun install --frozen-lockfile && bun run build
+      - run: docker compose -f docker-compose.control-plane.yml config
