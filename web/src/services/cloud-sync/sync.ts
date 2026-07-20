@@ -5,6 +5,11 @@ import { createProjectSnapshot } from "./project";
 export type CloudProjectState = { revision: number };
 export type CloudSyncConflict = { project: CanvasProject; currentRevision: number };
 
+export function createCloudConflictCopy(project: CanvasProject): CanvasProject {
+    const now = new Date().toISOString();
+    return { ...createProjectSnapshot(project), id: `${project.id}-local-${Date.now()}`, title: `${project.title}（本地冲突副本）`, createdAt: now, updatedAt: now };
+}
+
 export async function syncCloudProject(project: CanvasProject, state: CloudProjectState, token: string, baseUrl: string): Promise<{ revision: number } | CloudSyncConflict> {
     try {
         const saved = await saveCloudProject(project.id, state.revision, { title: project.title, payload: createProjectSnapshot(project) }, token, baseUrl);
