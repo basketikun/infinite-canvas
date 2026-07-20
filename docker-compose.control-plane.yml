@@ -12,5 +12,17 @@ services:
       - control-plane-data:/app/data
     restart: unless-stopped
 
+  admin:
+    build:
+      context: .
+      dockerfile: legacy-admin/Dockerfile
+    environment:
+      API_BASE_URL: http://control-plane:8080
+    ports:
+      - "3001:3000"
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+
 volumes:
   control-plane-data:
