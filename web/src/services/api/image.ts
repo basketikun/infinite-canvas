@@ -1,6 +1,8 @@
 import axios from "axios";
 
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { CONTROL_PLANE_URL } from "@/constant/runtime-config";
+import { useUserStore } from "@/stores/use-user-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -279,12 +281,13 @@ function withSystemPrompt(config: AiConfig, prompt: string) {
 }
 
 function aiApiUrl(config: AiConfig, path: string) {
+    if (config.channelMode === "remote") return `${CONTROL_PLANE_URL.replace(/\/+$/, "")}/api/v1${path}`;
     return buildApiUrl(config.baseUrl, path);
 }
 
 function aiHeaders(config: AiConfig, contentType?: string) {
     return {
-        Authorization: `Bearer ${config.apiKey}`,
+        Authorization: `Bearer ${config.channelMode === "remote" ? useUserStore.getState().token : config.apiKey}`,
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
 }

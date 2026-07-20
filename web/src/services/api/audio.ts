@@ -3,17 +3,20 @@ import axios from "axios";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { CONTROL_PLANE_URL } from "@/constant/runtime-config";
+import { useUserStore } from "@/stores/use-user-store";
 import { runModelPlugin } from "./model-plugin";
 
 type RequestOptions = { signal?: AbortSignal };
 
 function aiApiUrl(config: AiConfig, path: string) {
+    if (config.channelMode === "remote") return `${CONTROL_PLANE_URL.replace(/\/+$/, "")}/api/v1${path}`;
     return buildApiUrl(config.baseUrl, path);
 }
 
 function aiHeaders(config: AiConfig) {
     return {
-        Authorization: `Bearer ${config.apiKey}`,
+        Authorization: `Bearer ${config.channelMode === "remote" ? useUserStore.getState().token : config.apiKey}`,
         "Content-Type": "application/json",
     };
 }

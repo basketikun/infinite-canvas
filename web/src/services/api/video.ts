@@ -6,6 +6,8 @@ import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/fil
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { CONTROL_PLANE_URL } from "@/constant/runtime-config";
+import { useUserStore } from "@/stores/use-user-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -32,12 +34,13 @@ export type VideoGenerationTaskState = { status: "pending" } | { status: "comple
 const pluginVideoResults = new Map<string, VideoGenerationResult>();
 
 function aiApiUrl(config: AiConfig, path: string) {
+    if (config.channelMode === "remote") return `${CONTROL_PLANE_URL.replace(/\/+$/, "")}/api/v1${path}`;
     return buildApiUrl(config.baseUrl, path);
 }
 
 function aiHeaders(config: AiConfig, contentType?: string) {
     return {
-        Authorization: `Bearer ${config.apiKey}`,
+        Authorization: `Bearer ${config.channelMode === "remote" ? useUserStore.getState().token : config.apiKey}`,
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
 }
