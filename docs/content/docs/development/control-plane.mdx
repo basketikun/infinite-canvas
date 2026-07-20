@@ -42,3 +42,11 @@ docker compose -f docker-compose.control-plane.yml up --build -d
 ```
 
 同时将 `server/.env` 中的 `PUBLIC_BASE_URL` 和 `CORS_ALLOW_ORIGINS` 改为对应公开 URL。部署配置中不应写入供应商 API Key、用户 JWT 或管理台密码。
+
+## 可选云同步
+
+云同步使用独立 PostgreSQL 与 MinIO/S3，不改变 WebDAV。复制 `server/.env.example` 后替换数据库和 MinIO 密码，再执行：
+
+```bash
+docker compose -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml up --build
+```
