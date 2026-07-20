@@ -1,0 +1,45 @@
+---
+title: AI 上游更新适配手册
+description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
+---
+
+# AI 上游更新适配手册
+
+本手册是后续 AI 更新本 fork 的唯一执行入口。目标是吸收 `upstream/main` 的新版画布能力，同时保留本项目的 Go 控制平面、旧版独立管理台、服务端模式和独立云同步。
+
+## 不可破坏边界
+
+- `server/`：账号、权限、积分、模型代理、画布修订和云媒体 API；供应商 Key、S3 凭据只能存在服务端环境变量或管理设置。
+- `legacy-admin/`：独立 Next.js 管理台；不可与 `web/` 合并或替换。
+- `web/src/services/control-plane/`：控制平面认证、公开模型和服务端模式客户端。
+- `web/src/services/cloud-sync/`：云同步；不能改写 WebDAV 的原有合并语义。
+- 远程模式只能请求控制平面 `/api/v1/*` 并携带用户 Bearer token，绝不能把供应商 API Key 写入浏览器。
+
+## 每次更新流程
+
+1. 在 `integration/backend-control-plane` 拉取并确认工作区干净。
+2. 创建 `sync/upstream-YYYY-MM-DD` 分支，执行 `git fetch upstream --tags`，合并 `upstream/main`。
+3. 冲突优先保留上述定制目录；其它画布 UI、通用组件、依赖锁文件优先采用上游版本，再按编译错误恢复适配层调用。
+4. 先运行前端控制平面和云同步测试、`bun run typecheck`；再运行 `server` 的 `go test ./...`。
+5. 检查远程模式图片、文本、音频、视频和媒体上传仍只命中控制平面；检查 WebDAV 仍可独立使用。
+6. 在 PR 记录冲突文件、解决理由、完整验证输出和待人工验收项；绝不直接向 `upstream` 推送。
+
+## 变更审计清单
+
+- 上游改动是否触及 `use-config-store`、模型请求、运行期配置、路由、项目序列化或 IndexedDB 媒体？若触及，必须逐项复核服务端模式和云同步。
+- 上游新增画布字段时，更新 `CanvasProject` 快照契约与云同步测试，确保导入/导出、WebDAV、云同步都保留字段。
+- 上游新增媒体类型时，更新 `collectProjectStorageKeys`、对象存储 MIME 校验和恢复逻辑。
+- 上游改动 Docker 时，确认根镜像仍排除 `legacy-admin/node_modules`，运行期 `CONTROL_PLANE_URL` 仍会注入 `config.js`。
+
+## 当前验证命令
+
+```bash
+cd web && bun test src/services/control-plane src/services/cloud-sync && bun run typecheck
+docker run --rm -e GOPROXY=https://goproxy.cn,direct \
+  -v "$HOME/.cache/go-build:/root/.cache/go-build" \
+  -v "$HOME/go/pkg/mod:/go/pkg/mod" \
+  -v "$PWD/server:/src" -w /src golang:1.25 go test ./...
+docker compose -f docker-compose.control-plane.yml config
+```
+
+容器镜像构建、MinIO/PostgreSQL 联调和双浏览器冲突验收属于发布前必做人工门禁；未获得实际输出不得在 PR 中写“已完成”。
