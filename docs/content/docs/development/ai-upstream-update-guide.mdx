@@ -43,3 +43,10 @@ docker compose -f docker-compose.control-plane.yml config
 ```
 
 容器镜像构建、MinIO/PostgreSQL 联调和双浏览器冲突验收属于发布前必做人工门禁；未获得实际输出不得在 PR 中写“已完成”。
+
+## 发布与回滚
+
+- web、control-plane、admin 镜像必须使用同一 Git SHA 标签；生产 Compose 禁止使用 `latest`。
+- 发布前备份 PostgreSQL，执行镜像拉取、`/api/health` 健康检查和管理员登录检查。
+- 回滚使用上一 SHA 的 Compose 文件与镜像，只回滚应用；不要执行破坏性的数据库 schema downgrade。
+- 发布记录必须写明 Git SHA、镜像 SHA、数据库备份位置、上游冲突文件和全部验证输出。
