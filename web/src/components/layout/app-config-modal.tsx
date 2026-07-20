@@ -61,8 +61,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
     const config = useConfigStore((state) => state.config);
     const webdav = useConfigStore((state) => state.webdav);
+    const syncMode = useConfigStore((state) => state.syncMode);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
+    const setSyncMode = useConfigStore((state) => state.setSyncMode);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
@@ -286,9 +288,14 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                     },
                     {
                         key: "webdav",
-                        label: "WebDAV",
+                        label: "同步",
                         children: (
                             <Form layout="vertical" requiredMark={false}>
+                                <Form.Item label="同步方式" className="mb-4">
+                                    <Segmented block value={syncMode} options={[{ label: "关闭", value: "off" }, { label: "WebDAV", value: "webdav" }, { label: "云同步", value: "cloud", disabled: !token || config.channelMode !== "remote" }]} onChange={(value) => setSyncMode(value as "off" | "webdav" | "cloud")} />
+                                </Form.Item>
+                                {syncMode === "cloud" ? <div className="mb-4 rounded-lg border border-stone-200 px-4 py-3 text-sm text-stone-600 dark:border-stone-800 dark:text-stone-300">云同步会通过已登录的控制平面保存画布和媒体；发生版本冲突时将要求你选择本地、远端或另存副本。</div> : null}
+                                {syncMode !== "webdav" ? null : <>
                                 <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                     <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                                         <div>
@@ -325,6 +332,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                     </div>
                                     {syncingWebdav || webdavSyncStatus ? <WebdavProgressGrid progress={webdavDomainProgress} /> : null}
                                 </section>
+                                </>}
                             </Form>
                         ),
                     },
