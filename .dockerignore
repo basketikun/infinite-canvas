@@ -9,6 +9,9 @@ docs/out
 web/.next
 web/node_modules
 web/out
+legacy-admin/.next
+legacy-admin/node_modules
+legacy-admin/out
 *.log
 .env*
 !.env.example

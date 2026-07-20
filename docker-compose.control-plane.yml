@@ -24,5 +24,17 @@ services:
       - control-plane
     restart: unless-stopped
 
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+
 volumes:
   control-plane-data:

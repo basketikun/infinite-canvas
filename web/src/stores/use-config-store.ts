@@ -3,6 +3,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
+import { useUserStore } from "./use-user-store";
+
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
@@ -169,6 +171,7 @@ export function resolveModelScript(config: AiConfig, value: string) {
 
 function isAiConfigReady(config: AiConfig, model: string) {
     const channel = resolveModelChannel(config, model);
+    if (config.channelMode === "remote") return Boolean(model.trim() && channel.baseUrl.trim() && useUserStore.getState().token.trim());
     return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
 }
 

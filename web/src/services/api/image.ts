@@ -68,6 +68,8 @@ type ResponseApiPayload = {
     msg?: string;
 };
 type ResponseStreamState = { buffer: string; text: string; payload?: ResponseApiPayload; error?: string };
+type ChatCompletionPayload = { choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>; error?: { message?: string }; code?: number; msg?: string };
+type ChatCompletionStreamState = { buffer: string; text: string; error?: string };
 
 type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
@@ -471,6 +473,72 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
     return { ...result, content: state.text || result.content };
 }
 
+function validateChatCompletionPayload(payload: ChatCompletionPayload) {
+    if (typeof payload.code === "number" && payload.code !== 0) throw new Error(payload.msg || "请求失败");
+    if (payload.error?.message) throw new Error(payload.error.message);
+}
+
+function chatCompletionText(payload: ChatCompletionPayload) {
+    return payload.choices?.map((choice) => choice.delta?.content || choice.message?.content || "").join("") || "";
+}
+
+function consumeChatCompletionStreamBlock(block: string, state: ChatCompletionStreamState, onDelta?: (text: string) => void) {
+    const data = block
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).replace(/^ /, ""))
+        .join("\n")
+        .trim();
+    if (!data || data === "[DONE]") return;
+    const payload = JSON.parse(data) as ChatCompletionPayload;
+    validateChatCompletionPayload(payload);
+    const text = chatCompletionText(payload);
+    if (text) {
+        state.text += text;
+        onDelta?.(state.text);
+    }
+}
+
+function consumeChatCompletionStreamText(state: ChatCompletionStreamState, text: string, onDelta?: (text: string) => void, flush = false) {
+    state.buffer += text;
+    for (;;) {
+        const match = state.buffer.match(/\r?\n\r?\n/);
+        if (!match) break;
+        const index = match.index ?? 0;
+        consumeChatCompletionStreamBlock(state.buffer.slice(0, index), state, onDelta);
+        state.buffer = state.buffer.slice(index + match[0].length);
+    }
+    if (flush && state.buffer.trim()) {
+        consumeChatCompletionStreamBlock(state.buffer, state, onDelta);
+        state.buffer = "";
+    }
+}
+
+export async function requestRemoteChatCompletion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions, fetcher: typeof fetch = fetch) {
+    const response = await fetcher(aiApiUrl(config, "/chat/completions"), {
+        method: "POST",
+        headers: { ...aiHeaders(config, "application/json"), Accept: "text/event-stream" },
+        body: JSON.stringify({ model: config.model, messages, stream: true }),
+        signal: options?.signal,
+    });
+    if (!response.ok) throw new Error(await readFetchError(response, "请求失败"));
+    if (!response.body) {
+        const payload = (await response.json()) as ChatCompletionPayload;
+        validateChatCompletionPayload(payload);
+        return chatCompletionText(payload);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const state: ChatCompletionStreamState = { buffer: "", text: "" };
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        consumeChatCompletionStreamText(state, decoder.decode(value, { stream: true }), onDelta);
+    }
+    consumeChatCompletionStreamText(state, decoder.decode(), onDelta, true);
+    return state.text;
+}
+
 function toGeminiBody(config: AiConfig, messages: ResponseInputMessage[], extra?: Record<string, unknown>) {
     const systemText = [
         config.systemPrompt.trim(),
@@ -805,6 +873,11 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
         }
     }
     try {
+        if (requestConfig.channelMode === "remote") {
+            const answer = (await requestRemoteChatCompletion(requestConfig, withSystemMessage(requestConfig, messages) as AiTextMessage[], onDelta, options)) || "没有返回内容";
+            if (answer === "没有返回内容") onDelta(answer);
+            return answer;
+        }
         if (requestConfig.apiFormat === "gemini") {
             const answer = (await requestGeminiStreamingResponse(requestConfig, toGeminiBody(requestConfig, messages), onDelta, options)).content || "没有返回内容";
             if (answer === "没有返回内容") onDelta(answer);

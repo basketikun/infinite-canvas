@@ -5,7 +5,7 @@ description: 独立 Go 后端的本地运行与 Docker 部署
 
 # 后端控制平面
 
-`server/` 恢复 v0.3.0 的账号、权限、积分、模型代理、提示词、公共素材、参考媒体和系统设置 API。它独立于当前 Vite 画布运行。
+`server/` 恢复 v0.3.0 的账号、权限、积分、模型代理、提示词、公共素材、参考媒体和系统设置 API。配套 Compose 同时启动新版 Vite 画布、Go 控制平面和旧版独立管理台。
 
 画布项目、个人素材和生成记录当前继续保存在浏览器 IndexedDB/WebDAV，不应误认为已接入服务端画布同步。
 
@@ -26,4 +26,19 @@ cp server/.env.example server/.env
 docker compose -f docker-compose.control-plane.yml up --build
 ```
 
-上线前需要替换管理员密码与 JWT 密钥，并把 `CORS_ALLOW_ORIGINS` 配置为实际画布和管理台的 HTTPS 来源。
+启动后访问：
+
+- 画布：`http://127.0.0.1:3000`
+- 控制平面：`http://127.0.0.1:8080/api/health`
+- 管理台：`http://127.0.0.1:3001/login`
+
+画布设置中可以保持「本地直连」而无需登录；切换为「服务端」后，使用控制平面账号登录，模型和供应商 API Key 始终只保存在后端管理设置中。
+
+上线前需要替换管理员密码与 JWT 密钥，并把 `CORS_ALLOW_ORIGINS` 配置为实际画布和管理台的 HTTPS 来源。`CONTROL_PLANE_URL` 是浏览器访问控制平面的公开地址，不能填写 Compose 内部主机名 `control-plane`；例如反向代理部署时可执行：
+
+```bash
+CONTROL_PLANE_URL=https://api.canvas.example.com \
+docker compose -f docker-compose.control-plane.yml up --build -d
+```
+
+同时将 `server/.env` 中的 `PUBLIC_BASE_URL` 和 `CORS_ALLOW_ORIGINS` 改为对应公开 URL。部署配置中不应写入供应商 API Key、用户 JWT 或管理台密码。
