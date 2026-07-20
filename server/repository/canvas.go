@@ -70,6 +70,17 @@ func GetCanvasProject(userID string, projectID string) (model.CanvasProject, boo
 	return project, err == nil, err
 }
 
+// ListCanvasProjects 返回当前用户自己的项目元数据，不携带快照内容。
+func ListCanvasProjects(userID string) ([]model.CanvasProject, error) {
+	database, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	projects := []model.CanvasProject{}
+	err = database.Where("user_id = ?", userID).Order("updated_at desc").Find(&projects).Error
+	return projects, err
+}
+
 // GetCurrentCanvasProject 返回当前用户项目及其当前不可变快照。
 func GetCurrentCanvasProject(userID string, projectID string) (model.CanvasProject, model.CanvasRevision, bool, error) {
 	project, found, err := GetCanvasProject(userID, projectID)

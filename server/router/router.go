@@ -37,6 +37,13 @@ func New() *gin.Engine {
 	v1.POST("/audio/speech", gin.WrapF(handler.AIAudioSpeech))
 	v1.POST("/videos", gin.WrapF(handler.AIVideos))
 	v1.POST("/media/references", gin.WrapF(handler.UploadReferenceMedia))
+	v1.GET("/canvas/projects", gin.WrapF(handler.CanvasProjects))
+	v1.GET("/canvas/projects/:id", func(c *gin.Context) {
+		handler.CanvasProject(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.PUT("/canvas/projects/:id", func(c *gin.Context) {
+		handler.SaveCanvasProject(c.Writer, c.Request, c.Param("id"))
+	})
 	v1.GET("/videos/:id", func(c *gin.Context) {
 		handler.AIVideo(c.Writer, c.Request, c.Param("id"))
 	})
