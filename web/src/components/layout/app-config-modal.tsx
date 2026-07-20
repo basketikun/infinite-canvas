@@ -67,6 +67,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const token = useUserStore((state) => state.token);
+    const login = useUserStore((state) => state.login);
+    const isLoginLoading = useUserStore((state) => state.isLoading);
+    const [loginValues, setLoginValues] = useState({ username: "", password: "" });
     const webdavReady = Boolean(webdav.url.trim());
     const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
     useEffect(() => setActiveTab(initialTab), [initialTab]);
@@ -176,6 +179,21 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         onChange={(value) => updateConfig("channelMode", value as AiConfig["channelMode"])}
                                     />
                                 </div>
+                                {!token && CONTROL_PLANE_URL ? (
+                                    <Form
+                                        layout="inline"
+                                        className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800"
+                                        onFinish={() =>
+                                            void login(loginValues)
+                                                .then(() => message.success("已登录控制平面"))
+                                                .catch((error) => message.error(error instanceof Error ? error.message : "登录失败"))
+                                        }
+                                    >
+                                        <Form.Item className="mb-0"><Input placeholder="用户名" value={loginValues.username} onChange={(event) => setLoginValues((current) => ({ ...current, username: event.target.value }))} /></Form.Item>
+                                        <Form.Item className="mb-0"><Input.Password placeholder="密码" value={loginValues.password} onChange={(event) => setLoginValues((current) => ({ ...current, password: event.target.value }))} /></Form.Item>
+                                        <Form.Item className="mb-0"><Button htmlType="submit" loading={isLoginLoading}>登录服务端</Button></Form.Item>
+                                    </Form>
+                                ) : null}
                                 {config.channelMode === "remote" ? (
                                     <div className="rounded-lg border border-stone-200 px-4 py-3 text-sm text-stone-600 dark:border-stone-800 dark:text-stone-300">已启用服务端模式。模型与密钥由后端管理，登录后会自动加载可用模型。</div>
                                 ) : (
