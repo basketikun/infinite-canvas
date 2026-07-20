@@ -9,12 +9,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/timerainv7/infinite-canvas/server/config"
-	"github.com/timerainv7/infinite-canvas/server/model"
 	"github.com/glebarez/sqlite"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/timerainv7/infinite-canvas/server/config"
+	"github.com/timerainv7/infinite-canvas/server/model"
 	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -69,6 +69,9 @@ func DB() (*gorm.DB, error) {
 			&model.Prompt{},
 			&model.Asset{},
 			&model.Setting{},
+			&model.CanvasProject{},
+			&model.CanvasRevision{},
+			&model.MediaObject{},
 		)
 	})
 	return db, dbErr
