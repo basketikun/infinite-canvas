@@ -4,6 +4,7 @@ import { App } from "antd";
 
 import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
+import { useUserStore } from "@/stores/use-user-store";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -11,8 +12,13 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const config = useConfigStore((state) => state.config);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const hydrateUser = useUserStore((state) => state.hydrateUser);
 
     usePromptSourceScheduler();
+
+    useEffect(() => {
+        void hydrateUser();
+    }, [hydrateUser]);
 
     useEffect(() => {
         if (handledConfigParams.current) return;
