@@ -37,6 +37,13 @@ func TestSaveCanvasProjectRejectsStaleRevision(t *testing.T) {
 	if updated.CurrentRevision != 2 {
 		t.Fatalf("updated revision = %d, want 2", updated.CurrentRevision)
 	}
+	current, revision, found, err := GetCurrentCanvasProject("user-1", "project-1")
+	if err != nil || !found {
+		t.Fatalf("current project = found:%v err:%v, want current revision", found, err)
+	}
+	if current.CurrentRevision != 2 || revision.Payload != `{"nodes":[2]}` {
+		t.Fatalf("current project = revision:%d payload:%s", current.CurrentRevision, revision.Payload)
+	}
 }
 
 func TestCanvasProjectsAreScopedToUser(t *testing.T) {

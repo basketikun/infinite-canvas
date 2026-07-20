@@ -69,3 +69,21 @@ func GetCanvasProject(userID string, projectID string) (model.CanvasProject, boo
 	}
 	return project, err == nil, err
 }
+
+// GetCurrentCanvasProject 返回当前用户项目及其当前不可变快照。
+func GetCurrentCanvasProject(userID string, projectID string) (model.CanvasProject, model.CanvasRevision, bool, error) {
+	project, found, err := GetCanvasProject(userID, projectID)
+	if err != nil || !found {
+		return project, model.CanvasRevision{}, found, err
+	}
+	database, err := DB()
+	if err != nil {
+		return model.CanvasProject{}, model.CanvasRevision{}, false, err
+	}
+	revision := model.CanvasRevision{}
+	err = database.Where("project_id = ? AND revision = ?", project.ID, project.CurrentRevision).First(&revision).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return project, model.CanvasRevision{}, false, nil
+	}
+	return project, revision, err == nil, err
+}
