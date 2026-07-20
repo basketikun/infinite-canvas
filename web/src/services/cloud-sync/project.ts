@@ -1,4 +1,6 @@
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
+import { setImageBlob } from "@/services/image-storage";
+import { setMediaBlob } from "@/services/file-storage";
 
 const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 
@@ -15,4 +17,8 @@ export function collectProjectStorageKeys(project: CanvasProject) {
     };
     visit(project);
     return [...keys];
+}
+
+export async function restoreProjectMedia(storageKey: string, blob: Blob) {
+    return storageKey.startsWith("image:") ? setImageBlob(storageKey, blob) : setMediaBlob(storageKey, blob);
 }
