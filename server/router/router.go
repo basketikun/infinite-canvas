@@ -3,15 +3,17 @@ package router
 import (
 	"net/http"
 
+	"github.com/gin-gonic/gin"
+	"github.com/timerainv7/infinite-canvas/server/config"
 	"github.com/timerainv7/infinite-canvas/server/handler"
 	"github.com/timerainv7/infinite-canvas/server/middleware"
-	"github.com/gin-gonic/gin"
 )
 
 func New() *gin.Engine {
 	router := gin.Default()
 	router.RedirectTrailingSlash = false
 	_ = router.SetTrustedProxies(nil)
+	router.Use(middleware.CORS(config.Cfg.CORSAllowOrigins))
 	api := router.Group("/api")
 	api.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
