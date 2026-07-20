@@ -1,4 +1,5 @@
 .next/
+.worktrees/
 out/
 node_modules/
 .env*
