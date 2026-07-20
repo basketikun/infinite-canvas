@@ -27,3 +27,12 @@ export async function uploadCloudMedia(key: string, file: Blob, token: string, b
     if (!response.ok || payload.code !== 0) throw new Error(payload.msg || "媒体上传失败");
     return payload.data;
 }
+
+export async function downloadCloudMedia(key: string, sha256: string, token: string, baseUrl: string, fetcher: typeof fetch = fetch) {
+    const response = await fetcher(`${baseUrl.replace(/\/+$/, "")}/api/v1/canvas/media/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error("媒体下载失败");
+    const blob = await response.blob();
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer())), (value) => value.toString(16).padStart(2, "0")).join("");
+    if (sha256 && digest !== sha256) throw new Error("媒体完整性校验失败");
+    return blob;
+}
