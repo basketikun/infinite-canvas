@@ -86,7 +86,7 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
 
 async function createPluginVideoTask(config: AiConfig, model: string, script: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
     if (!config.baseUrl.trim()) throw new Error("请先配置 Base URL");
-    if (!config.apiKey.trim()) throw new Error("请先配置 API Key");
+    if (config.channelMode === "remote" ? !useUserStore.getState().token : !config.apiKey.trim()) throw new Error(config.channelMode === "remote" ? "请先登录服务端" : "请先配置 API Key");
     const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
     const result = videoPluginResult(
         await runModelPlugin({
@@ -293,7 +293,7 @@ async function videoResultFromUrl(url: string, options?: RequestOptions): Promis
 function assertVideoConfig(config: AiConfig, model: string) {
     if (!model) throw new Error("请先配置视频模型");
     if (!config.baseUrl.trim()) throw new Error("请先配置 Base URL");
-    if (!config.apiKey.trim()) throw new Error("请先配置 API Key");
+    if (config.channelMode === "remote" ? !useUserStore.getState().token : !config.apiKey.trim()) throw new Error(config.channelMode === "remote" ? "请先登录服务端" : "请先配置 API Key");
     if (config.apiFormat === "gemini") throw new Error("Gemini 调用格式暂不支持视频生成，请使用 OpenAI 格式渠道");
 }
 
