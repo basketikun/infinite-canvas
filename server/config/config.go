@@ -21,6 +21,10 @@ type Config struct {
 	DatabaseDSN         string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
 	PublicBaseURL       string `env:"PUBLIC_BASE_URL"`
 	CORSAllowOrigins    string `env:"CORS_ALLOW_ORIGINS"`
+	SyncS3Endpoint      string `env:"SYNC_S3_ENDPOINT"`
+	SyncS3AccessKey     string `env:"SYNC_S3_ACCESS_KEY"`
+	SyncS3SecretKey     string `env:"SYNC_S3_SECRET_KEY"`
+	SyncS3Bucket        string `env:"SYNC_S3_BUCKET" envDefault:"infinite-canvas-sync"`
 	LinuxDoAuthorizeURL string `env:"LINUX_DO_AUTHORIZE_URL" envDefault:"https://connect.linux.do/oauth2/authorize"`
 	LinuxDoTokenURL     string `env:"LINUX_DO_TOKEN_URL" envDefault:"https://connect.linux.do/oauth2/token"`
 	LinuxDoUserInfoURL  string `env:"LINUX_DO_USERINFO_URL" envDefault:"https://connect.linux.do/api/user"`
