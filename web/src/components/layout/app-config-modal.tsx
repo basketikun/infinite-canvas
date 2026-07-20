@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Modal, Progress, Select, Tabs } from "antd";
+import { App, Button, Form, Input, Modal, Progress, Segmented, Select, Tabs } from "antd";
 import { Cloud, Pencil, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -9,6 +9,8 @@ import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent }
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { CONTROL_PLANE_URL } from "@/constant/runtime-config";
+import { useUserStore } from "@/stores/use-user-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -64,6 +66,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
+    const token = useUserStore((state) => state.token);
     const webdavReady = Boolean(webdav.url.trim());
     const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
     useEffect(() => setActiveTab(initialTab), [initialTab]);
@@ -162,6 +165,21 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         label: "渠道",
                         children: (
                             <div>
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                    <div>
+                                        <div className="text-sm font-semibold">调用方式</div>
+                                        <div className="mt-1 text-xs text-stone-500">服务端模式由管理员统一托管模型渠道和密钥。</div>
+                                    </div>
+                                    <Segmented
+                                        value={config.channelMode}
+                                        options={[{ label: "本地直连", value: "local" }, { label: "服务端", value: "remote", disabled: !token || !CONTROL_PLANE_URL }]}
+                                        onChange={(value) => updateConfig("channelMode", value as AiConfig["channelMode"])}
+                                    />
+                                </div>
+                                {config.channelMode === "remote" ? (
+                                    <div className="rounded-lg border border-stone-200 px-4 py-3 text-sm text-stone-600 dark:border-stone-800 dark:text-stone-300">已启用服务端模式。模型与密钥由后端管理，登录后会自动加载可用模型。</div>
+                                ) : (
+                                    <>
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                     <div className="text-xs text-stone-500">每个渠道选择一个协议并拉取模型，为每个模型指定能力（生图/视频/文本/音频），并可自定义调用脚本。</div>
                                     <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
@@ -186,6 +204,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         </div>
                                     ))}
                                 </div>
+                                    </>
+                                )}
                             </div>
                         ),
                     },
