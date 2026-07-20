@@ -5,6 +5,7 @@
   "pages": [
     "local-development",
     "canvas-data-structure",
-    "local-codex-canvas"
+    "local-codex-canvas",
+    "control-plane"
   ]
 }

@@ -1,0 +1,29 @@
+---
+title: 后端控制平面
+description: 独立 Go 后端的本地运行与 Docker 部署
+---
+
+# 后端控制平面
+
+`server/` 恢复 v0.3.0 的账号、权限、积分、模型代理、提示词、公共素材、参考媒体和系统设置 API。它独立于当前 Vite 画布运行。
+
+画布项目、个人素材和生成记录当前继续保存在浏览器 IndexedDB/WebDAV，不应误认为已接入服务端画布同步。
+
+## 本地运行
+
+```bash
+cp server/.env.example server/.env
+cd server
+go test ./...
+go run .
+curl http://127.0.0.1:8080/api/health
+```
+
+## Docker
+
+```bash
+cp server/.env.example server/.env
+docker compose -f docker-compose.control-plane.yml up --build
+```
+
+上线前需要替换管理员密码与 JWT 密钥，并把 `CORS_ALLOW_ORIGINS` 配置为实际画布和管理台的 HTTPS 来源。

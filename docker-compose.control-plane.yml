@@ -1,0 +1,16 @@
+services:
+  control-plane:
+    build:
+      context: ./server
+      args:
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+    env_file:
+      - ./server/.env
+    ports:
+      - "8080:8080"
+    volumes:
+      - control-plane-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  control-plane-data:
