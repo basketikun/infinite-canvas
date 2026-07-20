@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -74,6 +75,53 @@ func SaveCanvasProject(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	w.Header().Set("ETag", strconv.FormatInt(project.CurrentRevision, 10))
 	OK(w, project)
+}
+
+func UploadCanvasMedia(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		Fail(w, "媒体文件无效或超过 100MB")
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		Fail(w, "请上传媒体文件")
+		return
+	}
+	defer file.Close()
+	media, err := service.UploadCanvasMedia(r.Context(), user.ID, r.FormValue("key"), header.Header.Get("Content-Type"), file)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, media)
+}
+
+func CanvasMedia(w http.ResponseWriter, r *http.Request, key string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	media, found, err := service.DownloadCanvasMedia(r.Context(), user.ID, key)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	if !found {
+		writeJSONStatus(w, http.StatusNotFound, response{Code: 1, Data: nil, Msg: "媒体不存在"})
+		return
+	}
+	defer media.Close()
+	w.Header().Set("Content-Type", media.MimeType)
+	w.Header().Set("Content-Length", strconv.FormatInt(media.Bytes, 10))
+	_, _ = io.Copy(w, media)
 }
 
 func parseIfMatch(value string) (int64, error) {

@@ -98,3 +98,25 @@ func GetCurrentCanvasProject(userID string, projectID string) (model.CanvasProje
 	}
 	return project, revision, err == nil, err
 }
+
+func SaveMediaObject(media model.MediaObject) (model.MediaObject, error) {
+	database, err := DB()
+	if err != nil {
+		return media, err
+	}
+	err = database.Save(&media).Error
+	return media, err
+}
+
+func GetMediaObject(userID string, key string) (model.MediaObject, bool, error) {
+	database, err := DB()
+	if err != nil {
+		return model.MediaObject{}, false, err
+	}
+	media := model.MediaObject{}
+	err = database.Where("user_id = ? AND key = ?", userID, key).First(&media).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.MediaObject{}, false, nil
+	}
+	return media, err == nil, err
+}

@@ -44,6 +44,10 @@ func New() *gin.Engine {
 	v1.PUT("/canvas/projects/:id", func(c *gin.Context) {
 		handler.SaveCanvasProject(c.Writer, c.Request, c.Param("id"))
 	})
+	v1.POST("/canvas/media", gin.WrapF(handler.UploadCanvasMedia))
+	v1.GET("/canvas/media/:key", func(c *gin.Context) {
+		handler.CanvasMedia(c.Writer, c.Request, c.Param("key"))
+	})
 	v1.GET("/videos/:id", func(c *gin.Context) {
 		handler.AIVideo(c.Writer, c.Request, c.Param("id"))
 	})
