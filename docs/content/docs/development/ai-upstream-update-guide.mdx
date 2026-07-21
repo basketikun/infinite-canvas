@@ -5,7 +5,15 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 
 # AI 上游更新适配手册
 
-本手册是后续 AI 更新本 fork 的唯一执行入口。目标是吸收 `upstream/main` 的新版画布能力，同时保留本项目的 Go 控制平面、旧版独立管理台、服务端模式和独立云同步。
+本手册是后续 AI 更新本 fork 的唯一执行入口。目标是吸收 `upstream/main` 的新版画布能力，同时保留本项目的 Go 控制平面、旧版独立管理台、服务端模式和独立云同步。AI 必须按本手册执行；不能因为上游目录结构变化而删除定制能力，也不能把“能编译”误写成“已部署”。
+
+## 给执行 AI 的任务提示词
+
+把下面整段（连同本文件）提供给执行 AI，再指定要合并的上游 tag/commit：
+
+> 在 `integration/backend-control-plane` 的隔离工作树中，把 `upstream/main`（或指定提交）合并到本 fork。只处理本次上游更新直接相关的冲突。必须保留 `server/`、`legacy-admin/`、服务端模式和云同步的全部契约；WebDAV 不得被云同步替换。先阅读 `docs/content/docs/development/ai-upstream-update-guide.mdx`，然后执行 `scripts/sync-upstream.sh` 或同等的干净分支流程。每个修改先补或更新测试，完成后运行本手册的全部自动验证和人工门禁。最终报告必须列出：上游提交、冲突文件、每项定制能力的适配点、实际运行的命令与退出结果、未做的人工验收。没有真实输出时不得声称通过或完成。
+
+如果指定的是 release tag，先确认该 tag 对应提交及发布说明；禁止把未审查的上游 force-push 分支直接合入。
 
 ## 不可破坏边界
 
@@ -15,14 +23,54 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 - `web/src/services/cloud-sync/`：云同步；不能改写 WebDAV 的原有合并语义。
 - 远程模式只能请求控制平面 `/api/v1/*` 并携带用户 Bearer token，绝不能把供应商 API Key 写入浏览器。
 
+下表是上游冲突时的默认归属规则。若无法同时满足，停下并记录差异，要求维护者决定，不能自行删除任一侧。
+
+| 路径/领域 | 默认处理 | 不变量 |
+| --- | --- | --- |
+| `web/src/**` 的通用画布/UI | 优先保留上游，再重新接入本 fork 的调用点 | 本地直连仍可用；服务端模式仍可登录和调用 |
+| `web/src/services/control-plane/**`、`use-user-store.ts`、`runtime-config.ts` | 保留 fork 实现，按上游接口调整 | token 仅用于控制平面；供应商 Key 不进浏览器 |
+| `web/src/services/cloud-sync/**`、`use-config-store.ts` | 三方合并，先保留 fork 数据契约 | `off/webdav/cloud` 三态仍存在；WebDAV 行为不变 |
+| `server/**` | 保留 fork；只吸收明确兼容的安全/构建改动 | 旧管理 API、模型代理、画布 API 都存在 |
+| `legacy-admin/**` | 保留独立应用 | 不迁入 `web/`，可独立 build 和登录 |
+| `Dockerfile`、Compose、entrypoint | 三方合并 | 根 `.dockerignore` 排除 admin 依赖；运行期写入 `CONTROL_PLANE_URL` |
+| `bun.lock`、`package.json` | 采用上游依赖基线后重新安装并验证 | 不以手改 lockfile 伪造依赖一致性 |
+
+## 必须保持的数据和 HTTP 契约
+
+### 服务端模式
+
+- `CONTROL_PLANE_URL` 的优先级是运行期 `window.__RUNTIME_CONFIG__`、构建期 `VITE_CONTROL_PLANE_URL`、空值；Docker 的 `web/docker-entrypoint.sh` 必须在启动时生成 `config.js`。
+- 本地模式仍走用户配置的供应商地址和 API Key。远程模式从 `use-user-store` 取 session token，只调用控制平面：图片、聊天、音频、视频、参考媒体分别命中 `/api/v1/*`。
+- 文本远程模式使用 `/api/v1/chat/completions`；不要把新版本地的 Responses API 路径误套到旧 Go 后端。
+- `isAiConfigReady` 在远程模式只要求有效会话、模型和控制平面地址，不要求浏览器存储供应商 Key。
+
+### 云同步
+
+- `CanvasProject` 的字段（节点、连线、会话、活动会话、背景、图片信息、视口、创建/更新时间）必须作为快照完整保留。上游新增项目字段时，必须同步修改快照、导入/导出、WebDAV 和云同步测试。
+- 服务端 API：`GET /api/v1/canvas/projects`、`GET/PUT /api/v1/canvas/projects/:id`、`POST /api/v1/canvas/media`、`GET /api/v1/canvas/media/:key`；全都要求用户 Bearer token 和用户隔离。
+- PUT 必须带 `If-Match`。新项目以 `0` 创建；过期 revision 必须收到 HTTP 409 且 JSON `data.currentRevision`，不得静默覆盖。
+- 云端 payload 是 `{ project: CanvasProject, media: CloudMediaManifest[] }`。`media` 每项含 `storageKey`、`sha256`、`mimeType`、`bytes`；读取旧的裸 `CanvasProject` payload 时兼容为无媒体清单。
+- 上传前生成媒体 SHA-256；下载后必须按清单校验 SHA-256，再写 IndexedDB。上游新增媒体前缀时，同步更新 `collectProjectStorageKeys`、本地读写路由和测试。
+- 冲突 UI 必须始终提供且仅提供明确的人为动作：用本地覆盖远端、使用远端、另存本地副本。不得后台自动选择任一版本。
+- WebDAV 仍同步画布、资产、生成记录及媒体的既有清单；云同步当前只同步画布和其引用媒体。两者的状态、请求和合并算法不得共用。
+
+### 后端、部署和安全
+
+- `server/` 支持 SQLite 本地控制平面和 PostgreSQL 云同步；云同步生产存储不是 SQLite。
+- 云同步 Compose 通过 `server/.env` 提供控制平面环境，且必须用 `docker compose --env-file server/.env` 让 PostgreSQL/MinIO 读取同一套部署变量；模板是 `server/.env.cloud.example`，真实 `.env` 不进 Git。
+- `SYNC_S3_*`、`DATABASE_DSN`、管理员密码、JWT secret、供应商 Key、用户 token 都是秘密。测试、日志、文档和截图不得输出其值。
+- `docker-compose.cloud-sync.yml` 不得重新加入可直接部署的硬编码密码；生产镜像必须以 Git SHA（而非 `latest`）标记。
+
 ## 每次更新流程
 
-1. 在 `integration/backend-control-plane` 拉取并确认工作区干净。
-2. 创建 `sync/upstream-YYYY-MM-DD` 分支，执行 `git fetch upstream --tags`，合并 `upstream/main`。
-3. 冲突优先保留上述定制目录；其它画布 UI、通用组件、依赖锁文件优先采用上游版本，再按编译错误恢复适配层调用。
-4. 先运行前端控制平面和云同步测试、`bun run typecheck`；再运行 `server` 的 `go test ./...`。
-5. 检查远程模式图片、文本、音频、视频和媒体上传仍只命中控制平面；检查 WebDAV 仍可独立使用。
-6. 在 PR 记录冲突文件、解决理由、完整验证输出和待人工验收项；绝不直接向 `upstream` 推送。
+1. 在 `integration/backend-control-plane` 拉取并确认工作区干净：`git status --short` 必须没有输出；确认 remote `upstream` 指向 `basketikun/infinite-canvas` 且没有推送 URL。
+2. 从集成分支创建隔离分支。优先运行 `./scripts/sync-upstream.sh`；它会 fetch tags、创建 `sync/upstream-YYYY-MM-DD` 并合并 `upstream/main`。同一天的重复执行先换分支名，禁止覆盖已有同步分支。
+3. 合并前记录 `git log --oneline integration/backend-control-plane..upstream/main`、上游 changelog 和文件统计。若上游有安全修复，记录其 commit；若有数据库/API 变更，先检查本手册的契约。
+4. 逐个处理冲突：先读冲突两侧的完整调用链，再按前述归属规则合并。不要用“接受 ours/theirs”批量解决，不要把 lockfile 或生成文件当源码冲突的替代品。
+5. 若上游新增/删除画布字段、媒体前缀、模型调用格式、设置项、路由、存储库、Docker 入口或依赖，更新相应的 fork 适配层和测试。测试先失败、实现后转绿。
+6. 执行自动验证，修复所有失败后重复全量验证；不要只运行受改文件的局部测试来声明完成。
+7. 在隔离 Compose 环境运行冒烟验收，记录实际 HTTP 状态和内容校验；随后运行双浏览器人工门禁。
+8. 仅在所有门禁有证据后，提交同步分支并发起合入 `integration/backend-control-plane` 的 PR。绝不向 `upstream` 推送，绝不用 reset/checkout 丢弃用户现有改动。
 
 ## 变更审计清单
 
@@ -30,19 +78,48 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 - 上游新增画布字段时，更新 `CanvasProject` 快照契约与云同步测试，确保导入/导出、WebDAV、云同步都保留字段。
 - 上游新增媒体类型时，更新 `collectProjectStorageKeys`、对象存储 MIME 校验和恢复逻辑。
 - 上游改动 Docker 时，确认根镜像仍排除 `legacy-admin/node_modules`，运行期 `CONTROL_PLANE_URL` 仍会注入 `config.js`。
+- 上游替换请求库、认证存储或 React 状态库时，确认 Authorization 头、token 清理、远程模式就绪判断和持久化的 `cloudRevisions` 仍工作。
+- 上游改变画布项目首页或配置页时，确认「同步」页仍能选择关闭/WebDAV/云同步，云端列表、立即同步、远端恢复和三种冲突操作仍可访问。
+- 上游改变服务端模型列表格式时，确认管理员设置到公开 `/api/settings` 再到新版模型选择器的映射；无法由模型名推断能力时必须能由管理员显式配置。
+- 上游改变 Go 版本、CGO、数据库库或容器基础镜像时，确认 `server` 的 SQLite 测试、PostgreSQL migration、S3/MinIO 客户端及非 root 容器启动均未退化。
 
-## 当前验证命令
+## 自动验证（每次同步必跑）
 
 ```bash
-cd web && bun test src/services/control-plane src/services/cloud-sync && bun run typecheck
+git diff --check
+
+cd web
+bun install --frozen-lockfile
+bun test src/services/control-plane src/services/cloud-sync src/stores/use-config-store.remote.test.ts
+bun run typecheck
+bun run build
+
+cd ../legacy-admin
+bun install --frozen-lockfile
+bun run build
+
+cd ..
 docker run --rm -e GOPROXY=https://goproxy.cn,direct \
   -v "$HOME/.cache/go-build:/root/.cache/go-build" \
   -v "$HOME/go/pkg/mod:/go/pkg/mod" \
   -v "$PWD/server:/src" -w /src golang:1.25 go test ./...
 docker compose -f docker-compose.control-plane.yml config
+docker compose --env-file server/.env.cloud.example \
+  -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml config
 ```
 
-容器镜像构建、MinIO/PostgreSQL 联调和双浏览器冲突验收属于发布前必做人工门禁；未获得实际输出不得在 PR 中写“已完成”。
+## 冒烟与人工门禁
+
+容器镜像构建、MinIO/PostgreSQL 联调和双浏览器冲突验收属于发布前必做人工门禁；未获得实际输出不得在 PR 中写“已完成”。Docker build/pull/Compose 启动要串行执行，避免低内存环境同时构建多个镜像。
+
+1. 用测试专用 `.env` 串行 build 并启动 web、control-plane、admin、PostgreSQL、MinIO；检查 `GET /api/health` 为 `ok`、web `config.js` 含公开控制平面 URL、admin 登录页可达。
+2. 使用管理员账号登录取得 token；创建画布 `PUT /api/v1/canvas/projects/:id` 且 `If-Match: 0`，读取后以同一旧 revision 再写一次，确认 HTTP 409 和 `currentRevision`。
+3. 上传最小媒体到 `/api/v1/canvas/media`，下载后计算 SHA-256，必须与上传响应一致。不得只检查 HTTP 200。
+4. 浏览器 A 创建并同步带图片/视频的画布；浏览器 B 使用同一账号「使用远端」，确认节点、连线、会话、视口和媒体均恢复。
+5. A、B 从同一 revision 各自修改；先同步 A，再同步 B。B 必须看见三项冲突选择，逐项在独立测试数据上确认结果。最后将 B 设为 WebDAV 模式，确认 WebDAV 仍独立完成一次同步。
+6. 在服务端模式逐一触发图片、文本、音频、视频和参考媒体；浏览器网络面板只出现控制平面和 Bearer token，不能出现供应商域名请求或 API Key。
+
+PR/发布记录应附：上游 commit、定制冲突表、所有命令的退出码、镜像 digest、HTTP 状态、SHA-256 对比、人工门禁结果及仍未验收项。
 
 ## 发布与回滚
 

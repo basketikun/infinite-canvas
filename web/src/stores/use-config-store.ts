@@ -120,12 +120,14 @@ type ConfigStore = {
     config: AiConfig;
 	webdav: WebdavSyncConfig;
 	syncMode: SyncMode;
+    cloudRevisions: Record<string, number>;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 	updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
 	setSyncMode: (mode: SyncMode) => void;
+    setCloudRevision: (projectID: string, revision: number) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
@@ -184,6 +186,7 @@ export const useConfigStore = create<ConfigStore>()(
             config: defaultConfig,
 			webdav: defaultWebdavSyncConfig,
 			syncMode: "off",
+            cloudRevisions: {},
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
@@ -202,6 +205,7 @@ export const useConfigStore = create<ConfigStore>()(
                     },
 				})),
 			setSyncMode: (syncMode) => set({ syncMode }),
+            setCloudRevision: (projectID, revision) => set((state) => ({ cloudRevisions: { ...state.cloudRevisions, [projectID]: revision } })),
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
             openConfigDialog: (shouldPromptContinue = false, configTab = "channels") => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
@@ -209,11 +213,12 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
-			partialize: (state) => ({ config: state.config, webdav: state.webdav, syncMode: state.syncMode }),
+			partialize: (state) => ({ config: state.config, webdav: state.webdav, syncMode: state.syncMode, cloudRevisions: state.cloudRevisions }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
                 const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
+                const cloudRevisions = Object.fromEntries(Object.entries(persistedState.cloudRevisions || {}).filter(([id, revision]) => id.trim() && typeof revision === "number" && Number.isInteger(revision) && revision >= 0));
                 const config = { ...defaultConfig, ...persistedConfig };
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
                 const channels = normalizeChannels(config);
@@ -222,6 +227,7 @@ export const useConfigStore = create<ConfigStore>()(
                     ...current,
 					webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
 					syncMode: persistedState.syncMode === "cloud" || persistedState.syncMode === "webdav" ? persistedState.syncMode : "off",
+                    cloudRevisions,
                     config: {
                         ...config,
                         channelMode: config.channelMode === "remote" ? "remote" : "local",

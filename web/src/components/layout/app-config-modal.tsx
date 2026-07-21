@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
+import { CloudSyncPanel } from "@/components/layout/cloud-sync-panel";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -69,6 +70,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const token = useUserStore((state) => state.token);
+    const user = useUserStore((state) => state.user);
     const login = useUserStore((state) => state.login);
     const isLoginLoading = useUserStore((state) => state.isLoading);
     const [loginValues, setLoginValues] = useState({ username: "", password: "" });
@@ -294,7 +296,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                 <Form.Item label="同步方式" className="mb-4">
                                     <Segmented block value={syncMode} options={[{ label: "关闭", value: "off" }, { label: "WebDAV", value: "webdav" }, { label: "云同步", value: "cloud", disabled: !token || config.channelMode !== "remote" }]} onChange={(value) => setSyncMode(value as "off" | "webdav" | "cloud")} />
                                 </Form.Item>
-                                {syncMode === "cloud" ? <div className="mb-4 rounded-lg border border-stone-200 px-4 py-3 text-sm text-stone-600 dark:border-stone-800 dark:text-stone-300">云同步会通过已登录的控制平面保存画布和媒体；发生版本冲突时将要求你选择本地、远端或另存副本。</div> : null}
+                                {syncMode === "cloud" ? <CloudSyncPanel token={token} userID={user?.id || ""} baseUrl={CONTROL_PLANE_URL} /> : null}
                                 {syncMode !== "webdav" ? null : <>
                                 <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                     <div className="mb-3 flex flex-wrap items-start justify-between gap-3">

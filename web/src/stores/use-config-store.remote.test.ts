@@ -21,3 +21,13 @@ test("服务端模式使用登录会话而非供应商 API Key 判断就绪", ()
         useUserStore.setState({ token: previousToken });
     }
 });
+
+test("云同步为每个画布保存已知服务端修订号", () => {
+    const previous = useConfigStore.getState().cloudRevisions;
+    try {
+        useConfigStore.getState().setCloudRevision("project-1", 6);
+        expect(useConfigStore.getState().cloudRevisions["project-1"]).toBe(6);
+    } finally {
+        useConfigStore.setState({ cloudRevisions: previous });
+    }
+});

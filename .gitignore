@@ -4,6 +4,7 @@ out/
 node_modules/
 .env*
 !.env.example
+!server/.env.cloud.example
 data/
 *.log
 *.tsbuildinfo

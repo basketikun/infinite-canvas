@@ -7,7 +7,7 @@ description: 独立 Go 后端的本地运行与 Docker 部署
 
 `server/` 恢复 v0.3.0 的账号、权限、积分、模型代理、提示词、公共素材、参考媒体和系统设置 API。配套 Compose 同时启动新版 Vite 画布、Go 控制平面和旧版独立管理台。
 
-画布项目、个人素材和生成记录当前继续保存在浏览器 IndexedDB/WebDAV，不应误认为已接入服务端画布同步。
+画布项目和其引用的本地媒体可选择同步至服务端；个人素材与生成记录继续由浏览器 IndexedDB/WebDAV 管理。云同步与 WebDAV 是互不替代的两种同步目标。
 
 ## 本地运行
 
@@ -45,8 +45,21 @@ docker compose -f docker-compose.control-plane.yml up --build -d
 
 ## 可选云同步
 
-云同步使用独立 PostgreSQL 与 MinIO/S3，不改变 WebDAV。复制 `server/.env.example` 后替换数据库和 MinIO 密码，再执行：
+云同步使用独立 PostgreSQL 与 MinIO/S3，不改变 WebDAV。先复制云同步环境模板并替换其中每一个示例密码、域名与密钥：
 
 ```bash
-docker compose -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml up --build
+cp server/.env.cloud.example server/.env
+# 编辑 server/.env：特别是 ADMIN_PASSWORD、JWT_SECRET、POSTGRES_PASSWORD、MINIO_ROOT_PASSWORD
+docker compose --env-file server/.env \
+  -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml up --build -d
 ```
+
+`--env-file server/.env` 必不可少：控制平面经 `env_file` 读取该文件，PostgreSQL 和 MinIO 则通过 Compose 插值读取同一份部署变量。不要把 `server/.env` 提交到 Git。
+
+在画布「配置与用户偏好 → 同步」中选择「云同步」，登录服务端模式后可以：
+
+- 顺序提交所有本地画布和其引用媒体；每个画布使用独立 revision；
+- 查看并显式恢复云端项目，下载媒体会做 SHA-256 校验；
+- 发生 409 时选择「用本地覆盖远端」「使用远端」或「另存本地副本」。
+
+云同步不会同步 WebDAV 的资产和生成记录；需要这些内容跨设备时，继续单独使用 WebDAV。
