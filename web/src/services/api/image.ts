@@ -244,33 +244,84 @@ function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
+    // 支持 data / images / results 三种返回字段（兼容不同 API）
+    const imageList = payload.data
+        || (payload as Record<string, unknown>).images as Array<Record<string, unknown>> | undefined
+        || (payload as Record<string, unknown>).results as Array<Record<string, unknown>> | undefined
+        || [];
     const images =
-        payload.data
-            ?.map(resolveImageDataUrl)
+        imageList
+            .map(resolveImageDataUrl)
             .filter((value): value is string => Boolean(value))
-            .map((dataUrl) => ({ id: nanoid(), dataUrl })) || [];
+            .map((dataUrl) => ({ id: nanoid(), dataUrl }));
 
     if (images.length === 0) {
-        throw new Error("接口没有返回图片");
+        // 尝试检查是否有返回了但格式不被识别的数据
+        const rawKeys = Object.keys(payload).filter((k) => k !== "code" && k !== "msg" && k !== "error");
+        throw new Error(rawKeys.length > 0
+            ? `接口返回了未知格式的数据（字段：${rawKeys.join("、")}），请检查模型或接口兼容性`
+            : "接口没有返回图片，请检查提示词是否触发安全审核或模型是否支持该操作");
     }
 
     return images;
 }
 
+function readApiErrorMessage(value: unknown): string {
+    if (!value) return "";
+    if (typeof value === "string") {
+        // 可能是 JSON 字符串（如 error.message 被序列化）或纯文本错误
+        try {
+            const parsed = JSON.parse(value);
+            const inner = readApiErrorMessage(parsed) || value;
+            // 如果 JSON 解析后得到 "{}" 这种空对象，返回原始字符串
+            if (inner === value && typeof parsed === "object" && Object.keys(parsed).length === 0) return "";
+            return inner;
+        } catch {
+            // 检查是否是 HTML 错误页面
+            if (/<[a-z][\s\S]*>/i.test(value)) return `服务返回了 HTML 错误页面（${value.slice(0, 80)}...）`;
+            return value;
+        }
+    }
+    if (typeof value !== "object") return "";
+    const payload = value as { msg?: unknown; message?: unknown; error?: unknown; detail?: unknown };
+    // error 可能是字符串或含 message 的对象
+    const errorMsg =
+        typeof payload.error === "string"
+            ? payload.error
+            : (payload.error as { message?: unknown })?.message;
+    return (
+        readApiErrorMessage(payload.msg) ||
+        readApiErrorMessage(payload.message) ||
+        readApiErrorMessage(errorMsg) ||
+        readApiErrorMessage(payload.detail) ||
+        ""
+    );
+}
+
 function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return "请求已取消";
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
+    if (axios.isAxiosError(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || readStatusError(error.response?.status, fallback);
+        // 优先从响应体提取业务错误
+        const apiMsg = readApiErrorMessage(responseData);
+        if (apiMsg) return apiMsg;
+        // 响应体无法提取时用 HTTP 状态推断
+        const statusMsg = readStatusError(error.response?.status, fallback);
+        if (statusMsg) return statusMsg;
+        // 最后用 axios 自身的错误文本
+        return error.message || fallback;
     }
     if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
-    return error instanceof Error ? error.message : fallback;
+    return error instanceof Error ? readApiErrorMessage(error.message) || error.message : fallback;
 }
 
 function readStatusError(status: number | undefined, fallback: string) {
     if (status === 401 || status === 403) return "鉴权失败，请检查 API Key、套餐权限或模型权限";
     if (status === 429) return "请求被限流或额度不足，请稍后重试";
-    return status ? `${fallback}：${status}` : fallback;
+    if (status === 404) return "接口地址不存在（404），请检查 Base URL 和模型选择";
+    if (status === 502) return "网关错误（502），接口服务暂时不可用，请稍后重试";
+    if (status === 503) return "服务繁忙（503），请稍后重试";
+    return status ? `请求失败（HTTP ${status}），请检查 Base URL 和 API Key 是否正确` : fallback;
 }
 
 function withSystemPrompt(config: AiConfig, prompt: string) {
@@ -717,6 +768,17 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     }
 }
 
+/** Seedream 系列模型和火山方舟 Ark 接口：图生图使用 /images/generations JSON 接口传 base64 参考图 */
+function isSeedreamRequestEdit(model: string, baseUrl: string) {
+    const modelLower = model.toLowerCase();
+    const baseUrlLower = baseUrl.toLowerCase();
+    return modelLower.includes("seedream") || modelLower.includes("doubao-seedream") || isArkApiUrl(baseUrlLower);
+}
+
+function isArkApiUrl(baseUrlLower: string) {
+    return baseUrlLower.includes("ark.cn-beijing.volces.com");
+}
+
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
@@ -750,6 +812,45 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
+
+    // Seedream / 火山方舟 Ark 图生图：使用 /images/generations JSON 接口
+    // 不支持 OpenAI 的 /images/edits multipart 接口
+    if (isSeedreamRequestEdit(requestConfig.model, requestConfig.baseUrl)) {
+        if (mask) throw new Error("蒙版编辑暂不支持该模型，请使用其他渠道");
+        const quality = normalizeQuality(config.quality);
+        const requestSize = resolveRequestSize(quality, config.size);
+        const background = normalizeBackground(config.background);
+        const refs = await Promise.all(references.map(async (image) => {
+            const dataUrl = await imageToDataUrl(image);
+            // 火山方舟 image 参数需要完整的 data URL 格式
+            return dataUrl;
+        }));
+        try {
+            const response = await axios.post<ImageApiResponse>(
+                aiApiUrl(requestConfig, "/images/generations"),
+                {
+                    model: requestConfig.model,
+                    prompt: withSystemPrompt(requestConfig, requestPrompt),
+                    n,
+                    response_format: "b64_json",
+                    output_format: IMAGE_OUTPUT_FORMAT,
+                    image: refs,  // Seedream 图生图：base64 参考图数组
+                    ...(quality ? { quality } : {}),
+                    ...(requestSize ? { size: requestSize } : {}),
+                    ...(background ? { background } : {}),
+                },
+                {
+                    headers: aiHeaders(requestConfig, "application/json"),
+                    signal: options?.signal,
+                },
+            );
+            return parseImagePayload(response.data);
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
+
+    // 标准 OpenAI 图生图：/images/edits multipart/form-data
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
