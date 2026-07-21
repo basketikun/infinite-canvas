@@ -90,7 +90,7 @@ git diff --check
 
 cd web
 bun install --frozen-lockfile
-bun test src/services/control-plane src/services/cloud-sync src/stores/use-config-store.remote.test.ts
+bun test src/services/control-plane src/services/cloud-sync src/services/webdav-sync.test.ts src/stores/use-config-store.remote.test.ts
 bun run typecheck
 bun run build
 
