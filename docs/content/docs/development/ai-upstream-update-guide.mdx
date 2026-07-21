@@ -57,7 +57,7 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 ### 后端、部署和安全
 
 - `server/` 支持 SQLite 本地控制平面和 PostgreSQL 云同步；云同步生产存储不是 SQLite。
-- 云同步 Compose 通过 `server/.env` 提供控制平面环境，且必须用 `docker compose --env-file server/.env` 让 PostgreSQL/MinIO 读取同一套部署变量；模板是 `server/.env.cloud.example`，真实 `.env` 不进 Git。
+- 云同步 Compose 通过独立的 `server/.env.cloud` 提供控制平面、PostgreSQL 和 MinIO 的同一套部署变量；必须使用 `docker compose --env-file server/.env.cloud`，模板是 `server/.env.cloud.example`。本地 SQLite 的 `server/.env` 不应被覆盖，真实 `.env.cloud` 不进 Git。
 - `SYNC_S3_*`、`DATABASE_DSN`、管理员密码、JWT secret、供应商 Key、用户 token 都是秘密。测试、日志、文档和截图不得输出其值。
 - `docker-compose.cloud-sync.yml` 不得重新加入可直接部署的硬编码密码；生产镜像必须以 Git SHA（而非 `latest`）标记。
 
