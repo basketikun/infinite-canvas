@@ -1,0 +1,17 @@
+name: Control Plane
+
+on:
+  pull_request:
+  push:
+    branches: ["integration/**"]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - run: cd server && go test ./...
+      - run: docker build -f server/Dockerfile server

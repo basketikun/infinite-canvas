@@ -6,6 +6,8 @@
     "local-development",
     "canvas-data-structure",
     "local-codex-canvas",
-    "control-plane"
+    "control-plane",
+    "upstream-sync",
+    "ai-upstream-update-guide"
   ]
 }

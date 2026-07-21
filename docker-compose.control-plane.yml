@@ -5,7 +5,7 @@ services:
       args:
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     env_file:
-      - ./server/.env
+      - ${CONTROL_PLANE_ENV_FILE:-./server/.env}
     ports:
       - "8080:8080"
     volumes:

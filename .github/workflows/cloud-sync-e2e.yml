@@ -1,0 +1,33 @@
+name: Cloud Sync Browser E2E
+
+on:
+  pull_request:
+  push:
+    branches: ["integration/**"]
+  workflow_dispatch:
+
+jobs:
+  browser-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start PostgreSQL, MinIO, control plane and web
+        run: |
+          CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example \
+          docker compose --env-file server/.env.cloud.example \
+            -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml up --build -d
+      - name: Run two-browser cloud sync gate
+        run: |
+          docker pull mcr.microsoft.com/playwright:v1.54.0-noble
+          docker run --rm --network host \
+            -e BASE_URL=http://localhost:3000 -e API_URL=http://localhost:8080 \
+            -e E2E_USERNAME=admin -e E2E_PASSWORD=change-this-before-production \
+            -v "$GITHUB_WORKSPACE/scripts/cloud-sync-browser-e2e.mjs:/work/cloud-sync-browser-e2e.mjs:ro" \
+            mcr.microsoft.com/playwright:v1.54.0-noble sh -lc \
+            'mkdir -p /tmp/e2e && cp /work/cloud-sync-browser-e2e.mjs /tmp/e2e/e2e.mjs && cd /tmp/e2e && npm install --no-save --no-package-lock playwright@1.54.0 >/dev/null && node e2e.mjs'
+      - name: Show service logs on failure
+        if: failure()
+        run: CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file server/.env.cloud.example -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml logs --tail=200
+      - name: Stop test stack
+        if: always()
+        run: CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file server/.env.cloud.example -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml down -v

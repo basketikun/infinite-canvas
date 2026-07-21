@@ -48,13 +48,13 @@ docker compose -f docker-compose.control-plane.yml up --build -d
 云同步使用独立 PostgreSQL 与 MinIO/S3，不改变 WebDAV。先复制云同步环境模板并替换其中每一个示例密码、域名与密钥：
 
 ```bash
-cp server/.env.cloud.example server/.env
-# 编辑 server/.env：特别是 ADMIN_PASSWORD、JWT_SECRET、POSTGRES_PASSWORD、MINIO_ROOT_PASSWORD
-docker compose --env-file server/.env \
+cp server/.env.cloud.example server/.env.cloud
+# 编辑 server/.env.cloud：特别是 ADMIN_PASSWORD、JWT_SECRET、POSTGRES_PASSWORD、MINIO_ROOT_PASSWORD
+docker compose --env-file server/.env.cloud \
   -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml up --build -d
 ```
 
-`--env-file server/.env` 必不可少：控制平面经 `env_file` 读取该文件，PostgreSQL 和 MinIO 则通过 Compose 插值读取同一份部署变量。不要把 `server/.env` 提交到 Git。
+`--env-file server/.env.cloud` 必不可少：控制平面、PostgreSQL 和 MinIO 都读取同一份部署变量。不要把 `server/.env.cloud` 提交到 Git。
 
 在画布「配置与用户偏好 → 同步」中选择「云同步」，登录服务端模式后可以：
 
@@ -63,3 +63,32 @@ docker compose --env-file server/.env \
 - 发生 409 时选择「用本地覆盖远端」「使用远端」或「另存本地副本」。
 
 云同步不会同步 WebDAV 的资产和生成记录；需要这些内容跨设备时，继续单独使用 WebDAV。
+
+### 双浏览器验收
+
+在云同步 Compose 已启动后，可用一次性 Playwright 容器执行真实双会话验收（不会写入项目依赖）：
+
+```bash
+docker pull mcr.microsoft.com/playwright:v1.54.0-noble
+docker run --rm --network host \
+  -e BASE_URL=http://localhost:3000 -e API_URL=http://localhost:8080 \
+  -e E2E_USERNAME=admin -e E2E_PASSWORD='<你的管理员密码>' \
+  -v "$PWD/scripts/cloud-sync-browser-e2e.mjs:/work/cloud-sync-browser-e2e.mjs:ro" \
+  mcr.microsoft.com/playwright:v1.54.0-noble sh -lc \
+  'mkdir -p /tmp/e2e && cp /work/cloud-sync-browser-e2e.mjs /tmp/e2e/e2e.mjs && cd /tmp/e2e && npm install --no-save --no-package-lock playwright@1.54.0 >/dev/null && node e2e.mjs'
+```
+
+该脚本使用两个隔离浏览器上下文，覆盖本地同步、远端恢复、媒体写入 IndexedDB、409 冲突的副本/远端/本地覆盖操作。生产域名必须让 `CORS_ALLOW_ORIGINS` 包含实际画布来源，并将 `BASE_URL`、`API_URL` 改为对应 HTTPS 地址。
+
+## 生产发布与回滚
+
+开发 Compose 会本地构建镜像；生产应使用 tag 发布工作流生成的三套同 SHA 镜像。发布前将 `IMAGE_OWNER` 设为 GitHub 用户或组织、`IMAGE_TAG` 设为完整 Git SHA，并准备真实的 `server/.env`：
+
+```bash
+IMAGE_OWNER=timerainv7 \
+IMAGE_TAG=<完整 Git SHA> \
+CONTROL_PLANE_URL=https://api.canvas.example.com \
+docker compose --env-file server/.env -f docker-compose.release.yml up -d
+```
+
+云同步生产部署再叠加 `-f docker-compose.cloud-sync.yml` 并把 `--env-file` 改为 `server/.env.cloud`。发布前备份 PostgreSQL 卷或数据库、检查 `/api/health` 与管理员登录；回滚时只把 `IMAGE_TAG` 改回上一 SHA 后重新 `up -d`，不要执行 schema downgrade。

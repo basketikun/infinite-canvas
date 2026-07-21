@@ -1,0 +1,35 @@
+# 生产发布入口：只引用由 GitHub Actions 以同一 Git SHA 发布的镜像，不在服务器构建源码。
+# 使用前设置 IMAGE_OWNER（GitHub 用户/组织）和 IMAGE_TAG（完整 Git SHA）。
+services:
+  control-plane:
+    image: ghcr.io/${IMAGE_OWNER:?请设置 GitHub 镜像所有者}/infinite-canvas-control-plane:${IMAGE_TAG:?请设置完整 Git SHA}
+    env_file:
+      - ${CONTROL_PLANE_ENV_FILE:-./server/.env}
+    ports:
+      - "8080:8080"
+    volumes:
+      - control-plane-data:/app/data
+    restart: unless-stopped
+
+  admin:
+    image: ghcr.io/${IMAGE_OWNER:?请设置 GitHub 镜像所有者}/infinite-canvas-admin:${IMAGE_TAG:?请设置完整 Git SHA}
+    environment:
+      API_BASE_URL: http://control-plane:8080
+    ports:
+      - "3001:3000"
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/${IMAGE_OWNER:?请设置 GitHub 镜像所有者}/infinite-canvas-web:${IMAGE_TAG:?请设置完整 Git SHA}
+    environment:
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:?请设置浏览器可访问的控制平面 URL}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - control-plane
+    restart: unless-stopped
+
+volumes:
+  control-plane-data:

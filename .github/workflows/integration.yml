@@ -18,3 +18,4 @@ jobs:
       - run: cd web && bun install --frozen-lockfile && bun test src/services/control-plane src/services/cloud-sync && bun run typecheck && bun run build
       - run: cd legacy-admin && bun install --frozen-lockfile && bun run build
       - run: docker compose -f docker-compose.control-plane.yml config
+      - run: CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file server/.env.cloud.example -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml config

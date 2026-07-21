@@ -1,0 +1,15 @@
+name: Legacy Admin
+
+on:
+  pull_request:
+  push:
+    branches: ["integration/**"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: cd legacy-admin && bun install --frozen-lockfile && bun run build
+      - run: docker build -f legacy-admin/Dockerfile .

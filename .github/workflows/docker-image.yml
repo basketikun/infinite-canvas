@@ -1,4 +1,4 @@
-name: Docker image
+name: Publish Control Plane Images
 
 on:
   push:
@@ -9,107 +9,45 @@ permissions:
   contents: read
   packages: write
 
-env:
-  IMAGE_NAME: ghcr.io/basketikun/infinite-canvas
-
 jobs:
-  meta:
+  publish:
     runs-on: ubuntu-latest
-    outputs:
-      tags: ${{ steps.meta.outputs.tags }}
-      labels: ${{ steps.meta.outputs.labels }}
-    steps:
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=tag
-            type=sha,prefix=
-
-  build:
-    needs: meta
-    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: linux/amd64
-            arch: amd64
-            runner: ubuntu-latest
-          - platform: linux/arm64
-            arch: arm64
-            runner: ubuntu-24.04-arm
+          - name: web
+            context: .
+            file: ./Dockerfile
+          - name: control-plane
+            context: ./server
+            file: ./server/Dockerfile
+          - name: admin
+            context: .
+            file: ./legacy-admin/Dockerfile
     steps:
       - uses: actions/checkout@v4
-
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - id: build
-        uses: docker/build-push-action@v6
+      - id: meta
+        uses: docker/metadata-action@v5
         with:
-          context: .
-          platforms: ${{ matrix.platform }}
-          labels: ${{ needs.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=app-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=app-${{ matrix.arch }}
-
-      - name: Export digest
-        shell: bash
-        run: |
-          mkdir -p "$RUNNER_TEMP/digests"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
-
-      - uses: actions/upload-artifact@v4
+          images: ghcr.io/${{ github.repository_owner }}/infinite-canvas-${{ matrix.name }}
+          tags: |
+            type=ref,event=tag
+            type=sha,format=long,prefix=
+      - uses: docker/build-push-action@v6
         with:
-          name: digests-${{ matrix.arch }}
-          path: ${{ runner.temp }}/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge:
-    needs:
-      - meta
-      - build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: ${{ runner.temp }}/digests
-          pattern: digests-*
-          merge-multiple: true
-
-      - name: Create multi-arch manifest
-        shell: bash
-        env:
-          TAGS: ${{ needs.meta.outputs.tags }}
-        run: |
-          tag_args=()
-          while IFS= read -r tag; do
-            if [ -n "$tag" ]; then
-              tag_args+=("-t" "$tag")
-            fi
-          done <<< "$TAGS"
-
-          digest_args=()
-          while IFS= read -r digest_file; do
-            digest_args+=("${IMAGE_NAME}@sha256:${digest_file}")
-          done < <(find "$RUNNER_TEMP/digests" -type f -printf '%f\n' | sort)
-
-          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

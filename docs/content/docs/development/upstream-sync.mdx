@@ -1,0 +1,27 @@
+---
+title: 上游同步
+description: 安全合并 upstream 版本的分支与验证流程
+---
+
+# 上游同步
+
+本 fork 只从 `upstream` 拉取，绝不向其推送。完整、可交给 AI 执行的规程见「[AI 上游更新适配手册](./ai-upstream-update-guide)」。
+
+## 操作入口
+
+在干净的 `integration/backend-control-plane` 工作树执行：
+
+```bash
+./scripts/sync-upstream.sh
+```
+
+脚本会拉取 upstream tags、从集成分支创建 `sync/upstream-YYYY-MM-DD` 并合并 `upstream/main`。所有冲突只在这个同步分支解决；完成验证后再通过 PR 合入集成分支。
+
+## 必须保留的模块
+
+- `server/`：Go 控制平面、旧后端 API、画布 revision 与 S3 媒体。
+- `legacy-admin/`：独立管理台。
+- `web/src/services/control-plane/`：认证与服务端模式。
+- `web/src/services/cloud-sync/`：云同步；不能改变 WebDAV 语义。
+
+每次同步至少运行前端/云同步测试、Go 测试、管理台 build，以及两份 Compose 配置渲染。发布前再执行完整人工双浏览器同步验收。

@@ -104,8 +104,11 @@ docker run --rm -e GOPROXY=https://goproxy.cn,direct \
   -v "$HOME/go/pkg/mod:/go/pkg/mod" \
   -v "$PWD/server:/src" -w /src golang:1.25 go test ./...
 docker compose -f docker-compose.control-plane.yml config
-docker compose --env-file server/.env.cloud.example \
+CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file server/.env.cloud.example \
   -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml config
+IMAGE_OWNER=example IMAGE_TAG=0123456789abcdef0123456789abcdef01234567 CONTROL_PLANE_URL=https://api.example.test \
+CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file server/.env.cloud.example \
+  -f docker-compose.release.yml config
 ```
 
 ## 冒烟与人工门禁
@@ -118,6 +121,8 @@ docker compose --env-file server/.env.cloud.example \
 4. 浏览器 A 创建并同步带图片/视频的画布；浏览器 B 使用同一账号「使用远端」，确认节点、连线、会话、视口和媒体均恢复。
 5. A、B 从同一 revision 各自修改；先同步 A，再同步 B。B 必须看见三项冲突选择，逐项在独立测试数据上确认结果。最后将 B 设为 WebDAV 模式，确认 WebDAV 仍独立完成一次同步。
 6. 在服务端模式逐一触发图片、文本、音频、视频和参考媒体；浏览器网络面板只出现控制平面和 Bearer token，不能出现供应商域名请求或 API Key。
+
+仓库的 `scripts/cloud-sync-browser-e2e.mjs` 可以在 `mcr.microsoft.com/playwright:v1.54.0-noble` 临时容器中执行上述 A/B 云同步门禁；使用方法见「后端控制平面」文档，`.github/workflows/cloud-sync-e2e.yml` 也会在 PR 和集成分支自动执行。上游改动同步 UI、媒体存储或 CORS 时必须重跑它。
 
 PR/发布记录应附：上游 commit、定制冲突表、所有命令的退出码、镜像 digest、HTTP 状态、SHA-256 对比、人工门禁结果及仍未验收项。
 
