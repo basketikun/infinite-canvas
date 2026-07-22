@@ -4,7 +4,7 @@
 
 **Goal:** 通过一个内置 Nginx 网关，把画布、控制平面与管理台安全发布到一个域名的 `/`、`/api/`、`/admin`。
 
-**Architecture:** Compose 仅让 gateway 绑定 `127.0.0.1:3002`，其余服务使用内部网络名称。Next.js 管理台在构建期使用 `/admin` basePath，并将原有管理员目录提升一层以避免双重 `/admin/admin`。
+**Architecture:** Compose 仅让 gateway 绑定 `127.0.0.1:3002`，其余服务使用内部网络名称。Next.js 管理台保留原有 `/admin/*` 路由，仅在生产构建中使用 `/admin` 静态资源前缀，由 Nginx 去掉前缀后转发。
 
 **Tech Stack:** Docker Compose、Nginx Alpine、Next.js 16、Bun。
 
@@ -45,7 +45,7 @@ Expected: Compose 只发布 `127.0.0.1:3002`，Nginx 输出 `syntax is ok` 与 `
 
 **Files:**
 - Modify: `legacy-admin/next.config.ts`
-- Move: `legacy-admin/src/app/(admin)/admin/**` to `legacy-admin/src/app/(admin)/**`
+- Modify: `legacy-admin/next.config.ts`
 - Modify: 管理台中指向旧 `/admin` 根路由的链接与重定向
 
 - [ ] **Step 1: 运行当前生产构建作为基线**
@@ -54,9 +54,9 @@ Run: `cd legacy-admin && bun run build`
 
 Expected: 当前构建成功，但不存在 `/admin` basePath。
 
-- [ ] **Step 2: 配置 basePath 并提升管理员路由**
+- [ ] **Step 2: 配置生产静态资源前缀**
 
-设置 `basePath: "/admin"`，把管理员首页改为根页面并将其跳转目标设为 `/users`；所有管理台内部管理员链接使用提升后的路径。
+保留管理台的 `/admin/*` 路由，将生产 `assetPrefix` 设置为 `/admin`，并让 Nginx 将 `/admin/_next/*` 去前缀转发给管理台。
 
 - [ ] **Step 3: 运行管理台生产构建**
 

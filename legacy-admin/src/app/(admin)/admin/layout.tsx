@@ -12,11 +12,11 @@ import { adminLayoutStyle } from "@/lib/app-theme";
 import { useUserStore } from "@/stores/use-user-store";
 
 const adminMenus = [
-    { key: "/users", icon: <UserOutlined />, label: "用户管理" },
-    { key: "/credit-logs", icon: <TransactionOutlined />, label: "算力点日志" },
-    { key: "/prompts", icon: <FileTextOutlined />, label: "提示词管理" },
-    { key: "/assets", icon: <PictureOutlined />, label: "素材库" },
-    { key: "/settings", icon: <SettingOutlined />, label: "系统设置" },
+    { key: "/admin/users", icon: <UserOutlined />, label: "用户管理" },
+    { key: "/admin/credit-logs", icon: <TransactionOutlined />, label: "算力点日志" },
+    { key: "/admin/prompts", icon: <FileTextOutlined />, label: "提示词管理" },
+    { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
+    { key: "/admin/settings", icon: <SettingOutlined />, label: "系统设置" },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -27,28 +27,27 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
     const logout = useUserStore((state) => state.clearSession);
-    const adminPath = pathname.replace(/^\/admin(?=\/|$)/, "") || "/";
-    const activeKey = adminPath.startsWith("/settings")
-        ? "/settings"
-        : adminPath.startsWith("/assets")
-          ? "/assets"
-          : adminPath.startsWith("/prompts")
-            ? "/prompts"
-            : adminPath.startsWith("/credit-logs")
-              ? "/credit-logs"
-              : adminPath.startsWith("/users")
-                ? "/users"
+    const activeKey = pathname.startsWith("/admin/settings")
+        ? "/admin/settings"
+        : pathname.startsWith("/admin/assets")
+          ? "/admin/assets"
+          : pathname.startsWith("/admin/prompts")
+            ? "/admin/prompts"
+            : pathname.startsWith("/admin/credit-logs")
+              ? "/admin/credit-logs"
+              : pathname.startsWith("/admin/users")
+                ? "/admin/users"
                 : "";
-    const pageTitle = adminPath.startsWith("/settings") ? "系统设置" : adminPath.startsWith("/assets") ? "素材库管理" : adminPath.startsWith("/prompts") ? "提示词管理" : adminPath.startsWith("/credit-logs") ? "算力点日志" : "用户管理";
+    const pageTitle = pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
 
     useEffect(() => {
         if (!isReady) return;
         if (!token) {
-            router.replace("/login?redirect=/");
+            router.replace("/login?redirect=/admin");
             return;
         }
         if (user?.role !== "admin") {
-            window.location.assign("/");
+            router.replace("/");
         }
     }, [isReady, router, token, user?.role]);
 
@@ -64,7 +63,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <Layout hasSider style={{ height: "100vh", overflow: "hidden", background: antToken.colorBgLayout }}>
             <Layout.Sider width={adminLayoutStyle.siderWidth} style={{ height: "100vh", overflow: "hidden", background: antToken.colorBgContainer, borderRight: `1px solid ${antToken.colorBorder}` }}>
                 <Flex align="center" gap={12} style={{ height: adminLayoutStyle.brandHeight, padding: "0 20px", borderBottom: `1px solid ${antToken.colorBorderSecondary}` }}>
-                    <span aria-hidden style={{ display: "inline-block", width: 30, height: 30, background: antToken.colorText, WebkitMask: "url(/admin/logo.svg) center / contain no-repeat", mask: "url(/admin/logo.svg) center / contain no-repeat" }} />
+                    <span aria-hidden style={{ display: "inline-block", width: 30, height: 30, background: antToken.colorText, WebkitMask: "url(/admin-assets/logo.svg) center / contain no-repeat", mask: "url(/admin-assets/logo.svg) center / contain no-repeat" }} />
                     <Typography.Text strong style={{ fontSize: 18, letterSpacing: 0 }}>
                         无限画布
                     </Typography.Text>
@@ -84,7 +83,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     }))}
                 />
                 <Flex vertical gap={8} style={{ position: "absolute", bottom: 0, insetInline: 0, padding: 12, borderTop: `1px solid ${antToken.colorBorder}`, background: antToken.colorBgContainer }}>
-                    <Button block icon={<HomeOutlined />} href="/" target="_blank" rel="noreferrer">
+                    <Button block icon={<HomeOutlined />} href="/canvas" target="_blank" rel="noreferrer">
                         前往画布
                     </Button>
                     <Button block icon={<LogoutOutlined />} onClick={logout}>

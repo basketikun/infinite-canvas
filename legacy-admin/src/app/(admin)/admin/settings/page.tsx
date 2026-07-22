@@ -503,7 +503,7 @@ export default function AdminSettingsPage() {
                                     size="small"
                                     title={
                                         <Space>
-                                            <img src="/admin/icons/linuxdo.svg" alt="" width={18} height={18} />
+                                            <img src="/admin-assets/icons/linuxdo.svg" alt="" width={18} height={18} />
                                             Linux.do 登录
                                         </Space>
                                     }

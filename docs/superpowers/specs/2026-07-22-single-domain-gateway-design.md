@@ -12,7 +12,7 @@ Nginx 优先将 `/api/` 转发至 Go 服务，将 `/admin` 路径前缀保留并
 
 ## 管理台路由
 
-管理台设置 Next.js `basePath` 为 `/admin`。原有管理员路由从 `app/(admin)/admin/**` 调整到 `app/(admin)/**`，使管理员首页为 `/admin`，功能页为 `/admin/users`、`/admin/settings` 等，而非错误的 `/admin/admin/users`。
+管理台保留既有 `/admin/*` 路由，因此管理员首页为 `/admin`，功能页为 `/admin/users`、`/admin/settings` 等。生产构建仅使用 `/admin` 作为 Next.js 静态资源前缀；Nginx 在转发静态资源时去掉该前缀，避免与 Vite 画布的静态文件冲突。
 
 ## 非目标
 

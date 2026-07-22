@@ -18,7 +18,7 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 ## 不可破坏边界
 
 - `server/`：账号、权限、积分、模型代理、画布修订和云媒体 API；供应商 Key、S3 凭据只能存在服务端环境变量或管理设置。
-- `legacy-admin/`：独立 Next.js 管理台；不可与 `web/` 合并或替换，生产 `basePath` 必须保持为 `/admin`。
+- `legacy-admin/`：独立 Next.js 管理台；不可与 `web/` 合并或替换，生产静态资源前缀必须保持为 `/admin`，管理员路由保持 `/admin/*`。
 - `web/src/services/control-plane/`：控制平面认证、公开模型和服务端模式客户端。
 - `web/src/services/cloud-sync/`：云同步；不能改写 WebDAV 的原有合并语义。
 - 远程模式只能请求控制平面 `/api/v1/*` 并携带用户 Bearer token，绝不能把供应商 API Key 写入浏览器。

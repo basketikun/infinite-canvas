@@ -14,7 +14,7 @@ export default function nextConfig(phase: string): NextConfig {
     const releases = parseChangelog(localChangelog);
 
     return {
-        basePath: "/admin",
+        assetPrefix: isDev ? undefined : "/admin",
         output: "standalone",
         allowedDevOrigins: isDev ? ["*.*.*.*"] : [],
         typescript: {
