@@ -5,8 +5,6 @@ services:
     image: ghcr.io/${IMAGE_OWNER:?请设置 GitHub 镜像所有者}/infinite-canvas-control-plane:${IMAGE_TAG:?请设置完整 Git SHA}
     env_file:
       - ${CONTROL_PLANE_ENV_FILE:-./server/.env}
-    ports:
-      - "8080:8080"
     volumes:
       - control-plane-data:/app/data
     restart: unless-stopped
@@ -15,8 +13,6 @@ services:
     image: ghcr.io/${IMAGE_OWNER:?请设置 GitHub 镜像所有者}/infinite-canvas-admin:${IMAGE_TAG:?请设置完整 Git SHA}
     environment:
       API_BASE_URL: http://control-plane:8080
-    ports:
-      - "3001:3000"
     depends_on:
       - control-plane
     restart: unless-stopped
@@ -25,10 +21,20 @@ services:
     image: ghcr.io/${IMAGE_OWNER:?请设置 GitHub 镜像所有者}/infinite-canvas-web:${IMAGE_TAG:?请设置完整 Git SHA}
     environment:
       CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:?请设置浏览器可访问的控制平面 URL}
-    ports:
-      - "3000:3000"
     depends_on:
       - control-plane
+    restart: unless-stopped
+
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:3002:80"
+    volumes:
+      - ./deploy/nginx/infinite-canvas.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - web
+      - control-plane
+      - admin
     restart: unless-stopped
 
 volumes:

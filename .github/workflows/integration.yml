@@ -19,3 +19,5 @@ jobs:
       - run: cd legacy-admin && bun install --frozen-lockfile && bun run build
       - run: docker compose -f docker-compose.control-plane.yml config
       - run: CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file server/.env.cloud.example -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml config
+      - run: IMAGE_OWNER=example IMAGE_TAG=0123456789abcdef0123456789abcdef01234567 CONTROL_PLANE_URL=https://canvas.example.test docker compose --env-file server/.env.example -f docker-compose.release.yml config
+      - run: docker run --rm --add-host control-plane:127.0.0.1 --add-host admin:127.0.0.1 --add-host web:127.0.0.1 -v "$PWD/deploy/nginx/infinite-canvas.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t

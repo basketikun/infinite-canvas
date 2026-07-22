@@ -18,7 +18,7 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 ## 不可破坏边界
 
 - `server/`：账号、权限、积分、模型代理、画布修订和云媒体 API；供应商 Key、S3 凭据只能存在服务端环境变量或管理设置。
-- `legacy-admin/`：独立 Next.js 管理台；不可与 `web/` 合并或替换。
+- `legacy-admin/`：独立 Next.js 管理台；不可与 `web/` 合并或替换，生产 `basePath` 必须保持为 `/admin`。
 - `web/src/services/control-plane/`：控制平面认证、公开模型和服务端模式客户端。
 - `web/src/services/cloud-sync/`：云同步；不能改写 WebDAV 的原有合并语义。
 - 远程模式只能请求控制平面 `/api/v1/*` 并携带用户 Bearer token，绝不能把供应商 API Key 写入浏览器。
@@ -31,8 +31,8 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 | `web/src/services/control-plane/**`、`use-user-store.ts`、`runtime-config.ts` | 保留 fork 实现，按上游接口调整 | token 仅用于控制平面；供应商 Key 不进浏览器 |
 | `web/src/services/cloud-sync/**`、`use-config-store.ts` | 三方合并，先保留 fork 数据契约 | `off/webdav/cloud` 三态仍存在；WebDAV 行为不变 |
 | `server/**` | 保留 fork；只吸收明确兼容的安全/构建改动 | 旧管理 API、模型代理、画布 API 都存在 |
-| `legacy-admin/**` | 保留独立应用 | 不迁入 `web/`，可独立 build 和登录 |
-| `Dockerfile`、Compose、entrypoint | 三方合并 | 根 `.dockerignore` 排除 admin 依赖；运行期写入 `CONTROL_PLANE_URL` |
+| `legacy-admin/**` | 保留独立应用 | 不迁入 `web/`，可独立 build 和登录；公开管理路由保持 `/admin` |
+| `Dockerfile`、Compose、entrypoint、`deploy/nginx/**` | 三方合并 | 根 `.dockerignore` 排除 admin 依赖；运行期写入 `CONTROL_PLANE_URL`；生产仅 gateway 映射 `127.0.0.1:3002` |
 | `bun.lock`、`package.json` | 采用上游依赖基线后重新安装并验证 | 不以手改 lockfile 伪造依赖一致性 |
 
 ## 必须保持的数据和 HTTP 契约
@@ -40,6 +40,7 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 ### 服务端模式
 
 - `CONTROL_PLANE_URL` 的优先级是运行期 `window.__RUNTIME_CONFIG__`、构建期 `VITE_CONTROL_PLANE_URL`、空值；Docker 的 `web/docker-entrypoint.sh` 必须在启动时生成 `config.js`。
+- 单域名生产部署中，`CONTROL_PLANE_URL` 必须是 `https://image.example.com` 这样的根地址，而非 `https://image.example.com/api`；调用方会自行拼接 `/api/*`。Cloudflare Tunnel 只指向 `http://127.0.0.1:3002`，Nginx 分流 `/`、`/api/` 与 `/admin`。
 - 本地模式仍走用户配置的供应商地址和 API Key。远程模式从 `use-user-store` 取 session token，只调用控制平面：图片、聊天、音频、视频、参考媒体分别命中 `/api/v1/*`。
 - 文本远程模式使用 `/api/v1/chat/completions`；不要把新版本地的 Responses API 路径误套到旧 Go 后端。
 - `isAiConfigReady` 在远程模式只要求有效会话、模型和控制平面地址，不要求浏览器存储供应商 Key。
@@ -77,7 +78,7 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 - 上游改动是否触及 `use-config-store`、模型请求、运行期配置、路由、项目序列化或 IndexedDB 媒体？若触及，必须逐项复核服务端模式和云同步。
 - 上游新增画布字段时，更新 `CanvasProject` 快照契约与云同步测试，确保导入/导出、WebDAV、云同步都保留字段。
 - 上游新增媒体类型时，更新 `collectProjectStorageKeys`、对象存储 MIME 校验和恢复逻辑。
-- 上游改动 Docker 时，确认根镜像仍排除 `legacy-admin/node_modules`，运行期 `CONTROL_PLANE_URL` 仍会注入 `config.js`。
+- 上游改动 Docker 时，确认根镜像仍排除 `legacy-admin/node_modules`，运行期 `CONTROL_PLANE_URL` 仍会注入 `config.js`，生产 Compose 中只有 `gateway` 发布 `127.0.0.1:3002`，且 Nginx 仍将 `/api/`、`/admin` 分别转发给 `control-plane`、`admin`。
 - 上游替换请求库、认证存储或 React 状态库时，确认 Authorization 头、token 清理、远程模式就绪判断和持久化的 `cloudRevisions` 仍工作。
 - 上游改变画布项目首页或配置页时，确认「同步」页仍能选择关闭/WebDAV/云同步，云端列表、立即同步、远端恢复和三种冲突操作仍可访问。
 - 上游改变服务端模型列表格式时，确认管理员设置到公开 `/api/settings` 再到新版模型选择器的映射；无法由模型名推断能力时必须能由管理员显式配置。
@@ -106,7 +107,7 @@ docker run --rm -e GOPROXY=https://goproxy.cn,direct \
 docker compose -f docker-compose.control-plane.yml config
 CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file server/.env.cloud.example \
   -f docker-compose.control-plane.yml -f docker-compose.cloud-sync.yml config
-IMAGE_OWNER=example IMAGE_TAG=0123456789abcdef0123456789abcdef01234567 CONTROL_PLANE_URL=https://api.example.test \
+IMAGE_OWNER=example IMAGE_TAG=0123456789abcdef0123456789abcdef01234567 CONTROL_PLANE_URL=https://image.example.test \
 CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file server/.env.cloud.example \
   -f docker-compose.release.yml config
 ```
@@ -115,7 +116,7 @@ CONTROL_PLANE_ENV_FILE=./server/.env.cloud.example docker compose --env-file ser
 
 容器镜像构建、MinIO/PostgreSQL 联调和双浏览器冲突验收属于发布前必做人工门禁；未获得实际输出不得在 PR 中写“已完成”。Docker build/pull/Compose 启动要串行执行，避免低内存环境同时构建多个镜像。
 
-1. 用测试专用 `.env` 串行 build 并启动 web、control-plane、admin、PostgreSQL、MinIO；检查 `GET /api/health` 为 `ok`、web `config.js` 含公开控制平面 URL、admin 登录页可达。
+1. 用测试专用 `.env` 串行 build 并启动 web、control-plane、admin、gateway、PostgreSQL、MinIO；检查 gateway 的 `GET /api/health` 为 `ok`、web `config.js` 含域名根控制平面 URL、`/admin` 登录页可达，且宿主机没有暴露 web、control-plane、admin 的端口。
 2. 使用管理员账号登录取得 token；创建画布 `PUT /api/v1/canvas/projects/:id` 且 `If-Match: 0`，读取后以同一旧 revision 再写一次，确认 HTTP 409 和 `currentRevision`。
 3. 上传最小媒体到 `/api/v1/canvas/media`，下载后计算 SHA-256，必须与上传响应一致。不得只检查 HTTP 200。
 4. 浏览器 A 创建并同步带图片/视频的画布；浏览器 B 使用同一账号「使用远端」，确认节点、连线、会话、视口和媒体均恢复。

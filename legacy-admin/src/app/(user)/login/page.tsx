@@ -91,8 +91,8 @@ function LoginContent() {
                     <span
                         className="mx-auto mb-4 block size-12 bg-stone-950 dark:bg-stone-100"
                         style={{
-                            mask: "url(/logo.svg) center / contain no-repeat",
-                            WebkitMask: "url(/logo.svg) center / contain no-repeat",
+                            mask: "url(/admin/logo.svg) center / contain no-repeat",
+                            WebkitMask: "url(/admin/logo.svg) center / contain no-repeat",
                         }}
                         aria-label="无限画布"
                     />
@@ -125,7 +125,7 @@ function LoginContent() {
                             {mode === "register" ? "注册" : "登录"}
                         </Button>
                         {linuxDoEnabled ? (
-                            <Button block href={`/api/auth/linux-do/authorize?redirect=${encodeURIComponent(redirect)}`} icon={<img src="/icons/linuxdo.svg" alt="" width={18} height={18} />}>
+                            <Button block href={`/api/auth/linux-do/authorize?redirect=${encodeURIComponent(redirect)}`} icon={<img src="/admin/icons/linuxdo.svg" alt="" width={18} height={18} />}>
                                 使用 Linux.do 登录
                             </Button>
                         ) : null}

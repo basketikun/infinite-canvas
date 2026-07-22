@@ -34,10 +34,10 @@ docker compose -f docker-compose.control-plane.yml up --build
 
 画布设置中可以保持「本地直连」而无需登录；切换为「服务端」后，使用控制平面账号登录，模型和供应商 API Key 始终只保存在后端管理设置中。
 
-上线前需要替换管理员密码与 JWT 密钥，并把 `CORS_ALLOW_ORIGINS` 配置为实际画布和管理台的 HTTPS 来源。`CONTROL_PLANE_URL` 是浏览器访问控制平面的公开地址，不能填写 Compose 内部主机名 `control-plane`；例如反向代理部署时可执行：
+上线前需要替换管理员密码与 JWT 密钥，并把 `CORS_ALLOW_ORIGINS` 配置为实际画布来源。`CONTROL_PLANE_URL` 是浏览器访问控制平面的公开地址，不能填写 Compose 内部主机名 `control-plane`；单域名反向代理时，它必须是域名根地址，**不能附加 `/api`**，否则前端会错误请求 `/api/api/*`。
 
 ```bash
-CONTROL_PLANE_URL=https://api.canvas.example.com \
+CONTROL_PLANE_URL=https://canvas.example.com \
 docker compose -f docker-compose.control-plane.yml up --build -d
 ```
 
@@ -87,8 +87,23 @@ docker run --rm --network host \
 ```bash
 IMAGE_OWNER=timerainv7 \
 IMAGE_TAG=<完整 Git SHA> \
-CONTROL_PLANE_URL=https://api.canvas.example.com \
+CONTROL_PLANE_URL=https://image.example.com \
 docker compose --env-file server/.env -f docker-compose.release.yml up -d
 ```
 
-云同步生产部署再叠加 `-f docker-compose.cloud-sync.yml` 并把 `--env-file` 改为 `server/.env.cloud`。发布前备份 PostgreSQL 卷或数据库、检查 `/api/health` 与管理员登录；回滚时只把 `IMAGE_TAG` 改回上一 SHA 后重新 `up -d`，不要执行 schema downgrade。
+生产 Compose 内置 Nginx 网关，唯一监听 `127.0.0.1:3002`。Cloudflare Tunnel 只需将公开域名转发到 `http://127.0.0.1:3002`：
+
+```text
+https://image.example.com/       -> 新版画布
+https://image.example.com/api/*  -> Go 控制平面
+https://image.example.com/admin  -> 管理台
+```
+
+对应的 `server/.env` 至少应设置：
+
+```dotenv
+PUBLIC_BASE_URL=https://image.example.com
+CORS_ALLOW_ORIGINS=https://image.example.com
+```
+
+云同步生产部署再叠加 `-f docker-compose.cloud-sync.yml` 并把 `--env-file` 改为 `server/.env.cloud`。发布前备份 PostgreSQL 卷或数据库、检查 `https://image.example.com/api/health` 与 `https://image.example.com/admin` 登录；回滚时只把 `IMAGE_TAG` 改回上一 SHA 后重新 `up -d`，不要执行 schema downgrade。
