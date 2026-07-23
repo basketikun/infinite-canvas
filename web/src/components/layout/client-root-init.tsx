@@ -12,16 +12,23 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
     const handledConfigParams = useRef(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);
+    const applyDefaultChannelMode = useConfigStore((state) => state.applyDefaultChannelMode);
     const config = useConfigStore((state) => state.config);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const hydrateUser = useUserStore((state) => state.hydrateUser);
     const token = useUserStore((state) => state.token);
+    const isUserReady = useUserStore((state) => state.isReady);
 
     usePromptSourceScheduler();
 
     useEffect(() => {
         void hydrateUser();
     }, [hydrateUser]);
+
+    useEffect(() => {
+        if (!isUserReady) return;
+        applyDefaultChannelMode(Boolean(token && CONTROL_PLANE_URL));
+    }, [applyDefaultChannelMode, isUserReady, token]);
 
     useEffect(() => {
         if (config.channelMode !== "remote" || !token || !CONTROL_PLANE_URL) return;
