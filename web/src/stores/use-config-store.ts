@@ -118,6 +118,7 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
 
 type ConfigStore = {
     config: AiConfig;
+	channelModePreferenceSet: boolean;
 	webdav: WebdavSyncConfig;
 	syncMode: SyncMode;
     cloudRevisions: Record<string, number>;
@@ -125,6 +126,8 @@ type ConfigStore = {
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
+	setChannelMode: (mode: AiConfig["channelMode"], userInitiated?: boolean) => void;
+	applyDefaultChannelMode: (remoteAvailable: boolean) => void;
 	updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
 	setSyncMode: (mode: SyncMode) => void;
     setCloudRevision: (projectID: string, revision: number) => void;
@@ -184,6 +187,7 @@ export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
             config: defaultConfig,
+			channelModePreferenceSet: false,
 			webdav: defaultWebdavSyncConfig,
 			syncMode: "off",
             cloudRevisions: {},
@@ -197,6 +201,16 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+			setChannelMode: (channelMode, userInitiated = true) =>
+				set((state) => ({
+					channelModePreferenceSet: userInitiated ? true : state.channelModePreferenceSet,
+					config: { ...state.config, channelMode },
+				})),
+			applyDefaultChannelMode: (remoteAvailable) =>
+				set((state) => {
+					if (state.channelModePreferenceSet) return state;
+					return { config: { ...state.config, channelMode: remoteAvailable ? "remote" : "local" } };
+				}),
 			updateWebdavConfig: (key, value) =>
                 set((state) => ({
                     webdav: {
@@ -213,7 +227,7 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
-			partialize: (state) => ({ config: state.config, webdav: state.webdav, syncMode: state.syncMode, cloudRevisions: state.cloudRevisions }),
+            partialize: (state) => ({ config: state.config, channelModePreferenceSet: state.channelModePreferenceSet, webdav: state.webdav, syncMode: state.syncMode, cloudRevisions: state.cloudRevisions }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
@@ -225,6 +239,7 @@ export const useConfigStore = create<ConfigStore>()(
                 const models = modelOptionsFromChannels(channels);
                 return {
                     ...current,
+					channelModePreferenceSet: persistedState.channelModePreferenceSet === true,
 					webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
 					syncMode: persistedState.syncMode === "cloud" || persistedState.syncMode === "webdav" ? persistedState.syncMode : "off",
                     cloudRevisions,
