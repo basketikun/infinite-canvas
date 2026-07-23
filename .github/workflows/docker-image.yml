@@ -2,6 +2,7 @@ name: Publish Control Plane Images
 
 on:
   push:
+    branches: ["integration/backend-control-plane"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -41,6 +42,7 @@ jobs:
           tags: |
             type=ref,event=tag
             type=sha,format=long,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/integration/backend-control-plane' }}
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
