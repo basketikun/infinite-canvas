@@ -11,7 +11,7 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 
 把下面整段（连同本文件）提供给执行 AI，再指定要合并的上游 tag/commit：
 
-> 在 `integration/backend-control-plane` 的隔离工作树中，把 `upstream/main`（或指定提交）合并到本 fork。只处理本次上游更新直接相关的冲突。必须保留 `server/`、`legacy-admin/`、服务端模式和云同步的全部契约；WebDAV 不得被云同步替换。先阅读 `docs/content/docs/development/ai-upstream-update-guide.mdx`，然后执行 `scripts/sync-upstream.sh` 或同等的干净分支流程。每个修改先补或更新测试，完成后运行本手册的全部自动验证和人工门禁。最终报告必须列出：上游提交、冲突文件、每项定制能力的适配点、实际运行的命令与退出结果、未做的人工验收。没有真实输出时不得声称通过或完成。
+> 在 `integration/backend-control-plane` 的隔离工作树中，把 `upstream/main`（或指定提交）合并到本 fork。只处理本次上游更新直接相关的冲突。必须保留 `server/`、`legacy-admin/`、服务端模式和云同步的全部契约；WebDAV 不得被云同步替换。先阅读 `docs/content/docs/development/ai-upstream-update-guide.mdx`，再在该隔离工作树内执行 `scripts/sync-upstream.sh` 或同等的干净分支流程。该脚本本身不创建 worktree，禁止在主检出目录直接运行。每个修改先补或更新测试，完成后运行本手册的全部自动验证和人工门禁。最终报告必须列出：上游提交、冲突文件、每项定制能力的适配点、实际运行的命令与退出结果、未做的人工验收。没有真实输出时不得声称通过或完成。
 
 如果指定的是 release tag，先确认该 tag 对应提交及发布说明；禁止把未审查的上游 force-push 分支直接合入。
 
@@ -33,6 +33,7 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 | `server/**` | 保留 fork；只吸收明确兼容的安全/构建改动 | 旧管理 API、模型代理、画布 API 都存在 |
 | `legacy-admin/**` | 保留独立应用 | 不迁入 `web/`，可独立 build 和登录；公开管理路由保持 `/admin` |
 | `Dockerfile`、Compose、entrypoint、`deploy/nginx/**` | 三方合并 | 根 `.dockerignore` 排除 admin 依赖；运行期写入 `CONTROL_PLANE_URL`；生产仅 gateway 映射 `127.0.0.1:3002` |
+| `.github/workflows/docker-image.yml` | 保留 fork 发布规则 | `integration/backend-control-plane` 推送更新三个 `latest`；`v*` 标签发布不可变版本；三个镜像必须同一提交构建 |
 | `bun.lock`、`package.json` | 采用上游依赖基线后重新安装并验证 | 不以手改 lockfile 伪造依赖一致性 |
 
 ## 必须保持的数据和 HTTP 契约
@@ -44,6 +45,9 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 - 本地模式仍走用户配置的供应商地址和 API Key。远程模式从 `use-user-store` 取 session token，只调用控制平面：图片、聊天、音频、视频、参考媒体分别命中 `/api/v1/*`。
 - 文本远程模式使用 `/api/v1/chat/completions`；不要把新版本地的 Responses API 路径误套到旧 Go 后端。
 - `isAiConfigReady` 在远程模式只要求有效会话、模型和控制平面地址，不要求浏览器存储供应商 Key。
+- `useConfigStore` 的 `channelModePreferenceSet` 是持久化的用户手动选择标记。没有该标记时，`ClientRootInit` 必须在 `useUserStore.isReady` 后：有有效 token 和 `CONTROL_PLANE_URL` 则选择 `remote`，否则选择 `local`；有标记时不得覆盖 `channelMode`。
+- `UserStatusActions` 同时被普通顶栏和画布顶栏使用，必须保留右上角“登录服务端”入口、已登录账户菜单、服务端/本地直连切换和退出登录。登录成功切换 `remote`，退出登录切换 `local`；配置窗口必须调用同一 `setChannelMode` 动作。
+- `use-theme-store` 的无持久化默认值为 `light`。上游不得将其改回深色，也不得覆盖已有用户持久化的主题偏好。
 
 ### 云同步
 
@@ -60,12 +64,12 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 - `server/` 支持 SQLite 本地控制平面和 PostgreSQL 云同步；云同步生产存储不是 SQLite。
 - 云同步 Compose 通过独立的 `server/.env.cloud` 提供控制平面、PostgreSQL 和 MinIO 的同一套部署变量；必须使用 `docker compose --env-file server/.env.cloud`，模板是 `server/.env.cloud.example`。本地 SQLite 的 `server/.env` 不应被覆盖，真实 `.env.cloud` 不进 Git。
 - `SYNC_S3_*`、`DATABASE_DSN`、管理员密码、JWT secret、供应商 Key、用户 token 都是秘密。测试、日志、文档和截图不得输出其值。
-- `docker-compose.cloud-sync.yml` 不得重新加入可直接部署的硬编码密码；生产镜像必须以 Git SHA（而非 `latest`）标记。
+- `docker-compose.cloud-sync.yml` 不得重新加入可直接部署的硬编码密码。固定版本发布使用同一 Git SHA 或同一 `v0.9.0-control-plane.*` 标签；滚动部署可使用三个 `latest` 镜像，但只能在 `Publish Control Plane Images` 的三个矩阵 job 都成功后执行 `docker compose pull` 和 `docker compose up -d`。
 
 ## 每次更新流程
 
 1. 在 `integration/backend-control-plane` 拉取并确认工作区干净：`git status --short` 必须没有输出；确认 remote `upstream` 指向 `basketikun/infinite-canvas` 且没有推送 URL。
-2. 从集成分支创建隔离分支。优先运行 `./scripts/sync-upstream.sh`；它会 fetch tags、创建 `sync/upstream-YYYY-MM-DD` 并合并 `upstream/main`。同一天的重复执行先换分支名，禁止覆盖已有同步分支。
+2. 从集成分支创建隔离 worktree，并在其中创建同步分支。优先在该 worktree 内运行 `./scripts/sync-upstream.sh`；它会 fetch tags、创建 `sync/upstream-YYYY-MM-DD` 并合并 `upstream/main`。同一天的重复执行先换分支名，禁止覆盖已有同步分支。若脚本因分支已存在而退出，创建新的日期后缀分支后再用等价手动 merge 流程；不得回到主检出目录执行脚本。
 3. 合并前记录 `git log --oneline integration/backend-control-plane..upstream/main`、上游 changelog 和文件统计。若上游有安全修复，记录其 commit；若有数据库/API 变更，先检查本手册的契约。
 4. 逐个处理冲突：先读冲突两侧的完整调用链，再按前述归属规则合并。不要用“接受 ours/theirs”批量解决，不要把 lockfile 或生成文件当源码冲突的替代品。
 5. 若上游新增/删除画布字段、媒体前缀、模型调用格式、设置项、路由、存储库、Docker 入口或依赖，更新相应的 fork 适配层和测试。测试先失败、实现后转绿。
@@ -76,6 +80,7 @@ description: 让 AI 安全合并 infinite-canvas 上游版本的操作规程
 ## 变更审计清单
 
 - 上游改动是否触及 `use-config-store`、模型请求、运行期配置、路由、项目序列化或 IndexedDB 媒体？若触及，必须逐项复核服务端模式和云同步。
+- 上游改动是否触及 `UserStatusActions`、`ClientRootInit`、`use-user-store`、`use-config-store`、`use-theme-store` 或配置窗口？若触及，必须验证右上角登录、首次登录默认服务端、未登录默认本地、手动模式偏好持久化、退出登录回本地和浅色默认主题。
 - 上游新增画布字段时，更新 `CanvasProject` 快照契约与云同步测试，确保导入/导出、WebDAV、云同步都保留字段。
 - 上游新增媒体类型时，更新 `collectProjectStorageKeys`、对象存储 MIME 校验和恢复逻辑。
 - 上游改动 Docker 时，确认根镜像仍排除 `legacy-admin/node_modules`，运行期 `CONTROL_PLANE_URL` 仍会注入 `config.js`，生产 Compose 中只有 `gateway` 发布 `127.0.0.1:3002`，且 Nginx 仍将 `/api/`、`/admin` 分别转发给 `control-plane`、`admin`。
@@ -91,7 +96,7 @@ git diff --check
 
 cd web
 bun install --frozen-lockfile
-bun test src/services/control-plane src/services/cloud-sync src/services/webdav-sync.test.ts src/stores/use-config-store.remote.test.ts
+bun test src/services/control-plane src/services/cloud-sync src/services/webdav-sync.test.ts src/stores/use-config-store.remote.test.ts src/stores/use-theme-store.test.ts
 bun run typecheck
 bun run build
 
@@ -129,7 +134,8 @@ PR/发布记录应附：上游 commit、定制冲突表、所有命令的退出�
 
 ## 发布与回滚
 
-- web、control-plane、admin 镜像必须使用同一 Git SHA 标签；生产 Compose 禁止使用 `latest`。
-- 发布前备份 PostgreSQL，执行镜像拉取、`/api/health` 健康检查和管理员登录检查。
-- 回滚使用上一 SHA 的 Compose 文件与镜像，只回滚应用；不要执行破坏性的数据库 schema downgrade。
-- 发布记录必须写明 Git SHA、镜像 SHA、数据库备份位置、上游冲突文件和全部验证输出。
+- `integration/backend-control-plane` 的每次推送会让发布工作流为 web、control-plane、admin 三个镜像分别更新同一提交的完整 SHA 和 `latest`。`v*` 标签推送额外发布不可变版本标签。上游更新不得删除这些 workflow 触发条件或 `latest` 的分支条件。
+- 日常服务器可以将三个应用镜像一次性固定为 `:latest`；每次更新前必须等待 `Publish Control Plane Images` 的 web、admin、control-plane 三个 job 全部成功，随后只执行 `docker compose pull` 与 `docker compose up -d`。不能在三个 job 仍在运行时拉取，避免得到不同提交的镜像。
+- 可审计发布、问题排查和回滚使用同一个 Git SHA 或同一个 `v0.9.0-control-plane.*` 标签。不要把三个服务固定到不同 SHA，也不要根据单个镜像的发布时间混搭版本。
+- 发布前备份 PostgreSQL，执行镜像拉取、`/api/health` 健康检查和管理员登录检查。回滚只回滚应用；不要执行破坏性的数据库 schema downgrade。
+- 发布记录必须写明部署通道（`latest` 或固定版本）、Git SHA、三个镜像 tag/digest、数据库备份位置、上游冲突文件和全部验证输出。
