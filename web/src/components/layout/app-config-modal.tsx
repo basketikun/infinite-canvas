@@ -64,6 +64,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const webdav = useConfigStore((state) => state.webdav);
     const syncMode = useConfigStore((state) => state.syncMode);
     const updateConfig = useConfigStore((state) => state.updateConfig);
+    const setChannelMode = useConfigStore((state) => state.setChannelMode);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
     const setSyncMode = useConfigStore((state) => state.setSyncMode);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
@@ -180,7 +181,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                     <Segmented
                                         value={config.channelMode}
                                         options={[{ label: "本地直连", value: "local" }, { label: "服务端", value: "remote", disabled: !token || !CONTROL_PLANE_URL }]}
-                                        onChange={(value) => updateConfig("channelMode", value as AiConfig["channelMode"])}
+                                        onChange={(value) => setChannelMode(value as AiConfig["channelMode"])}
                                     />
                                 </div>
                                 {!token && CONTROL_PLANE_URL ? (
@@ -189,7 +190,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800"
                                         onFinish={() =>
                                             void login(loginValues)
-                                                .then(() => message.success("已登录控制平面"))
+                                                .then(() => {
+                                                    setChannelMode("remote", false);
+                                                    message.success("已登录控制平面");
+                                                })
                                                 .catch((error) => message.error(error instanceof Error ? error.message : "登录失败"))
                                         }
                                     >
