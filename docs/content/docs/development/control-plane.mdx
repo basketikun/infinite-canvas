@@ -91,6 +91,15 @@ CONTROL_PLANE_URL=https://image.example.com \
 docker compose --env-file server/.env -f docker-compose.release.yml up -d
 ```
 
+对于滚动部署，将三个应用镜像标签一次性改为 `:latest`。此后每次 `integration/backend-control-plane` 推送成功，服务器只需执行：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+`latest` 始终由同一个集成分支提交构建的 web、管理台和控制平面镜像共同更新。需要回滚时，将三个镜像临时固定为同一个已发布的 `v0.9.0-control-plane.*` 标签，再执行相同命令。
+
 生产 Compose 内置 Nginx 网关，唯一监听 `127.0.0.1:3002`。Cloudflare Tunnel 只需将公开域名转发到 `http://127.0.0.1:3002`：
 
 ```text
