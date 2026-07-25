@@ -62,6 +62,8 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+export const ATLAS_CLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
+export const ATLAS_CLOUD_TEXT_MODELS = ["deepseek-ai/deepseek-v4-pro", "qwen/qwen3.5-flash"];
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -271,6 +273,15 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
     };
 }
 
+export function createAtlasCloudChannel(): ModelChannel {
+    return createModelChannel({
+        name: "Atlas Cloud",
+        baseUrl: ATLAS_CLOUD_BASE_URL,
+        apiFormat: "openai",
+        models: ATLAS_CLOUD_TEXT_MODELS.map((name) => ({ name, capability: "text" })),
+    });
+}
+
 export function encodeChannelModel(channelId: string, model: string) {
     return `${channelId}${CHANNEL_MODEL_SEPARATOR}${model.trim()}`;
 }
@@ -316,7 +327,11 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.some((item) => item.name === model));
-    return matched || config.channels[0] || createModelChannel({ id: "default", name: "默认渠道", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })) });
+    return (
+        matched ||
+        config.channels[0] ||
+        createModelChannel({ id: "default", name: "默认渠道", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })) })
+    );
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {

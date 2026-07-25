@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [新增] 配置渠道新增 Atlas Cloud 快捷入口，自动预填 OpenAI 兼容接口地址和文本模型。
+
 ## v0.10.0 - 2026-07-25
 
 + [新增] 提示词来源新增BananaPromptQuicker，并支持添加自定义标准 JSON 来源。
