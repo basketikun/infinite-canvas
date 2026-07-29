@@ -55,7 +55,7 @@ export function PromptSourceContentModal({ source, onClose }: { source: PromptSo
                             <div className="mt-0.5 text-xs font-normal text-stone-500">共 {items.length} 条</div>
                         </div>
                         <Button size="small" icon={<RefreshCw className="size-3.5" />} loading={loading} onClick={() => void load(true)}>
-                            立即拉取
+                            立即更新
                         </Button>
                     </div>
                 }

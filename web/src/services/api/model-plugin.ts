@@ -106,7 +106,7 @@ function createPoll(signal?: AbortSignal) {
 /**
  * Run a user-authored model call script as an async function body with flat locals (see PLUGIN_VARIABLES):
  *   prompt / images / messages / params        —— 本次请求的输入
- *   model / baseUrl / apiKey / systemPrompt     —— 当前渠道信息
+ *   model / baseUrl / apiKey / systemPrompt / reasoningEffort     —— 当前渠道与文本设置
  *   http / request / poll / sleep / signal / onDelta    —— 调用辅助
  * The script must `return` the result; each caller normalizes it to its capability's shape.
  */
@@ -124,6 +124,7 @@ export async function runModelPlugin<T = unknown>(args: RunPluginArgs): Promise<
         "baseUrl",
         "apiKey",
         "systemPrompt",
+        "reasoningEffort",
         "http",
         "request",
         "poll",
@@ -142,6 +143,7 @@ export async function runModelPlugin<T = unknown>(args: RunPluginArgs): Promise<
             config.baseUrl,
             config.apiKey,
             config.systemPrompt || "",
+            config.reasoningEffort,
             http,
             request,
             poll,
@@ -169,6 +171,7 @@ export const PLUGIN_VARIABLES: PluginVariable[] = [
     { name: "baseUrl", type: "string", desc: "渠道接口地址（原样，未拼 /v1）" },
     { name: "apiKey", type: "string", desc: "渠道 API Key，请求头里自己带上" },
     { name: "systemPrompt", type: "string", desc: "系统提示词原文" },
+    { name: "reasoningEffort", type: '"auto" | "low" | "medium" | "high" | "xhigh"', desc: "文本推理强度；auto 表示由脚本决定是否传递", capabilities: ["text"] },
     { name: "http", type: "object", desc: "便捷请求：http.post(path, body, {headers,params,responseType})、http.get(path, opts)、http.url(path)；默认带 Authorization: Bearer apiKey，可用 headers 覆盖；path 相对时按 baseUrl 拼 /v1" },
     { name: "request", type: "function", desc: "原始请求 request({ method, url, headers, params, data, responseType })，不加任何默认头，鉴权头自己写；url 相对时按 baseUrl 拼接（不加 /v1）" },
     { name: "poll", type: "function", desc: "轮询 poll(request, extract, {intervalMs,timeoutMs})，extract 返回真值即结束" },
@@ -321,12 +324,16 @@ return { data: audio.data };`,
     text: [
         {
             label: "OpenAI 规范",
-            script: `// 文本对话（OpenAI Responses 接口）。可用：messages([{role,content}])、systemPrompt、model
+            script: `// 文本对话（OpenAI Responses 接口）。可用：messages([{role,content}])、systemPrompt、model、reasoningEffort
 const data = await request({
   method: "post",
   url: \`\${baseUrl}/v1/responses\`,
   headers: { "Content-Type": "application/json", Authorization: \`Bearer \${apiKey}\` },
-  data: { model, input: messages },
+  data: {
+    model,
+    input: messages,
+    ...(reasoningEffort === "auto" ? {} : { reasoning: { effort: reasoningEffort } }),
+  },
 });
 const text = data.output_text
   || (data.output || []).flatMap((o) => o.content || []).map((c) => c.text || "").join("")

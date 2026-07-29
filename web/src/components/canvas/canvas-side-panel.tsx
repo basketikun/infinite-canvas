@@ -29,6 +29,7 @@ type Props = {
     nodes: CanvasNodeData[];
     selectedNodeIds: Set<string>;
     onFocusNode: (nodeId: string) => void;
+    onPreviewNode: (nodeId: string) => void;
     onInsertAsset: (payload: InsertAssetPayload) => void;
 };
 
@@ -48,7 +49,7 @@ const STATUS_COLOR: Record<string, string> = {
     idle: "transparent",
 };
 
-export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onInsertAsset }: Props) {
+export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onInsertAsset }: Props) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
     const width = useCanvasSidePanelStore((state) => state.width);
@@ -103,7 +104,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onInsertA
                 </div>
                 <div className="mt-2 min-h-0 flex-1 overflow-hidden">
                     {tab === "canvas" ? (
-                        <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} theme={theme} />
+                        <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} theme={theme} />
                     ) : tab === "assets" ? (
                         <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
                     ) : (
@@ -144,7 +145,7 @@ function nodePreviewText(node: CanvasNodeData) {
     return getNodeDefinition(node.type)?.title || node.type;
 }
 
-function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, theme }: { nodes: CanvasNodeData[]; selectedNodeIds: Set<string>; onFocusNode: (nodeId: string) => void; theme: CanvasTheme }) {
+function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, theme }: { nodes: CanvasNodeData[]; selectedNodeIds: Set<string>; onFocusNode: (nodeId: string) => void; onPreviewNode: (nodeId: string) => void; theme: CanvasTheme }) {
     const { message } = App.useApp();
     const [keyword, setKeyword] = useState("");
     const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -216,23 +217,26 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, theme }: { nodes:
                             const isChecked = checked.has(node.id);
                             const active = selectMode ? isChecked : selectedNodeIds.has(node.id);
                             return (
-                                <button
-                                    key={node.id}
-                                    type="button"
-                                    onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))}
-                                    className={cn("flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition", active ? "" : "hover:bg-black/5 dark:hover:bg-white/5")}
-                                    style={active ? { background: theme.toolbar.activeBg } : undefined}
-                                >
-                                    {selectMode ? <CheckMark checked={isChecked} theme={theme} /> : null}
-                                    <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md">
-                                        {isImage ? <img src={node.metadata!.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5 opacity-60" />}
-                                    </span>
-                                    <span className="min-w-0 flex-1 space-y-0.5">
-                                        <span className="block truncate text-sm font-medium leading-snug">{node.title || getNodeDefinition(node.type)?.title || "未命名节点"}</span>
-                                        <span className="block truncate text-xs leading-snug opacity-50">{nodePreviewText(node)}</span>
-                                    </span>
-                                    {node.metadata?.status && node.metadata.status !== "idle" ? <span className="size-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[node.metadata.status] || "transparent" }} /> : null}
-                                </button>
+                                <div key={node.id} className={cn("group flex w-full items-center rounded-lg transition", active ? "" : "hover:bg-black/5 dark:hover:bg-white/5")} style={active ? { background: theme.toolbar.activeBg } : undefined}>
+                                    <button type="button" onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))} className="flex min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left" title={selectMode ? undefined : "定位到节点"}>
+                                        {selectMode ? <CheckMark checked={isChecked} theme={theme} /> : null}
+                                        <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md">
+                                            {isImage ? <img src={node.metadata!.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5 opacity-60" />}
+                                        </span>
+                                        <span className="min-w-0 flex-1 space-y-0.5">
+                                            <span className="block truncate text-sm font-medium leading-snug">{node.title || getNodeDefinition(node.type)?.title || "未命名节点"}</span>
+                                            <span className="block truncate text-xs leading-snug opacity-50">{nodePreviewText(node)}</span>
+                                        </span>
+                                        {node.metadata?.status && node.metadata.status !== "idle" ? <span className="size-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[node.metadata.status] || "transparent" }} /> : null}
+                                    </button>
+                                    {selectMode || !isImage ? null : (
+                                        <div className="flex shrink-0 flex-col items-center gap-0.5 pr-1.5">
+                                            <button type="button" onClick={() => onPreviewNode(node.id)} className="grid size-7 place-items-center rounded-md opacity-55 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label="放大预览" title="放大预览">
+                                                <Eye className="size-3.5" />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             );
                         })}
                     </div>
@@ -445,7 +449,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { o
     const sources = usePromptSourceStore((state) => state.sources);
     const enabledSources = useMemo(() => sources.filter((source) => source.enabled), [sources]);
     const [keyword, setKeyword] = useState("");
-    const [expanded, setExpanded] = useState<Record<string, boolean>>(() => (enabledSources[0] ? { [enabledSources[0].id]: true } : {}));
+    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [detail, setDetail] = useState<Prompt | null>(null);
 
     const copyPrompt = async (prompt: string) => {
@@ -463,25 +467,21 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { o
                 <Input size="small" allowClear prefix={<Search className="size-3.5 text-stone-400" />} placeholder="搜索提示词" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                {enabledSources.length ? (
-                    <div className="space-y-1">
-                        {enabledSources.map((source) => (
-                            <PromptSourceGroup
-                                key={source.id}
-                                sourceId={source.id}
-                                sourceName={source.name}
-                                keyword={keyword}
-                                open={!!expanded[source.id]}
-                                theme={theme}
-                                onToggle={() => setExpanded((prev) => ({ ...prev, [source.id]: !prev[source.id] }))}
-                                onInsert={onInsert}
-                                onView={setDetail}
-                            />
-                        ))}
-                    </div>
-                ) : (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无提示词来源" className="pt-16" />
-                )}
+                <div className="space-y-1">
+                    {enabledSources.length ? enabledSources.map((source) => (
+                        <PromptSourceGroup
+                            key={source.id}
+                            sourceId={source.id}
+                            sourceName={source.name}
+                            keyword={keyword}
+                            open={!!expanded[source.id]}
+                            theme={theme}
+                            onToggle={() => setExpanded((prev) => ({ ...prev, [source.id]: !prev[source.id] }))}
+                            onInsert={onInsert}
+                            onView={setDetail}
+                        />
+                    )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无提示词" className="pt-12" />}
+                </div>
             </div>
             <PromptDetailDialog prompt={detail} onClose={() => setDetail(null)} onCopy={(prompt) => void copyPrompt(prompt)} />
         </div>
@@ -508,7 +508,8 @@ function PromptSourceGroup({
     onView: (prompt: Prompt) => void;
 }) {
     // 展开过一次即缓存,避免收起后重复请求;搜索命中时也需要拿到数据来计数。
-    const query = useQuery({ queryKey: ["side-panel-prompts", sourceId], queryFn: () => fetchSourcePrompts(sourceId), enabled: open, staleTime: 1000 * 60 * 60 });
+    const showResults = open || !!keyword.trim();
+    const query = useQuery({ queryKey: ["side-panel-prompts", sourceId], queryFn: () => fetchSourcePrompts(sourceId), enabled: showResults, staleTime: 1000 * 60 * 60 });
 
     const filtered = useMemo(() => {
         const items = query.data || [];
@@ -522,12 +523,12 @@ function PromptSourceGroup({
     return (
         <div>
             <button type="button" onClick={onToggle} className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs font-semibold opacity-75 transition hover:opacity-100">
-                <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+                <ChevronRight className={cn("size-3.5 transition-transform", showResults && "rotate-90")} />
                 <BookOpen className="size-3.5" />
                 <span className="min-w-0 flex-1 truncate">{sourceName}</span>
-                {open && query.isSuccess ? <span className="opacity-50">{filtered.length}</span> : null}
+                {showResults && query.isSuccess ? <span className="opacity-50">{filtered.length}</span> : null}
             </button>
-            {open ? (
+            {showResults ? (
                 <div className="px-1 pb-2 pt-1">
                     {query.isLoading ? (
                         <div className="flex justify-center py-6">

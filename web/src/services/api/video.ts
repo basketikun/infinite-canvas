@@ -184,7 +184,7 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
         model: modelOptionName(model),
         content,
         ratio: normalizeSeedanceRatio(config.size),
-        resolution: normalizeSeedanceResolution(config.vquality, modelOptionName(model)),
+        resolution: normalizeSeedanceResolution(config.vquality),
         duration: normalizeSeedanceDuration(config.videoSeconds),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
         watermark: boolConfig(config.videoWatermark, false),
@@ -355,14 +355,29 @@ function readApiErrorMessage(value: unknown): string {
     if (!value) return "";
     if (typeof value === "string") {
         try {
-            return readApiErrorMessage(JSON.parse(value)) || value;
+            const parsed = JSON.parse(value);
+            const inner = readApiErrorMessage(parsed) || value;
+            if (inner === value && typeof parsed === "object" && Object.keys(parsed).length === 0) return "";
+            return inner;
         } catch {
+            if (/<[a-z][\s\S]*>/i.test(value)) return `服务返回了 HTML 错误页面（${value.slice(0, 80)}...）`;
             return value;
         }
     }
     if (typeof value !== "object") return "";
-    const payload = value as { msg?: unknown; message?: unknown; error?: { message?: unknown } };
-    return readApiErrorMessage(payload.msg) || readApiErrorMessage(payload.message) || readApiErrorMessage(payload.error?.message);
+    const payload = value as { msg?: unknown; message?: unknown; error?: unknown; detail?: unknown };
+    // error 可能是字符串或含 message 的对象
+    const errorMsg =
+        typeof payload.error === "string"
+            ? payload.error
+            : (payload.error as { message?: unknown })?.message;
+    return (
+        readApiErrorMessage(payload.msg) ||
+        readApiErrorMessage(payload.message) ||
+        readApiErrorMessage(errorMsg) ||
+        readApiErrorMessage(payload.detail) ||
+        ""
+    );
 }
 
 function readAxiosError(error: unknown, fallback: string) {

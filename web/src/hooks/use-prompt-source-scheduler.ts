@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { refreshAllSources } from "@/services/api/prompts";
+import { refreshDueSources } from "@/services/api/prompts";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 
 const CHECK_INTERVAL_MS = 60_000;
 
-/** Periodically refetch all enabled prompt sources while the app is open, based on the global schedule. */
+/** Periodically update only the sources whose last successful refresh is due. */
 export function usePromptSourceScheduler() {
     const queryClient = useQueryClient();
     const intervalMinutes = usePromptSourceStore((state) => state.schedule.intervalMinutes);
@@ -16,16 +16,19 @@ export function usePromptSourceScheduler() {
         let running = false;
         const tick = async () => {
             if (running) return;
-            const { schedule, updateSchedule } = usePromptSourceStore.getState();
-            const last = schedule.lastFetchedAt ? new Date(schedule.lastFetchedAt).getTime() : 0;
-            if (Date.now() - last < intervalMinutes * 60_000) return;
+            const { updateSchedule } = usePromptSourceStore.getState();
             running = true;
             try {
-                await refreshAllSources();
+                const result = await refreshDueSources(intervalMinutes * 60_000);
+                if (!result.results.length) return;
                 updateSchedule("lastFetchedAt", new Date().toISOString());
-                await queryClient.invalidateQueries({ queryKey: ["prompts"] });
+                await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ["prompts"] }),
+                    queryClient.invalidateQueries({ queryKey: ["side-panel-prompts"] }),
+                    queryClient.invalidateQueries({ queryKey: ["prompt-source-statuses"] }),
+                ]);
             } catch {
-                // 拉取失败时静默重试，等待下一个检查周期。
+                // 单个来源的错误已写入来源状态，下一个检查周期会继续尝试。
             } finally {
                 running = false;
             }
