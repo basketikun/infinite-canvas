@@ -65,6 +65,13 @@ const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+export const MINIMAX_REGIONS = ["global_en", "cn_zh"] as const;
+export type MiniMaxRegion = (typeof MINIMAX_REGIONS)[number];
+export const MINIMAX_TEXT_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+export const MINIMAX_CHANNEL_PRESETS: Record<MiniMaxRegion, { name: string; baseUrl: string }> = {
+    global_en: { name: "MiniMax Global", baseUrl: "https://api.minimax.io/v1" },
+    cn_zh: { name: "MiniMax China", baseUrl: "https://api.minimaxi.com/v1" },
+};
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -282,6 +289,16 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiFormat,
         models: normalizeChannelModels(channel?.models),
     };
+}
+
+export function createMiniMaxChannel(region: MiniMaxRegion): ModelChannel {
+    const preset = MINIMAX_CHANNEL_PRESETS[region];
+    return createModelChannel({
+        name: preset.name,
+        baseUrl: preset.baseUrl,
+        apiFormat: "openai",
+        models: MINIMAX_TEXT_MODELS.map((name) => ({ name, capability: "text" })),
+    });
 }
 
 export function encodeChannelModel(channelId: string, model: string) {
