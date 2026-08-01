@@ -2,6 +2,7 @@ import axios from "axios";
 
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
+import { extractImageUrls, streamChatCompletions } from "./chat-completions";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -733,6 +734,15 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
+    if (requestConfig.apiFormat === "chat") {
+        const messages = [{ role: "user", content: withSystemPrompt(requestConfig, prompt) }];
+        try {
+            const results = await Promise.all(Array.from({ length: n }, () => streamChatCompletions(requestConfig, messages, { signal: options?.signal })));
+            return results.flatMap((text) => extractImageUrls(text)).map((url) => ({ id: nanoid(), dataUrl: url }));
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
     if (requestConfig.apiFormat === "gemini") {
         try {
             return await requestGeminiImages(requestConfig, prompt, [], n, options);
@@ -789,6 +799,17 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                 signal: options?.signal,
             });
             return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
+    if (requestConfig.apiFormat === "chat") {
+        if (mask) throw new Error("Chat 兼容协议暂不支持蒙版编辑");
+        const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
+        const content: Array<Record<string, unknown>> = [{ type: "text", text: withSystemPrompt(requestConfig, requestPrompt) }, ...refs.map((url) => ({ type: "image_url", image_url: { url } }))];
+        try {
+            const result = await streamChatCompletions(requestConfig, [{ role: "user", content }], { signal: options?.signal });
+            return extractImageUrls(result).map((url) => ({ id: nanoid(), dataUrl: url }));
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }

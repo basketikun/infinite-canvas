@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
-export type ApiCallFormat = "openai" | "gemini" | "ark";
+export type ApiCallFormat = "openai" | "gemini" | "ark" | "chat";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
@@ -375,7 +375,7 @@ export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
 }
 
 function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
-    return apiFormat === "gemini" || apiFormat === "ark" ? apiFormat : "openai";
+    return apiFormat === "gemini" || apiFormat === "ark" || apiFormat === "chat" ? apiFormat : "openai";
 }
 
 function uniqueModelOptions(models: string[]) {

@@ -7,6 +7,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
+import { extractVideoUrl, streamChatCompletions } from "./chat-completions";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
@@ -61,6 +62,12 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     const script = resolveModelScript(config, selectedModel);
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
+    if (requestConfig.apiFormat === "chat") {
+        if (videoReferences.length || audioReferences.length) {
+            throw new Error("Chat 兼容视频接口暂不支持参考视频或参考音频，请移除参考资产");
+        }
+        return createChatVideoTask(requestConfig, selectedModel, prompt, references, options);
+    }
     assertVideoConfig(requestConfig, requestConfig.model);
     if (isSeedanceVideoConfig(requestConfig)) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
@@ -105,6 +112,19 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
     );
     const id = nanoid();
     pluginVideoResults.set(id, result);
+    return { id, provider: "plugin", model };
+}
+
+async function createChatVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    if (!config.baseUrl.trim()) throw new Error("请先配置 Base URL");
+    if (!config.apiKey.trim()) throw new Error("请先配置 API Key");
+    const refs = await Promise.all(references.slice(0, 3).map((image) => imageToDataUrl(image)));
+    const content = refs.length
+        ? [{ type: "text", text: prompt }, ...refs.map((url) => ({ type: "image_url", image_url: { url } }))]
+        : prompt;
+    const text = await streamChatCompletions(config, [{ role: "user", content }], { signal: options?.signal });
+    const id = nanoid();
+    pluginVideoResults.set(id, { url: extractVideoUrl(text), mimeType: "video/mp4" });
     return { id, provider: "plugin", model };
 }
 
