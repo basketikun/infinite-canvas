@@ -16,6 +16,7 @@
         "@ant-design/pro-components": "3.0.0-beta.3",
         "@codemirror/lang-javascript": "^6.2.5",
         "@codemirror/lang-json": "^6.0.2",
+        "@rollup/rollup-win32-x64-msvc": "^4.62.3",
         "@tanstack/react-query": "^5.100.9",
         "@uiw/react-codemirror": "^4.25.9",
         "antd": "^6.4.2",
@@ -26,6 +27,7 @@
         "dayjs": "^1.11.20",
         "fflate": "^0.8.3",
         "file-saver": "^2.0.5",
+        "lightningcss-win32-x64-msvc": "^1.33.0",
         "localforage": "^1.10.0",
         "lucide-react": "^1.16.0",
         "motion": "^12.38.0",
@@ -43,6 +45,7 @@
         "zustand": "^5.0.12"
     },
     "devDependencies": {
+        "@tailwindcss/oxide-win32-x64-msvc": "^4.3.3",
         "@tailwindcss/postcss": "^4",
         "@types/file-saver": "^2.0.7",
         "@types/node": "^20",
