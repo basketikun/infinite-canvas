@@ -252,7 +252,7 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
     return (
         <Modal className="canvas-node-info-modal" title={title} open={open && Boolean(node)} centered footer={null} onCancel={onClose}>
             {node ? (
-                <div className="h-[56vh] min-h-[360px] text-sm">
+                <div className="h-[56vh] min-h-[360px] select-text text-sm" data-canvas-shortcuts-ignore>
                     {view === "info" ? (
                         <div className="thin-scrollbar h-full space-y-3 overflow-auto pr-1">
                             <InfoRow label="ID" value={node.id} />

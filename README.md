@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/50077?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-50077" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/50077/daily?language=TypeScript" alt="basketikun%2Finfinite-canvas | Trendshift" width="250" height="55"></a>
+<a href="https://trendshift.io/repositories/50077?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-50077" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/50077" alt="basketikun%2Finfinite-canvas | Trendshift" width="250" height="55"/></a>
 </p>
 
 <p align="center">
@@ -127,6 +127,10 @@ docker compose up -d
 ## 开源协议
 
 本项目使用 GNU Affero General Public License v3.0，见 [LICENSE](LICENSE)。
+
+你可以在遵守 AGPL-3.0 的前提下自由使用、复制、修改和分发本项目。如果你分发修改后的版本，或将其作为网站、SaaS 等网络服务提供给他人使用，需要向对应用户公开基于本项目形成的完整源代码，继续使用 AGPL-3.0 协议，并保留原项目的作者、版权、许可证和来源说明。
+
+本项目禁止未经授权的闭源商用。如果你希望将无限画布用于商业项目，请尊重开源，遵循 AGPL-3.0 协议，继续开源基于本项目修改或开发的对应代码，回馈开源社区；如果无法公开对应代码，请联系作者购买商业授权后闭源使用。
 
 ## Star History
 

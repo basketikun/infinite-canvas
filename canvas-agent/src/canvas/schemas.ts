@@ -6,6 +6,7 @@ const viewportSchema = z.object({ x: z.number(), y: z.number(), k: z.number() })
 const nodeTypeSchema = z.enum(["image", "text", "config", "video", "audio"]);
 const generationModeSchema = z.enum(["text", "image", "video", "audio"]);
 
+/** Canvas Agent 对外提供的工具名称。 */
 export const toolNames = [
     "site_navigate",
     "canvas_list_projects",
