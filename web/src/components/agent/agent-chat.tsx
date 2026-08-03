@@ -89,7 +89,7 @@ export function AgentChatTimeline({
                         />
                     ) : null}
                     {pendingApprovals.map((approval) => <AgentApprovalCard key={approval.requestId} approval={approval} theme={theme} onDecision={(decision) => onApprovalDecision(approval, decision)} />)}
-                    {(sending || waiting || bootstrapStatus) && !streaming && !pendingTool && !pendingApprovals.length ? <AgentWorkingMessage text={working.text} detail={"detail" in working ? working.detail : undefined} status={bootstrapStatus?.status} mcpStatuses={Object.entries(mcpStartupStatuses).map(([name, item]) => ({ name, ...item }))} activityKey={working.key} theme={theme} /> : null}
+                    {(sending || waiting || bootstrapStatus) && !streaming && !pendingTool && !pendingApprovals.length ? <AgentWorkingMessage text={working.text} detail={typeof (working as Record<string, unknown>).detail === "string" ? ((working as Record<string, unknown>).detail as string) : undefined} status={bootstrapStatus?.status} mcpStatuses={Object.entries(mcpStartupStatuses).map(([name, item]) => ({ name, ...item }))} activityKey={working.key} theme={theme} /> : null}
                 </div>
             </div>
             {showScrollToBottom ? (

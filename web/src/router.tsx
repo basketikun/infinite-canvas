@@ -8,11 +8,14 @@ import CanvasProjectPage from "@/pages/canvas/project";
 import ConfigPage from "@/pages/config";
 import HomePage from "@/pages/home";
 import ImagePage from "@/pages/image";
+import LandingPage from "@/pages/landing";
 import NotFound from "@/pages/not-found";
 import PromptsPage from "@/pages/prompts";
 import VideoPage from "@/pages/video";
 
 export const router = createBrowserRouter([
+    { path: "/", element: <LandingPage /> },
+    { path: "/landing", element: <LandingPage /> },
     {
         element: (
             <UserLayout>
@@ -21,7 +24,7 @@ export const router = createBrowserRouter([
             </UserLayout>
         ),
         children: [
-            { path: "/", element: <HomePage /> },
+            { path: "/home", element: <HomePage /> },
             { path: "/image", element: <ImagePage /> },
             { path: "/video", element: <VideoPage /> },
             { path: "/assets", element: <AssetsPage /> },
