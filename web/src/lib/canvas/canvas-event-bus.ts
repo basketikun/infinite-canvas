@@ -2,7 +2,7 @@ import localforage from "localforage";
 
 import type { PluginStorage } from "@/types/canvas-plugin";
 
-// 画布内轻量事件总线,供节点/插件互相通信
+// Lightweight canvas event bus for communication between nodes and plugins.
 type Handler = (payload: unknown) => void;
 const handlers = new Map<string, Set<Handler>>();
 
@@ -26,7 +26,7 @@ export function onCanvasEvent(event: string, handler: Handler) {
     return () => set!.delete(handler);
 }
 
-// 插件私有存储,按 pluginId 命名空间隔离
+// Private plugin storage isolated by pluginId namespace.
 const stores = new Map<string, LocalForage>();
 
 export function createPluginStorage(pluginId: string): PluginStorage {

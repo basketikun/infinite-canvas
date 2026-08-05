@@ -28,7 +28,7 @@ export function usePromptSourceScheduler() {
                     queryClient.invalidateQueries({ queryKey: ["prompt-source-statuses"] }),
                 ]);
             } catch {
-                // 单个来源的错误已写入来源状态，下一个检查周期会继续尝试。
+                // Per-source errors are stored in source state and retried during the next check cycle.
             } finally {
                 running = false;
             }

@@ -10,8 +10,8 @@ const webDir = dirname(fileURLToPath(import.meta.url));
 const localVersion = readFileSync(resolve(webDir, "../VERSION"), "utf8").trim() || "dev";
 const localChangelog = readFileSync(resolve(webDir, "../CHANGELOG.md"), "utf8");
 
-// 暴露 /plugins/index.json:列出 public/plugins 下的本地插件文件,
-// 供前端自动发现并加入插件列表(默认关闭)。dev 下实时读目录,构建时产出静态清单。
+// Expose /plugins/index.json with local plugin files from public/plugins.
+// The frontend can discover and list them when enabled; development reads the directory live, while builds emit a static registry.
 function localPluginsManifest(): Plugin {
     const pluginsDir = resolve(webDir, "public/plugins");
     const listLocalPlugins = () => {

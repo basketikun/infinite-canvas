@@ -1,10 +1,12 @@
 import { App, Button, Drawer, Input, Space, Switch } from "antd";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { PromptSource } from "@/services/api/prompt-source-presets";
 
 export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { open: boolean; source: PromptSource | null; onSave: (source: PromptSource) => void; onClose: () => void }) {
     const { message } = App.useApp();
+    const { t } = useTranslation();
     const [draft, setDraft] = useState<PromptSource | null>(source);
 
     useEffect(() => {
@@ -18,9 +20,9 @@ export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { op
     const save = () => {
         const name = draft.name.trim();
         const url = draft.url.trim();
-        if (!name) return message.warning("请输入来源名称");
-        if (!isHttpUrl(url)) return message.warning("请输入有效的 JSON URL");
-        if (draft.homepage.trim() && !isHttpUrl(draft.homepage.trim())) return message.warning("请输入有效的主页地址");
+        if (!name) return message.warning(t("config.promptSources.editor.nameRequired"));
+        if (!isHttpUrl(url)) return message.warning(t("config.promptSources.editor.invalidUrl"));
+        if (draft.homepage.trim() && !isHttpUrl(draft.homepage.trim())) return message.warning(t("config.promptSources.editor.invalidHomepage"));
         onSave({ ...draft, name, url, homepage: draft.homepage.trim(), builtIn: false });
         onClose();
     };
@@ -29,46 +31,46 @@ export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { op
         <Drawer
             open={open}
             width={560}
-            title={source?.name === "新来源" ? "新增提示词来源" : "编辑提示词来源"}
+            title={t(source?.name ? "config.promptSources.editor.editTitle" : "config.promptSources.editor.addTitle")}
             onClose={onClose}
             styles={{ body: { paddingTop: 16 } }}
             extra={
                 <Space>
-                    <Button onClick={onClose}>取消</Button>
+                    <Button onClick={onClose}>{t("common.cancel")}</Button>
                     <Button type="primary" onClick={save}>
-                        保存
+                        {t("common.save")}
                     </Button>
                 </Space>
             }
         >
             <div className="space-y-5">
                 <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium">来源名称</span>
-                    <Input value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder="用于分类展示" />
+                    <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.name")}</span>
+                    <Input value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={t("config.promptSources.editor.namePlaceholder")} />
                 </label>
                 <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">JSON URL</span>
                     <Input value={draft.url} onChange={(event) => patch({ url: event.target.value })} placeholder="https://example.com/prompts.json" />
                 </label>
                 <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium">来源主页（可选）</span>
+                    <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.homepage")}</span>
                     <Input value={draft.homepage} onChange={(event) => patch({ homepage: event.target.value })} placeholder="https://example.com" />
                 </label>
                 <div className="flex items-center justify-between border-y border-stone-200 py-3 dark:border-stone-800">
-                    <span className="text-sm font-medium">启用来源</span>
+                    <span className="text-sm font-medium">{t("config.promptSources.editor.enabled")}</span>
                     <Switch checked={draft.enabled} onChange={(enabled) => patch({ enabled })} />
                 </div>
                 <div>
-                    <div className="mb-2 text-sm font-medium">JSON 格式</div>
+                    <div className="mb-2 text-sm font-medium">{t("config.promptSources.editor.jsonFormat")}</div>
                     <pre className="overflow-x-auto rounded-md bg-stone-100 p-3 text-xs leading-5 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{`[
   {
     "id": "product-photo-1",
-    "title": "白底商品图",
-    "prompt": "生成专业白底商品摄影图",
+    "title": "Product photo",
+    "prompt": "Generate a professional product photo on a white background",
     "description": "",
     "coverUrl": "",
     "referenceImageUrls": [],
-    "tags": ["商品", "摄影"]
+    "tags": ["product", "photography"]
   }
 ]`}</pre>
                 </div>

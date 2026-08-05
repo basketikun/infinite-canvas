@@ -1,6 +1,7 @@
 import localforage from "localforage";
 
 import { nanoid } from "nanoid";
+import i18n from "@/i18n";
 import { readImageMeta } from "@/lib/image-utils";
 
 export type UploadedImage = {
@@ -84,7 +85,7 @@ function blobToDataUrl(blob: Blob) {
     return new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("读取图片失败"));
+        reader.onerror = () => reject(new Error(i18n.t("common.imageReadFailed")));
         reader.readAsDataURL(blob);
     });
 }

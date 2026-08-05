@@ -1,0 +1,9 @@
+{
+  "title": "操作手册",
+  "root": true,
+  "defaultOpen": true,
+  "pages": [
+    "canvas-node-manual",
+    "canvas-shortcuts"
+  ]
+}

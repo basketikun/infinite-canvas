@@ -90,7 +90,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         color: showOverlay ? "transparent" : style?.color,
         caretColor: style?.color || theme.node.text,
         cursor: "text",
-        // showOverlay 时高亮 div 覆盖在 textarea 上,若不把 textarea 提到上层,原生插入光标(caret)会被盖住看不见
+        // The highlight layer covers the textarea when showOverlay is active, so keep the textarea above it to preserve the native caret.
         ...(showOverlay ? { position: "relative", zIndex: 1, background: "transparent", backgroundColor: "transparent" } : {}),
     } as CSSProperties;
     const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} caretIndex={mention.start} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
@@ -220,8 +220,8 @@ function MentionMenu({ textarea, caretIndex, references, activeIndex, theme, onS
     const menuWidth = 256;
     const maxMenuHeight = 224;
     const gap = 6;
-    // 菜单锚定到 @ 所在的光标像素位置(而非 textarea 底边),避免输入框较高时菜单离 @ 太远。
-    // 画布可能被缩放,rect 是缩放后坐标,而镜像测量得到的是布局坐标,需按 scale 换算。
+    // Anchor the menu to the pixel position of the @ caret instead of the textarea edge.
+    // The canvas may be scaled: rect uses scaled coordinates while mirror measurements use layout coordinates, so apply the scale.
     const scale = textarea.offsetWidth ? rect.width / textarea.offsetWidth : 1;
     const computed = window.getComputedStyle(textarea);
     const lineHeight = (parseFloat(computed.lineHeight) || parseFloat(computed.fontSize) * 1.4 || 20) * scale;
@@ -295,7 +295,7 @@ function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
 }
 
-// 通过镜像 div 复刻 textarea 的排版,测出第 index 个字符处光标相对 textarea 的像素坐标(布局尺度,未含缩放)。
+// Mirror the textarea layout in a div to measure the caret at index in unscaled layout coordinates.
 const MIRROR_STYLE_PROPS = ["boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "fontStyle", "fontVariant", "fontWeight", "fontStretch", "fontSize", "lineHeight", "fontFamily", "textAlign", "textIndent", "letterSpacing", "wordSpacing", "tabSize", "textTransform"] as const;
 
 function getCaretPoint(textarea: HTMLTextAreaElement, index: number) {
@@ -323,8 +323,8 @@ function escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// 纯 textarea 无法做真正的原子 token,这里在删除时把整个引用 label 当作一个整体一次删掉,
-// 避免逐字删除把「图片1」删成「图片」。labels 需按长度降序传入以优先匹配更长的 label。
+// A plain textarea cannot represent atomic tokens, so delete a complete reference label at once.
+// Labels must be ordered by descending length so longer labels match first.
 function deleteAdjacentLabel(value: string, caret: number, direction: "backward" | "forward", labels: string[]): { value: string; caret: number } | null {
     if (direction === "backward") {
         const before = value.slice(0, caret);
@@ -332,12 +332,12 @@ function deleteAdjacentLabel(value: string, caret: number, direction: "backward"
             if (!label) continue;
             const match = new RegExp(`(^|\\s)(${escapeRegExp(label)})\\s*$`).exec(before);
             if (match) {
-                const start = match.index + match[1].length; // label 起始位置(保留前面的分隔空格)
+                const start = match.index + match[1].length; // Label start; preserve the preceding separator space.
                 return { value: value.slice(0, start) + value.slice(caret), caret: start };
             }
         }
     } else {
-        // 向后删除:光标前须是行首或空白,避免切进其它文字中间
+        // Forward deletion requires the caret to follow a line boundary or whitespace to avoid cutting into other text.
         if (caret > 0 && !/\s/.test(value[caret - 1])) return null;
         const after = value.slice(caret);
         for (const label of labels) {

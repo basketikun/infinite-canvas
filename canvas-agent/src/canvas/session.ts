@@ -12,7 +12,18 @@ type PendingRequest = { clientId: string; resolve: (value: unknown) => void; rej
 type TurnAttachment = { clientId: string; id: string; name: string; type: string; size: number; width: number; height: number; dataUrl: string };
 type ReplayEvent = { type: string; payload: Record<string, unknown> };
 export type CodexState = { busy: boolean; threadId: string; turnId: string };
-export const AGENT_PROTOCOL_VERSION = 3;
+export type McpStartupState = "starting" | "ready" | "failed" | "cancelled";
+export type ConversationState = {
+    revision: number;
+    conversationId: string;
+    threadId: string;
+    status: "idle" | "preparing" | "ready" | "warning" | "running" | "failed";
+    mcpStatuses: Record<string, { status: McpStartupState; error?: string | null; failureReason?: string | null }>;
+    sourceClientId?: string;
+    error?: string;
+};
+type McpInventoryItem = { name: string; authStatus?: string };
+export const AGENT_PROTOCOL_VERSION = 5;
 
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
@@ -42,6 +53,19 @@ export class CanvasSession {
     private boundClientId = "";
     private focusSequence = 0;
     private codexState: CodexState = { busy: false, threadId: "", turnId: "" };
+    private conversationState: ConversationState;
+    private conversationInventoryComplete = false;
+    private preparedConversationThreadId = "";
+
+    constructor(activeThreadId = "") {
+        this.conversationState = {
+            revision: 1,
+            conversationId: activeThreadId || crypto.randomUUID(),
+            threadId: activeThreadId,
+            status: activeThreadId ? "ready" : "idle",
+            mcpStatuses: {},
+        };
+    }
 
     /** 获取当前目标网页的画布状态。 */
     private get canvasState() {
@@ -55,7 +79,7 @@ export class CanvasSession {
 
     /** 返回 Canvas Agent 当前连接状态。 */
     health() {
-        return { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, hasCanvas: Boolean(this.canvasState), clients: this.clients.size, codexBusy: this.codexState.busy };
+        return { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, hasCanvas: Boolean(this.canvasState), clients: this.clients.size, codexBusy: this.codexState.busy, conversation: this.conversationStateSnapshot };
     }
 
     /** 返回 Codex 是否正在执行任务。 */
@@ -67,9 +91,111 @@ export class CanvasSession {
         return this.codexState.threadId;
     }
 
+    /** Return a copy that callers can restore after a temporary Codex operation. */
+    get codexStateSnapshot(): CodexState {
+        return { ...this.codexState };
+    }
+
+    /** 返回站点级对话的权威快照。 */
+    get conversationStateSnapshot(): ConversationState {
+        return { ...this.conversationState, mcpStatuses: { ...this.conversationState.mcpStatuses } };
+    }
+
+    /** 原子开始一次新建或恢复对话流程。 */
+    beginConversation(options: { threadId?: string; conversationId?: string; sourceClientId?: string } = {}) {
+        this.conversationInventoryComplete = false;
+        this.preparedConversationThreadId = "";
+        return this.updateConversation({
+            conversationId: options.conversationId || options.threadId || crypto.randomUUID(),
+            threadId: options.threadId || "",
+            status: "preparing",
+            mcpStatuses: {},
+            sourceClientId: options.sourceClientId,
+            error: undefined,
+        });
+    }
+
+    /** 记录预热阶段单个 MCP 服务的启动状态。 */
+    updateConversationMcp(name: string, status: McpStartupState, error?: string | null, failureReason?: string | null) {
+        if (!name || this.conversationState.status !== "preparing") return this.conversationStateSnapshot;
+        const snapshot = this.updateConversation({
+            mcpStatuses: { ...this.conversationState.mcpStatuses, [name]: { status, error, failureReason } },
+        });
+        return this.conversationInventoryComplete && this.preparedConversationThreadId
+            ? this.completeConversationPreparation(this.preparedConversationThreadId)
+            : snapshot;
+    }
+
+    /** 用 app-server 的完整 MCP 清单补齐未发送逐项通知的服务。 */
+    completeConversationMcpInventory(services: McpInventoryItem[]) {
+        if (this.conversationState.status !== "preparing") return this.conversationStateSnapshot;
+        const mcpStatuses = { ...this.conversationState.mcpStatuses };
+        services.filter((item) => item.name).forEach((item) => {
+            const current = mcpStatuses[item.name];
+            if (current?.status === "failed" || current?.status === "cancelled") return;
+            mcpStatuses[item.name] = item.authStatus === "notLoggedIn"
+                ? { status: "failed", error: "MCP 服务未登录", failureReason: "reauthenticationRequired" }
+                : { status: "ready" };
+        });
+        this.conversationInventoryComplete = true;
+        return this.updateConversation({ mcpStatuses });
+    }
+
+    /** MCP 清单读取结束后提交线程和最终可发送状态。 */
+    completeConversationPreparation(threadId: string) {
+        this.preparedConversationThreadId = threadId;
+        const statuses = this.conversationState.mcpStatuses;
+        const hasPending = !this.conversationInventoryComplete || Object.values(statuses).some((item) => item.status === "starting");
+        const requiredFailure = statuses["infinite-canvas"]?.status !== "ready";
+        const hasFailure = Object.values(statuses).some((item) => item.status === "failed" || item.status === "cancelled");
+        const requiredFailureDetail = statuses["infinite-canvas"]?.error;
+        return this.updateConversation({
+            threadId,
+            status: hasPending ? "preparing" : requiredFailure ? "failed" : hasFailure ? "warning" : "ready",
+            error: requiredFailure ? `Infinite Canvas MCP 初始化失败${requiredFailureDetail ? `：${requiredFailureDetail}` : ""}` : undefined,
+        });
+    }
+
+    /** 将创建线程或读取 MCP 清单的失败保存为不可发送状态。 */
+    failConversationPreparation(error: string) {
+        this.conversationInventoryComplete = false;
+        this.preparedConversationThreadId = "";
+        return this.updateConversation({ status: "failed", error });
+    }
+
+    /** 切换到无需重新预热的既有状态，例如删除当前对话后的空状态。 */
+    activateConversation(threadId: string, sourceClientId?: string) {
+        this.conversationInventoryComplete = false;
+        this.preparedConversationThreadId = "";
+        return this.updateConversation({
+            conversationId: threadId || crypto.randomUUID(),
+            threadId,
+            status: threadId ? "ready" : "idle",
+            mcpStatuses: {},
+            sourceClientId,
+            error: undefined,
+        });
+    }
+
+    markConversationRunning(threadId: string) {
+        if (!threadId || threadId !== this.conversationState.threadId || !["ready", "warning"].includes(this.conversationState.status)) return this.conversationStateSnapshot;
+        return this.updateConversation({ status: "running" });
+    }
+
+    finishConversationRun(threadId: string) {
+        if (!threadId || threadId !== this.conversationState.threadId) return this.conversationStateSnapshot;
+        const hasFailure = Object.values(this.conversationState.mcpStatuses).some((item) => item.status === "failed" || item.status === "cancelled");
+        return this.updateConversation({ status: hasFailure ? "warning" : "ready" });
+    }
+
     /** 判断网页客户端是否仍连接到当前 Agent。 */
     hasClient(clientId: string) {
         return this.clients.has(clientId);
+    }
+
+    /** 读取指定网页上报的画布，避免提炼时受最近焦点或其他标签页影响。 */
+    canvasStateForClient(clientId: string) {
+        return this.clients.has(clientId) ? this.canvasStates.get(clientId) || null : null;
     }
 
     /** 原子取得 Codex 写操作权限，避免多个网页并发切换或修改会话。 */
@@ -106,13 +232,13 @@ export class CanvasSession {
         if (type === "agent_error") this.pendingApprovals.clear();
     }
 
-    /** 更新并广播 Codex 运行状态。 */
-    setCodexState(patch: Partial<CodexState>) {
+    /** 更新并广播 Codex 运行状态；静默后台活动可保留上一 turn 的断线重放。 */
+    setCodexState(patch: Partial<CodexState>, options: { preserveReplay?: boolean } = {}) {
         const next = { ...this.codexState, ...patch };
         const threadChanged = next.threadId !== this.codexState.threadId;
         const turnChanged = Boolean(this.codexState.turnId && next.turnId && next.turnId !== this.codexState.turnId);
         const nextTurnStarted = !this.codexState.busy && next.busy;
-        if (threadChanged || turnChanged || nextTurnStarted) {
+        if (!options.preserveReplay && (threadChanged || turnChanged || nextTurnStarted)) {
             this.codexReplayEvents.clear();
             this.codexReplayActiveItems.clear();
         }
@@ -153,7 +279,7 @@ export class CanvasSession {
                 this.clientFocusOrder.set(clientId, ++this.focusSequence);
             }
         }
-        sendEvent(res, "hello", { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, clientId, workspace: { activeThreadId }, codex: this.codexState, pendingApprovals: this.codexPendingApprovals });
+        sendEvent(res, "hello", { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, clientId, workspace: { activeThreadId }, conversation: this.conversationStateSnapshot, codex: this.codexState, pendingApprovals: this.codexPendingApprovals });
         if (!statusOnly && activeThreadId && this.codexState.threadId === activeThreadId) this.codexReplayEvents.forEach((event) => sendEvent(res, event.type, event.payload));
         const timer = setInterval(() => sendEvent(res, "ping", { time: Date.now() }), 15000);
         res.on("close", () => {
@@ -170,6 +296,13 @@ export class CanvasSession {
             });
             if (this.activeClientId === clientId) this.activeClientId = [...this.clients.keys()].sort((a, b) => (this.clientFocusOrder.get(b) || 0) - (this.clientFocusOrder.get(a) || 0))[0] || "";
         });
+    }
+
+    private updateConversation(patch: Partial<Omit<ConversationState, "revision">>) {
+        this.conversationState = { ...this.conversationState, ...patch, revision: this.conversationState.revision + 1 };
+        const snapshot = this.conversationStateSnapshot;
+        this.emitAll("conversation_changed", snapshot);
+        return snapshot;
     }
 
     /** 保存指定网页上报的最新画布快照。 */

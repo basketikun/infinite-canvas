@@ -23,6 +23,25 @@ test("MCP 读取当前激活网页的画布", async (t) => {
     assert.equal(field(await session.callTool("canvas_get_state", {}), "projectId"), "canvas-second");
 });
 
+test("按精确 clientId 读取画布快照，不受当前焦点影响", (t) => {
+    const session = new CanvasSession();
+    const first = connect(session, "first");
+    const second = connect(session, "second");
+    t.after(() => {
+        first.close();
+        second.close();
+    });
+    session.updateState(snapshot("canvas-first"), "first");
+    session.updateState(snapshot("canvas-second"), "second");
+    session.activateClient("second");
+
+    assert.equal(field(session.canvasStateForClient("first"), "projectId"), "canvas-first");
+    assert.equal(field(session.canvasStateForClient("second"), "projectId"), "canvas-second");
+    assert.equal(session.canvasStateForClient("missing"), null);
+    first.close();
+    assert.equal(session.canvasStateForClient("first"), null);
+});
+
 test("画布写操作只发送给当前激活网页", async (t) => {
     const session = new CanvasSession();
     const first = connect(session, "first");
@@ -195,15 +214,16 @@ test("shared thread events are broadcast with the active thread id", (t) => {
 });
 
 test("new clients receive the current Codex state and later updates", (t) => {
-    const session = new CanvasSession();
+    const session = new CanvasSession("thread-2");
     session.setCodexState({ busy: true, threadId: "thread-2", turnId: "turn-1" });
     session.trackCodexEvent("codex_approval", { requestId: "approval-1", threadId: "thread-2" });
     const client = connect(session, "first", "thread-2");
     t.after(() => client.close());
 
     const hello = client.event("hello");
-    assert.equal(field(hello, "protocolVersion"), 3);
+    assert.equal(field(hello, "protocolVersion"), 5);
     assert.deepEqual(field(hello, "workspace"), { activeThreadId: "thread-2" });
+    assert.deepEqual(field(hello, "conversation"), { revision: 1, conversationId: "thread-2", threadId: "thread-2", status: "ready", mcpStatuses: {} });
     assert.deepEqual(field(hello, "codex"), { busy: true, threadId: "thread-2", turnId: "turn-1" });
     assert.deepEqual(field(hello, "pendingApprovals"), [{ requestId: "approval-1", threadId: "thread-2" }]);
 
@@ -217,6 +237,50 @@ test("new clients receive the current Codex state and later updates", (t) => {
     assert.deepEqual(client.event("codex_state"), { busy: false, threadId: "thread-2", turnId: "turn-1" });
 });
 
+test("对话 revision 单调递增且 MCP 全部进入终态前保持 preparing", () => {
+    const session = new CanvasSession();
+    const revisions = [session.conversationStateSnapshot.revision];
+
+    revisions.push(session.beginConversation({ sourceClientId: "first" }).revision);
+    revisions.push(session.updateConversationMcp("late-service", "starting").revision);
+    revisions.push(session.completeConversationMcpInventory([{ name: "infinite-canvas", authStatus: "unsupported" }]).revision);
+    const pending = session.completeConversationPreparation("thread-1");
+    revisions.push(pending.revision);
+    assert.equal(pending.status, "preparing");
+
+    const ready = session.updateConversationMcp("late-service", "ready");
+    revisions.push(ready.revision);
+    assert.equal(ready.status, "ready");
+    assert.equal(ready.threadId, "thread-1");
+    revisions.slice(1).forEach((revision, index) => assert.ok(revision > revisions[index]));
+});
+
+test("可选 MCP 失败进入 warning，画布 MCP 失败进入 failed", () => {
+    const optionalFailure = new CanvasSession();
+    optionalFailure.beginConversation();
+    optionalFailure.completeConversationMcpInventory([
+        { name: "infinite-canvas", authStatus: "unsupported" },
+        { name: "notion", authStatus: "notLoggedIn" },
+    ]);
+    const warning = optionalFailure.completeConversationPreparation("thread-1");
+    assert.equal(warning.status, "warning");
+    assert.equal(warning.mcpStatuses.notion.status, "failed");
+
+    const requiredFailure = new CanvasSession();
+    requiredFailure.beginConversation();
+    requiredFailure.completeConversationMcpInventory([{ name: "infinite-canvas", authStatus: "notLoggedIn" }]);
+    const failed = requiredFailure.completeConversationPreparation("thread-2");
+    assert.equal(failed.status, "failed");
+    assert.match(failed.error || "", /Infinite Canvas MCP/);
+
+    const requiredMissing = new CanvasSession();
+    requiredMissing.beginConversation();
+    requiredMissing.completeConversationMcpInventory([{ name: "notion", authStatus: "unsupported" }]);
+    const missing = requiredMissing.completeConversationPreparation("thread-3");
+    assert.equal(missing.status, "failed");
+    assert.match(missing.error || "", /Infinite Canvas MCP/);
+});
+
 test("Codex 写操作在多窗口之间互斥且不能与运行 turn 并发", () => {
     const session = new CanvasSession();
     assert.equal(session.beginCodexMutation(), true);
@@ -226,6 +290,46 @@ test("Codex 写操作在多窗口之间互斥且不能与运行 turn 并发", ()
     session.endCodexMutation();
     session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     assert.equal(session.beginCodexMutation(), false);
+});
+
+test("Skill draft generation broadcasts shared busy state and restores the previous thread", (t) => {
+    const session = new CanvasSession();
+    const first = connect(session, "first");
+    const second = connect(session, "second");
+    t.after(() => {
+        first.close();
+        second.close();
+    });
+    session.setCodexState({ threadId: "thread-1", turnId: "turn-previous" });
+    const previous = session.codexStateSnapshot;
+
+    assert.equal(session.beginCodexMutation(), true);
+    session.setCodexState({ busy: true, threadId: previous.threadId, turnId: "" }, { preserveReplay: true });
+    assert.deepEqual(first.events("codex_state").at(-1), { busy: true, threadId: "thread-1", turnId: "" });
+    assert.deepEqual(second.events("codex_state").at(-1), { busy: true, threadId: "thread-1", turnId: "" });
+    assert.equal(session.beginCodexMutation(), false);
+
+    session.setCodexState(previous, { preserveReplay: true });
+    session.endCodexMutation();
+    assert.deepEqual(first.events("codex_state").at(-1), previous);
+    assert.deepEqual(second.events("codex_state").at(-1), previous);
+    assert.equal(session.beginCodexMutation(), true);
+    session.endCodexMutation();
+});
+
+test("Skill draft busy state preserves the previous turn replay until history acknowledges it", (t) => {
+    const session = new CanvasSession();
+    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", text: "回答" } });
+    session.setCodexState({ busy: false });
+    const previous = session.codexStateSnapshot;
+
+    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "" }, { preserveReplay: true });
+    session.setCodexState(previous, { preserveReplay: true });
+
+    const client = connect(session, "first", "thread-1");
+    t.after(() => client.close());
+    assert.equal(client.events("agent_event").length, 1);
 });
 
 test("a bound client remains the tool target while focus changes", async (t) => {

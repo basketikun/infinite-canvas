@@ -62,8 +62,9 @@ export function threadMessages(thread: unknown, planUpdates: CodexPlanUpdate[] =
         let userAdded = false;
         let planAdded = false;
         let reasoningAdded = false;
-        const fallbackUserText = displayUserText(String(field(turn, "input") || ""));
-        if (fallbackUserText && !items.some((item) => field(item, "type") === "userMessage")) {
+        const explicitUserText = displayUserText(String(field(turn, "messageText") || ""));
+        const fallbackUserText = explicitUserText || displayUserText(String(field(turn, "input") || ""));
+        if (fallbackUserText && (explicitUserText || !items.some((item) => field(item, "type") === "userMessage"))) {
             push({ id: "synthetic:user", role: "user", text: fallbackUserText });
             userAdded = true;
             if (planMessage) {
@@ -458,7 +459,8 @@ function userFacingCodexError(message: string) {
 
 /** 提取用户输入条目中的文本与附件占位信息。 */
 function userInputText(content: unknown) {
-    return arrayValue(content)
+    const items = arrayValue(content);
+    const text = items
         .map((item) => {
             const type = String(field(item, "type") || "");
             if (type === "text") return String(field(item, "text") || "");
@@ -468,6 +470,7 @@ function userInputText(content: unknown) {
         })
         .filter(Boolean)
         .join("\n");
+    return text.trim();
 }
 
 /** 移除用户消息中由旧流程拼接的 Agent 前置提示词。 */

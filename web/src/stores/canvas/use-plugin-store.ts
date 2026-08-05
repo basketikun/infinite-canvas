@@ -8,11 +8,11 @@ export type InstalledPlugin = {
     name: string;
     version: string;
     description?: string;
-    url: string; // 安装来源,可用于更新
-    source: string; // 缓存的插件源码,离线可用、版本固定
+    url: string; // Installation source used for updates.
+    source: string; // Cached plugin source for offline use and pinned versions.
     enabled: boolean;
-    local?: boolean; // 自动发现于 web/public/plugins 的本地插件(默认关闭,启用时按 url 重新拉取)
-    official?: boolean; // 从官方注册表安装(用于在管理器里归类)
+    local?: boolean; // Local plugin discovered in web/public/plugins; disabled by default and refetched from its URL when enabled.
+    official?: boolean; // Installed from the official registry and grouped accordingly in the manager.
     installedAt: string;
 };
 

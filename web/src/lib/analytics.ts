@@ -1,8 +1,8 @@
-// 统计分析加载器：默认关闭，可同时启用多家。
-// 仅支持 GA4 与百度：两者都只接受 ID，脚本地址由代码固定拼接——
-// 不接受任意脚本 URL / 内联 JS，避免「配置项被用来在访客浏览器执行任意代码」。
-// 全空时不注入任何脚本、不发任何外部请求。这是开源项目的硬要求：
-// fork/自托管者默认零统计，官方站点仅通过环境变量注入自己的 ID（ID 不入库）。
+// Analytics loader: disabled by default, with support for enabling multiple providers.
+// Only GA4 and Baidu are supported. Both accept IDs only, and their script URLs are assembled here.
+// Arbitrary script URLs and inline JavaScript are intentionally rejected to prevent configuration from executing code in visitors' browsers.
+// When no IDs are configured, no scripts are injected and no external requests are sent.
+// Forks and self-hosted deployments therefore have no analytics by default; the official site provides its IDs through environment variables.
 
 import { ANALYTICS_BAIDU_ID, ANALYTICS_GA4_ID } from "@/constant/runtime-config";
 
@@ -17,7 +17,7 @@ declare global {
 }
 
 let initialized = false;
-// 记录实际启用了哪些统计，供路由上报时按需分发。
+// Track enabled providers so route events are dispatched only where needed.
 const active = { ga4: false, baidu: false };
 
 function appendScript(src: string, attrs: Record<string, string> = {}) {
@@ -37,7 +37,7 @@ function initGa4(id: string) {
     window.gtag = gtag;
     appendScript(`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`);
     gtag("js", new Date());
-    // SPA 路由上报交给 trackPageview，这里关闭默认的自动 page_view，避免重复。
+    // Disable GA4's automatic page view because SPA route reporting is handled by trackPageview.
     gtag("config", id, { send_page_view: false });
     active.ga4 = true;
 }
@@ -52,24 +52,24 @@ export function initAnalytics() {
     if (initialized || typeof window === "undefined") return;
     initialized = true;
 
-    // 各家相互独立，逐个判断并启用；任一家出错都不影响其它家与主应用。
+    // Initialize providers independently so one failure does not affect the others or the application.
     if (ANALYTICS_GA4_ID) {
         try {
             initGa4(ANALYTICS_GA4_ID);
         } catch {
-            /* 忽略 */
+            /* Ignore analytics initialization errors. */
         }
     }
     if (ANALYTICS_BAIDU_ID) {
         try {
             initBaidu(ANALYTICS_BAIDU_ID);
         } catch {
-            /* 忽略 */
+            /* Ignore analytics initialization errors. */
         }
     }
 }
 
-// SPA 路由切换时上报页面浏览，分发给所有已启用的统计。
+// Report SPA route changes to every enabled analytics provider.
 export function trackPageview(path: string) {
     try {
         if (active.ga4 && window.gtag) {
@@ -79,7 +79,6 @@ export function trackPageview(path: string) {
             window._hmt.push(["_trackPageview", path]);
         }
     } catch {
-        /* 忽略 */
+        /* Ignore analytics reporting errors. */
     }
 }
-

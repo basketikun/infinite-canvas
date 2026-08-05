@@ -3,7 +3,7 @@ import React from "react";
 import { emitCanvasEvent, onCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import type { CanvasPluginApp } from "@/types/canvas-plugin";
 
-// 插件运行时:远程插件通过它拿到宿主的 React 实例,避免多份 React 实例
+// Remote plugins obtain the host React instance through this runtime to avoid multiple React copies.
 export type PluginRuntime = CanvasPluginApp & {
     React: typeof React;
     jsx: typeof React.createElement;
@@ -13,7 +13,7 @@ export type PluginRuntime = CanvasPluginApp & {
 
 let runtime: PluginRuntime | null = null;
 
-// 注入插件样式:同 key 覆盖旧样式,返回移除函数
+// Inject plugin styles, replacing the previous style with the same key, and return a removal function.
 function injectCSS(css: string, key?: string) {
     const id = key ? `canvas-plugin-style-${key}` : undefined;
     if (id) document.getElementById(id)?.remove();

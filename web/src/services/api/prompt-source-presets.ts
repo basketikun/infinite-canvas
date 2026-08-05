@@ -15,7 +15,7 @@ const PROMPT_REGISTRY_SOURCE_BASE = "https://raw.githubusercontent.com/yukkcat/i
 export function createPromptSource(source?: Partial<PromptSource>): PromptSource {
     return {
         id: source?.id?.trim() || nanoid(),
-        name: source?.name?.trim() || "新来源",
+        name: source?.name?.trim() || "",
         url: source?.url?.trim() || "",
         homepage: source?.homepage?.trim() || "",
         enabled: source?.enabled ?? true,

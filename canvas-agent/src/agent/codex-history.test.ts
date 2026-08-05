@@ -85,6 +85,30 @@ test("用户消息使用与实时消息一致的 turn 级稳定 ID", () => {
     assert.equal(messages[0].itemId, "synthetic:user");
 });
 
+test("显式用户正文优先于 Codex 自动补入的 Skill 前缀", () => {
+    const messages = threadMessages({ id: "thread-1", turns: [{ id: "turn-1", status: "completed", items: [{
+        id: "codex-user-1",
+        type: "userMessage",
+        content: [
+            { type: "text", text: "$product-grid 生成产品图" },
+            { type: "skill", name: "product-grid", path: "D:\\site\\.agents\\skills\\product-grid\\SKILL.md" },
+        ],
+    }] }] }, [], { items: [], turns: [{ threadId: "thread-1", turnId: "turn-1", turn: { messageText: "生成产品图" } }] });
+    assert.equal(messages[0].text, "生成产品图");
+});
+
+test("没有显式用户正文时保留用户自行输入的 Skill 标记和正文", () => {
+    const messages = threadMessages({ id: "thread-1", turns: [{ id: "turn-1", status: "completed", items: [{
+        id: "codex-user-1",
+        type: "userMessage",
+        content: [
+            { type: "text", text: "$product-grid 生成产品图" },
+            { type: "skill", name: "product-grid", path: "D:\\site\\.agents\\skills\\product-grid\\SKILL.md" },
+        ],
+    }] }] });
+    assert.equal(messages[0].text, "$product-grid 生成产品图");
+});
+
 test("Codex 历史省略命令时使用补充事件恢复完整命令卡片", () => {
     const messages = threadMessages({
         id: "thread-1",

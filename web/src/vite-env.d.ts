@@ -4,11 +4,11 @@ declare const __APP_VERSION__: string;
 declare const __APP_RELEASES__: import("@/lib/release").ReleaseInfo[];
 
 interface ImportMetaEnv {
-    // 逗号分隔的本地开发插件 URL,每次启动重新拉取(不缓存、不落库)
+    // Comma-separated local development plugin URLs, refetched on every startup without caching or persistence.
     readonly VITE_DEV_PLUGINS?: string;
-    // 统计分析（可选，构建期注入）：每家一个独立变量，填了谁就启用谁，可同时启用多家
-    // GA4 衡量 ID（G-XXXX）
+    // Optional build-time analytics configuration, with one independent variable per provider.
+    // GA4 measurement ID (G-XXXX)
     readonly VITE_ANALYTICS_GA4_ID?: string;
-    // 百度统计站点 ID
+    // Baidu Analytics site ID
     readonly VITE_ANALYTICS_BAIDU_ID?: string;
 }

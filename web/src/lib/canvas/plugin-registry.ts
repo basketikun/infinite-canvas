@@ -1,6 +1,6 @@
 import { PLUGIN_REGISTRY_URL } from "@/constant/env";
 
-// 官方插件清单里的一条(entry 已解析成绝对 URL)
+// An official registry item whose entry has been resolved to an absolute URL.
 export type OfficialPluginEntry = {
     id: string;
     name: string;
@@ -13,10 +13,10 @@ export type OfficialPluginEntry = {
 type RawEntry = { id?: string; name?: string; version?: string; description?: string; icon?: string; entry?: string; url?: string };
 type RawManifest = { plugins?: RawEntry[] };
 
-// 拉取官方插件清单;entry(相对文件名)按清单地址解析成绝对 URL,再走既有 URL 安装流程
+// Fetch the official registry and resolve relative entries against its URL for the existing URL installation flow.
 export async function fetchOfficialPlugins(registryUrl: string = PLUGIN_REGISTRY_URL): Promise<OfficialPluginEntry[]> {
     const response = await fetch(registryUrl, { headers: { accept: "application/json" } });
-    if (!response.ok) throw new Error(`获取官方插件列表失败 (HTTP ${response.status})`);
+    if (!response.ok) throw new Error(i18n.t("canvas.pluginErrors.registryFailed", { status: response.status }));
     const data = (await response.json()) as RawManifest;
     const list = Array.isArray(data?.plugins) ? data.plugins : [];
     return list
@@ -31,8 +31,8 @@ export async function fetchOfficialPlugins(registryUrl: string = PLUGIN_REGISTRY
         }));
 }
 
-// 语义化版本比较:返回 >0 表示 a 更高,<0 表示 b 更高,0 表示相等。
-// 只按 major.minor.patch 数值比较,忽略非数字段(预发布标签等)。
+// Compare semantic versions: positive means a is newer, negative means b is newer, and zero means equal.
+// Compare numeric major.minor.patch components only and ignore non-numeric parts such as prerelease labels.
 function compareSemver(a: string, b: string): number {
     const parse = (v: string) => v.split(".").map((part) => parseInt(part, 10) || 0);
     const [pa, pb] = [parse(a), parse(b)];
@@ -43,7 +43,8 @@ function compareSemver(a: string, b: string): number {
     return 0;
 }
 
-// 远程版本是否比本地已安装版本更高(即有可升级的更新)
+// Return whether the remote version is newer than the installed version.
 export function hasUpgrade(installedVersion: string, remoteVersion: string): boolean {
     return compareSemver(remoteVersion, installedVersion) > 0;
 }
+import i18n from "@/i18n";

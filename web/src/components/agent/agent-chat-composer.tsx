@@ -1,12 +1,15 @@
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Button, Dropdown, Tooltip } from "antd";
-import { ArrowUp, Check, ChevronUp, Cpu, Hand, ImagePlus, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
+import { ArrowUp, Check, ChevronUp, Cpu, Gauge, Hand, ImagePlus, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { isPlainEnterKey } from "@/lib/keyboard-event";
+import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import type { AgentModel, AgentPermissionMode, AgentReasoningEffort } from "@/stores/use-agent-store";
 import type { AgentChatAttachment } from "./agent-chat-message";
+import { AgentSkillPicker } from "./agent-skill-picker";
 
 export function AgentChatComposer({
     prompt,
@@ -53,7 +56,10 @@ export function AgentChatComposer({
     onReasoningEffortChange?: (effort: AgentReasoningEffort) => void;
     left?: ReactNode;
 }) {
+    const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const selectedSkill = useAgentSkillStore((state) => state.selectedSkill);
+    const clearSkillSelection = useAgentSkillStore((state) => state.clearSelection);
     const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length);
     return (
         <div className="px-2 pb-2 pt-2" onWheelCapture={(event) => event.stopPropagation()}>
@@ -64,12 +70,22 @@ export function AgentChatComposer({
                             <div key={item.id} className="group relative size-14 shrink-0 overflow-hidden rounded-xl border" style={{ borderColor: theme.node.stroke }} title={item.name}>
                                 <img src={item.url} alt={item.name} className="size-full object-cover" />
                                 {onRemoveAttachment ? (
-                                    <button type="button" className="absolute right-1 top-1 grid size-5 place-items-center rounded-full border opacity-0 shadow-sm transition group-hover:opacity-100" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }} onClick={() => onRemoveAttachment(item.id)} aria-label="移除图片">
+                                    <button type="button" className="absolute right-1 top-1 grid size-5 place-items-center rounded-full border opacity-0 shadow-sm transition group-hover:opacity-100" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }} onClick={() => onRemoveAttachment(item.id)} aria-label={t("agent.composer.removeImage")}>
                                         <X className="size-3" />
                                     </button>
                                 ) : null}
                             </div>
                         ))}
+                    </div>
+                ) : null}
+                {selectedSkill ? (
+                    <div className="mb-2 flex items-center px-1">
+                        <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
+                            <span className="truncate">{selectedSkill.interface?.displayName || selectedSkill.name}</span>
+                            <button type="button" className="grid size-4 shrink-0 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" onClick={() => clearSkillSelection()} aria-label={t("agent.composer.removeSkill")}>
+                                <X className="size-3" />
+                            </button>
+                        </span>
                     </div>
                 ) : null}
                 <textarea
@@ -92,7 +108,7 @@ export function AgentChatComposer({
                     style={{ color: theme.node.text }}
                     placeholder={placeholder}
                 />
-                <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="@container mt-2 flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-1">
                         {onAddFiles ? (
                             <>
@@ -100,11 +116,12 @@ export function AgentChatComposer({
                                     void onAddFiles(event.target.files);
                                     event.target.value = "";
                                 }} />
-                                <Tooltip title="上传图片">
-                                    <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={disabled || sending} style={{ color: theme.node.muted }} icon={<ImagePlus className="size-4" />} onClick={() => fileInputRef.current?.click()} />
+                                <Tooltip title={t("agent.composer.uploadImage")}>
+                                    <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={disabled || sending} style={{ color: theme.node.muted }} icon={<ImagePlus className="size-4" />} onClick={() => fileInputRef.current?.click()} aria-label={t("agent.composer.uploadImage")} />
                                 </Tooltip>
                             </>
                         ) : null}
+                        <AgentSkillPicker />
                         {onConfirmToolsChange ? <ToolConfirmationMenu confirmTools={Boolean(confirmTools)} theme={theme} onChange={onConfirmToolsChange} /> : null}
                         {permissionMode && onPermissionModeChange ? <PermissionModeMenu permissionMode={permissionMode} theme={theme} onChange={onPermissionModeChange} /> : null}
                         {models?.length && model && reasoningEffort && onModelChange && onReasoningEffortChange ? <AgentModelControls models={models} model={model} reasoningEffort={reasoningEffort} onModelChange={onModelChange} onReasoningEffortChange={onReasoningEffortChange} /> : null}
@@ -112,9 +129,9 @@ export function AgentChatComposer({
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                         {sending && onStop ? (
-                            <Button danger shape="circle" className="!h-10 !w-10 !min-w-10" icon={<Square className="size-4" />} onClick={() => void onStop()} aria-label="停止" />
+                            <Tooltip title={t("agent.composer.stop")} placement="top"><Button danger shape="circle" className="!h-10 !w-10 !min-w-10" icon={<Square className="size-4" />} onClick={() => void onStop()} aria-label={t("agent.composer.stop")} /></Tooltip>
                         ) : (
-                            <Button type="primary" shape="circle" className="!h-10 !w-10 !min-w-10" disabled={!canSubmit} icon={sending ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />} onClick={() => void onSubmit()} aria-label="发送" />
+                            <Tooltip title={t("agent.composer.send")} placement="top"><Button type="primary" shape="circle" className="!h-10 !w-10 !min-w-10" disabled={!canSubmit} icon={sending ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />} onClick={() => void onSubmit()} aria-label={t("agent.composer.send")} /></Tooltip>
                         )}
                     </div>
                 </div>
@@ -124,95 +141,116 @@ export function AgentChatComposer({
 }
 
 function AgentModelControls({ models, model, reasoningEffort, onModelChange, onReasoningEffortChange }: { models: AgentModel[]; model: string; reasoningEffort: AgentReasoningEffort; onModelChange: (model: string) => void; onReasoningEffortChange: (effort: AgentReasoningEffort) => void }) {
+    const { t } = useTranslation();
     const current = models.find((item) => item.model === model) || models[0];
+    const effortLabel = (effort: AgentReasoningEffort) => t(`agent.composer.effort.${effort}`);
+    const [modelOpen, setModelOpen] = useState(false);
+    const [reasoningOpen, setReasoningOpen] = useState(false);
     return (
         <div className="flex min-w-0 items-center gap-1">
-            <Select value={model} onValueChange={onModelChange}>
-                <SelectTrigger className="h-9 min-w-0 max-w-36 rounded-full border-0 bg-transparent px-2.5 text-xs font-medium shadow-none hover:bg-black/5 focus:ring-0 dark:bg-transparent dark:hover:bg-white/10" title={current.displayName || current.model} aria-label="选择 Codex 模型">
-                    <Cpu className="size-3.5 shrink-0 opacity-70" />
-                    <span className="min-w-0 flex-1 truncate text-left">{current.displayName || current.model}</span>
-                </SelectTrigger>
-                <SelectContent data-canvas-no-zoom position="popper" side="top" align="start" sideOffset={6} className="z-[1200] w-64 rounded-xl border border-border/70 bg-popover p-1 shadow-xl">
-                    {models.map((item) => <SelectItem key={item.model} value={item.model}>{item.displayName || item.model}</SelectItem>)}
-                </SelectContent>
-            </Select>
-            <Select value={reasoningEffort} onValueChange={(value) => onReasoningEffortChange(value as AgentReasoningEffort)}>
-                <SelectTrigger className="h-9 rounded-full border-0 bg-transparent px-2.5 text-xs font-medium shadow-none hover:bg-black/5 focus:ring-0 dark:bg-transparent dark:hover:bg-white/10" aria-label="选择推理强度">
-                    <span>{effortLabels[reasoningEffort]}</span>
-                </SelectTrigger>
-                <SelectContent data-canvas-no-zoom position="popper" side="top" align="start" sideOffset={6} className="z-[1200] min-w-32 rounded-xl border border-border/70 bg-popover p-1 shadow-xl">
-                    {current.supportedReasoningEfforts.map((item) => <SelectItem key={item.reasoningEffort} value={item.reasoningEffort}>{effortLabels[item.reasoningEffort]}</SelectItem>)}
-                </SelectContent>
-            </Select>
+            <Tooltip title={t("agent.composer.model", { model: current.displayName || current.model })} placement="top" open={modelOpen ? false : undefined}>
+                <span className="inline-flex shrink-0">
+                    <Select value={model} open={modelOpen} onOpenChange={setModelOpen} onValueChange={onModelChange}>
+                        <SelectTrigger hideChevron className="h-9 w-9 min-w-9 justify-center gap-0 rounded-full border-0 bg-transparent px-0 text-xs font-medium shadow-none hover:bg-black/5 focus:ring-0 @min-[660px]:w-auto @min-[660px]:min-w-36 @min-[660px]:max-w-36 @min-[660px]:justify-start @min-[660px]:gap-1.5 @min-[660px]:px-2.5 dark:bg-transparent dark:hover:bg-white/10" aria-label={t("agent.composer.selectModel", { model: current.displayName || current.model })}>
+                            <Cpu className="size-3.5 shrink-0 opacity-70" />
+                            <span className="hidden min-w-0 flex-1 truncate text-left @min-[660px]:inline">{current.displayName || current.model}</span>
+                            <ChevronUp className="hidden size-3 opacity-50 @min-[660px]:block" />
+                        </SelectTrigger>
+                        <SelectContent data-canvas-no-zoom position="popper" side="top" align="start" sideOffset={6} className="z-[1200] w-64 rounded-xl border border-border/70 bg-popover p-1 shadow-xl">
+                            {models.map((item) => <SelectItem key={item.model} value={item.model}>{item.displayName || item.model}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </span>
+            </Tooltip>
+            <Tooltip title={t("agent.composer.reasoning", { effort: effortLabel(reasoningEffort) })} placement="top" open={reasoningOpen ? false : undefined}>
+                <span className="inline-flex shrink-0">
+                    <Select value={reasoningEffort} open={reasoningOpen} onOpenChange={setReasoningOpen} onValueChange={(value) => onReasoningEffortChange(value as AgentReasoningEffort)}>
+                        <SelectTrigger hideChevron className="h-9 w-9 min-w-9 justify-center gap-0 rounded-full border-0 bg-transparent px-0 text-xs font-medium shadow-none hover:bg-black/5 focus:ring-0 @min-[660px]:w-auto @min-[660px]:min-w-[4.5rem] @min-[660px]:justify-start @min-[660px]:gap-1.5 @min-[660px]:px-2.5 dark:bg-transparent dark:hover:bg-white/10" aria-label={t("agent.composer.selectReasoning", { effort: effortLabel(reasoningEffort) })}>
+                            <Gauge className="size-3.5 opacity-70" />
+                            <span className="hidden @min-[660px]:inline">{effortLabel(reasoningEffort)}</span>
+                            <ChevronUp className="hidden size-3 opacity-50 @min-[660px]:block" />
+                        </SelectTrigger>
+                        <SelectContent data-canvas-no-zoom position="popper" side="top" align="start" sideOffset={6} className="z-[1200] min-w-32 rounded-xl border border-border/70 bg-popover p-1 shadow-xl">
+                            {current.supportedReasoningEfforts.map((item) => <SelectItem key={item.reasoningEffort} value={item.reasoningEffort}>{effortLabel(item.reasoningEffort)}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </span>
+            </Tooltip>
         </div>
     );
 }
 
-const effortLabels: Record<AgentReasoningEffort, string> = {
-    minimal: "最低",
-    low: "轻度",
-    medium: "中",
-    high: "高",
-    xhigh: "极高",
-    max: "最高",
-    ultra: "Ultra",
-};
-
 function PermissionModeMenu({ permissionMode, theme, onChange }: { permissionMode: AgentPermissionMode; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onChange: (permissionMode: AgentPermissionMode) => void }) {
+    const { t } = useTranslation();
+    const permissionOptions: Array<{ key: AgentPermissionMode; title: string; shortTitle: string; description: string; icon: ReactNode }> = [
+        { key: "request", title: t("agent.composer.permission.request"), shortTitle: t("agent.composer.permission.request"), description: t("agent.composer.permission.requestDescription"), icon: <ShieldAlert className="size-3.5" /> },
+        { key: "automatic", title: t("agent.composer.permission.automatic"), shortTitle: t("agent.composer.permission.automatic"), description: t("agent.composer.permission.automaticDescription"), icon: <ShieldCheck className="size-3.5" /> },
+        { key: "full", title: t("agent.composer.permission.full"), shortTitle: t("agent.composer.permission.fullShort"), description: t("agent.composer.permission.fullDescription"), icon: <ShieldOff className="size-3.5" /> },
+    ];
     const current = permissionOptions.find((item) => item.key === permissionMode) || permissionOptions[0];
+    const [open, setOpen] = useState(false);
     return (
-        <Dropdown
-            trigger={["click"]}
-            placement="topLeft"
-            menu={{
-                items: permissionOptions.map((item) => ({
-                    key: item.key,
-                    label: <ConfirmationOption icon={item.icon} title={item.title} description={item.description} selected={permissionMode === item.key} />,
-                    onClick: () => onChange(item.key),
-                })),
-            }}
-        >
-            <button type="button" className="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: permissionMode === "full" ? "#ea580c" : theme.node.text }} aria-label="选择 Codex 权限模式">
-                {current.icon}
-                <span>{current.shortTitle}</span>
-                <ChevronUp className="size-3 opacity-50" />
-            </button>
-        </Dropdown>
+        <Tooltip title={t("agent.composer.permissionLabel", { mode: current.shortTitle })} placement="top" open={open ? false : undefined}>
+            <span className="inline-flex shrink-0">
+                <Dropdown
+                    trigger={["click"]}
+                    placement="topLeft"
+                    open={open}
+                    onOpenChange={setOpen}
+                    menu={{
+                        items: permissionOptions.map((item) => ({
+                            key: item.key,
+                            label: <ConfirmationOption icon={item.icon} title={item.title} description={item.description} selected={permissionMode === item.key} />,
+                            onClick: () => onChange(item.key),
+                        })),
+                    }}
+                >
+                    <button type="button" className="flex h-9 w-9 min-w-9 shrink-0 items-center justify-center gap-0 rounded-full px-0 text-xs font-medium transition hover:bg-black/5 @min-[660px]:h-9 @min-[660px]:w-auto @min-[660px]:min-w-0 @min-[660px]:justify-start @min-[660px]:gap-1.5 @min-[660px]:px-2.5 dark:hover:bg-white/10" style={{ color: permissionMode === "full" ? "#ea580c" : theme.node.text }} aria-label={t("agent.composer.selectPermission", { mode: current.title })}>
+                        {current.icon}
+                        <span className="hidden @min-[660px]:inline">{current.shortTitle}</span>
+                        <ChevronUp className="hidden size-3 opacity-50 @min-[660px]:block" />
+                    </button>
+                </Dropdown>
+            </span>
+        </Tooltip>
     );
 }
 
-const permissionOptions: Array<{ key: AgentPermissionMode; title: string; shortTitle: string; description: string; icon: ReactNode }> = [
-    { key: "request", title: "请求批准", shortTitle: "请求批准", description: "编辑工作区外文件或联网时始终询问", icon: <ShieldAlert className="size-3.5" /> },
-    { key: "automatic", title: "自动审查", shortTitle: "自动审查", description: "由 Codex 审查风险操作，必要时再询问", icon: <ShieldCheck className="size-3.5" /> },
-    { key: "full", title: "完全访问权限", shortTitle: "完全访问", description: "不受限制地访问网络和本机文件", icon: <ShieldOff className="size-3.5" /> },
-];
-
 function ToolConfirmationMenu({ confirmTools, theme, onChange }: { confirmTools: boolean; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onChange: (confirmTools: boolean) => void }) {
+    const { t } = useTranslation();
+    const [open, setOpen] = useState(false);
+    const mode = t(confirmTools ? "agent.composer.tools.manual" : "agent.composer.tools.automatic");
     return (
-        <Dropdown
-            trigger={["click"]}
-            placement="topLeft"
-            menu={{
-                items: [
-                    {
-                        key: "manual",
-                        label: <ConfirmationOption icon={<Hand className="size-4" />} title="手动确认" description="Agent 执行画布写入前会请求确认" selected={confirmTools} />,
-                        onClick: () => onChange(true),
-                    },
-                    {
-                        key: "automatic",
-                        label: <ConfirmationOption icon={<RefreshCw className="size-4" />} title="自动确认" description="Agent 会自动执行画布写入操作" selected={!confirmTools} />,
-                        onClick: () => onChange(false),
-                    },
-                ],
-            }}
-        >
-            <button type="button" className="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} aria-label="选择工具确认模式">
-                {confirmTools ? <Hand className="size-3.5" /> : <RefreshCw className="size-3.5" />}
-                <span>{confirmTools ? "手动确认" : "自动确认"}</span>
-                <ChevronUp className="size-3 opacity-50" />
-            </button>
-        </Dropdown>
+        <Tooltip title={t("agent.composer.tools.label", { mode })} placement="top" open={open ? false : undefined}>
+            <span className="inline-flex shrink-0">
+                <Dropdown
+                    trigger={["click"]}
+                    placement="topLeft"
+                    open={open}
+                    onOpenChange={setOpen}
+                    menu={{
+                        items: [
+                            {
+                                key: "manual",
+                                label: <ConfirmationOption icon={<Hand className="size-4" />} title={t("agent.composer.tools.manual")} description={t("agent.composer.tools.manualDescription")} selected={confirmTools} />,
+                                onClick: () => onChange(true),
+                            },
+                            {
+                                key: "automatic",
+                                label: <ConfirmationOption icon={<RefreshCw className="size-4" />} title={t("agent.composer.tools.automatic")} description={t("agent.composer.tools.automaticDescription")} selected={!confirmTools} />,
+                                onClick: () => onChange(false),
+                            },
+                        ],
+                    }}
+                >
+                    <button type="button" className="flex h-9 w-9 min-w-9 shrink-0 items-center justify-center gap-0 rounded-full px-0 text-xs font-medium transition hover:bg-black/5 @min-[660px]:w-auto @min-[660px]:min-w-0 @min-[660px]:justify-start @min-[660px]:gap-1.5 @min-[660px]:px-2.5 dark:hover:bg-white/10" style={{ color: theme.node.text }} aria-label={t("agent.composer.tools.select", { mode })}>
+                        {confirmTools ? <Hand className="size-3.5" /> : <RefreshCw className="size-3.5" />}
+                        <span className="hidden @min-[660px]:inline">{mode}</span>
+                        <ChevronUp className="hidden size-3 opacity-50 @min-[660px]:block" />
+                    </button>
+                </Dropdown>
+            </span>
+        </Tooltip>
     );
 }
 

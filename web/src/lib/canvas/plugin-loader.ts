@@ -2,11 +2,12 @@ import { registerNodeDefinitions, unregisterPluginNodes } from "@/lib/canvas/nod
 import { getPluginRuntime } from "@/lib/canvas/plugin-runtime";
 import { usePluginStore, type InstalledPlugin } from "@/stores/canvas/use-plugin-store";
 import type { CanvasPlugin } from "@/types/canvas-plugin";
+import i18n from "@/i18n";
 
 const cleanups = new Map<string, () => void>();
 
-// 远程插件默认导出可以是 CanvasPlugin,或接收 runtime 返回 CanvasPlugin 的工厂
-// (工厂形式用 runtime.React,无需 bundle 自带 React)
+// A remote plugin may export CanvasPlugin directly or a factory that receives runtime and returns CanvasPlugin.
+// The factory uses runtime.React so the bundle does not need its own React copy.
 async function evaluatePluginSource(source: string): Promise<CanvasPlugin> {
     const blob = new Blob([source], { type: "text/javascript" });
     const url = URL.createObjectURL(blob);
@@ -23,15 +24,15 @@ async function evaluatePluginSource(source: string): Promise<CanvasPlugin> {
 
 function assertPlugin(plugin: unknown): asserts plugin is CanvasPlugin {
     const value = plugin as Partial<CanvasPlugin> | null;
-    if (!value || typeof value !== "object") throw new Error("插件未导出有效对象");
-    if (!value.id || !Array.isArray(value.nodes) || !value.nodes.length) throw new Error("插件缺少 id 或 nodes");
+    if (!value || typeof value !== "object") throw new Error(i18n.t("canvas.pluginErrors.invalidExport"));
+    if (!value.id || !Array.isArray(value.nodes) || !value.nodes.length) throw new Error(i18n.t("canvas.pluginErrors.missingFields"));
 }
 
 export function activatePlugin(plugin: CanvasPlugin) {
     registerNodeDefinitions(plugin.nodes, plugin.id);
     const runtime = getPluginRuntime();
     const disposers: Array<() => void> = [];
-    // 插件声明的样式:启用时注入,禁用/卸载时清理
+    // Inject declared styles when enabled and remove them when disabled or uninstalled.
     if (plugin.css) disposers.push(runtime.injectCSS(plugin.css, plugin.id));
     const cleanup = plugin.setup?.(runtime);
     if (typeof cleanup === "function") disposers.push(cleanup);
@@ -46,29 +47,28 @@ export function deactivatePlugin(pluginId: string) {
 
 async function fetchPluginSource(url: string) {
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`下载失败 (HTTP ${response.status})`);
+    if (!response.ok) throw new Error(i18n.t("canvas.pluginErrors.downloadFailed", { status: response.status }));
     return response.text();
 }
 
-// 加缓存穿透参数,配合 watch 构建拿到最新产物
+// Add a cache-busting parameter so watch builds load the latest output.
 function withCacheBust(url: string) {
     return `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
 }
 
-// 从 URL 安装(或覆盖更新)一个插件,成功后立即启用。
-// bustCache=true 时下载绕过 HTTP/CDN 缓存(升级场景必需,避免拿到旧产物),
-// 但落库的 url 始终保持干净(不带 ?t=),便于后续再次更新。
+// Install or replace a plugin from a URL and enable it immediately.
+// bustCache bypasses HTTP/CDN caches during upgrades while persisting a clean URL without the timestamp query.
 export async function installPluginFromUrl(url: string, opts?: { official?: boolean; bustCache?: boolean }) {
     const source = await fetchPluginSource(opts?.bustCache ? withCacheBust(url) : url);
     const plugin = await evaluatePluginSource(source);
-    deactivatePlugin(plugin.id); // 覆盖旧版本
+    deactivatePlugin(plugin.id); // Replace the previous version.
     usePluginStore.getState().upsert({ id: plugin.id, name: plugin.name || plugin.id, version: plugin.version || "0.0.0", description: plugin.description, url, source, enabled: true, official: opts?.official });
     activatePlugin(plugin);
     return plugin;
 }
 
 export async function updatePlugin(record: InstalledPlugin) {
-    // 升级必须拿到最新产物,强制绕过缓存
+    // Upgrades must fetch the latest output and therefore always bypass caches.
     return installPluginFromUrl(record.url, { official: record.official, bustCache: true });
 }
 
@@ -78,7 +78,7 @@ export async function setPluginEnabled(record: InstalledPlugin, enabled: boolean
         deactivatePlugin(record.id);
         return;
     }
-    // 本地插件启用时按 url 重新拉取,拿到最新构建(缓存 source 可能已过期)
+    // Reload local plugins from their URL when enabled because the cached source may be stale.
     const source = record.local ? await fetchPluginSource(withCacheBust(record.url)) : record.source;
     const plugin = await evaluatePluginSource(source);
     activatePlugin(plugin);
@@ -91,31 +91,29 @@ export function uninstallPlugin(id: string) {
 
 let loaded = false;
 
-// 应用启动时加载已安装且启用的插件
+// Load installed and enabled plugins at application startup.
 export async function ensurePluginsLoaded() {
     if (loaded) return;
     loaded = true;
     await usePluginStore.persist.rehydrate();
-    await loadLocalPlugins(); // 先发现本地插件(默认关闭),再统一按 enabled 激活
+    await loadLocalPlugins(); // Discover disabled local plugins first, then activate all enabled records.
     const records = usePluginStore.getState().plugins.filter((record) => record.enabled);
     await Promise.all(
         records.map(async (record) => {
             try {
-                // 本地插件用最新产物,其余用缓存的源码
+                // Local plugins use the latest output; other plugins use their cached source.
                 const source = record.local ? await fetchPluginSource(withCacheBust(record.url)) : record.source;
                 activatePlugin(await evaluatePluginSource(source));
             } catch (error) {
-                console.error(`[plugin] 加载失败: ${record.id}`, error);
+                console.error(`[plugin] Failed to load: ${record.id}`, error);
             }
         }),
     );
     await loadDevPlugins();
 }
 
-// 自动发现 web/public/plugins 下的本地插件:加入列表但默认关闭,
-// 本地开发放好插件文件即可在管理器里看到并一键启用,无需手动填 URL。
-// 已在列表中的:刷新元数据(version/name/description/source)到最新产物,
-// 但保留用户的 enabled 开关 —— 否则改了插件版本后,持久化 store 里的旧 version 永不更新。
+// Discover local plugins from web/public/plugins, add them disabled, and expose them in the manager without a URL.
+// Refresh metadata and source for existing records while preserving the enabled flag so persisted versions stay current.
 async function loadLocalPlugins() {
     let urls: unknown;
     try {
@@ -123,7 +121,7 @@ async function loadLocalPlugins() {
         if (!response.ok) return;
         urls = await response.json();
     } catch {
-        return; // 无本地清单(如生产环境未构建插件)则跳过
+        return; // Skip when no local manifest exists, such as production builds without plugins.
     }
     if (!Array.isArray(urls) || !urls.length) return;
     const store = usePluginStore.getState();
@@ -140,18 +138,18 @@ async function loadLocalPlugins() {
                     description: plugin.description,
                     url,
                     source,
-                    enabled: existing?.enabled ?? false, // 保留用户开关,新发现默认关闭
+                    enabled: existing?.enabled ?? false, // Preserve the user setting; new discoveries default to disabled.
                     local: true,
                 });
             } catch (error) {
-                console.error(`[plugin] 本地插件发现失败: ${url}`, error);
+                console.error(`[plugin] Failed to discover local plugin: ${url}`, error);
             }
         }),
     );
 }
 
-// 本地开发:VITE_DEV_PLUGINS 里的 URL 每次启动都重新拉取(不缓存、不落库),
-// 配合 watch 构建即可「改代码→刷新页面」看到最新插件,无需反复安装。
+// During local development, refetch VITE_DEV_PLUGINS URLs without caching or persistence on every startup.
+// Together with watch builds, refreshing the page loads code changes without reinstalling the plugin.
 async function loadDevPlugins() {
     const raw = import.meta.env.VITE_DEV_PLUGINS;
     if (!raw) return;
@@ -163,9 +161,9 @@ async function loadDevPlugins() {
                 const plugin = await evaluatePluginSource(source);
                 deactivatePlugin(plugin.id);
                 activatePlugin(plugin);
-                console.info(`[plugin] dev 插件已加载: ${plugin.id} (${url})`);
+                console.info(`[plugin] Dev plugin loaded: ${plugin.id} (${url})`);
             } catch (error) {
-                console.error(`[plugin] dev 插件加载失败: ${url}`, error);
+                console.error(`[plugin] Failed to load dev plugin: ${url}`, error);
             }
         }),
     );

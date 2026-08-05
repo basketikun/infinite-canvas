@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button, Card, Checkbox, Form, Modal, Space, Switch, Tag, Tooltip, Typography, theme as antdTheme } from "antd";
 import { Ellipsis, Image as ImageIcon, Settings2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import type { ImageQuickToolId } from "./canvas-image-toolbar-tools";
 
@@ -48,6 +49,7 @@ export function ImageToolSettingsModal({
     onCancel: () => void;
     onSave: () => void;
 }) {
+    const { t } = useTranslation();
     const { token } = antdTheme.useToken();
     const previewToolbarRef = useRef<HTMLDivElement>(null);
     const scrollbarTrackRef = useRef<HTMLInputElement>(null);
@@ -56,7 +58,7 @@ export function ImageToolSettingsModal({
     const selectedTools = tools.filter((tool) => selected.has(tool.id));
     const previewTools: PreviewTool[] = [
         ...selectedTools,
-        { id: "more", title: "配置快捷工具", label: "更多", icon: <Ellipsis className="size-4" />, active: true },
+        { id: "more", title: t("canvas.imageTools.configure"), label: t("canvas.imageTools.more"), icon: <Ellipsis className="size-4" />, active: true },
     ];
 
     const syncPreviewScroll = useCallback(() => {
@@ -121,7 +123,7 @@ export function ImageToolSettingsModal({
 
     return (
         <Modal
-            title="自定义工具栏"
+            title={t("canvas.imageTools.customize")}
             open={open}
             centered
             width={760}
@@ -130,20 +132,20 @@ export function ImageToolSettingsModal({
             footer={
                 <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
-                        <span>显示按钮文字</span>
+                        <span>{t("canvas.imageTools.showLabels")}</span>
                         <Switch checked={showLabels} onChange={onShowLabelsChange} />
                     </div>
                     <Space>
-                        <Button onClick={onCancel}>取消</Button>
+                        <Button onClick={onCancel}>{t("common.cancel")}</Button>
                         <Button type="primary" onClick={onSave}>
-                            保存
+                            {t("common.save")}
                         </Button>
                     </Space>
                 </div>
             }
         >
             <Typography.Paragraph type="secondary" className="!mb-4">
-                选择你想在图片节点编辑栏中使用的快捷工具。
+                {t("canvas.imageTools.description")}
             </Typography.Paragraph>
 
             <Card
@@ -151,7 +153,7 @@ export function ImageToolSettingsModal({
                 title={
                     <Space size={6}>
                         <Settings2 className="size-4" />
-                        节点预览
+                        {t("canvas.imageTools.preview")}
                     </Space>
                 }
                 className="mb-4"
@@ -172,7 +174,7 @@ export function ImageToolSettingsModal({
                         style={{ background: token.colorFillAlter, borderColor: token.colorBorderSecondary, color: token.colorTextSecondary }}
                     >
                         <ImageIcon className="mb-2 size-8" />
-                        <Typography.Text type="secondary">图片节点</Typography.Text>
+                        <Typography.Text type="secondary">{t("canvas.imageTools.imageNode")}</Typography.Text>
                     </div>
                     <input
                         ref={scrollbarTrackRef}
@@ -194,7 +196,7 @@ export function ImageToolSettingsModal({
                     className="!mb-4"
                     label={
                         <Space size={8}>
-                            <span>快捷工具</span>
+                            <span>{t("canvas.imageTools.quickTools")}</span>
                             <Tag className="m-0">
                                 {selectedTools.length}/{tools.length}
                             </Tag>

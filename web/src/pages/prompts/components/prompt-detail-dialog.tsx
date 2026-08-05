@@ -1,9 +1,12 @@
 import { Copy, FileText, FolderPlus } from "lucide-react";
 import { Button, Modal, Space, Tag } from "antd";
+import { useTranslation } from "react-i18next";
 
 import { formatPromptDate, type Prompt } from "@/services/api/prompts";
 
 export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset }: { prompt: Prompt | null; onClose: () => void; onCopy: (prompt: string) => void; onSaveAsset?: (prompt: Prompt) => void }) {
+    const { i18n, t } = useTranslation();
+
     return (
         <Modal title={prompt?.title} open={Boolean(prompt)} onCancel={onClose} footer={null} width={720} centered styles={{ body: { height: "calc(85vh - 55px)", overflow: "hidden" } }}>
             {prompt ? (
@@ -23,16 +26,16 @@ export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset }: { p
                         {prompt.description ? <p className="mt-4 text-sm leading-6 text-stone-500 dark:text-stone-400">{prompt.description}</p> : null}
                         {prompt.preview ? <pre className="mt-4 whitespace-pre-wrap rounded-lg bg-stone-100 p-3 text-xs leading-5 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{prompt.preview}</pre> : null}
                         <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-800 dark:text-stone-300">{prompt.prompt}</p>
-                        {prompt.createdAt || prompt.updatedAt ? <div className="mt-4 text-xs text-stone-500 dark:text-stone-400">{prompt.createdAt ? `创建：${formatPromptDate(prompt.createdAt)}` : null}{prompt.createdAt && prompt.updatedAt ? " · " : null}{prompt.updatedAt ? `更新：${formatPromptDate(prompt.updatedAt)}` : null}</div> : null}
+                        {prompt.createdAt || prompt.updatedAt ? <div className="mt-4 text-xs text-stone-500 dark:text-stone-400">{prompt.createdAt ? t("common.created", { date: formatPromptDate(prompt.createdAt, i18n.resolvedLanguage) }) : null}{prompt.createdAt && prompt.updatedAt ? " · " : null}{prompt.updatedAt ? t("common.updated", { date: formatPromptDate(prompt.updatedAt, i18n.resolvedLanguage) }) : null}</div> : null}
                     </div>
                     <div className="shrink-0 pt-4">
                         <Space wrap>
                             <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(prompt.prompt)}>
-                                复制提示词
+                                {t("common.copyPrompt")}
                             </Button>
                             {onSaveAsset ? (
                                 <Button icon={<FolderPlus className="size-4" />} onClick={() => onSaveAsset(prompt)}>
-                                    加入我的资产
+                                    {t("common.addToAssets")}
                                 </Button>
                             ) : null}
                         </Space>

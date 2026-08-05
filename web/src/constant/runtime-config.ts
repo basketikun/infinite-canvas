@@ -1,13 +1,13 @@
-// 运行期配置读取层。
-// 优先级：window.__RUNTIME_CONFIG__（容器启动时由 entrypoint 注入）> 构建期 VITE_ 变量 > 默认值。
-// 这样既支持「同一镜像 docker run -e 配置」，也兼容自行 build 时的构建期注入。
+// Runtime configuration access layer.
+// Priority: window.__RUNTIME_CONFIG__ (injected by the container entrypoint) > build-time VITE_ variables > defaults.
+// This supports both configuring the same image with docker run -e and injecting values during custom builds.
 //
-// 统计按「每家一个独立变量」配置：填了谁就启用谁，可同时启用多家，默认全空即关闭。
-// 仅支持 GA4 与百度：两者都只接受 ID，脚本地址由代码固定拼接，不接受任意脚本/内联 JS。
+// Each analytics provider has its own variable; configured providers are enabled independently and all are disabled by default.
+// Only GA4 and Baidu are supported. Both accept IDs only, and script URLs are assembled in code without arbitrary scripts or inline JavaScript.
 
 type RuntimeConfig = {
-    ANALYTICS_GA4_ID?: string; // GA4 衡量 ID（G-XXXX）
-    ANALYTICS_BAIDU_ID?: string; // 百度统计站点 ID
+    ANALYTICS_GA4_ID?: string; // GA4 measurement ID (G-XXXX)
+    ANALYTICS_BAIDU_ID?: string; // Baidu Analytics site ID
 };
 
 declare global {
@@ -27,4 +27,3 @@ function read(key: keyof RuntimeConfig, buildTime: string | undefined, fallback 
 
 export const ANALYTICS_GA4_ID = read("ANALYTICS_GA4_ID", import.meta.env.VITE_ANALYTICS_GA4_ID);
 export const ANALYTICS_BAIDU_ID = read("ANALYTICS_BAIDU_ID", import.meta.env.VITE_ANALYTICS_BAIDU_ID);
-

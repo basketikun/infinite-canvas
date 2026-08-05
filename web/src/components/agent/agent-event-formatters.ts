@@ -1,9 +1,10 @@
 import { isSiteTool, SITE_TOOL_LABELS } from "@/lib/agent/agent-site-tools";
+import i18n from "@/i18n";
 import { summarizeCanvasAgentOps, type CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import { randomId } from "@/lib/utils";
 import { useAgentStore, type AgentAttachment, type AgentChatItem, type AgentEventLog, type AgentTokenUsage } from "@/stores/use-agent-store";
 import type { AgentChatAttachment } from "./agent-chat-message";
-export const REASONING_PLACEHOLDER = "正在分析任务…";
+export const REASONING_PLACEHOLDER = i18n.t("agent.events.analyzing");
 
 export type AgentEventPayload = {
     agent?: string;
@@ -78,33 +79,33 @@ export function formatAgentActivity(event: AgentEventPayload): Omit<AgentChatIte
     if (item.type === "reasoning") {
         const text = readableText(item.summary);
         if (completed && !text) return null;
-        return { role: "tool", title: "思考摘要", text: text || activityPlaceholder(item.type), detail: { kind: "reasoning", status: itemStatus } };
+        return { role: "tool", title: tr("reasoning"), text: text || activityPlaceholder(item.type), detail: { kind: "reasoning", status: itemStatus } };
     }
     if (item.type === "plan") {
         const text = stringText(item.text);
         if (completed && !text && !item.error?.message) return null;
-        return { role: "tool", title: "执行计划", text: item.error?.message || text || activityPlaceholder(item.type), detail: { kind: "plan", status: itemStatus, ...(item.error?.message ? { output: item.error.message } : {}) } };
+        return { role: "tool", title: tr("plan"), text: item.error?.message || text || activityPlaceholder(item.type), detail: { kind: "plan", status: itemStatus, ...(item.error?.message ? { output: item.error.message } : {}) } };
     }
     if (item.type === "command_execution") {
         const command = stringText(item.command);
-        const text = command || (completed ? failed ? "命令执行失败" : "命令已完成" : activityPlaceholder(item.type));
-        return { role: "tool", title: "执行命令", text, detail: commandActivityDetail(item, itemStatus) };
+        const text = command || (completed ? tr(failed ? "commandFailed" : "commandCompleted") : activityPlaceholder(item.type));
+        return { role: "tool", title: tr("executeCommand"), text, detail: commandActivityDetail(item, itemStatus) };
     }
     if (item.type === "file_change") {
         const files = activityFiles(item.changes);
-        return { role: "tool", title: "修改文件", text: item.error?.message || fileActivitySummary(files, completed), detail: { kind: "file", status: itemStatus, files, ...(item.error?.message ? { output: item.error.message } : {}) } };
+        return { role: "tool", title: tr("editFiles"), text: item.error?.message || fileActivitySummary(files, completed), detail: { kind: "file", status: itemStatus, files, ...(item.error?.message ? { output: item.error.message } : {}) } };
     }
     if (item.type === "web_search") {
-        return { role: "tool", title: "搜索资料", text: item.error?.message || webSearchSummary(item), detail: { kind: "search", status: itemStatus, rows: webSearchDetailRows(item), ...(item.error?.message ? { output: item.error.message } : {}) } };
+        return { role: "tool", title: tr("searchWeb"), text: item.error?.message || webSearchSummary(item), detail: { kind: "search", status: itemStatus, rows: webSearchDetailRows(item), ...(item.error?.message ? { output: item.error.message } : {}) } };
     }
-    if (item.type === "image_view") return { role: "tool", title: "查看图片", text: item.error?.message || stringText(item.path) || (completed ? "已查看图片" : "正在查看图片"), detail: { kind: "image", status: itemStatus, ...(item.error?.message ? { output: item.error.message } : {}) } };
+    if (item.type === "image_view") return { role: "tool", title: tr("viewImage"), text: item.error?.message || stringText(item.path) || tr(completed ? "imageViewed" : "viewingImage"), detail: { kind: "image", status: itemStatus, ...(item.error?.message ? { output: item.error.message } : {}) } };
     if (item.type === "image_generation") {
-        return { role: "tool", title: "内置生图", text: item.error?.message || (completed ? failed ? "图片生成失败" : "图片生成完成" : "正在生成图片…"), detail: { kind: "image", status: itemStatus, savedPath: item.savedPath, ...(item.error?.message ? { output: item.error.message } : {}) } };
+        return { role: "tool", title: tr("imageGeneration"), text: item.error?.message || tr(completed ? failed ? "imageFailed" : "imageCompleted" : "generatingImage"), detail: { kind: "image", status: itemStatus, savedPath: item.savedPath, ...(item.error?.message ? { output: item.error.message } : {}) } };
     }
-    if (item.type === "context_compaction") return { role: "tool", title: "整理上下文", text: item.error?.message || (completed ? "已整理当前对话，继续处理任务" : "正在整理当前对话…"), detail: { kind: "context", status: itemStatus, ...(item.error?.message ? { output: item.error.message } : {}) } };
+    if (item.type === "context_compaction") return { role: "tool", title: tr("compactContext"), text: item.error?.message || tr(completed ? "contextCompacted" : "compactingContext"), detail: { kind: "context", status: itemStatus, ...(item.error?.message ? { output: item.error.message } : {}) } };
     if (isMcpToolItem(item)) {
         const name = String(item.tool || "");
-        return { role: "tool", title: toolName(name), text: completed ? item.error?.message || toolSummary(item) : `正在${toolAction(name)}…`, detail: toolDetail(item, itemStatus) };
+        return { role: "tool", title: toolName(name), text: completed ? item.error?.message || toolSummary(item) : tr("toolRunning", { action: toolAction(name) }), detail: toolDetail(item, itemStatus) };
     }
     if (item.type === "dynamic_tool_call") {
         const name = String(item.tool || "");
@@ -112,11 +113,11 @@ export function formatAgentActivity(event: AgentEventPayload): Omit<AgentChatIte
         return {
             role: "tool",
             title,
-            text: completed ? item.error?.message || readableText(item.contentItems) : `正在${toolAction(name)}…`,
+            text: completed ? item.error?.message || readableText(item.contentItems) : tr("toolRunning", { action: toolAction(name) }),
             detail: toolDetail(item, itemStatus),
         };
     }
-    if (item.type === "collab_tool_call") return { role: "tool", title: "协作处理", text: item.error?.message || (completed ? failed ? "协作任务失败" : "已完成协作任务" : "正在协作处理任务…"), detail: { kind: "tool", status: itemStatus, ...(item.error?.message ? { output: item.error.message } : {}) } };
+    if (item.type === "collab_tool_call") return { role: "tool", title: tr("collaboration"), text: item.error?.message || tr(completed ? failed ? "collaborationFailed" : "collaborationCompleted" : "collaborating"), detail: { kind: "tool", status: itemStatus, ...(item.error?.message ? { output: item.error.message } : {}) } };
     return null;
 }
 
@@ -126,8 +127,8 @@ export function formatAgentPlan(event: AgentEventPayload): Omit<AgentChatItem, "
     const completed = tasks.filter((item) => item.status === "completed").length;
     return {
         role: "tool",
-        title: "任务进度",
-        text: `已完成 ${completed}/${tasks.length} 项`,
+        title: tr("progress"),
+        text: tr("progressCount", { completed, total: tasks.length }),
         detail: { kind: "todo", status: completed === tasks.length ? "completed" : "inProgress", tasks, explanation: stringText(event.explanation) },
     };
 }
@@ -148,14 +149,14 @@ export function turnPlanStatus(detail: unknown, turnStatus?: string) {
 }
 
 export function activityDeltaFallback(item: AgentEventItem, delta: string): AgentChatItem {
-    if (item.type === "command_execution") return { id: item.id || randomId(), role: "tool", title: "执行命令", text: activityPlaceholder(item.type), detail: { kind: "command", status: "inProgress", output: delta } };
-    return { id: item.id || randomId(), role: "tool", title: item.type === "plan" ? "执行计划" : "思考摘要", text: delta, detail: { kind: activityKind(item.type), status: "inProgress" } };
+    if (item.type === "command_execution") return { id: item.id || randomId(), role: "tool", title: tr("executeCommand"), text: activityPlaceholder(item.type), detail: { kind: "command", status: "inProgress", output: delta } };
+    return { id: item.id || randomId(), role: "tool", title: item.type === "plan" ? tr("plan") : tr("reasoning"), text: delta, detail: { kind: activityKind(item.type), status: "inProgress" } };
 }
 
 export function activityPlaceholder(type?: string) {
-    if (type === "plan") return "正在整理执行步骤…";
-    if (type === "command_execution") return "正在执行命令…";
-    return REASONING_PLACEHOLDER;
+    if (type === "plan") return tr("planning");
+    if (type === "command_execution") return tr("executingCommand");
+    return tr("analyzing");
 }
 
 export function activityKind(type?: string) {
@@ -170,7 +171,7 @@ export function activityDetail(value: unknown, kind: string, status: string): Ag
 }
 
 function commandActivityDetail(item: AgentEventItem, status: string): AgentUserDetail {
-    const rows = [detailRow("工作目录", item.cwd), detailRow("退出状态", item.exitCode), durationDetailRow(item.durationMs)].flatMap((row) => (row ? [row] : []));
+    const rows = [detailRow(tr("workingDirectory"), item.cwd), detailRow(tr("exitStatus"), item.exitCode), durationDetailRow(item.durationMs)].flatMap((row) => (row ? [row] : []));
     const commandStatus = typeof item.exitCode === "number" && item.exitCode !== 0 ? "failed" : status;
     return { kind: "command", status: commandStatus, rows, output: item.error?.message || stringText(item.aggregatedOutput) };
 }
@@ -183,23 +184,23 @@ function activityFiles(value: unknown) {
 }
 
 function fileActivitySummary(files: Array<{ path: string; action?: string }>, completed: boolean) {
-    if (!files.length) return completed ? "已完成文件修改" : "正在准备文件修改…";
-    if (files.length === 1) return `${completed ? "已" : "正在"}${files[0].action || "修改"} ${files[0].path}`;
-    const names = files.slice(0, 3).map((file) => file.path).join("、");
-    return `${completed ? "已修改" : "正在修改"} ${files.length} 个文件：${names}${files.length > 3 ? " 等" : ""}`;
+    if (!files.length) return tr(completed ? "filesCompleted" : "preparingFiles");
+    if (files.length === 1) return tr(completed ? "fileCompleted" : "editingFile", { action: files[0].action || tr("edit"), path: files[0].path });
+    const names = files.slice(0, 3).map((file) => file.path).join(", ");
+    return tr(completed ? "filesEdited" : "editingFiles", { count: files.length, names, more: files.length > 3 ? tr("andMore") : "" });
 }
 
 function webSearchSummary(item: AgentEventItem) {
     const action = item.action;
     const type = stringText(objectField(action, "type"));
-    if (type === "openPage") return `打开网页：${stringText(objectField(action, "url"))}`;
-    if (type === "findInPage") return `在网页中查找“${stringText(objectField(action, "pattern")) || "内容"}”`;
-    return `搜索：${stringText(item.query) || stringText(objectField(action, "query")) || "相关资料"}`;
+    if (type === "openPage") return tr("openPage", { url: stringText(objectField(action, "url")) });
+    if (type === "findInPage") return tr("findInPage", { pattern: stringText(objectField(action, "pattern")) || tr("content") });
+    return tr("search", { query: stringText(item.query) || stringText(objectField(action, "query")) || tr("relatedInfo") });
 }
 
 function webSearchDetailRows(item: AgentEventItem) {
     const action = item.action;
-    return [detailRow("关键词", item.query || objectField(action, "query")), detailRow("网页", objectField(action, "url"))].flatMap((row) => (row ? [row] : []));
+    return [detailRow(tr("keyword"), item.query || objectField(action, "query")), detailRow(tr("webpage"), objectField(action, "url"))].flatMap((row) => (row ? [row] : []));
 }
 
 function readableText(value: unknown): string {
@@ -215,13 +216,13 @@ function detailRow(label: string, value: unknown) {
 
 function durationDetailRow(value: unknown) {
     const duration = Number(value || 0);
-    return duration > 0 ? { label: "耗时", value: `${(duration / 1000).toFixed(1)} 秒` } : null;
+    return duration > 0 ? { label: tr("duration"), value: tr("seconds", { value: (duration / 1000).toFixed(1) }) } : null;
 }
 
 function changeAction(value: unknown) {
-    if (value === "add") return "新增";
-    if (value === "delete") return "删除";
-    return "修改";
+    if (value === "add") return tr("add");
+    if (value === "delete") return tr("delete");
+    return tr("edit");
 }
 
 export function parseEventData<T>(event: Event) {
@@ -252,13 +253,13 @@ export function registerLiveAgentTurn(
 
 export function formatLogText(logs: AgentEventLog[], context: AgentLogContext) {
     const head = [
-        "Infinite Canvas Agent 诊断",
-        `地址：${context.endpoint}`,
-        `连接：${context.connected ? "在线" : context.enabled ? "连接中" : "未启用"} · 状态：${context.activity}`,
-        `消息：${context.messages} · 工具：${context.pendingTool ? toolName(context.pendingTool) : "无"}`,
+        tr("diagnostics"),
+        tr("address", { endpoint: context.endpoint }),
+        tr("connection", { connection: tr(context.connected ? "online" : context.enabled ? "connecting" : "disabled"), status: context.activity }),
+        tr("messageTool", { messages: context.messages, tool: context.pendingTool ? toolName(context.pendingTool) : tr("none") }),
     ].join("\n");
     const body = logs.map((item) => `${item.time} ${item.title}${item.text && item.text !== item.title ? ` · ${item.text}` : ""}`).join("\n");
-    return [head, body || "暂无事件日志"].join("\n\n");
+    return [head, body || tr("noLogs")].join("\n\n");
 }
 
 export function formatLogJson(logs: AgentEventLog[], context: AgentLogContext) {
@@ -267,29 +268,29 @@ export function formatLogJson(logs: AgentEventLog[], context: AgentLogContext) {
 
 export function formatAgentEventLog(event: AgentEventPayload) {
     const item = event.item;
-    if (event.type === "thread.started") return { title: "创建会话", text: shortId(event.thread_id) };
-    if (event.type === "turn.started") return { title: "开始处理", text: shortId(event.turn_id) };
+    if (event.type === "thread.started") return { title: tr("threadCreated"), text: shortId(event.thread_id) };
+    if (event.type === "turn.started") return { title: tr("turnStarted"), text: shortId(event.turn_id) };
     if (event.type === "plan.updated") {
         const tasks = planTasks(event.plan);
-        return { title: "更新任务进度", text: `已完成 ${tasks.filter((item) => item.status === "completed").length}/${tasks.length} 项` };
+        return { title: tr("progressUpdated"), text: tr("progressCount", { completed: tasks.filter((item) => item.status === "completed").length, total: tasks.length }) };
     }
-    if (event.type === "turn.completed" && event.status === "failed") return { title: "处理失败", text: agentErrorView(event.error?.message).text };
-    if (event.type === "turn.completed") return { title: event.status === "interrupted" ? "处理已停止" : "处理完成", text: turnSummary(event) };
-    if (event.type === "turn.failed" || event.type === "error") return { title: "处理失败", text: agentErrorView(event.message || event.error?.message).text };
-    if (event.type === "item.started" && isMcpToolItem(item)) return { title: "调用工具", text: toolName(String(item?.tool || "")) };
-    if (event.type === "item.completed" && isMcpToolItem(item)) return { title: item.error ? "工具失败" : "工具完成", text: `${toolName(String(item?.tool || ""))}${item.error?.message ? ` · ${item.error.message}` : ""}` };
-    if (event.type === "item.completed" && item?.type === "agent_message") return { title: "收到回复", text: compactText(stringText(item.text)) };
+    if (event.type === "turn.completed" && event.status === "failed") return { title: tr("turnFailed"), text: agentErrorView(event.error?.message).text };
+    if (event.type === "turn.completed") return { title: tr(event.status === "interrupted" ? "turnStopped" : "turnCompleted"), text: turnSummary(event) };
+    if (event.type === "turn.failed" || event.type === "error") return { title: tr("turnFailed"), text: agentErrorView(event.message || event.error?.message).text };
+    if (event.type === "item.started" && isMcpToolItem(item)) return { title: tr("toolCalled"), text: toolName(String(item?.tool || "")) };
+    if (event.type === "item.completed" && isMcpToolItem(item)) return { title: tr(item.error ? "toolFailed" : "toolCompleted"), text: `${toolName(String(item?.tool || ""))}${item.error?.message ? ` · ${item.error.message}` : ""}` };
+    if (event.type === "item.completed" && item?.type === "agent_message") return { title: tr("replyReceived"), text: compactText(stringText(item.text)) };
     return null;
 }
 
 function turnSummary(event: AgentEventPayload) {
-    return event.duration_ms ? `${(event.duration_ms / 1000).toFixed(1)} 秒` : "完成";
+    return event.duration_ms ? tr("seconds", { value: (event.duration_ms / 1000).toFixed(1) }) : tr("completed");
 }
 
 export function agentErrorView(value: unknown) {
     const text = normalizeText(value);
-    if (/selected model is at capacity/i.test(text)) return { title: "模型暂时繁忙", text: "当前选择的模型请求量过大，暂时无法处理。请稍后重试，或切换其他模型后再试。" };
-    return { title: "任务失败", text: text || "Codex 未能完成本次任务，请稍后重试。" };
+    if (/selected model is at capacity/i.test(text)) return { title: tr("modelBusy"), text: tr("modelBusyDescription") };
+    return { title: tr("taskFailed"), text: text || tr("taskFailedDescription") };
 }
 
 export function eventUsage(event: AgentEventPayload): AgentTokenUsage {
@@ -314,53 +315,33 @@ export function isConnectionErrorMessage(item: AgentChatItem) {
 }
 
 export function toolName(name: string) {
-    if (name === "imagegen" || name.endsWith("__imagegen")) return "生成图片";
-    if (name === "view_image" || name.endsWith("__view_image")) return "查看图片";
-    if (name === "exec" || name === "exec_command" || name.endsWith("__exec_command")) return "执行命令";
-    if (name === "apply_patch" || name.endsWith("__apply_patch")) return "修改文件";
-    if (name === "web__run" || name.endsWith("__web__run")) return "搜索资料";
-    if (name === "canvas_apply_ops") return "画布操作";
-    if (name === "canvas_get_state") return "读取画布";
-    if (name === "canvas_get_selection") return "读取选区";
-    if (name === "canvas_export_snapshot") return "导出快照";
-    if (name === "canvas_create_node") return "创建节点";
-    if (name === "canvas_create_attachment_nodes") return "添加附件图片";
-    if (name === "canvas_create_text_node") return "创建文本";
-    if (name === "canvas_create_text_nodes") return "批量创建文本";
-    if (name === "canvas_create_config_node") return "创建生成配置";
-    if (name === "canvas_create_image_prompt_flow") return "创建生图流程";
-    if (name === "canvas_create_generation_flow") return "创建生成流程";
-    if (name === "canvas_generate_text") return "生成文本";
-    if (name === "canvas_generate_image") return "生成图片";
-    if (name === "canvas_generate_video") return "生成视频";
-    if (name === "canvas_generate_audio") return "生成音频";
-    if (name === "canvas_update_node") return "更新节点";
-    if (name === "canvas_update_node_text") return "更新文本";
-    if (name === "canvas_move_nodes") return "移动节点";
-    if (name === "canvas_resize_node") return "调整节点尺寸";
-    if (name === "canvas_delete_nodes") return "删除节点";
-    if (name === "canvas_connect_nodes") return "连接节点";
-    if (name === "canvas_select_nodes") return "选择节点";
-    if (name === "canvas_set_viewport") return "调整视口";
-    if (name === "canvas_run_generation") return "触发生成";
-    if (name === "site_navigate") return "打开页面";
+    if (name === "imagegen" || name.endsWith("__imagegen")) return tr("tools.generateImage");
+    if (name === "view_image" || name.endsWith("__view_image")) return tr("tools.viewImage");
+    if (name === "exec" || name === "exec_command" || name.endsWith("__exec_command")) return tr("tools.executeCommand");
+    if (name === "apply_patch" || name.endsWith("__apply_patch")) return tr("tools.editFiles");
+    if (name === "web__run" || name.endsWith("__web__run")) return tr("tools.searchWeb");
+    if (toolTranslationKeys[name]) return tr(`tools.${toolTranslationKeys[name]}`);
     if (isSiteTool(name)) return SITE_TOOL_LABELS[name];
-    return name ? `调用工具：${name}` : "工具操作";
+    return name ? tr("toolNamed", { name }) : tr("toolOperation");
 }
+
+const toolTranslationKeys: Record<string, string> = {
+    canvas_apply_ops: "canvasOps", canvas_get_state: "readCanvas", canvas_get_selection: "readSelection", canvas_export_snapshot: "exportSnapshot", canvas_create_node: "createNode", canvas_create_attachment_nodes: "addAttachments", canvas_create_text_node: "createText", canvas_create_text_nodes: "createTexts", canvas_create_config_node: "createConfig", canvas_create_image_prompt_flow: "createImageFlow", canvas_create_generation_flow: "createGenerationFlow", canvas_generate_text: "generateText", canvas_generate_image: "generateImage", canvas_generate_video: "generateVideo", canvas_generate_audio: "generateAudio", canvas_update_node: "updateNode", canvas_update_node_text: "updateText", canvas_move_nodes: "moveNodes", canvas_resize_node: "resizeNode", canvas_delete_nodes: "deleteNodes", canvas_connect_nodes: "connectNodes", canvas_select_nodes: "selectNodes", canvas_set_viewport: "setViewport", canvas_run_generation: "runGeneration", site_navigate: "openPage",
+};
 
 function siteToolSummary(name: string, result: unknown, input: unknown) {
     const data = result && typeof result === "object" ? (result as Record<string, unknown>) : {};
-    if (name === "site_navigate") return `已打开${routeName(stringText(objectField(input, "path")) || "/")}`;
-    if (name === "canvas_list_projects") return `共 ${numberField(data, "total")} 个画布`;
-    if (name === "prompts_search") return `找到 ${numberField(data, "total")} 条提示词`;
-    if (name === "assets_list") return `共 ${numberField(data, "total")} 个资产`;
-    if (name === "assets_add") return "已加入我的素材";
+    if (name === "site_navigate") return tr("openedRoute", { route: routeName(stringText(objectField(input, "path")) || "/") });
+    if (name === "canvas_list_projects") return tr("canvasCount", { count: numberField(data, "total") });
+    if (name === "prompts_search") return tr("promptCount", { count: numberField(data, "total") });
+    if (name === "assets_list") return tr("assetCount", { count: numberField(data, "total") });
+    if (name === "assets_add") return tr("assetAdded");
     if (name === "generation_get_status") {
         const summary = data.summary && typeof data.summary === "object" ? (data.summary as Record<string, unknown>) : {};
-        return `共 ${numberField(data, "total")} 个任务，排队 ${numberField(summary, "queued")}，运行中 ${numberField(summary, "running")}，成功 ${numberField(summary, "succeeded")}，失败 ${numberField(summary, "failed")}`;
+        return tr("generationStatus", { total: numberField(data, "total"), queued: numberField(summary, "queued"), running: numberField(summary, "running"), succeeded: numberField(summary, "succeeded"), failed: numberField(summary, "failed") });
     }
-    if (name === "workbench_image_generate" || name === "workbench_video_generate") return typeof data.note === "string" ? data.note : "已在工作台执行";
-    if (name === "workbench_image_get_config" || name === "workbench_video_get_config") return "已读取工作台配置";
+    if (name === "workbench_image_generate" || name === "workbench_video_generate") return typeof data.note === "string" ? data.note : tr("workbenchExecuted");
+    if (name === "workbench_image_get_config" || name === "workbench_video_get_config") return tr("workbenchConfigRead");
     return "";
 }
 
@@ -379,11 +360,11 @@ export function toolCallDetail(name: string, input: unknown, status: string, err
 
 function toolInputRows(name: string, input: unknown) {
     input = parseToolArguments(input);
-    if (name === "site_navigate") return [detailRow("目标页面", routeName(stringText(objectField(input, "path")) || "/"))].flatMap((row) => (row ? [row] : []));
-    if (name === "prompts_search") return [detailRow("搜索内容", objectField(input, "query"))].flatMap((row) => (row ? [row] : []));
-    if (name === "canvas_create_text_node") return [detailRow("文本内容", objectField(input, "text"))].flatMap((row) => (row ? [row] : []));
-    if (name === "canvas_apply_ops") return [detailRow("操作内容", summarizeCanvasAgentOps((objectField(input, "ops") as CanvasAgentOp[] | undefined) || []))].flatMap((row) => (row ? [row] : []));
-    if (name === "canvas_create_attachment_nodes") return [detailRow("图片数量", Array.isArray(objectField(input, "attachmentIds")) ? (objectField(input, "attachmentIds") as unknown[]).length : 0)].flatMap((row) => (row ? [row] : []));
+    if (name === "site_navigate") return [detailRow(tr("targetPage"), routeName(stringText(objectField(input, "path")) || "/"))].flatMap((row) => (row ? [row] : []));
+    if (name === "prompts_search") return [detailRow(tr("searchContent"), objectField(input, "query"))].flatMap((row) => (row ? [row] : []));
+    if (name === "canvas_create_text_node") return [detailRow(tr("textContent"), objectField(input, "text"))].flatMap((row) => (row ? [row] : []));
+    if (name === "canvas_apply_ops") return [detailRow(tr("operationContent"), summarizeCanvasAgentOps((objectField(input, "ops") as CanvasAgentOp[] | undefined) || []))].flatMap((row) => (row ? [row] : []));
+    if (name === "canvas_create_attachment_nodes") return [detailRow(tr("imageCount"), Array.isArray(objectField(input, "attachmentIds")) ? (objectField(input, "attachmentIds") as unknown[]).length : 0)].flatMap((row) => (row ? [row] : []));
     return [];
 }
 
@@ -395,8 +376,8 @@ export function toolSummary(item?: AgentEventItem) {
     const connectionField = objectField(result, "connections");
     const nodes = Array.isArray(nodeField) ? nodeField : [];
     const connections = Array.isArray(connectionField) ? connectionField : [];
-    if (name === "canvas_get_state") return Array.isArray(nodeField) || Array.isArray(connectionField) ? canvasContentSummary(nodes, connections.length) : "已读取当前画布内容";
-    if (name === "canvas_get_selection") return "已读取当前选中内容";
+    if (name === "canvas_get_state") return Array.isArray(nodeField) || Array.isArray(connectionField) ? canvasContentSummary(nodes, connections.length) : tr("canvasRead");
+    if (name === "canvas_get_selection") return tr("selectionRead");
     return "";
 }
 
@@ -409,33 +390,32 @@ function canvasContentSummary(nodes: unknown[], connections: number) {
     const known = new Set(["text", "image", "config", "video", "audio", "group"]);
     const other = Object.entries(counts).reduce((total, [type, count]) => total + (known.has(type) ? 0 : count), 0);
     const parts = [
-        counts.text ? `${counts.text} 个文本` : "",
-        counts.image ? `${counts.image} 张图片` : "",
-        counts.config ? `${counts.config} 个配置` : "",
-        counts.video ? `${counts.video} 个视频` : "",
-        counts.audio ? `${counts.audio} 个音频` : "",
-        counts.group ? `${counts.group} 个分组` : "",
-        other ? `${other} 个其他节点` : "",
-        connections ? `${connections} 条连线` : "",
+        counts.text ? tr("textNodes", { count: counts.text }) : "",
+        counts.image ? tr("imageNodes", { count: counts.image }) : "",
+        counts.config ? tr("configNodes", { count: counts.config }) : "",
+        counts.video ? tr("videoNodes", { count: counts.video }) : "",
+        counts.audio ? tr("audioNodes", { count: counts.audio }) : "",
+        counts.group ? tr("groupNodes", { count: counts.group }) : "",
+        other ? tr("otherNodes", { count: other }) : "",
+        connections ? tr("connections", { count: connections }) : "",
     ].filter(Boolean);
-    return parts.length ? parts.join("、") : "当前画布为空";
+    return parts.length ? parts.join(i18n.language === "zh-CN" ? "、" : ", ") : tr("emptyCanvas");
 }
 
 export function toolAction(name: string) {
     const label = toolName(name);
-    if (label.startsWith("读取") || label.startsWith("查看") || label.startsWith("搜索") || label.startsWith("打开")) return label;
-    return `执行${label}`;
+    return tr("executeTool", { tool: label });
 }
 
 export function routeName(path: string) {
-    if (path === "/") return "首页";
-    if (path === "/canvas") return "画布页面";
-    if (path.startsWith("/canvas/")) return "指定画布";
-    if (path.startsWith("/image")) return "生图工作台";
-    if (path.startsWith("/video")) return "视频工作台";
-    if (path.startsWith("/prompts")) return "提示词中心";
-    if (path.startsWith("/assets")) return "我的素材";
-    if (path.startsWith("/config")) return "配置页面";
+    if (path === "/") return tr("routes.home");
+    if (path === "/canvas") return tr("routes.canvas");
+    if (path.startsWith("/canvas/")) return tr("routes.canvasProject");
+    if (path.startsWith("/image")) return tr("routes.image");
+    if (path.startsWith("/video")) return tr("routes.video");
+    if (path.startsWith("/prompts")) return tr("routes.prompts");
+    if (path.startsWith("/assets")) return tr("routes.assets");
+    if (path.startsWith("/config")) return tr("routes.config");
     return path;
 }
 
@@ -443,10 +423,10 @@ export function workingActivity(item?: AgentChatItem) {
     const status = String(objectField(item?.detail, "status") || "");
     const output = stringText(objectField(item?.detail, "output"));
     const key = `${item?.id || "waiting"}-${status}-${item?.text || ""}-${output.length}`;
-    if (item?.role !== "tool") return { key, text: "正在思考..." };
-    if (["inProgress", "in_progress", "running", "pending"].includes(status)) return { key, text: `${item.title || "工具操作"}正在进行...` };
-    if (item.title === "读取画布") return { key, text: "画布已读取，Codex 正在整理结果..." };
-    return { key, text: `${item.title || "工具操作"}已完成，Codex 正在继续处理...` };
+    if (item?.role !== "tool") return { key, text: tr("thinking") };
+    if (["inProgress", "in_progress", "running", "pending"].includes(status)) return { key, text: tr("operationRunning", { operation: item.title || tr("toolOperation") }) };
+    if (item.title === toolName("canvas_get_state")) return { key, text: tr("organizingCanvas") };
+    return { key, text: tr("operationCompleted", { operation: item.title || tr("toolOperation") }) };
 }
 
 export function currentPlanMessage(messages: AgentChatItem[]) {
@@ -503,7 +483,7 @@ function numberField(value: unknown, key: string) {
 }
 
 export function promptWithAttachments(text: string, attachments: AgentAttachment[]) {
-    return text || (attachments.length ? "请处理上传的图片附件。" : "");
+    return text || (attachments.length ? tr("attachmentPrompt") : "");
 }
 
 export function attachmentPayloadBytes(attachments: AgentAttachment[]) {
@@ -614,4 +594,10 @@ export function mergeStreamText(prefix: string, incoming: string) {
     if (!prefix || incoming.startsWith(prefix)) return incoming || prefix;
     if (!incoming || prefix.startsWith(incoming)) return prefix;
     return incoming.length >= prefix.length ? incoming : prefix;
+}
+
+function tr(key: string, options?: Record<string, unknown>) {
+    const path = `agent.events.${key}`;
+    const extraPath = `agent.eventExtra.${key}`;
+    return i18n.t(i18n.exists(path) ? path : i18n.exists(extraPath) ? extraPath : `agent.eventMore.${key}`, options);
 }
