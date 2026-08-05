@@ -38,7 +38,7 @@ export async function uploadImage(input: string | Blob): Promise<UploadedImage> 
         blob = input;
     }
 
-    const storageKey = ;
+    const storageKey = `image:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
