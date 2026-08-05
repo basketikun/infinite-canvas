@@ -6,7 +6,7 @@ import { readImageMeta } from "@/lib/image-utils";
 
 export type UploadedImage = {
     url: string;
-    storageKey: string;
+    storageKey?: string;
     width: number;
     height: number;
     bytes: number;
@@ -17,8 +17,28 @@ const store = localforage.createInstance({ name: "infinite-canvas", storeName: "
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
-    const storageKey = `image:${nanoid()}`;
+    const isRemoteUrl = typeof input === "string" && !input.startsWith("data:");
+
+    let blob: Blob;
+    if (typeof input === "string") {
+        try {
+            blob = await (await fetch(input)).blob();
+        } catch {
+            // When the provider returns a remote URL without CORS headers the
+            // fetch above throws (TypeError: Failed to fetch). The generation
+            // itself succeeded, so fall back to displaying the remote URL
+            // directly instead of marking the node as failed.
+            if (isRemoteUrl) {
+                const meta = await readImageMeta(input);
+                return { url: input, width: meta.width, height: meta.height, bytes: 0, mimeType: meta.mimeType };
+            }
+            throw new Error(i18n.t("common.imageReadFailed"));
+        }
+    } else {
+        blob = input;
+    }
+
+    const storageKey = ;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
@@ -51,7 +71,13 @@ export async function setImageBlob(storageKey: string, blob: Blob) {
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }) {
     const url = image.dataUrl || (await resolveImageUrl(image.storageKey, image.url || ""));
     if (!url || url.startsWith("data:")) return url;
-    return blobToDataUrl(await (await fetch(url)).blob());
+    try {
+        return blobToDataUrl(await (await fetch(url)).blob());
+    } catch {
+        // If the remote URL is not fetchable (CORS / network), return it as-is
+        // so the image can still be displayed directly.
+        return url;
+    }
 }
 
 export async function deleteStoredImages(keys: Iterable<string>) {
