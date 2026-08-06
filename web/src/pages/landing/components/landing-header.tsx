@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Zap, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
 export function LandingHeader() {
     const [scrolled, setScrolled] = useState(false);
@@ -67,16 +67,8 @@ export function LandingHeader() {
                     ))}
                 </nav>
 
-                {/* Top-Right Call to Action */}
+                {/* Top-Right Area */}
                 <div className="flex items-center gap-4">
-                    <Link
-                        to="/canvas"
-                        className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-2 text-xs font-bold text-stone-950 shadow-lg shadow-orange-500/20 transition hover:scale-105 hover:shadow-orange-500/35 active:scale-95"
-                    >
-                        <Zap className="size-4" />
-                        <span>立即使用</span>
-                    </Link>
-
                     {/* Mobile Menu Trigger */}
                     <button
                         type="button"

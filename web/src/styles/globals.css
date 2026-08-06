@@ -168,6 +168,44 @@
         }
     }
 
+    @keyframes marquee-left {
+        0% {
+            transform: translateX(0%);
+        }
+        100% {
+            transform: translateX(-50%);
+        }
+    }
+
+    @keyframes marquee-right {
+        0% {
+            transform: translateX(-50%);
+        }
+        100% {
+            transform: translateX(0%);
+        }
+    }
+
+    .animate-marquee-left {
+        display: flex;
+        width: max-content;
+        animation: marquee-left 40s linear infinite;
+    }
+
+    .animate-marquee-left:hover {
+        animation-play-state: paused;
+    }
+
+    .animate-marquee-right {
+        display: flex;
+        width: max-content;
+        animation: marquee-right 40s linear infinite;
+    }
+
+    .animate-marquee-right:hover {
+        animation-play-state: paused;
+    }
+
     .hide-scrollbar {
         -ms-overflow-style: none;
         scrollbar-width: none;
