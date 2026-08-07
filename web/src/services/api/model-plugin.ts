@@ -25,6 +25,8 @@ export type RunPluginArgs = {
     config: AiConfig;
     prompt?: string;
     images?: string[];
+    videoRefs?: string[];
+    audioRefs?: string[];
     messages?: unknown[];
     params?: Record<string, unknown>;
     signal?: AbortSignal;
@@ -119,6 +121,8 @@ export async function runModelPlugin<T = unknown>(args: RunPluginArgs): Promise<
     const runner = new Function(
         "prompt",
         "images",
+        "videoRefs",
+        "audioRefs",
         "messages",
         "params",
         "model",
@@ -138,6 +142,8 @@ export async function runModelPlugin<T = unknown>(args: RunPluginArgs): Promise<
         return await runner(
             args.prompt || "",
             args.images || [],
+            args.videoRefs || [],
+            args.audioRefs || [],
             args.messages || [],
             args.params || {},
             config.model,
@@ -167,6 +173,8 @@ export function getPluginVariables(): PluginVariable[] {
     return [
         { name: "prompt", type: "string", desc: i18n.t("modelPlugin.variables.prompt"), capabilities: ["image", "video", "audio"] },
         { name: "images", type: "string[]", desc: i18n.t("modelPlugin.variables.images"), capabilities: ["image", "video"] },
+        { name: "videoRefs", type: "string[]", desc: i18n.t("modelPlugin.variables.videoRefs"), capabilities: ["video"] },
+        { name: "audioRefs", type: "string[]", desc: i18n.t("modelPlugin.variables.audioRefs"), capabilities: ["video"] },
         { name: "messages", type: "{ role, content }[]", desc: i18n.t("modelPlugin.variables.messages"), capabilities: ["text"] },
         { name: "params", type: "object", desc: i18n.t("modelPlugin.variables.params") },
         { name: "model", type: "string", desc: i18n.t("modelPlugin.variables.model") },
@@ -247,6 +255,138 @@ return (data.candidates || [])
         },
     ],
     video: [
+        {
+            label: i18n.t("modelPlugin.templates.comfyuiH3"),
+            script: `// ${i18n.t("modelPlugin.templates.comfyuiH3Hint")}
+// ${i18n.t("modelPlugin.templates.availableComfyuiH3")}
+// ${i18n.t("modelPlugin.templates.comfyuiWorkflow")}
+const WORKFLOW = {
+  // "1": { class_type: "LoadImage", inputs: { image: "ref.png" } },
+  // "2": { class_type: "LoadVideo", inputs: { file: "ref.mp4" } },
+  // "3": { class_type: "LoadAudio", inputs: { audio: "ref.wav" } },
+  // "4": { class_type: "MiniMaxH3ReferenceToVideo", inputs: { clip: ["5", 0], vae: ["5", 1], audio_vae: ["5", 2], prompt: "...", width: 1280, height: 720, length: 97, ref_image_size: "1.0", ref_images: [["1", 0]], ref_videos: [["2", 0]], ref_audios: [["3", 0]] } },
+  // ...
+};
+
+const wf = JSON.parse(JSON.stringify(WORKFLOW));
+
+// ${i18n.t("modelPlugin.templates.uploadRefs")}
+// ${i18n.t("modelPlugin.templates.networkRetry")}
+async function retry(fn, tries = 3) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try { return await fn(); } catch (e) { lastErr = e; await sleep(800 * (i + 1)); }
+  }
+  throw lastErr;
+}
+const extMap = { "image/png": "png", "image/jpeg": "jpg", "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/flac": "flac", "audio/aac": "aac", "audio/ogg": "ogg" };
+function refExt(dataUrl) {
+  const m = /^data:([^;,]+)/.exec(dataUrl);
+  return (m && extMap[m[1]]) || "bin";
+}
+async function uploadRefs(dataUrls, prefix) {
+  const names = [];
+  for (let i = 0; i < dataUrls.length; i++) {
+    const blob = await (await fetch(dataUrls[i])).blob();
+    const form = new FormData();
+    form.set("image", blob, prefix + "_" + i + "." + refExt(dataUrls[i]));
+    const up = await retry(() => http.post("/upload/image", form));
+    names.push(up.name);
+  }
+  return names;
+}
+const imgNames = await uploadRefs(images || [], "ref_img");
+const vidNames = await uploadRefs(videoRefs || [], "ref_vid");
+const audNames = await uploadRefs(audioRefs || [], "ref_aud");
+// 注入循环会 shift 清空数组，必须先记录实际上传数量
+const used = { img: imgNames.length, vid: vidNames.length, aud: audNames.length };
+
+// ${i18n.t("modelPlugin.templates.injectRefs")}
+for (const node of Object.values(wf)) {
+  if (!node || typeof node !== "object") continue;
+  if (node.class_type === "LoadImage" && imgNames.length) node.inputs.image = imgNames.shift();
+  else if (node.class_type === "LoadVideo" && vidNames.length) node.inputs.file = vidNames.shift();
+  else if (node.class_type === "LoadAudio" && audNames.length) node.inputs.audio = audNames.shift();
+  else if (node.class_type === "CLIPTextEncode") node.inputs.text = prompt;
+  else if (/^PrimitiveString/.test(node.class_type) && typeof node.inputs.value === "string") node.inputs.value = prompt;
+  else if (typeof node.inputs?.prompt === "string") node.inputs.prompt = prompt;
+  if (node.class_type === "RandomNoise") node.inputs.noise_seed = Math.floor(Math.random() * 1e15);
+  else if (typeof node.inputs?.seed === "number") node.inputs.seed = Math.floor(Math.random() * 1e15);
+}
+
+// ${i18n.t("modelPlugin.templates.trimRefs")}
+function trimRefs(w, used) {
+  const specs = [["ref_images", used.img], ["ref_videos", used.vid], ["ref_video_audios", used.vid], ["ref_audios", used.aud]];
+  for (const node of Object.values(w)) {
+    if (!node || typeof node !== "object") continue;
+    if (node.class_type !== "MiniMaxH3ReferenceToVideo") continue;
+    const inps = node.inputs || {};
+    for (const [slotKey, n] of specs) {
+      Object.keys(inps).filter((k) => k.startsWith(slotKey + ".")).slice(n).forEach((k) => delete inps[k]);
+    }
+  }
+  // 从保留的参考槽出发做可达性分析，保留下游引用链（如 LoadVideo -> GetVideoComponents）
+  const keep = new Set();
+  const stack = [];
+  for (const node of Object.values(w)) {
+    if (!node || typeof node !== "object") continue;
+    if (node.class_type !== "MiniMaxH3ReferenceToVideo") continue;
+    for (const v of Object.values(node.inputs || {})) {
+      if (Array.isArray(v) && typeof v[0] === "string" && w[v[0]] && !keep.has(v[0])) { keep.add(v[0]); stack.push(v[0]); }
+    }
+  }
+  while (stack.length) {
+    const nid = stack.pop();
+    const node = w[nid];
+    if (!node || typeof node !== "object") continue;
+    for (const v of Object.values(node.inputs || {})) {
+      if (Array.isArray(v) && typeof v[0] === "string" && w[v[0]] && !keep.has(v[0])) { keep.add(v[0]); stack.push(v[0]); }
+    }
+  }
+  for (const [id, node] of Object.entries(w)) {
+    if (node && typeof node === "object" && /^(LoadImage|LoadVideo|LoadAudio|GetVideoComponents)$/.test(node.class_type) && !keep.has(id)) delete w[id];
+  }
+  // ${i18n.t("modelPlugin.templates.cascadeTrim")}
+  for (;;) {
+    let changed = false;
+    for (const [id, node] of Object.entries(w)) {
+      if (!node || typeof node !== "object") continue;
+      for (const v of Object.values(node.inputs || {})) {
+        if (Array.isArray(v) && typeof v[0] === "string" && v[0] !== id && !w[v[0]]) { delete w[id]; changed = true; break; }
+      }
+    }
+    if (!changed) break;
+  }
+}
+trimRefs(wf, used);
+
+const client_id = "canvas-" + Math.random().toString(36).slice(2);
+const resp = await retry(() => http.post("/prompt", { prompt: wf, client_id }));
+if (!resp.prompt_id) throw new Error("ComfyUI: " + JSON.stringify(resp));
+const id = resp.prompt_id;
+
+const outs = await poll(
+  () => retry(() => http.get(\`/history/\${id}\`)),
+  (h) => {
+    const run = h[id] || h[Object.keys(h)[0]];
+    if (!run) return null;
+    if (run.status?.status_str === "error") {
+      throw new Error("ComfyUI: " + (run.status.messages?.at?.(-1)?.[1]?.message || "execution error"));
+    }
+    if (run.status?.completed) {
+      const files = Object.values(run.outputs || {}).flatMap((o) => o.gifs || o.images || []);
+      return files.length ? files : null;
+    }
+    return null;
+  },
+  { intervalMs: 5000, timeoutMs: 1200000 },
+);
+const f = outs[0];
+return {
+  url: http.url(\`/view?filename=\${encodeURIComponent(f.filename)}&subfolder=\${encodeURIComponent(f.subfolder || "")}&type=\${f.type}\`),
+  mimeType: /\\.(mp4|webm|mov|mkv)$/i.test(f.filename) ? "video/mp4" : undefined,
+};`,
+        },
         {
             label: i18n.t("modelPlugin.templates.openai"),
             script: `// ${i18n.t("modelPlugin.templates.videoOpenai")}
