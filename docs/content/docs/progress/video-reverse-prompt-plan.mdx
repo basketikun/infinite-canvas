@@ -1,0 +1,117 @@
+---
+title: Video Reverse Prompt Plan
+description: Add video-to-prompt reverse engineering to the canvas: frame extraction fallback plus native Gemini video input
+---
+
+# Video Reverse Prompt Plan
+
+## Problem
+
+The canvas already supports image prompt reverse-engineering (the "reverse prompt" tool on image nodes), but not for video nodes. Workflows like dy-fanpai need "reference video → prompt": given a reference video (action, expression, camera angle, motion, BGM), produce an H3-ready prompt.
+
+## Current state (reusable pieces)
+
+| Asset | Location | Note |
+|---|---|---|
+| Image reverse prompt flow | `project.tsx` reversePrompt + `reversePreset` template + `requestImageQuestion` | Image → image_url array → multimodal text model → prompt, backend-agnostic |
+| Multiple image input | `canvas-node-generation.ts` `buildNodeResponseMessages` | Message content already supports multiple image_url parts |
+| Text capability | `image.ts` `requestImageQuestion` | openai / gemini / ark / plugin script formats |
+| Video node data | `file-storage.ts` | Videos live in the browser as blob: + storageKey (localforage) |
+
+Key conclusion: reverse prompting is "video → text model". The lower half (requestImageQuestion + image_url) can be reused as-is; only the upper half (normalizing video into model input) is new.
+
+## Backend video-input capability (research)
+
+| Backend | Native video input | Notes |
+|---|---|---|
+| Gemini (3 Pro/Flash, all) | Yes, strongest | File API 2GB / inline 20MB; 1M context handles 1h (3h at low res); 1fps sampling + audio + timestamps; ~300 tokens/sec |
+| DashScope Qwen-VL | Yes | Video URL input |
+| Zhipu GLM-4V-Plus | Yes | Video URL / base64 |
+| Kimi (moonshot-latest) | Yes | Needs vision permission |
+| Volcengine video-understand service | Yes | Async task API, not a standard chat API |
+| OpenAI GPT-4o | No | Official docs: Video: Not supported; their own recommendation is 2-4fps frame extraction |
+| Claude | No | Images only; excluded |
+| ComfyUI local VLM (Qwen2.5-VL etc.) | Yes | Needs model download; via plugin script |
+
+## Solution: dual-track (frame fallback + native passthrough)
+
+```
+Video node → reverse-prompt entry → normalize → text capability → model → prompt
+                                    ├─ Track A: extract N frames → image_url (backend-agnostic)
+                                    └─ Track B: native video → video part (Gemini etc.)
+```
+
+### Track A: frame-extraction fallback (Phase 1, backend-agnostic)
+
+1. New `web/src/lib/canvas/video-frame-extract.ts`: `<video>` + canvas, N frames (default 5, 3-9), max width 512, jpeg 0.8, dataURL array
+2. Text-mode context: video nodes → frames merged into the referenceImages position
+3. Extend the reverse template (`reverseVideoPreset`): "frames sampled in time order (0s–T), describe motion, camera work, pacing; output an H3 prompt"
+
+Pros: works with every multimodal text model, reuses the existing flow, zero backend changes, low cost. Limits: loses timing/audio (compensated in the prompt).
+
+### Track B: native Gemini passthrough (Phase 2)
+
+1. Add `video_url` content type to `AiTextMessage`
+2. Gemini conversion: video part (inline base64 ≤20MB; File API for larger files later)
+3. Implementation: `apiFormat === "gemini"` with inline data ≤20MB sends the video natively; every other backend always extracts frames (GPT-4o family is never sent video)
+4. Selection: `apiFormat=gemini` + video → passthrough; otherwise extract frames
+
+Pros: highest quality (motion timing + audio); the gemini branch already exists so the change is localized.
+
+## UI entry points
+
+1. "Reverse prompt" button on the video-node toolbar (mirrors image nodes); clicking creates a text node with streaming output
+2. Text config node connected to a video node: text context accepts video input, auto frame-extract / passthrough
+
+## Code changes
+
+| File | Change |
+|---|---|
+| `web/src/lib/canvas/video-frame-extract.ts` (new) | video + canvas → N frame dataURLs |
+| `web/src/services/api/image.ts` | video_url content type; gemini video part mapping |
+| `web/src/pages/canvas/project.tsx` | `hydrateVideoFramesForText`: text context merges video-node frames into reference images (max 2 videos, ≤12 frames) |
+| `web/src/pages/canvas/project.tsx` | video-node reversePrompt action (reuse text flow + template) |
+| i18n (zh/en) | `reverseVideoPreset` template, toolbar labels |
+
+## Phasing
+
+- Phase 1: frame-extraction fallback (backend-agnostic, usable today)
+- Phase 2: Gemini native passthrough with automatic degradation
+- Phase 3 (optional): DashScope Qwen-VL passthrough, ComfyUI local VLM
+
+## Boundaries & limits
+
+- Frame extraction loses timing/audio → compensated by time-ordered prompt wording
+- Gemini inline cap 20MB / video token cost (~300 tokens/sec)
+- Long videos: uniform N frames (default 5)
+- Output quality depends on the channel model's multimodality (text-only models cannot reverse-engineer)
+
+## Review addendum: 8 edge cases to handle
+
+1. **Cross-origin videos taint the canvas** — inline uploads (blob:/localforage) are fine, but user-added online URLs make `toDataURL()` throw `SecurityError`. Whitelist `blob:`/same-origin/`asset:`; otherwise show a friendly error (or suggest Gemini passthrough).
+2. **Frame extraction is an async event chain** (`loadedmetadata` → `seek` → `seeked` → `drawImage` ×N). Wrap as `extractVideoFrames(url, {count, maxWidth, onProgress})` and hook it into the async `hydrateNodeGenerationContext` (the sync `buildNodeGenerationContext` cannot host it).
+3. **Frames carry no audio** — audio-dimension reverse engineering (e.g. "keep the BGM") requires Track B (Gemini). Frame-based output only promises visual dimensions.
+4. **Token blow-up with multiple videos** — limit to 2 video nodes; frames adapt to duration (≤15s → 5, 15-60s → 7, >60s → 9), total cap 12 frames.
+5. **Video-node toolbar has no reverse-prompt slot** — image tools live in `canvas-image-toolbar-tools.tsx` with a configure UI; the video toolbar is different and needs its own action.
+6. **Text-only models cannot reverse-engineer** — add a `supportsVision` check (gemini or vision model names) with a friendly "configure a multimodal model" message.
+7. **Empty/lost video content** — mirror the image `emptyReverse` guard.
+8. **Gemini inline fallback chain** — inline ≤20MB; 20MB-2GB via Files API (browser-direct, `x-goog-api-key`); else degrade to frames. P2 ships inline + degrade, Files API as P2 increment.
+
+## Risks & mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Black/wrong frames from seek timing bugs | Poor reverse output | Unit-test extractor; self-check for all-black frames |
+| Slow seeks on long videos | Long waits | `onProgress` "extracting frame i/N" |
+| Gemini passthrough token cost | Expensive on long videos | Default to frames; passthrough only ≤1min |
+| Substandard output | User confusion | Strict `reverseVideoPreset` format + allow re-running |
+
+## Acceptance
+
+- Video node "reverse prompt" streams an immediately usable generation prompt (subject/action/camera/style/audio)
+- Gemini channel: video passthrough (or automatic fallback)
+- Other channels: automatic frame extraction, consistent behavior
+- Result lands in a text node, ready to feed the image/video generation chain
+- Online-URL videos: friendly error, no white screen
+- Text-only models: "configure a multimodal model" hint
+- Empty/lost video content: warning
