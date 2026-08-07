@@ -115,6 +115,8 @@ const IMAGE_MAX_PIXELS = 8294400;
 const IMAGE_MAX_EDGE = 3840;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
+// output_format 是 OpenAI gpt-image 系列专属参数，其他 OpenAI 兼容模型大多不支持，发送会导致 400 报错。
+const SUPPORTS_OUTPUT_FORMAT = /^gpt-image/i;
 
 const GEMINI_SUPPORTED_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"];
 const GEMINI_IMAGE_SIZE_BY_QUALITY: Record<string, string> = { low: "1K", medium: "2K", high: "4K", standard: "1K", hd: "2K" };
@@ -195,6 +197,37 @@ function resolveRequestSize(quality: string | undefined, size: string) {
     }
     if (value.includes(":")) return resolveSize(quality, value);
     throw new Error(apiText("invalidImageSizeFormat"));
+}
+
+/** 从 API 错误信息中提取最小像素要求，如 "image size must be at least 3686400 pixels"。 */
+function extractMinimumPixels(error: unknown): number | undefined {
+    const responseData = axios.isAxiosError(error) ? error.response?.data : error;
+    const message = readApiErrorMessage(responseData);
+    const match = message.match(/at least\s+(\d+)\s+pixels/i);
+    return match ? Number(match[1]) : undefined;
+}
+
+/** 按当前配置的比例计算满足最小像素数的尺寸，无法满足（超上限或比例未知）时返回 undefined。 */
+function resolveSizeAtLeastPixels(config: AiConfig, minPixels: number): string | undefined {
+    const value = config.size.trim();
+    if (!value || value.toLowerCase() === "auto") return undefined;
+    const dimensions = parseImageDimensions(value);
+    const ratio = dimensions ? { width: dimensions.width, height: dimensions.height } : value.includes(":") ? parseImageRatio(value) : null;
+    if (!ratio) return undefined;
+    const isLandscape = ratio.width >= ratio.height;
+    const longRatio = isLandscape ? ratio.width / ratio.height : ratio.height / ratio.width;
+    const shortSide = Math.ceil(Math.sqrt(minPixels / longRatio) / IMAGE_SIZE_STEP) * IMAGE_SIZE_STEP;
+    const longSide = Math.max(shortSide, Math.ceil((shortSide * longRatio) / IMAGE_SIZE_STEP) * IMAGE_SIZE_STEP);
+    if (longSide * shortSide < minPixels || longSide * shortSide > IMAGE_MAX_PIXELS) return undefined;
+    return isLandscape ? `${longSide}x${shortSide}` : `${shortSide}x${longSide}`;
+}
+
+/** 请求因尺寸过小失败时，返回满足 API 最小像素要求的重试尺寸；无尺寸要求或无需重试时返回 undefined。 */
+function minimumRetrySize(config: AiConfig, error: unknown, currentSize: string | undefined) {
+    const minPixels = extractMinimumPixels(error);
+    if (!minPixels) return undefined;
+    const retrySize = resolveSizeAtLeastPixels(config, minPixels);
+    return retrySize && retrySize !== currentSize ? retrySize : undefined;
 }
 
 function resolveGeminiImageConfig(config: AiConfig) {
@@ -746,27 +779,34 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
+    const requestBody = (size?: string) => ({
+        model: requestConfig.model,
+        prompt: withSystemPrompt(requestConfig, prompt),
+        n,
+        ...(quality ? { quality } : {}),
+        ...(size ? { size } : {}),
+        ...(background ? { background } : {}),
+        response_format: "b64_json",
+        ...(SUPPORTS_OUTPUT_FORMAT.test(requestConfig.model) ? { output_format: IMAGE_OUTPUT_FORMAT } : {}),
+    });
+    const postImages = async (body: Record<string, unknown>) => {
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/generations"), body, {
+            headers: aiHeaders(requestConfig, "application/json"),
+            signal: options?.signal,
+        });
+        return parseImagePayload(response.data);
+    };
     try {
-        const response = await axios.post<ImageApiResponse>(
-            aiApiUrl(requestConfig, "/images/generations"),
-            {
-                model: requestConfig.model,
-                prompt: withSystemPrompt(requestConfig, prompt),
-                n,
-                ...(quality ? { quality } : {}),
-                ...(requestSize ? { size: requestSize } : {}),
-                ...(background ? { background } : {}),
-                response_format: "b64_json",
-                output_format: IMAGE_OUTPUT_FORMAT,
-            },
-            {
-                headers: aiHeaders(requestConfig, "application/json"),
-                signal: options?.signal,
-            },
-        );
-        const images = parseImagePayload(response.data);
-        return images;
+        return await postImages(requestBody(requestSize));
     } catch (error) {
+        const retrySize = minimumRetrySize(config, error, requestSize);
+        if (retrySize) {
+            try {
+                return await postImages(requestBody(retrySize));
+            } catch {
+                // 重试仍失败时抛出原始错误
+            }
+        }
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     }
 }
@@ -811,27 +851,35 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         const requestSize = resolveRequestSize(quality, config.size);
         const background = normalizeBackground(config.background);
         const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
-        try {
-            const response = await axios.post<ImageApiResponse>(
-                aiApiUrl(requestConfig, "/images/generations"),
-                {
-                    model: requestConfig.model,
-                    prompt: withSystemPrompt(requestConfig, requestPrompt),
-                    n,
-                    response_format: "b64_json",
-                    output_format: IMAGE_OUTPUT_FORMAT,
-                    image: refs,
-                    ...(quality ? { quality } : {}),
-                    ...(requestSize ? { size: requestSize } : {}),
-                    ...(background ? { background } : {}),
-                },
-                {
-                    headers: aiHeaders(requestConfig, "application/json"),
-                    signal: options?.signal,
-                },
-            );
+        const arkBody = (size?: string) => ({
+            model: requestConfig.model,
+            prompt: withSystemPrompt(requestConfig, requestPrompt),
+            n,
+            response_format: "b64_json",
+            ...(SUPPORTS_OUTPUT_FORMAT.test(requestConfig.model) ? { output_format: IMAGE_OUTPUT_FORMAT } : {}),
+            image: refs,
+            ...(quality ? { quality } : {}),
+            ...(size ? { size } : {}),
+            ...(background ? { background } : {}),
+        });
+        const postArk = async (body: Record<string, unknown>) => {
+            const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/generations"), body, {
+                headers: aiHeaders(requestConfig, "application/json"),
+                signal: options?.signal,
+            });
             return parseImagePayload(response.data);
+        };
+        try {
+            return await postArk(arkBody(requestSize));
         } catch (error) {
+            const retrySize = minimumRetrySize(config, error, requestSize);
+            if (retrySize) {
+                try {
+                    return await postArk(arkBody(retrySize));
+                } catch {
+                    // 重试仍失败时抛出原始错误
+                }
+            }
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
@@ -844,7 +892,9 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));
     formData.set("n", String(n));
     formData.set("response_format", "b64_json");
-    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    if (SUPPORTS_OUTPUT_FORMAT.test(requestConfig.model)) {
+        formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    }
     if (quality) {
         formData.set("quality", quality);
     }
@@ -863,6 +913,16 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         const images = parseImagePayload(response.data);
         return images;
     } catch (error) {
+        const retrySize = minimumRetrySize(config, error, requestSize);
+        if (retrySize) {
+            formData.set("size", retrySize);
+            try {
+                const retryResponse = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });
+                return parseImagePayload(retryResponse.data);
+            } catch {
+                // 重试仍失败时抛出原始错误
+            }
+        }
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     }
 }
