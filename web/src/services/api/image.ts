@@ -13,7 +13,7 @@ const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiE
 
 export type AiTextMessage = {
     role: "system" | "user" | "assistant";
-    content: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+    content: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } } | { type: "video_url"; video_url: { url: string } }>;
 };
 
 type ResponseToolCall = {
@@ -381,7 +381,12 @@ function toResponseInput(messages: ResponseInputMessage[]): ResponseInputItem[] 
 
 function toResponseContent(content: ResponseMessageContent): string | ResponseInputContent[] {
     if (!Array.isArray(content)) return String(content || "");
-    return content.map((item) => (item.type === "text" ? { type: "input_text" as const, text: item.text } : { type: "input_image" as const, image_url: item.image_url.url }));
+    return content.map((item) => {
+        if (item.type === "text") return { type: "input_text" as const, text: item.text };
+        // OpenAI 兼容接口不原生支持视频输入，调用方保证此路径只走图片；防御性按图处理
+        if (item.type === "video_url") return { type: "input_image" as const, image_url: item.video_url.url };
+        return { type: "input_image" as const, image_url: item.image_url.url };
+    });
 }
 
 function toResponseTool(tool: ResponseFunctionTool): ResponseApiToolDefinition {
@@ -554,7 +559,17 @@ function toGeminiContents(messages: ResponseInputMessage[]): GeminiContent[] {
 
 function toGeminiParts(content: ResponseMessageContent): GeminiPart[] {
     if (!Array.isArray(content)) return [{ text: String(content || "") }];
-    return content.map((item) => (item.type === "text" ? { text: item.text } : toGeminiImagePart(item.image_url.url)));
+    return content.map((item) => {
+        if (item.type === "text") return { text: item.text };
+        if (item.type === "video_url") return toGeminiVideoPart(item.video_url.url);
+        return toGeminiImagePart(item.image_url.url);
+    });
+}
+
+function toGeminiVideoPart(url: string): GeminiPart {
+    const match = url.match(/^data:([^;,]+);base64,(.+)$/);
+    if (match) return { inlineData: { mimeType: match[1], data: match[2] } };
+    return { fileData: { fileUri: url, mimeType: "video/mp4" } };
 }
 
 function toGeminiImagePart(url: string): GeminiPart {
@@ -565,7 +580,7 @@ function toGeminiImagePart(url: string): GeminiPart {
 
 function geminiTextContent(content: ResponseMessageContent) {
     if (!Array.isArray(content)) return String(content || "");
-    return content.map((item) => (item.type === "text" ? item.text : item.image_url.url)).join("\n");
+    return content.map((item) => (item.type === "text" ? item.text : item.type === "video_url" ? item.video_url.url : item.image_url.url)).join("\n");
 }
 
 function jsonObject(value: string): Record<string, unknown> {

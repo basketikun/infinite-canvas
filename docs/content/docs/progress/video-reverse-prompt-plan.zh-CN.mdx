@@ -1,0 +1,147 @@
+---
+title: 视频反推提示词 方案
+description: 画布新增"视频 → 反推提示词"能力：抽帧兜底 + Gemini 原生视频直传的双轨方案
+---
+
+# 视频反推提示词 方案
+
+## 背景 / 要解决的问题
+
+画布已支持**图片反推**（图片节点工具栏「反推提示词」），但**无法对视频节点反推**。dy-fanpai 等场景需要"参考视频 → 提示词"：给定一段参考视频（动作 / 表情 / 神态 / 拍摄角度 / 运镜 / BGM），反推出可直接用于 AI 视频生成的 H3 提示词。
+
+## 现状盘点（可复用资产）
+
+| 资产 | 位置 | 说明 |
+|---|---|---|
+| 图片反推链路 | `project.tsx` reversePrompt + `reversePreset` 模板 + `requestImageQuestion` | 图片 → image_url 数组 → 多模态文本模型 → 提示词，**不绑定后端** |
+| 多图输入 | `canvas-node-generation.ts` `buildNodeResponseMessages` | messages content 已支持多个 image_url |
+| 文本能力 | `image.ts` `requestImageQuestion` | openai / gemini / ark / 模型插件四种格式 |
+| 视频节点数据 | `file-storage.ts` | 视频在浏览器 blob: + storageKey（localforage） |
+
+**关键结论**：反推本质 = "视频 → 文本模型"。图片反推的"下半身"（requestImageQuestion + image_url）可直接复用，只差"上半身"——把视频归一化成模型能吃的输入。
+
+## 后端视频输入能力（调研结论）
+
+| 后端 | 原生视频直传 | 说明 |
+|---|---|---|
+| **Gemini**（3 Pro/Flash 全系） | ✅ 最强 | File API 2GB / inline 20MB；1M 上下文可处理 1h（低分辨率 3h）；1fps 采样 + 音轨 + 时间戳；~300 token/秒 |
+| DASHSCOPE Qwen-VL（qwen2.5-vl / qwen-vl-max） | ✅ | 视频 URL 输入 |
+| 智谱 GLM-4V-Plus | ✅ | 视频 URL / base64，国内直连 |
+| Kimi（moonshot-latest） | ✅ | 需开通视觉权限 |
+| 火山引擎视频理解服务 | ✅ | 异步任务 API，非标准 chat 接口 |
+| **OpenAI GPT-4o** | ❌ | 官方明确 Video: Not supported，官方方案就是抽帧 2-4fps 转图片 |
+| **Claude** | ❌ | 完全不支持视频，排除 |
+| ComfyUI 本地 VLM（Qwen2.5-VL 等） | ✅ | 要装模型（几 GB），走模型插件脚本 |
+
+## 方案：双轨（抽帧兜底 + 原生直传）
+
+```
+视频节点 → 反推入口 → 前端归一化 → text 能力 → 文本模型 → 提示词
+                        ├─ 轨道 A：抽帧 N 帧 → image_url（后端无关）
+                        └─ 轨道 B：视频直传 → video part（Gemini 等原生支持的后端）
+```
+
+### 轨道 A：抽帧兜底（Phase 1，后端无关）
+
+1. 新增 `web/src/lib/canvas/video-frame-extract.ts`：`<video>` 元素 + canvas 抽 N 帧（默认 5，可配置 3~9），限宽 512，jpeg 0.8，输出 dataURL 数组
+2. text 模式上下文：视频节点（referenceVideos）→ 抽帧 → 帧图并入 referenceImages 位置
+3. 反推提示词模板扩展（`reverseVideoPreset`）：明确"这些是按时间顺序抽样的视频帧（0s~T），请描述动作演变、运镜、节奏，输出 H3 提示词"
+
+- 优点：所有多模态文本模型可用、复用现有链路、零后端改动、实现成本低
+- 局限：丢时序/音频（用提示词补偿）
+
+### 轨道 B：Gemini 原生直传（Phase 2）
+
+1. `AiTextMessage` content 增加 `video_url` 类型
+2. gemini 转换：video part（inline base64，≤20MB；大文件走 File API 后续）
+3. 实现判断：apiFormat=gemini（内联 ≤20MB）直传视频；其余后端一律抽帧（GPT-4o 系不直传视频）
+4. 选择逻辑：`apiFormat=gemini` + 视频 → 直传；否则抽帧
+
+- 优点：质量最高（含动作时序 + 音频）；画布已有 gemini 分支，改动集中
+
+## UI 入口
+
+1. **视频节点工具栏**加「反推提示词」按钮（对齐图片节点的 reversePrompt），点击创建文本节点并流式输出
+2. **文本配置节点连接视频节点**：文本生成上下文支持视频输入，自动走抽帧/直传
+
+## 代码改动清单
+
+| 文件 | 改动 |
+|---|---|
+| `web/src/lib/canvas/video-frame-extract.ts`（新） | 视频抽帧工具：video + canvas → N 帧 dataURL |
+| `web/src/services/api/image.ts` | content 类型加 video_url；gemini 转 video part 映射 |
+| `web/src/pages/canvas/project.tsx` | `hydrateVideoFramesForText`：文本模式上下文将视频节点抽帧并入参考图（最多 2 个视频、≤12 帧）；视频节点 reversePrompt 动作（复用文本生成流程 + 反推模板） |
+| i18n（zh/en） | `reverseVideoPreset` 模板、工具栏文案 |
+
+## 分阶段实施
+
+- **Phase 1**：抽帧兜底（后端无关，今天可用）——新工具 + 上下文接入 + 反推入口
+- **Phase 2**：Gemini 直传 + 自动降级（原生视频质量最高）
+- **Phase 3**（可选）：DASHSCOPE Qwen-VL 直传、ComfyUI 本地 VLM
+
+## 边界与限制
+
+- 抽帧丢时序/音频 → 提示词按时间顺序说明补偿
+- Gemini inline 上限 20MB / 视频 token 成本（~300 token/秒）
+- 长视频：抽帧取均匀 N 帧（默认 5），不追帧数
+- 反推结果质量取决于渠道文本模型的多模态能力（纯文本模型反推不了）
+
+## 审查补充：8 个易漏点（必须处理）
+
+### 1. 跨域视频会污染 canvas（否则抽帧直接抛 SecurityError）
+画布视频来自上传（blob:/localforage）没这个问题，但用户可能添加**在线 URL 视频**——`<video src="https://...">` 加载后 canvas 被污染，`toDataURL()` 抛 `SecurityError`。
+处理：抽帧前判断视频源——`blob:`/同源/`asset:` 才抽帧；非白名单 URL 直接报错提示"该视频来源无法抽帧，请用上传的视频或切换到 Gemini 直传"。
+
+### 2. 抽帧是异步时序链，不是"一行代码"
+`<video>` 要依次等 `loadedmetadata`（拿 duration）→ `seek(t)` → `seeked` → `drawImage`，N 帧 N 次 seek。写错事件顺序会抽到黑帧/第一帧。
+处理：抽帧工具封装成 `extractVideoFrames(url, {count, maxWidth, onProgress}): Promise<string[]>`，内部用事件 Promise 化；并确认**接入点是 async 的 `hydrateNodeGenerationContext`**（`buildNodeGenerationContext` 是同步的，不能塞抽帧）。
+
+### 3. 抽帧完全丢音频（BGM/台词/音效）
+反推"声音"维度时抽帧无能为力——提示词补偿只能"描述声音"，不能还原声音信息。
+处理：方案里明确——**需要音频维度反推（如"保留 BGM"类需求）必须走轨道 B（Gemini 直传）**；抽帧反推只承诺画面维度（主体/动作/运镜/场景/风格）。
+
+### 4. 帧数与多视频的 token 失控
+5 帧 ≈ 每帧数百 token 可接受，但**多个视频节点连文本配置节点时 N×M 帧会爆 context**。
+处理：反推上下文限定——视频最多 2 个；帧数按时长自适应（≤15s → 5 帧；15~60s → 7 帧；>60s → 9 帧），且总帧数上限 12。
+
+### 5. 视频节点工具栏不一定有"反推"槽位
+图片节点的 reversePrompt 在 `canvas-image-toolbar-tools.tsx`（有 configure 自定义工具 UI）；**视频节点工具栏结构不同**（canvas-video-settings-popover 等），加按钮要确认视频 hover 工具栏的扩展方式，可能需要给视频工具栏补一个"反推"动作（不依赖图片工具的 configure UI）。
+
+### 6. 纯文本模型反推不了，要有友好报错
+反推走 `generationConfig` 当前文本模型；若用户配的是纯文本模型（无视觉），请求会失败或乱输出。
+处理：`supportsVision` 校验——apiFormat=gemini 或模型名匹配视觉模型才允许反推，否则提示"请配置多模态文本模型（如 Gemini / Qwen-VL）"；图片反推目前没这层，视频反推补上。
+
+### 7. 视频节点内容可能为空 / 已丢失
+对应图片反推的 `emptyReverse` 检查（"图片节点为空，无法反推提示词"）。视频节点同样要：content 为空 → 警告；storageKey 取 blob 失败 → 报错。
+
+### 8. Gemini 直传的超限降级链
+inline ≤20MB 直传；**超限（20MB~2GB）要走 Gemini Files API**（浏览器直传 `generativelanguage.googleapis.com/v1beta/files`，带 `x-goog-api-key`，画布是纯前端可以直调）；>2GB 或 API 失败 → 降级抽帧。P2 先做 inline 直传 + 降级，Files API 作为 P2 增量。
+
+### reverseVideoPreset 模板草稿
+```
+这些是按时间顺序抽样的视频帧（0 秒到 {时长} 秒），请反推一段适合用于 AI 视频生成的提示词。
+要求：
+1. 只输出提示词正文，不要解释。
+2. 覆盖：主体与动作、表情神态、场景环境、镜头语言（景别/角度/运镜）、光影、风格、节奏、时长。
+3. 按时间顺序描述动作演变（如"0-2秒…2-5秒…"）。
+4. 画面中出现的文字/水印要排除。
+```
+
+## 风险与应对
+
+| 风险 | 影响 | 应对 |
+|---|---|---|
+| 抽帧黑帧/错帧（事件时序 bug） | 反推质量差 | 抽帧工具单测 + 抽帧后自检（非全黑像素） |
+| 长视频 seek 慢 | 反推等待久 | onProgress 提示"正在提取第 i/N 帧" |
+| Gemini 直传 token 成本 | 长视频贵 | 默认抽帧，直传仅对 ≤1min 视频 |
+| 反推结果不达标 | 用户困惑 | reverseVideoPreset 严格控制输出格式 + 允许连续反推 |
+
+## 验收标准
+
+- 视频节点点击「反推提示词」→ 流式输出一段可直接用于生图的提示词（覆盖主体/动作/运镜/风格/声音）
+- Gemini 渠道：视频直传（或自动降级到抽帧）
+- 其他渠道（OpenAI/Claude 等）：自动抽帧，行为一致
+- 结果写入文本节点，可继续连接生图/生视频链路
+- 在线 URL 视频：友好提示无法抽帧（不白屏不抛错）
+- 纯文本模型：提示"请配置多模态文本模型"
+- 空视频节点 / storageKey 丢失：警告提示

@@ -5,12 +5,13 @@ import { Group, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
-import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
+import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
-import { uploadMediaFile } from "@/services/file-storage";
+import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
+import { extractVideoFrames } from "@/lib/canvas/video-frame-extract";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -29,7 +30,7 @@ import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/can
 import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "@/components/canvas/canvas-node-mask-edit-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
-import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
+import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
 import { InfiniteCanvas } from "@/components/canvas/infinite-canvas";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
@@ -1592,6 +1593,34 @@ function InfiniteCanvasPage() {
         [addAsset, message, t],
     );
 
+    const hydrateVideoFramesForText = useCallback(async (context: NodeGenerationContext): Promise<NodeGenerationContext> => {
+        if (!context.referenceVideos.length) return context;
+        const frames: ReferenceImage[] = [];
+        for (const video of context.referenceVideos.slice(0, 2)) {
+            const url = video.storageKey ? await resolveMediaUrl(video.storageKey, video.url) : video.url;
+            if (!url) continue;
+            try {
+                const extracted = await extractVideoFrames(url);
+                frames.push(...extracted.map((dataUrl, i) => ({ id: `${video.id}-f${i}`, name: `${video.name || video.id}-${i}.jpg`, type: "image/jpeg", dataUrl })));
+            } catch {
+                // 单个视频抽帧失败不影响其他参考
+            }
+            if (frames.length >= 12) break;
+        }
+        return frames.length ? { ...context, referenceImages: [...context.referenceImages, ...frames] } : context;
+    }, []);
+
+    const videoUrlToDataUrl = useCallback(async (url: string): Promise<string> => {
+        const blob = await (await fetch(url)).blob();
+        if (blob.size > 20 * 1024 * 1024) throw new Error("video too large");
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(new Error("read failed"));
+            reader.readAsDataURL(blob);
+        });
+    }, []);
+
     const createImageReversePromptNodes = useCallback(
         (node: CanvasNodeData) => {
             if (node.type !== CanvasNodeType.Image || !node.metadata?.content) {
@@ -1629,6 +1658,95 @@ function InfiniteCanvasPage() {
             setContextMenu(null);
         },
         [effectiveConfig.model, effectiveConfig.textModel, message, t],
+    );
+
+    const createVideoReversePromptNodes = useCallback(
+        async (node: CanvasNodeData) => {
+            if (node.type !== CanvasNodeType.Video || !node.metadata?.content) {
+                message.warning(t("canvas.projectPage.emptyVideoReverse"));
+                return;
+            }
+            const textModel = effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel;
+            const isGemini = effectiveConfig.apiFormat === "gemini";
+            if (!isGemini && !/(vl|vision|multimodal)/i.test(textModel)) {
+                message.warning(t("canvas.projectPage.videoReverseNeedsVision"));
+                return;
+            }
+            const generationConfig = { ...buildGenerationConfig(effectiveConfig, node, "text"), model: textModel };
+            if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+                openConfigDialog(true);
+                return;
+            }
+            const videoUrl = node.metadata.storageKey ? await resolveMediaUrl(node.metadata.storageKey, node.metadata.content) : node.metadata.content;
+            if (!videoUrl) {
+                message.warning(t("canvas.projectPage.emptyVideoReverse"));
+                return;
+            }
+            const preset = t("canvas.projectPage.reverseVideoPreset");
+            const loadingKey = "video-reverse-frames";
+            message.loading({ content: t("canvas.projectPage.extractingVideoFrames"), key: loadingKey });
+            let contentParts: AiTextMessage["content"];
+            try {
+                if (isGemini) {
+                    // Gemini 原生支持视频输入：直传视频（含音频/时序），质量最高；超限或读取失败自动降级抽帧
+                    try {
+                        const videoDataUrl = await videoUrlToDataUrl(videoUrl);
+                        contentParts = [{ type: "text", text: preset }, { type: "video_url", video_url: { url: videoDataUrl } }];
+                    } catch {
+                        const frames = await extractVideoFrames(videoUrl);
+                        contentParts = [{ type: "text", text: preset }, ...frames.map((dataUrl) => ({ type: "image_url" as const, image_url: { url: dataUrl } }))];
+                    }
+                } else {
+                    const frames = await extractVideoFrames(videoUrl);
+                    contentParts = [{ type: "text", text: preset }, ...frames.map((dataUrl) => ({ type: "image_url" as const, image_url: { url: dataUrl } }))];
+                }
+            } catch (error) {
+                message.destroy(loadingKey);
+                message.error(error instanceof Error ? error.message : t("canvas.projectPage.generationFailed"));
+                return;
+            }
+            message.destroy(loadingKey);
+
+            const gap = 96;
+            const textSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
+            const centerY = node.position.y + node.height / 2;
+            const textNode = {
+                ...createCanvasNode(CanvasNodeType.Text, { x: node.position.x + node.width + gap + textSpec.width / 2, y: centerY }, { content: "", prompt: t("canvas.projectPage.reverseVideoPreset"), status: NODE_STATUS_LOADING, fontSize: 14 }),
+                title: t("canvas.projectPage.reverseTitle"),
+            };
+            setNodes((prev) => [...prev, textNode]);
+            setSelectedNodeIds(new Set([textNode.id]));
+            setContextMenu(null);
+
+            const controller = startGenerationRequest(textNode.id, node.id);
+            let streamed = "";
+            try {
+                const messages: AiTextMessage[] = [
+                    {
+                        role: "user",
+                        content: contentParts,
+                    },
+                ];
+                const answer = await requestImageQuestion(
+                    generationConfig,
+                    messages,
+                    (text) => {
+                        streamed = text;
+                        setNodes((prev) => prev.map((item) => (item.id === textNode.id ? { ...item, metadata: { ...item.metadata, content: text, status: NODE_STATUS_LOADING } } : item)));
+                    },
+                    { signal: controller.signal },
+                );
+                setNodes((prev) => prev.map((item) => (item.id === textNode.id ? { ...item, metadata: { ...item.metadata, content: answer || streamed, prompt: t("canvas.projectPage.reverseVideoPreset"), status: NODE_STATUS_SUCCESS } } : item)));
+            } catch (error) {
+                if (isGenerationCanceled(error)) return;
+                const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+                message.error(errorDetails);
+                setNodes((prev) => prev.map((item) => (item.id === textNode.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
+            } finally {
+                finishGenerationRequest(textNode.id, controller);
+            }
+        },
+        [effectiveConfig.apiFormat, effectiveConfig.model, effectiveConfig.textModel, isAiConfigReady, message, openConfigDialog, t],
     );
 
     const cropImageNode = useCallback(async (node: CanvasNodeData, crop: CanvasImageCropRect) => {
@@ -2065,6 +2183,8 @@ function InfiniteCanvasPage() {
             const generationContext = await hydrateNodeGenerationContext(
                 buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, editingTextNode ? t("canvas.projectPage.editTextPrompt", { source: sourceTextContent, prompt }) : prompt),
             );
+            // 文本模式连接了视频节点时，抽帧并入参考图（P1：后端无关的视频反推）
+            const hydratedContext = mode === "text" ? await hydrateVideoFramesForText(generationContext) : generationContext;
             const effectivePrompt = generationContext.prompt.trim();
             if (runController.signal.aborted) {
                 finishGenerationRequest(nodeId, runController);
@@ -2357,7 +2477,7 @@ function InfiniteCanvasPage() {
                         let localStreamed = "";
                         return requestImageQuestion(
                             generationConfig,
-                            buildNodeResponseMessages({ ...generationContext, prompt: effectivePrompt }),
+                            buildNodeResponseMessages({ ...hydratedContext, prompt: effectivePrompt }),
                             (text) => {
                                 localStreamed = text;
                                 streamed = text;
@@ -2428,7 +2548,8 @@ function InfiniteCanvasPage() {
             }
 
             const context = hasSavedImageMetadata ? null : await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourceNode.metadata?.prompt || node.metadata?.prompt || ""));
-            const prompt = (savedImageMetadata?.prompt || context?.prompt || "").trim();
+            const videoRetryContext = context ? await hydrateVideoFramesForText(context) : null;
+            const prompt = (savedImageMetadata?.prompt || videoRetryContext?.prompt || "").trim();
             if (!prompt) {
                 message.warning(t("canvas.projectPage.retryPromptMissing"));
                 return;
@@ -2450,11 +2571,11 @@ function InfiniteCanvasPage() {
 
             try {
                 if (node.type === CanvasNodeType.Text) {
-                    if (!context) return;
+                    if (!videoRetryContext) return;
                     let streamed = "";
                     const answer = await requestImageQuestion(
                         generationConfig,
-                        buildNodeResponseMessages({ ...context, prompt }),
+                        buildNodeResponseMessages({ ...videoRetryContext, prompt }),
                         (text) => {
                             streamed = text;
                             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, type: CanvasNodeType.Text, metadata: { ...item.metadata, content: text, status: NODE_STATUS_LOADING } } : item)));
@@ -2916,7 +3037,7 @@ function InfiniteCanvasPage() {
                     onSuperResolve={(node) => setSuperResolveNodeId(node.id)}
                     onAngle={(node) => setAngleNodeId(node.id)}
                     onViewImage={(node) => setPreviewNodeId(node.id)}
-                    onReversePrompt={createImageReversePromptNodes}
+                    onReversePrompt={(node) => (node.type === CanvasNodeType.Video ? void createVideoReversePromptNodes(node) : createImageReversePromptNodes(node))}
                     onRetry={(node) => void handleRetryNode(node)}
                     onToggleFreeResize={(node) => toggleNodeFreeResize(node.id)}
                     onDelete={(node) => deleteNodes(new Set([node.id]))}
