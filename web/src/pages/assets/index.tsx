@@ -8,7 +8,7 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { useAssetCatalog, type AssetSourceFilter } from "@/hooks/use-asset-catalog";
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
 import { uploadImage } from "@/services/image-storage";
-import { isEagleAsset } from "@/services/eagle-assets";
+import { createEagleAsset, createEagleTextAsset, deleteEagleAsset, isEagleAsset, updateEagleAsset } from "@/services/eagle-assets";
 import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
@@ -23,7 +23,7 @@ type AssetFormValues = {
     content?: string;
 };
 
-type ImageDraft = ImageAsset["data"] | null;
+type ImageDraft = (ImageAsset["data"] & { sourceDataUrl?: string }) | null;
 
 const kindOptions = ["all", "text", "image", "video"] as const;
 
@@ -49,6 +49,7 @@ export default function AssetsPage() {
     const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
     const [deletingAsset, setDeletingAsset] = useState<Asset | null>(null);
     const [formKind, setFormKind] = useState<AssetKind>("text");
+    const [assetTarget, setAssetTarget] = useState<"local" | "eagle">("local");
     const [imageDraft, setImageDraft] = useState<ImageDraft>(null);
     const coverUrl = Form.useWatch("coverUrl", form) || "";
     const title = Form.useWatch("title", form) || "";
@@ -81,6 +82,7 @@ export default function AssetsPage() {
         setEditingAsset(null);
         setImageDraft(null);
         setFormKind("text");
+        setAssetTarget("local");
         form.setFieldsValue({ kind: "text", title: "", coverUrl: "", tags: [], source: t("assets.manual"), note: "", content: "" });
         setIsAssetOpen(true);
     };
@@ -88,6 +90,7 @@ export default function AssetsPage() {
     const openEdit = (asset: Asset) => {
         setEditingAsset(asset);
         setFormKind(asset.kind);
+        setAssetTarget(isEagleAsset(asset) ? "eagle" : "local");
         setImageDraft(asset.kind === "image" ? asset.data : null);
         form.setFieldsValue({
             kind: asset.kind,
@@ -103,6 +106,51 @@ export default function AssetsPage() {
 
     const saveAsset = async () => {
         const values = await form.validateFields();
+
+        if (editingAsset && isEagleAsset(editingAsset)) {
+            try {
+                await updateEagleAsset(editingAsset, {
+                    name: values.title.trim(),
+                    tags: values.tags || [],
+                    annotation: values.note?.trim() || "",
+                    content: values.kind === "text" ? (values.content || "").trim() : undefined,
+                });
+                refreshEagle();
+                message.success(t("assets.eagleUpdated"));
+                setIsAssetOpen(false);
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : t("assets.eagleWriteFailed"));
+            }
+            return;
+        }
+
+        if (assetTarget === "eagle") {
+            if (values.kind === "text") {
+                try {
+                    await createEagleTextAsset({ content: (values.content || "").trim(), name: values.title.trim(), tags: values.tags || [], annotation: values.note?.trim() || "" });
+                    refreshEagle();
+                    message.success(t("assets.eagleTextSaved"));
+                    setIsAssetOpen(false);
+                } catch (error) {
+                    message.error(error instanceof Error ? error.message : t("assets.eagleWriteFailed"));
+                }
+                return;
+            }
+            if (!imageDraft?.sourceDataUrl) {
+                message.error(t("assets.selectImage"));
+                return;
+            }
+            try {
+                await createEagleAsset({ base64: imageDraft.sourceDataUrl, name: values.title.trim(), tags: values.tags || [], annotation: values.note?.trim() || "" });
+                refreshEagle();
+                message.success(t("assets.eagleSaved"));
+                setIsAssetOpen(false);
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : t("assets.eagleWriteFailed"));
+            }
+            return;
+        }
+
         const base = {
             title: values.title.trim(),
             coverUrl: values.coverUrl?.trim() || (values.kind === "image" && imageDraft ? imageDraft.dataUrl : ""),
@@ -120,7 +168,18 @@ export default function AssetsPage() {
                 message.error(t("assets.selectImage"));
                 return;
             }
-            const asset = { ...base, kind: "image" as const, data: imageDraft };
+            const asset = {
+                ...base,
+                kind: "image" as const,
+                data: {
+                    dataUrl: imageDraft.dataUrl,
+                    storageKey: imageDraft.storageKey,
+                    width: imageDraft.width,
+                    height: imageDraft.height,
+                    bytes: imageDraft.bytes,
+                    mimeType: imageDraft.mimeType,
+                },
+            };
             editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
         }
 
@@ -136,8 +195,8 @@ export default function AssetsPage() {
 
     const readImageFile = async (file?: File) => {
         if (!file || !file.type.startsWith("image/")) return;
-        const image = await uploadImage(file);
-        const draft = { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
+        const [sourceDataUrl, image] = await Promise.all([readFileAsDataUrl(file), uploadImage(file)]);
+        const draft = { sourceDataUrl, dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
         setImageDraft(draft);
         if (!form.getFieldValue("coverUrl")) form.setFieldValue("coverUrl", draft.dataUrl);
         if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
@@ -183,7 +242,13 @@ export default function AssetsPage() {
     const confirmDelete = () => {
         if (!deletingAsset) return;
         if (isEagleAsset(deletingAsset)) {
-            setDeletingAsset(null);
+            void deleteEagleAsset(deletingAsset)
+                .then(() => {
+                    refreshEagle();
+                    message.success(t("assets.eagleDeleted"));
+                })
+                .catch((error) => message.error(error instanceof Error ? error.message : t("assets.eagleWriteFailed")))
+                .finally(() => setDeletingAsset(null));
             return;
         }
         removeAsset(deletingAsset.id);
@@ -289,7 +354,7 @@ export default function AssetsPage() {
                 <div className="mx-auto flex max-w-7xl flex-col gap-5">
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {visibleAssets.map((asset) => (
-                            <AssetCard key={asset.id} asset={asset} readOnly={isEagleAsset(asset)} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
+                            <AssetCard key={asset.id} asset={asset} readOnly={!isEagleAsset(asset) && asset.kind === "video"} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
                         ))}
                     </div>
 
@@ -314,11 +379,23 @@ export default function AssetsPage() {
             <Modal title={editingAsset ? t("assets.edit") : t("assets.add")} open={isAssetOpen} width={980} onCancel={() => setIsAssetOpen(false)} onOk={() => void saveAsset()} okText={t("common.save")} cancelText={t("common.cancel")} destroyOnHidden>
                 <div className="grid gap-6 pt-1 lg:grid-cols-[minmax(0,1fr)_320px]">
                     <Form form={form} layout="vertical" requiredMark={false} initialValues={{ kind: "text", tags: [] }}>
+                        <Form.Item label={t("assets.target")}>
+                            <Select
+                                value={assetTarget}
+                                disabled={Boolean(editingAsset)}
+                                options={[
+                                    { label: t("assets.targets.local"), value: "local" },
+                                    { label: t("assets.targets.eagle"), value: "eagle" },
+                                ]}
+                                onChange={(value) => setAssetTarget(value)}
+                            />
+                        </Form.Item>
                         <Form.Item name="kind" label={t("assets.type")}>
                             <Select
                                 options={[
                                     { label: t("assets.kinds.text"), value: "text" },
                                     { label: t("assets.kinds.image"), value: "image" },
+                                    { label: t("assets.kinds.video"), value: "video", disabled: !editingAsset },
                                 ]}
                                 onChange={(value) => setFormKind(value)}
                             />
@@ -349,6 +426,10 @@ export default function AssetsPage() {
                             <Form.Item name="content" label={t("assets.fields.textContent")} rules={[{ required: true, message: t("assets.fields.textRequired") }]}>
                                 <Input.TextArea rows={8} placeholder={t("assets.fields.textPlaceholder")} />
                             </Form.Item>
+                        ) : formKind === "video" ? (
+                            <Typography.Text type="secondary" className="block rounded-lg border border-dashed border-stone-300 p-4 text-xs dark:border-stone-700">
+                                {t("assets.eagleMetadataOnly")}
+                            </Typography.Text>
                         ) : (
                             <Form.Item label={t("assets.fields.imageContent")} required>
                                 <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
