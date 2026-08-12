@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Empty, Input, Modal, Pagination, Tag } from "antd";
+import { Alert, Empty, Input, Modal, Pagination, Select, Tag } from "antd";
 import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { useAssetCatalog, type AssetSourceFilter } from "@/hooks/use-asset-catalog";
 import { cn } from "@/lib/utils";
-import { useAssetStore, type Asset } from "@/stores/use-asset-store";
+import { isEagleAsset } from "@/services/eagle-assets";
+import type { Asset } from "@/stores/use-asset-store";
 
 export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number };
 
@@ -17,9 +19,19 @@ type Props = {
 
 export function AssetPickerModal({ open, onInsert, onClose }: Props) {
     const { t } = useTranslation();
+    const catalog = useAssetCatalog();
+    const [sourceFilter, setSourceFilter] = useState<AssetSourceFilter>("all");
     return (
         <Modal title={t("canvas.assetPicker.title")} open={open} onCancel={onClose} footer={null} width={860} destroyOnHidden styles={{ body: { padding: "0 24px 24px", minHeight: 480 } }}>
-            <MyAssetsTab onInsert={onInsert} />
+            <MyAssetsTab
+                assets={catalog.assets}
+                onInsert={onInsert}
+                sourceFilter={sourceFilter}
+                onSourceFilterChange={setSourceFilter}
+                eagleLoading={catalog.eagleLoading}
+                eagleError={catalog.eagleError}
+                onRefreshEagle={catalog.refreshEagle}
+            />
         </Modal>
     );
 }
@@ -52,9 +64,24 @@ function PickerCard({ title, kind, cover, onClick }: { title: string; kind: stri
     );
 }
 
-function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => void }) {
+function MyAssetsTab({
+    assets,
+    onInsert,
+    sourceFilter,
+    onSourceFilterChange,
+    eagleLoading,
+    eagleError,
+    onRefreshEagle,
+}: {
+    assets: Asset[];
+    onInsert: (payload: InsertAssetPayload) => void;
+    sourceFilter: AssetSourceFilter;
+    onSourceFilterChange: (value: AssetSourceFilter) => void;
+    eagleLoading: boolean;
+    eagleError: string | null;
+    onRefreshEagle: () => void;
+}) {
     const { t } = useTranslation();
-    const assets = useAssetStore((state) => state.assets);
     const [keyword, setKeyword] = useState("");
     const [kindFilter, setKindFilter] = useState("all");
     const [page, setPage] = useState(1);
@@ -63,9 +90,10 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
         const query = keyword.trim().toLowerCase();
         return assets
             .filter((a) => a.kind === "text" || a.kind === "image" || a.kind === "video")
+            .filter((a) => sourceFilter === "all" || (sourceFilter === "eagle" ? isEagleAsset(a) : !isEagleAsset(a)))
             .filter((a) => kindFilter === "all" || a.kind === kindFilter)
             .filter((a) => !query || [a.title, ...(a.tags || [])].join(" ").toLowerCase().includes(query));
-    }, [assets, keyword, kindFilter]);
+    }, [assets, keyword, kindFilter, sourceFilter]);
 
     const visible = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
 
@@ -85,6 +113,20 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
+                <Select
+                    size="small"
+                    className="w-32"
+                    value={sourceFilter}
+                    onChange={(value) => {
+                        setPage(1);
+                        onSourceFilterChange(value as AssetSourceFilter);
+                    }}
+                    options={[
+                        { value: "all", label: t("assets.sources.all") },
+                        { value: "local", label: t("assets.sources.local") },
+                        { value: "eagle", label: t("assets.sources.eagle") },
+                    ]}
+                />
                 <Input
                     className="w-56"
                     size="small"
@@ -113,6 +155,9 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
                     ))}
                 </div>
             </div>
+
+            {eagleError ? <Alert className="py-2" type="warning" showIcon message={t("assets.eagleUnavailable")} description={eagleError} action={<button type="button" className="text-xs underline" onClick={onRefreshEagle}>{t("assets.retryEagle")}</button>} /> : null}
+            {eagleLoading && (sourceFilter === "all" || sourceFilter === "eagle") ? <div className="text-xs text-stone-500">{t("assets.eagleLoading")}</div> : null}
 
             {visible.length ? (
                 <div className="grid grid-cols-4 gap-3">

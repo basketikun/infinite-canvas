@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
 import { parseChangelog } from "./src/lib/release";
+import { eagleBridge } from "./eagle-bridge";
 
 const webDir = dirname(fileURLToPath(import.meta.url));
 const localVersion = readFileSync(resolve(webDir, "../VERSION"), "utf8").trim() || "dev";
@@ -40,7 +41,7 @@ function localPluginsManifest(): Plugin {
 
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
-    plugins: [react(), localPluginsManifest()],
+    plugins: [react(), localPluginsManifest(), eagleBridge()],
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),

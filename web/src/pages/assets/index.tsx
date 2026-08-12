@@ -1,12 +1,14 @@
 import { Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Card, Drawer, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Drawer, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { useCopyText } from "@/hooks/use-copy-text";
+import { useAssetCatalog, type AssetSourceFilter } from "@/hooks/use-asset-catalog";
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
 import { uploadImage } from "@/services/image-storage";
+import { isEagleAsset } from "@/services/eagle-assets";
 import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
@@ -33,11 +35,12 @@ export default function AssetsPage() {
     const coverInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const assetInputRef = useRef<HTMLInputElement>(null);
-    const assets = useAssetStore((state) => state.assets);
+    const { localAssets, assets, eagleLoading, eagleError, refreshEagle } = useAssetCatalog();
     const addAsset = useAssetStore((state) => state.addAsset);
     const updateAsset = useAssetStore((state) => state.updateAsset);
     const removeAsset = useAssetStore((state) => state.removeAsset);
     const [keyword, setKeyword] = useState("");
+    const [sourceFilter, setSourceFilter] = useState<AssetSourceFilter>("all");
     const [kindFilter, setKindFilter] = useState<AssetKind | "all">("all");
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
@@ -52,15 +55,17 @@ export default function AssetsPage() {
     const tags = Form.useWatch("tags", form) || [];
     const content = Form.useWatch("content", form) || "";
     const validAssets = useMemo(() => assets.filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video"), [assets]);
+    const localValidAssets = useMemo(() => localAssets.filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video"), [localAssets]);
 
     const filteredAssets = useMemo(() => {
         const query = keyword.trim().toLowerCase();
         return validAssets.filter((asset) => {
+            if (sourceFilter !== "all" && (sourceFilter === "eagle") !== isEagleAsset(asset)) return false;
             if (kindFilter !== "all" && asset.kind !== kindFilter) return false;
             if (!query) return true;
             return assetSearchText(asset).includes(query);
         });
-    }, [validAssets, keyword, kindFilter]);
+    }, [validAssets, keyword, kindFilter, sourceFilter]);
 
     const visibleAssets = useMemo(() => {
         const start = (page - 1) * pageSize;
@@ -149,11 +154,11 @@ export default function AssetsPage() {
     };
 
     const exportAllAssets = async () => {
-        if (!validAssets.length) {
+        if (!localValidAssets.length) {
             message.warning(t("assets.noneToExport"));
             return;
         }
-        await exportAssets(validAssets, t("assets.packageName"));
+        await exportAssets(localValidAssets, t("assets.packageName"));
     };
 
     const importAssetZip = async (file?: File) => {
@@ -177,6 +182,10 @@ export default function AssetsPage() {
 
     const confirmDelete = () => {
         if (!deletingAsset) return;
+        if (isEagleAsset(deletingAsset)) {
+            setDeletingAsset(null);
+            return;
+        }
         removeAsset(deletingAsset.id);
         message.success(t("assets.deleted"));
         setDeletingAsset(null);
@@ -230,6 +239,25 @@ export default function AssetsPage() {
                                     ))}
                                 </div>
                             </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-medium text-stone-500 dark:text-stone-400">{t("assets.source")}</span>
+                                <Select
+                                    size="small"
+                                    className="w-36"
+                                    value={sourceFilter}
+                                    onChange={(value) => {
+                                        setPage(1);
+                                        setSourceFilter(value as AssetSourceFilter);
+                                    }}
+                                    options={[
+                                        { value: "all", label: t("assets.sources.all") },
+                                        { value: "local", label: t("assets.sources.local") },
+                                        { value: "eagle", label: t("assets.sources.eagle") },
+                                    ]}
+                                />
+                                {eagleLoading && (sourceFilter === "all" || sourceFilter === "eagle") ? <Typography.Text type="secondary" className="text-xs">{t("assets.eagleLoading")}</Typography.Text> : null}
+                                {eagleError ? <button type="button" className="text-xs text-amber-700 underline dark:text-amber-400" onClick={refreshEagle}>{t("assets.retryEagle")}</button> : null}
+                            </div>
                             <div className="flex flex-wrap gap-4">
                                 <button
                                     type="button"
@@ -254,13 +282,14 @@ export default function AssetsPage() {
                                 </button>
                             </div>
                         </div>
+                        {eagleError ? <Alert className="py-2" type="warning" showIcon message={t("assets.eagleUnavailable")} description={eagleError} /> : null}
                     </div>
                 </div>
 
                 <div className="mx-auto flex max-w-7xl flex-col gap-5">
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {visibleAssets.map((asset) => (
-                            <AssetCard key={asset.id} asset={asset} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
+                            <AssetCard key={asset.id} asset={asset} readOnly={isEagleAsset(asset)} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
                         ))}
                     </div>
 
@@ -399,7 +428,7 @@ export default function AssetsPage() {
     );
 }
 
-function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
+function AssetCard({ asset, readOnly, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; readOnly?: boolean; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
     const { t } = useTranslation();
     const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
     const summary = assetSummary(asset);
@@ -446,7 +475,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                 <Button size="small" onClick={onOpen}>
                     {t("common.view")}
                 </Button>
-                {asset.kind !== "video" ? (
+                {!readOnly && asset.kind !== "video" ? (
                     <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>
                         {t("common.edit")}
                     </Button>
@@ -461,9 +490,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                         {t("common.download")}
                     </Button>
                 ) : null}
-                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onDelete}>
-                    {t("common.delete")}
-                </Button>
+                {!readOnly ? <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onDelete}>{t("common.delete")}</Button> : null}
             </div>
         </Card>
     );
