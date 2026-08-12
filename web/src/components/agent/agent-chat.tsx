@@ -4,8 +4,9 @@ import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { summarizeCanvasAgentOps } from "@/lib/canvas/canvas-agent-ops";
-import { useAgentStore, type AgentChatItem, type AgentPendingApproval, type AgentPendingToolCall, type AgentTokenUsage } from "@/stores/use-agent-store";
+import { useAgentStore, type AgentChatItem, type AgentClarificationAnswers, type AgentPendingApproval, type AgentPendingClarification, type AgentPendingToolCall, type AgentTokenUsage } from "@/stores/use-agent-store";
 import { AgentApprovalCard, AgentChatMessage, AgentCommandGroup, AgentPendingToolCard, AgentToolCard, AgentWorkingMessage } from "./agent-chat-message";
+import { AgentClarificationCard } from "./agent-clarification-card";
 import { agentMessageToChatMessage, currentPlanMessage, isPlanMessage, latestPlanMessage, toolCallDetail, toolName, workingActivity } from "./agent-event-formatters";
 import { AgentScrollToBottom } from "./agent-scroll-to-bottom";
 
@@ -16,20 +17,26 @@ export function AgentChatTimeline({
     theme,
     pendingTool,
     pendingApprovals,
+    pendingClarifications,
     sending,
     waiting,
     onRejectTool,
     onApproveTool,
     onApprovalDecision,
+    onClarificationSubmit,
+    onClarificationCancel,
 }: {
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     pendingTool: AgentPendingToolCall | null;
     pendingApprovals: AgentPendingApproval[];
+    pendingClarifications: AgentPendingClarification[];
     sending: boolean;
     waiting: boolean;
     onRejectTool: () => void;
     onApproveTool: () => void;
     onApprovalDecision: (approval: AgentPendingApproval, decision: "accept" | "acceptForSession" | "decline") => void;
+    onClarificationSubmit: (clarification: AgentPendingClarification, answers: AgentClarificationAnswers) => void;
+    onClarificationCancel: (clarification: AgentPendingClarification) => void;
 }) {
     const { t } = useTranslation();
     const messages = useAgentStore((state) => state.messages);
@@ -60,7 +67,7 @@ export function AgentChatTimeline({
     useEffect(() => {
         const frame = requestAnimationFrame(() => (followMessagesRef.current ? scrollToBottom("auto") : updateScrollState()));
         return () => cancelAnimationFrame(frame);
-    }, [messages, pendingApprovals, pendingTool, scrollToBottom, updateScrollState, waiting]);
+    }, [messages, pendingApprovals, pendingClarifications, pendingTool, scrollToBottom, updateScrollState, waiting]);
     useEffect(() => {
         const content = contentRef.current;
         if (!content) return;
@@ -79,9 +86,7 @@ export function AgentChatTimeline({
         <div className="relative min-h-0 flex-1">
             <div ref={listRef} className="thin-scrollbar h-full select-text overflow-y-auto" onScroll={updateScrollState}>
                 <div ref={contentRef} className="space-y-4 px-4 pt-4">
-                    {timeline.map((entry) => entry.type === "commands"
-                        ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} />
-                        : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} />)}
+                    {timeline.map((entry) => (entry.type === "commands" ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} /> : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} />))}
                     {pendingTool ? (
                         <AgentPendingToolCard
                             summary={summarizeCanvasAgentOps(pendingTool.input?.ops || []) || toolName(pendingTool.name)}
@@ -91,20 +96,32 @@ export function AgentChatTimeline({
                             onApprove={onApproveTool}
                         />
                     ) : null}
-                    {pendingApprovals.map((approval) => <AgentApprovalCard key={approval.requestId} approval={approval} theme={theme} onDecision={(decision) => onApprovalDecision(approval, decision)} />)}
-                    {(sending || waiting || showBootstrap) && !streaming && !pendingTool && !pendingApprovals.length ? <AgentWorkingMessage text={working.text} detail={"detail" in working && typeof working.detail === "string" ? working.detail : undefined} status={showBootstrap ? bootstrapStatus?.status : undefined} mcpStatuses={showBootstrap ? Object.entries(mcpStartupStatuses).map(([name, item]) => ({ name, ...item })) : []} activityKey={working.key} theme={theme} /> : null}
+                    {pendingApprovals.map((approval) => (
+                        <AgentApprovalCard key={approval.requestId} approval={approval} theme={theme} onDecision={(decision) => onApprovalDecision(approval, decision)} />
+                    ))}
+                    {pendingClarifications.map((clarification) => (
+                        <AgentClarificationCard key={clarification.requestId} clarification={clarification} theme={theme} onSubmit={(answer) => onClarificationSubmit(clarification, answer)} onCancel={() => onClarificationCancel(clarification)} />
+                    ))}
+                    {(sending || waiting || showBootstrap) && !streaming && !pendingTool && !pendingApprovals.length && !pendingClarifications.length ? (
+                        <AgentWorkingMessage
+                            text={working.text}
+                            detail={"detail" in working && typeof working.detail === "string" ? working.detail : undefined}
+                            status={showBootstrap ? bootstrapStatus?.status : undefined}
+                            mcpStatuses={showBootstrap ? Object.entries(mcpStartupStatuses).map(([name, item]) => ({ name, ...item })) : []}
+                            activityKey={working.key}
+                            theme={theme}
+                        />
+                    ) : null}
                 </div>
             </div>
-            {showScrollToBottom ? (
-                <AgentScrollToBottom theme={theme} title={t("agent.chat.latestMessages")} onClick={() => scrollToBottom()} />
-            ) : null}
+            {showScrollToBottom ? <AgentScrollToBottom theme={theme} title={t("agent.chat.latestMessages")} onClick={() => scrollToBottom()} /> : null}
         </div>
     );
 }
 
 export function AgentTaskProgress({ theme, busy }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; busy: boolean }) {
     const { t } = useTranslation();
-    const plan = useAgentStore((state) => busy ? currentPlanMessage(state.messages) : latestPlanMessage(state.messages));
+    const plan = useAgentStore((state) => (busy ? currentPlanMessage(state.messages) : latestPlanMessage(state.messages)));
     if (!plan) return null;
     return (
         <div className="shrink-0 px-4 pt-2">

@@ -12,6 +12,7 @@ type TestClient = {
     plansByTurn: Map<string, unknown>;
     lastUsage: unknown;
     answerServerRequest(message: Record<string, unknown>): void;
+    cancelClarifications(threadId: string): void;
     failAll(message: string): void;
     handle(message: Record<string, unknown>): void;
     handleNotification(method: string, params: Record<string, unknown>): void;
@@ -39,6 +40,51 @@ test("审批只在 app-server 确认 resolved 后清除", () => {
     const resolved = events.find((item) => item.type === "codex_approval_resolved");
     assert.deepEqual(resolved?.payload, { threadId: "thread-1", turnId: "turn-1", requestId: "17", decision: "accept" });
     assert.equal(client.resolveApproval("17", "accept"), false);
+});
+
+test("MCP elicitation 会暂停并在网页回答后恢复同一请求", () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const events: Array<{ type: string; payload: unknown }> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, (type: string, payload: unknown) => events.push({ type, payload }), emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+    testClient.currentThreadId = "thread-1";
+    testClient.currentTurnId = "turn-1";
+
+    testClient.answerServerRequest({ id: 18, method: "mcpServer/elicitation/request", params: { threadId: "thread-1", turnId: "turn-1", message: "请选择形式", requestedSchema: { type: "object", properties: { style: { type: "string", title: "视频形式", oneOf: [{ const: "brand", title: "品牌宣传片" }, { const: "story", title: "剧情短片" }] } }, required: ["style"] } } });
+    assert.equal(writes.length, 0);
+    assert.deepEqual(events.find((event) => event.type === "agent_clarification")?.payload, { requestId: "18", threadId: "thread-1", turnId: "turn-1", message: "请选择形式", questions: [{ id: "style", label: "视频形式", kind: "single", options: [{ value: "brand", label: "品牌宣传片" }, { value: "story", label: "剧情短片" }], required: true }] });
+
+    assert.equal(client.resolveClarification("18", { style: "brand" }), true);
+    assert.deepEqual(writes[0], { id: 18, result: { action: "accept", content: { style: "brand" } } });
+    testClient.handleNotification("serverRequest/resolved", { requestId: "18" });
+    assert.equal(events.filter((event) => event.type === "agent_clarification_resolved").length, 1);
+});
+
+test("取消 MCP elicitation 会返回标准 cancel 结果", () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, () => undefined, emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+    testClient.answerServerRequest({ id: 19, method: "mcpServer/elicitation/request", params: { requestedSchema: { type: "object", properties: {} } } });
+
+    assert.equal(client.resolveClarification("19", null), true);
+    assert.deepEqual(writes[0], { id: 19, result: { action: "cancel" } });
+});
+
+test("中断澄清只发出一次取消事件", () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const events: Array<{ type: string; payload: unknown }> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, (type: string, payload: unknown) => events.push({ type, payload }), emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+    testClient.currentThreadId = "thread-1";
+    testClient.answerServerRequest({ id: 20, method: "mcpServer/elicitation/request", params: { threadId: "thread-1", requestedSchema: { type: "object", properties: {} } } });
+
+    testClient.cancelClarifications("thread-1");
+    testClient.handleNotification("serverRequest/resolved", { requestId: "20" });
+    assert.deepEqual(writes, [{ id: 20, result: { action: "cancel" } }]);
+    assert.equal(events.filter((event) => event.type === "agent_clarification_resolved").length, 1);
 });
 
 test("中断请求只作用于当前运行线程", async () => {

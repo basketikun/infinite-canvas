@@ -4,7 +4,7 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import { runClaudeTurn } from "../agent/claude.js";
-import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
+import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexClarification, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
 import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
 import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
@@ -416,6 +416,13 @@ export function startHttpServer() {
         const ok = await resolveCodexApproval(String(req.body?.requestId || ""), decision);
         res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "审批请求已失效" }) });
     }));
+    app.post("/agent/codex/clarification", route(async (req, res) => {
+        const requestId = String(req.body?.requestId || "");
+        const answers = req.body?.answers;
+        if (!requestId || (answers !== null && (!answers || typeof answers !== "object" || Array.isArray(answers))) || !validClarificationAnswers(answers)) return res.status(400).json({ ok: false, error: "澄清答案无效" });
+        const ok = await resolveCodexClarification(requestId, answers === null ? null : answers as Record<string, unknown>);
+        res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "澄清请求已失效" }) });
+    }));
     app.post("/agent/codex/interrupt", route(async (req, res) => {
         const ok = await interruptCodexTurn(skillDraftRunning ? undefined : String(req.body?.threadId || ""));
         res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "当前没有可停止的任务" }) });
@@ -473,6 +480,12 @@ function reasoningEffort(value: unknown): CodexReasoningEffort | undefined {
 
 function startupStatus(value: unknown): "starting" | "ready" | "failed" | "cancelled" {
     return value === "starting" || value === "ready" || value === "failed" ? value : "cancelled";
+}
+
+function validClarificationAnswers(value: unknown) {
+    if (value === null) return true;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    return Object.values(value as Record<string, unknown>).every((answer) => typeof answer === "string" || (Array.isArray(answer) && answer.every((item) => typeof item === "string")));
 }
 
 function mcpInventory(value: unknown) {

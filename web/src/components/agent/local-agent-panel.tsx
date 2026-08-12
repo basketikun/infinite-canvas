@@ -18,10 +18,26 @@ import { uploadImage } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
-import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
+import {
+    useAgentStore,
+    type AgentAttachment,
+    type AgentBootstrapStatus,
+    type AgentCanvasContext,
+    type AgentCanvasReference,
+    type AgentChatItem,
+    type AgentClarificationAnswers,
+    type AgentConversationState,
+    type AgentModel,
+    type AgentPendingApproval,
+    type AgentPendingClarification,
+    type AgentPendingToolCall,
+    type AgentPermissionMode,
+    type AgentReasoningEffort,
+    type AgentThreadSummary,
+} from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
-import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@/services/api/canvas-agent";
+import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postCodexClarification, postState, postToolResult } from "@/services/api/canvas-agent";
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentConnectView } from "./agent-connect-view";
@@ -72,7 +88,7 @@ const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const MESSAGE_PREVIEW_LONG_EDGE = 192;
 const MESSAGE_PREVIEW_MAX_LENGTH = 500_000;
 const DEFAULT_AGENT_URL = "http://127.0.0.1:17371";
-const AGENT_PROTOCOL_VERSION = 6;
+const AGENT_PROTOCOL_VERSION = 7;
 const HISTORY_RETRY_DELAYS_MS = [0, 150, 350, 700, 1200];
 const AGENT_REASONING_EFFORTS = new Set<AgentReasoningEffort>(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 const rt = (key: string, options?: Record<string, unknown>) => i18n.t(`agent.runtime.${key}`, options);
@@ -84,10 +100,27 @@ type AgentWorkspaceResponse = { ok?: boolean; workspace?: AgentWorkspace; conver
 type AgentTurnResponse = { ok?: boolean; threadId?: string };
 type AgentModelsResponse = { ok?: boolean; data?: AgentModel[] };
 type AgentCodexState = { busy?: boolean; threadId?: string; turnId?: string };
-type AgentHelloEvent = { ok?: boolean; protocolVersion?: number; clientId?: string; workspace?: { activeThreadId?: string }; conversation?: AgentConversationState; codex?: AgentCodexState; pendingApprovals?: AgentPendingApproval[] };
+type AgentHelloEvent = {
+    ok?: boolean;
+    protocolVersion?: number;
+    clientId?: string;
+    workspace?: { activeThreadId?: string };
+    conversation?: AgentConversationState;
+    codex?: AgentCodexState;
+    pendingApprovals?: AgentPendingApproval[];
+    pendingClarifications?: AgentPendingClarification[];
+};
 type AgentWorkspaceEvent = { activeThreadId?: string; threadId?: string; sourceClientId?: string; emptyThread?: boolean; draftThread?: boolean; conversation?: AgentConversationState };
 type AgentChatEvent = { threadId?: string; turnId?: string; sourceClientId?: string; replayed?: boolean; message?: AgentChatItem };
-type AgentBootstrapEvent = { type?: "codex.preparing" | "codex.prepare_failed" | "mcp.startup" | "mcp.complete"; phase?: "preheat" | "runtime"; threadId?: string; name?: string; status?: "starting" | "ready" | "failed" | "cancelled"; error?: string | null; failureReason?: string | null };
+type AgentBootstrapEvent = {
+    type?: "codex.preparing" | "codex.prepare_failed" | "mcp.startup" | "mcp.complete";
+    phase?: "preheat" | "runtime";
+    threadId?: string;
+    name?: string;
+    status?: "starting" | "ready" | "failed" | "cancelled";
+    error?: string | null;
+    failureReason?: string | null;
+};
 type AgentClientGlobal = typeof globalThis & { __infiniteCanvasAgentClientIdPromise?: Promise<string> };
 
 function authoritativeHistoryTurnKeys(threadId: string, settledTurnIds: string[]) {
@@ -99,27 +132,31 @@ function agentErrorState(error: unknown) {
 }
 
 function conversationBootstrapView(conversation: AgentConversationState) {
-    const mcpStartupStatuses: Record<string, AgentBootstrapStatus> = Object.fromEntries(Object.entries(conversation.mcpStatuses).map(([name, item]) => {
-        const view: AgentBootstrapStatus = item.status === "starting"
-            ? { key: `mcp:${name}:starting`, text: rt("mcpStarting", { name }), detail: rt("mcpConnecting"), status: "running" }
-            : item.status === "ready"
-                ? { key: `mcp:${name}:ready`, text: rt("mcpReadyNamed", { name }), detail: rt("toolsReady"), status: "ready" }
-                : { key: `mcp:${name}:${item.status}`, text: rt(item.status === "failed" ? "mcpFailedNamed" : "mcpCanceledNamed", { name }), detail: item.error || rt("toolInitFailed"), status: "error" };
-        return [name, view];
-    }));
+    const mcpStartupStatuses: Record<string, AgentBootstrapStatus> = Object.fromEntries(
+        Object.entries(conversation.mcpStatuses).map(([name, item]) => {
+            const view: AgentBootstrapStatus =
+                item.status === "starting"
+                    ? { key: `mcp:${name}:starting`, text: rt("mcpStarting", { name }), detail: rt("mcpConnecting"), status: "running" }
+                    : item.status === "ready"
+                      ? { key: `mcp:${name}:ready`, text: rt("mcpReadyNamed", { name }), detail: rt("toolsReady"), status: "ready" }
+                      : { key: `mcp:${name}:${item.status}`, text: rt(item.status === "failed" ? "mcpFailedNamed" : "mcpCanceledNamed", { name }), detail: item.error || rt("toolInitFailed"), status: "error" };
+            return [name, view];
+        }),
+    );
     const services = Object.values(mcpStartupStatuses);
     const pending = services.filter((item) => item.status === "running").length;
-    const bootstrapStatus: AgentBootstrapStatus | null = conversation.status === "idle" || conversation.status === "preparing"
-        ? services.length
-            ? { key: "mcp:starting", text: rt("mcpServicesStarting"), detail: pending ? rt("toolServicesPending", { count: pending }) : rt("checkingToolServices"), status: "running" }
-            : { key: "codex:preparing", text: rt("conversationInitializing"), detail: rt("conversationCreating"), status: "running" }
-        : conversation.status === "warning"
-            ? { key: "mcp:warning", text: rt("someMcpFailed"), detail: rt("remainingToolsReady"), status: "error" }
-            : conversation.status === "failed"
+    const bootstrapStatus: AgentBootstrapStatus | null =
+        conversation.status === "idle" || conversation.status === "preparing"
+            ? services.length
+                ? { key: "mcp:starting", text: rt("mcpServicesStarting"), detail: pending ? rt("toolServicesPending", { count: pending }) : rt("checkingToolServices"), status: "running" }
+                : { key: "codex:preparing", text: rt("conversationInitializing"), detail: rt("conversationCreating"), status: "running" }
+            : conversation.status === "warning"
+              ? { key: "mcp:warning", text: rt("someMcpFailed"), detail: rt("remainingToolsReady"), status: "error" }
+              : conversation.status === "failed"
                 ? { key: "codex:prepare_failed", text: rt("conversationInitFailed"), detail: conversation.error || rt("conversationCreateFailed"), status: "error" }
                 : conversation.status === "ready"
-                    ? { key: "mcp:ready", text: rt("mcpServicesReady", { count: services.length }), detail: rt("toolsReady"), status: "ready" }
-                    : null;
+                  ? { key: "mcp:ready", text: rt("mcpServicesReady", { count: services.length }), detail: rt("toolsReady"), status: "ready" }
+                  : null;
     return { bootstrapStatus, mcpStartupStatuses };
 }
 
@@ -134,7 +171,35 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     // canvasContext is intentionally excluded because project updates it every frame during dragging and resizing.
     // The panel uses it only for ref synchronization and debounced postState calls, never during rendering.
     // Subscribing here would rerender the panel every frame and amplify the #185 crash, so it is observed imperatively below.
-    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, tokenUsage, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, permissionMode, models, model, reasoningEffort, activity, conversation, connectError, pendingTool, pendingApprovals } = useAgentStore(
+    const {
+        width,
+        url,
+        token,
+        connected,
+        enabled,
+        prompt,
+        attachments,
+        sending,
+        waiting,
+        tokenUsage,
+        eventLogs,
+        threads,
+        activeThreadId,
+        workspacePath,
+        loadingThreads,
+        activeTab,
+        confirmTools,
+        permissionMode,
+        models,
+        model,
+        reasoningEffort,
+        activity,
+        conversation,
+        connectError,
+        pendingTool,
+        pendingApprovals,
+        pendingClarifications,
+    } = useAgentStore(
         useShallow((state) => ({
             width: state.width,
             url: state.url,
@@ -162,6 +227,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             connectError: state.connectError,
             pendingTool: state.pendingTool,
             pendingApprovals: state.pendingApprovals,
+            pendingClarifications: state.pendingClarifications,
         })),
     );
     const setAgentState = useAgentStore((state) => state.setAgentState);
@@ -200,122 +266,128 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 setClientReady(true);
             }
         });
-        return () => { disposed = true; };
+        return () => {
+            disposed = true;
+        };
     }, []);
-    const loadThreadSnapshot = useCallback(async (threadId: string, sequence: number, response?: AgentThreadResponse, expectedTurnId = "") => {
-        let thread = response;
-        let lastError: unknown;
-        for (const delayMs of HISTORY_RETRY_DELAYS_MS) {
-            if (delayMs) await delay(delayMs);
-            if (sequence !== loadThreadsSequenceRef.current || useAgentStore.getState().activeThreadId !== threadId) return false;
-            try {
-                thread ||= await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}`);
-                lastError = undefined;
-            } catch (error) {
-                lastError = error;
+    const loadThreadSnapshot = useCallback(
+        async (threadId: string, sequence: number, response?: AgentThreadResponse, expectedTurnId = "") => {
+            let thread = response;
+            let lastError: unknown;
+            for (const delayMs of HISTORY_RETRY_DELAYS_MS) {
+                if (delayMs) await delay(delayMs);
+                if (sequence !== loadThreadsSequenceRef.current || useAgentStore.getState().activeThreadId !== threadId) return false;
+                try {
+                    thread ||= await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}`);
+                    lastError = undefined;
+                } catch (error) {
+                    lastError = error;
+                    thread = undefined;
+                    continue;
+                }
+                const history = normalizeHistoryMessages(thread.messages || []);
+                const latest = useAgentStore.getState();
+                if (sequence !== loadThreadsSequenceRef.current || latest.activeThreadId !== threadId) return false;
+                const historyTurns = authoritativeHistoryTurnKeys(threadId, thread.settledTurnIds || []);
+                const hasExpectedTurn = !expectedTurnId || historyTurns.has(`${threadId}\0${expectedTurnId}`);
+                historyTurns.forEach((key) => liveTurnKeysRef.current.delete(key));
+                if (latest.activeTurnId) liveTurnKeysRef.current.add(`${threadId}\0${latest.activeTurnId}`);
+                authoritativeHistoryTurnsRef.current = historyTurns;
+                const messages = mergeAgentMessages(history, latest.messages, threadId, liveTurnKeysRef.current);
+                threadMessagesRef.current.set(threadId, messages);
+                setAgentState({ messages, connectError: "" });
+                const coveredTurnIds = [...historyTurns].map((key) => key.slice(threadId.length + 1));
+                if (coveredTurnIds.length) void acknowledgeCodexHistory(endpoint, token, threadId, coveredTurnIds).catch(() => undefined);
+                if (hasExpectedTurn && (thread.historyReady !== false || Boolean(expectedTurnId))) return true;
                 thread = undefined;
-                continue;
             }
-            const history = normalizeHistoryMessages(thread.messages || []);
-            const latest = useAgentStore.getState();
-            if (sequence !== loadThreadsSequenceRef.current || latest.activeThreadId !== threadId) return false;
-            const historyTurns = authoritativeHistoryTurnKeys(threadId, thread.settledTurnIds || []);
-            const hasExpectedTurn = !expectedTurnId || historyTurns.has(`${threadId}\0${expectedTurnId}`);
-            historyTurns.forEach((key) => liveTurnKeysRef.current.delete(key));
-            if (latest.activeTurnId) liveTurnKeysRef.current.add(`${threadId}\0${latest.activeTurnId}`);
-            authoritativeHistoryTurnsRef.current = historyTurns;
-            const messages = mergeAgentMessages(history, latest.messages, threadId, liveTurnKeysRef.current);
-            threadMessagesRef.current.set(threadId, messages);
-            setAgentState({ messages, connectError: "" });
-            const coveredTurnIds = [...historyTurns].map((key) => key.slice(threadId.length + 1));
-            if (coveredTurnIds.length) void acknowledgeCodexHistory(endpoint, token, threadId, coveredTurnIds).catch(() => undefined);
-            if (hasExpectedTurn && (thread.historyReady !== false || Boolean(expectedTurnId))) return true;
-            thread = undefined;
-        }
-        if (lastError) throw lastError;
-        return false;
-    }, [endpoint, setAgentState, token]);
-    const applyWorkspaceChange = useCallback((data: AgentWorkspaceEvent) => {
-        const nextThreadId = data.activeThreadId ?? data.threadId ?? "";
-        const current = useAgentStore.getState();
-        const threadChanged = current.activeThreadId !== nextThreadId;
-        const emptyThread = Boolean(data.emptyThread || data.draftThread);
-        const pendingMessage = [...current.messages].reverse().find((item) => item.role === "user" && !item.turnId);
-        const keepPendingMessage = Boolean(
-            data.emptyThread
-            && pendingMessage
-            && (current.sending || current.waiting)
-            && (!data.sourceClientId || data.sourceClientId === clientIdRef.current),
-        );
-        if (threadChanged && current.activeThreadId) {
-            const messages = keepPendingMessage ? current.messages.filter((item) => item.id !== pendingMessage!.id) : current.messages;
-            threadMessagesRef.current.set(current.activeThreadId, messages);
-        }
-        if (emptyThread && nextThreadId) threadMessagesRef.current.delete(nextThreadId);
-        if (threadChanged || emptyThread) {
-            loadThreadsSequenceRef.current += 1;
-            authoritativeHistoryTurnsRef.current.clear();
-            liveTurnKeysRef.current.clear();
-        }
-        const messages = keepPendingMessage
-            ? [scopeChatItem(pendingMessage!, nextThreadId, "")]
-            : emptyThread ? []
-                : threadChanged ? threadMessagesRef.current.get(nextThreadId) || []
-                    : current.messages;
-        pendingToolRef.current = null;
-        setAgentState({
-            activeThreadId: nextThreadId,
-            activeTurnId: threadChanged || emptyThread ? "" : current.activeTurnId,
-            messages,
-            tokenUsage: threadChanged || emptyThread ? null : current.tokenUsage,
-            pendingTool: null,
-            pendingApprovals: threadChanged || emptyThread ? [] : current.pendingApprovals,
-        });
-        return loadThreadsSequenceRef.current;
-    }, [setAgentState]);
-    const applyConversationState = useCallback((next: AgentConversationState, force = false) => {
-        const current = useAgentStore.getState();
-        if (!next?.revision || !force && next.revision <= current.conversation.revision) return false;
-        const conversationChanged = next.conversationId !== current.conversation.conversationId;
-        if (conversationChanged || next.threadId !== current.activeThreadId) {
-            applyWorkspaceChange({
-                activeThreadId: next.threadId,
-                emptyThread: conversationChanged || !current.activeThreadId,
-                draftThread: next.status === "preparing",
-                sourceClientId: next.sourceClientId,
-            });
-        }
-        setAgentState({ conversation: next, ...conversationBootstrapView(next) });
-        return true;
-    }, [applyWorkspaceChange, setAgentState]);
-    const loadThreads = useCallback(async (skipHistory = false, expectedTurnId = "") => {
-        if (!connectedRef.current && !useAgentStore.getState().connected) return;
-        let sequence = ++loadThreadsSequenceRef.current;
-        setAgentState({ loadingThreads: true });
-        try {
-            const data = await fetchAgentJson<AgentThreadsResponse>(endpoint, token, `/agent/codex/threads`);
-            if (sequence !== loadThreadsSequenceRef.current) return;
-            if (data.conversation) {
-                applyConversationState(data.conversation);
-                sequence = loadThreadsSequenceRef.current;
-            }
+            if (lastError) throw lastError;
+            return false;
+        },
+        [endpoint, setAgentState, token],
+    );
+    const applyWorkspaceChange = useCallback(
+        (data: AgentWorkspaceEvent) => {
+            const nextThreadId = data.activeThreadId ?? data.threadId ?? "";
             const current = useAgentStore.getState();
-            const currentThreadId = current.activeThreadId || data.workspace?.activeThreadId || "";
-            if (!data.conversation && currentThreadId !== current.activeThreadId) sequence = applyWorkspaceChange({ activeThreadId: currentThreadId });
-            if (sequence !== loadThreadsSequenceRef.current || useAgentStore.getState().activeThreadId !== currentThreadId) return;
-            setAgentState({ threads: data.data || [], workspacePath: data.workspace?.workspacePath || "" });
-            if (currentThreadId && !skipHistory) {
-                await loadThreadSnapshot(currentThreadId, sequence, undefined, expectedTurnId);
-            } else {
+            const threadChanged = current.activeThreadId !== nextThreadId;
+            const emptyThread = Boolean(data.emptyThread || data.draftThread);
+            const pendingMessage = [...current.messages].reverse().find((item) => item.role === "user" && !item.turnId);
+            const keepPendingMessage = Boolean(data.emptyThread && pendingMessage && (current.sending || current.waiting) && (!data.sourceClientId || data.sourceClientId === clientIdRef.current));
+            if (threadChanged && current.activeThreadId) {
+                const messages = keepPendingMessage ? current.messages.filter((item) => item.id !== pendingMessage!.id) : current.messages;
+                threadMessagesRef.current.set(current.activeThreadId, messages);
+            }
+            if (emptyThread && nextThreadId) threadMessagesRef.current.delete(nextThreadId);
+            if (threadChanged || emptyThread) {
+                loadThreadsSequenceRef.current += 1;
                 authoritativeHistoryTurnsRef.current.clear();
                 liveTurnKeysRef.current.clear();
             }
-        } catch (error) {
-            addEventLog(rt("historyReadFailed"), error);
-        } finally {
-            if (sequence === loadThreadsSequenceRef.current && !threadOperationRef.current) setAgentState({ loadingThreads: false });
-        }
-    }, [applyConversationState, applyWorkspaceChange, endpoint, loadThreadSnapshot, setAgentState, token]);
+            const messages = keepPendingMessage ? [scopeChatItem(pendingMessage!, nextThreadId, "")] : emptyThread ? [] : threadChanged ? threadMessagesRef.current.get(nextThreadId) || [] : current.messages;
+            pendingToolRef.current = null;
+            setAgentState({
+                activeThreadId: nextThreadId,
+                activeTurnId: threadChanged || emptyThread ? "" : current.activeTurnId,
+                messages,
+                tokenUsage: threadChanged || emptyThread ? null : current.tokenUsage,
+                pendingTool: null,
+                pendingApprovals: threadChanged || emptyThread ? [] : current.pendingApprovals,
+                pendingClarifications: threadChanged || emptyThread ? [] : current.pendingClarifications,
+            });
+            return loadThreadsSequenceRef.current;
+        },
+        [setAgentState],
+    );
+    const applyConversationState = useCallback(
+        (next: AgentConversationState, force = false) => {
+            const current = useAgentStore.getState();
+            if (!next?.revision || (!force && next.revision <= current.conversation.revision)) return false;
+            const conversationChanged = next.conversationId !== current.conversation.conversationId;
+            if (conversationChanged || next.threadId !== current.activeThreadId) {
+                applyWorkspaceChange({
+                    activeThreadId: next.threadId,
+                    emptyThread: conversationChanged || !current.activeThreadId,
+                    draftThread: next.status === "preparing",
+                    sourceClientId: next.sourceClientId,
+                });
+            }
+            setAgentState({ conversation: next, ...conversationBootstrapView(next) });
+            return true;
+        },
+        [applyWorkspaceChange, setAgentState],
+    );
+    const loadThreads = useCallback(
+        async (skipHistory = false, expectedTurnId = "") => {
+            if (!connectedRef.current && !useAgentStore.getState().connected) return;
+            let sequence = ++loadThreadsSequenceRef.current;
+            setAgentState({ loadingThreads: true });
+            try {
+                const data = await fetchAgentJson<AgentThreadsResponse>(endpoint, token, `/agent/codex/threads`);
+                if (sequence !== loadThreadsSequenceRef.current) return;
+                if (data.conversation) {
+                    applyConversationState(data.conversation);
+                    sequence = loadThreadsSequenceRef.current;
+                }
+                const current = useAgentStore.getState();
+                const currentThreadId = current.activeThreadId || data.workspace?.activeThreadId || "";
+                if (!data.conversation && currentThreadId !== current.activeThreadId) sequence = applyWorkspaceChange({ activeThreadId: currentThreadId });
+                if (sequence !== loadThreadsSequenceRef.current || useAgentStore.getState().activeThreadId !== currentThreadId) return;
+                setAgentState({ threads: data.data || [], workspacePath: data.workspace?.workspacePath || "" });
+                if (currentThreadId && !skipHistory) {
+                    await loadThreadSnapshot(currentThreadId, sequence, undefined, expectedTurnId);
+                } else {
+                    authoritativeHistoryTurnsRef.current.clear();
+                    liveTurnKeysRef.current.clear();
+                }
+            } catch (error) {
+                addEventLog(rt("historyReadFailed"), error);
+            } finally {
+                if (sequence === loadThreadsSequenceRef.current && !threadOperationRef.current) setAgentState({ loadingThreads: false });
+            }
+        },
+        [applyConversationState, applyWorkspaceChange, endpoint, loadThreadSnapshot, setAgentState, token],
+    );
     // Imperatively subscribe to canvasContext to keep the ref current and debounce snapshot reports without rerendering the panel.
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout> | null = null;
@@ -349,11 +421,13 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         let eventQueue = Promise.resolve();
         const isCurrentConnection = () => !disposed && clientIdRef.current === clientId;
         const enqueueEvent = (task: () => void | Promise<void>) => {
-            eventQueue = eventQueue.then(async () => {
-                if (isCurrentConnection()) await task();
-            }).catch((error) => {
-                if (isCurrentConnection()) addEventLog(rt("conversationSyncFailed"), error);
-            });
+            eventQueue = eventQueue
+                .then(async () => {
+                    if (isCurrentConnection()) await task();
+                })
+                .catch((error) => {
+                    if (isCurrentConnection()) addEventLog(rt("conversationSyncFailed"), error);
+                });
         };
         const source = new EventSource(`${endpoint}/events?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId)}`);
         source.addEventListener("hello", (event) => {
@@ -364,7 +438,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 protocolRejected = true;
                 source.close();
                 connectedRef.current = false;
-                setAgentState({ enabled: false, connected: false, waiting: false, sending: false, activity: rt("restartRequired"), connectError: text, silentConnect: false, fragmentBootstrap: false, pendingTool: null, pendingApprovals: [] });
+                setAgentState({ enabled: false, connected: false, waiting: false, sending: false, activity: rt("restartRequired"), connectError: text, silentConnect: false, pendingTool: null, pendingApprovals: [], pendingClarifications: [] });
                 useAgentSkillStore.getState().reset();
                 addEventLog(rt("versionMismatch"), text, hello);
                 if (!headless) message.error(text);
@@ -376,18 +450,23 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             if (hello?.conversation) applyConversationState(hello.conversation, true);
             else applyWorkspaceChange({ activeThreadId: nextThreadId });
             const current = useAgentStore.getState();
-            const nextTurnId = codex?.threadId === nextThreadId ? codex.turnId ?? "" : "";
+            const nextTurnId = codex?.threadId === nextThreadId ? (codex.turnId ?? "") : "";
             if (nextTurnId) liveTurnKeysRef.current.add(`${nextThreadId}\0${nextTurnId}`);
             const activeTurnId = busy ? nextTurnId : "";
             const pendingApprovals = busy ? (hello?.pendingApprovals || []).filter((item) => !item.threadId || item.threadId === nextThreadId) : [];
+            const pendingClarifications = busy ? (hello?.pendingClarifications || []).filter((item) => !item.threadId || item.threadId === nextThreadId) : [];
             const messages = activeTurnId
-                ? bindPendingTurnMessages(current.messages.filter((item) => !isConnectionErrorMessage(item)), nextThreadId, activeTurnId)
+                ? bindPendingTurnMessages(
+                      current.messages.filter((item) => !isConnectionErrorMessage(item)),
+                      nextThreadId,
+                      activeTurnId,
+                  )
                 : current.messages.filter((item) => !isConnectionErrorMessage(item));
             errorLoggedRef.current = false;
             connectedRef.current = true;
             setAgentState({
                 connected: true,
-                activity: pendingApprovals.length ? rt("awaitingApproval") : busy ? rt("codexRunning") : rt("connected"),
+                activity: pendingApprovals.length ? rt("awaitingApproval") : pendingClarifications.length ? rt("awaitingClarification") : busy ? rt("codexRunning") : rt("connected"),
                 waiting: busy,
                 sending: false,
                 connectError: "",
@@ -397,6 +476,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 activeTurnId,
                 messages,
                 pendingApprovals,
+                pendingClarifications,
             });
             if (!headless) message.success(rt("localAgentConnected"));
             void postState(endpoint, token, clientId, canvasContextRef.current?.snapshot || null);
@@ -456,14 +536,31 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const decision = data.decision || approval?.deciding;
             if (approval && decision) addEventLog(rt(decision === "accept" || decision === "acceptForSession" ? "approvalGranted" : "approvalCanceled"), approval.reason || approval.method, approval);
         });
+        source.addEventListener("agent_clarification", (event) => {
+            if (!isCurrentConnection()) return;
+            const data = parseEventData<AgentPendingClarification>(event);
+            if (!data?.requestId || !data.questions?.length || !isCurrentThreadEvent(data)) return;
+            const current = useAgentStore.getState();
+            setAgentState({ pendingClarifications: [...current.pendingClarifications.filter((item) => item.requestId !== data.requestId), data], activity: rt("awaitingClarification") });
+            addEventLog(rt("awaitingClarification"), data.message || data.questions[0].label, data);
+        });
+        source.addEventListener("agent_clarification_resolved", (event) => {
+            if (!isCurrentConnection()) return;
+            const data = parseEventData<{ requestId?: string }>(event);
+            if (!data?.requestId) return;
+            const current = useAgentStore.getState();
+            const pendingClarifications = current.pendingClarifications.filter((item) => item.requestId !== data.requestId);
+            setAgentState({ pendingClarifications, activity: clarificationActivity(pendingClarifications, current.pendingApprovals, current.waiting, current.activity) });
+        });
         source.addEventListener("agent_event", (event) => {
             const data = parseEventData<AgentEventPayload>(event);
-            if (data) enqueueEvent(() => {
-                if (!isCurrentThreadEvent(data)) return;
-                const shouldProcess = registerLiveAgentTurn(data, authoritativeHistoryTurnsRef.current, liveTurnKeysRef.current);
-                if (data.type !== "usage.updated" && !shouldProcess) return;
-                return handleAgentEvent(data);
-            });
+            if (data)
+                enqueueEvent(() => {
+                    if (!isCurrentThreadEvent(data)) return;
+                    const shouldProcess = registerLiveAgentTurn(data, authoritativeHistoryTurnsRef.current, liveTurnKeysRef.current);
+                    if (data.type !== "usage.updated" && !shouldProcess) return;
+                    return handleAgentEvent(data);
+                });
         });
         source.addEventListener("agent_bootstrap", (event) => {
             const data = parseEventData<AgentBootstrapEvent>(event);
@@ -482,18 +579,22 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             }
             if (!data.name || !data.status) return;
             const label = data.name;
-            const status = data.status === "starting"
-                ? { text: rt("mcpStarting", { name: label }), detail: rt("mcpConnecting"), status: "running" as const }
-                : data.status === "ready"
-                    ? { text: rt("mcpReadyNamed", { name: label }), detail: rt("toolsReady"), status: "ready" as const }
-                    : data.status === "failed"
+            const status =
+                data.status === "starting"
+                    ? { text: rt("mcpStarting", { name: label }), detail: rt("mcpConnecting"), status: "running" as const }
+                    : data.status === "ready"
+                      ? { text: rt("mcpReadyNamed", { name: label }), detail: rt("toolsReady"), status: "ready" as const }
+                      : data.status === "failed"
                         ? { text: rt("mcpFailedNamed", { name: label }), detail: data.error || rt("toolInitFailed"), status: "error" as const }
                         : { text: rt("mcpCanceledNamed", { name: label }), detail: rt("toolInitCanceled"), status: "error" as const };
             addEventLog(status.text, status.detail, data);
         });
         source.addEventListener("conversation_changed", (event) => {
             const data = parseEventData<AgentConversationState>(event);
-            if (data) enqueueEvent(() => { applyConversationState(data); });
+            if (data)
+                enqueueEvent(() => {
+                    applyConversationState(data);
+                });
         });
         source.addEventListener("workspace_changed", (event) => {
             const data = parseEventData<AgentWorkspaceEvent>(event);
@@ -516,9 +617,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 const clientMessageId = data.message!.clientMessageId || data.message!.itemId || data.message!.id;
                 if (current.activeThreadId !== threadId) return;
                 const next = scopeChatItem(data.message!, threadId, turnId);
-                const currentMessages = data.message!.role === "user" && clientMessageId
-                    ? current.messages.filter((item) => item.role !== "user" || item.clientMessageId !== clientMessageId || item.id === next.id)
-                    : current.messages;
+                const currentMessages = data.message!.role === "user" && clientMessageId ? current.messages.filter((item) => item.role !== "user" || item.clientMessageId !== clientMessageId || item.id === next.id) : current.messages;
                 const messages = upsertAgentMessage(currentMessages, next);
                 setAgentState({ messages });
             });
@@ -564,6 +663,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 fragmentBootstrap: false,
                 pendingTool: null,
                 pendingApprovals: [],
+                pendingClarifications: [],
             });
             useAgentSkillStore.getState().reset();
             if (!wasConnected) {
@@ -590,26 +690,28 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
 
     useEffect(() => {
         if (!connected) return;
-        void fetchAgentJson<AgentModelsResponse>(endpoint, token, "/agent/codex/models").then(({ data = [] }) => {
-            const names = new Set<string>();
-            const models = data.flatMap((item) => {
-                const name = item.displayName || item.model;
-                const efforts = item.supportedReasoningEfforts.filter(({ reasoningEffort }) => AGENT_REASONING_EFFORTS.has(reasoningEffort));
-                if (item.model === "codex-auto-review" || names.has(name) || !efforts.length) return [];
-                names.add(name);
-                const defaultReasoningEffort = efforts.some((effort) => effort.reasoningEffort === item.defaultReasoningEffort) ? item.defaultReasoningEffort : efforts[0].reasoningEffort;
-                return [{ ...item, supportedReasoningEfforts: efforts, defaultReasoningEffort }];
-            });
-            if (!models.length) return;
-            const savedModel = useAgentStore.getState().model;
-            const current = models.find((item) => item.model === savedModel) || models.find((item) => item.isDefault) || models[0];
-            const savedEffort = useAgentStore.getState().reasoningEffort;
-            const efforts = current.supportedReasoningEfforts.map((item) => item.reasoningEffort);
-            const nextEffort = efforts.includes(savedEffort as AgentReasoningEffort) ? savedEffort as AgentReasoningEffort : current.defaultReasoningEffort || efforts[0];
-            localStorage.setItem("canvas-agent-model", current.model);
-            localStorage.setItem("canvas-agent-reasoning-effort", nextEffort);
-            setAgentState({ models, model: current.model, reasoningEffort: nextEffort });
-        }).catch((error) => addEventLog(rt("modelListFailed"), error));
+        void fetchAgentJson<AgentModelsResponse>(endpoint, token, "/agent/codex/models")
+            .then(({ data = [] }) => {
+                const names = new Set<string>();
+                const models = data.flatMap((item) => {
+                    const name = item.displayName || item.model;
+                    const efforts = item.supportedReasoningEfforts.filter(({ reasoningEffort }) => AGENT_REASONING_EFFORTS.has(reasoningEffort));
+                    if (item.model === "codex-auto-review" || names.has(name) || !efforts.length) return [];
+                    names.add(name);
+                    const defaultReasoningEffort = efforts.some((effort) => effort.reasoningEffort === item.defaultReasoningEffort) ? item.defaultReasoningEffort : efforts[0].reasoningEffort;
+                    return [{ ...item, supportedReasoningEfforts: efforts, defaultReasoningEffort }];
+                });
+                if (!models.length) return;
+                const savedModel = useAgentStore.getState().model;
+                const current = models.find((item) => item.model === savedModel) || models.find((item) => item.isDefault) || models[0];
+                const savedEffort = useAgentStore.getState().reasoningEffort;
+                const efforts = current.supportedReasoningEfforts.map((item) => item.reasoningEffort);
+                const nextEffort = efforts.includes(savedEffort as AgentReasoningEffort) ? (savedEffort as AgentReasoningEffort) : current.defaultReasoningEffort || efforts[0];
+                localStorage.setItem("canvas-agent-model", current.model);
+                localStorage.setItem("canvas-agent-reasoning-effort", nextEffort);
+                setAgentState({ models, model: current.model, reasoningEffort: nextEffort });
+            })
+            .catch((error) => addEventLog(rt("modelListFailed"), error));
     }, [connected, endpoint, setAgentState, token]);
 
     useEffect(() => {
@@ -664,10 +766,12 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
         const messageId = createId();
         const userText = text || rt(files.length ? "imagesSent" : "canvasReferencesSent", { count: files.length || canvasReferences.length });
-        const messageReferences: AgentCanvasReference[] = await Promise.all(canvasReferences.map(async ({ nodeId, label, title, kind, previewUrl, text }) => {
-            const image = referenceImages.find((item) => item.id === `canvas:${nodeId}`);
-            return { nodeId, label, title, kind, previewUrl: image ? (await createMessageAttachmentMetadata(image)).url : previewUrl, text };
-        }));
+        const messageReferences: AgentCanvasReference[] = await Promise.all(
+            canvasReferences.map(async ({ nodeId, label, title, kind, previewUrl, text }) => {
+                const image = referenceImages.find((item) => item.id === `canvas:${nodeId}`);
+                return { nodeId, label, title, kind, previewUrl: image ? (await createMessageAttachmentMetadata(image)).url : previewUrl, text };
+            }),
+        );
         const messageSkill = selectedSkill ? { name: selectedSkill.name, path: selectedSkill.path, displayName: selectedSkill.interface?.displayName || undefined } : undefined;
         loadThreadsSequenceRef.current += 1;
         const currentBeforeSend = useAgentStore.getState();
@@ -684,7 +788,10 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             };
             const modelName = models.find((item) => item.model === model)?.displayName || model || rt("defaultModel");
             const effortName = reasoningEffort ? i18n.t(`agent.composer.effort.${reasoningEffort}`) : rt("defaultEffort");
-            addEventLog(rt("sendTask"), `${modelName} · ${effortName}${selectedSkill ? ` · Skill ${selectedSkill.name}` : ""}${files.length ? ` · ${rt("attachmentCount", { count: files.length })}` : ""}${canvasReferences.length ? ` · ${rt("canvasReferenceCount", { count: canvasReferences.length })}` : ""} · ${compactText(text) || rt(canvasReferences.length ? "canvasReferencesOnly" : "attachmentsOnly")}`);
+            addEventLog(
+                rt("sendTask"),
+                `${modelName} · ${effortName}${selectedSkill ? ` · Skill ${selectedSkill.name}` : ""}${files.length ? ` · ${rt("attachmentCount", { count: files.length })}` : ""}${canvasReferences.length ? ` · ${rt("canvasReferenceCount", { count: canvasReferences.length })}` : ""} · ${compactText(text) || rt(canvasReferences.length ? "canvasReferencesOnly" : "attachmentsOnly")}`,
+            );
             const accepted = await fetchAgentJson<AgentTurnResponse>(endpoint, token, "/agent/codex/turn", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
@@ -713,7 +820,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             });
         } catch (error) {
             const text = error instanceof Error ? error.message : rt("sendFailed");
-            const response = error instanceof AgentApiError ? error.response as { code?: string; state?: AgentConversationState } : undefined;
+            const response = error instanceof AgentApiError ? (error.response as { code?: string; state?: AgentConversationState }) : undefined;
             if (response?.state) applyConversationState(response.state);
             const stale = response?.code === "CONVERSATION_STALE";
             const busy = response?.code === "CONVERSATION_BUSY" || text.includes("Codex 正在运行");
@@ -869,7 +976,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const current = useAgentStore.getState();
         const pending = current.pendingApprovals.find((item) => item.requestId === approval.requestId);
         if (!pending || pending.deciding) return;
-        setAgentState({ pendingApprovals: current.pendingApprovals.map((item) => item.requestId === approval.requestId ? { ...item, deciding: decision } : item), activity: rt("submittingApproval") });
+        setAgentState({ pendingApprovals: current.pendingApprovals.map((item) => (item.requestId === approval.requestId ? { ...item, deciding: decision } : item)), activity: rt("submittingApproval") });
         try {
             await postCodexApproval(endpoint, token, approval.requestId, decision);
             const latest = useAgentStore.getState();
@@ -878,13 +985,47 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const latest = useAgentStore.getState();
             const expired = error instanceof Error && error.message.includes("审批请求已失效");
             const resolved = expired || !latest.pendingApprovals.some((item) => item.requestId === approval.requestId);
-            const pendingApprovals = resolved
-                ? latest.pendingApprovals.filter((item) => item.requestId !== approval.requestId)
-                : latest.pendingApprovals.map((item) => item.requestId === approval.requestId ? { ...item, deciding: undefined } : item);
+            const pendingApprovals = resolved ? latest.pendingApprovals.filter((item) => item.requestId !== approval.requestId) : latest.pendingApprovals.map((item) => (item.requestId === approval.requestId ? { ...item, deciding: undefined } : item));
             setAgentState({ pendingApprovals, activity: approvalActivity(pendingApprovals, latest.waiting, latest.activity) });
             if (resolved) return;
             addEventLog(rt("approvalFailed"), error);
             message.error(error instanceof Error ? error.message : rt("approvalFailed"));
+        }
+    };
+
+    const submitClarification = async (clarification: AgentPendingClarification, answers: AgentClarificationAnswers) => {
+        const current = useAgentStore.getState();
+        const pending = current.pendingClarifications.find((item) => item.requestId === clarification.requestId);
+        if (!pending || pending.deciding) return;
+        setAgentState({ pendingClarifications: current.pendingClarifications.map((item) => (item.requestId === clarification.requestId ? { ...item, deciding: "submit" } : item)), activity: rt("submittingClarification") });
+        try {
+            await postCodexClarification(endpoint, token, clarification.requestId, answers);
+        } catch (error) {
+            const latest = useAgentStore.getState();
+            setAgentState({
+                pendingClarifications: latest.pendingClarifications.map((item) => (item.requestId === clarification.requestId ? { ...item, deciding: undefined } : item)),
+                activity: clarificationActivity(latest.pendingClarifications, latest.pendingApprovals, latest.waiting, latest.activity),
+            });
+            addEventLog(rt("clarificationFailed"), error);
+            message.error(error instanceof Error ? error.message : rt("clarificationFailed"));
+        }
+    };
+
+    const cancelClarification = async (clarification: AgentPendingClarification) => {
+        const current = useAgentStore.getState();
+        const pending = current.pendingClarifications.find((item) => item.requestId === clarification.requestId);
+        if (!pending || pending.deciding) return;
+        setAgentState({ pendingClarifications: current.pendingClarifications.map((item) => (item.requestId === clarification.requestId ? { ...item, deciding: "cancel" } : item)), activity: rt("submittingClarification") });
+        try {
+            await postCodexClarification(endpoint, token, clarification.requestId);
+        } catch (error) {
+            const latest = useAgentStore.getState();
+            setAgentState({
+                pendingClarifications: latest.pendingClarifications.map((item) => (item.requestId === clarification.requestId ? { ...item, deciding: undefined } : item)),
+                activity: clarificationActivity(latest.pendingClarifications, latest.pendingApprovals, latest.waiting, latest.activity),
+            });
+            addEventLog(rt("clarificationFailed"), error);
+            message.error(error instanceof Error ? error.message : rt("clarificationFailed"));
         }
     };
 
@@ -995,6 +1136,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             fragmentBootstrap: false,
             pendingTool: null,
             pendingApprovals: [],
+            pendingClarifications: [],
             conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} },
             bootstrapStatus: null,
             mcpStartupStatuses: {},
@@ -1024,7 +1166,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         clearSkillSelection();
         setAgentState({ activeTab: "chat", activity: rt("creatingConversation") });
         try {
-            const result = await fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) });
+            const result = await fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }),
+            });
             if (threadOperationRef.current !== operation) return;
             if (result.conversation) applyConversationState(result.conversation);
             setAgentState({ activeTab: "chat", activity: rt("newConversation") });
@@ -1044,7 +1190,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (!current.connected || !threadId || current.sending || current.waiting || current.loadingThreads || ["preparing", "running"].includes(current.conversation.status)) return;
         const operation = beginThreadOperation();
         try {
-            const result = await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}/resume`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ permissionMode, clientId: clientIdRef.current }) });
+            const result = await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}/resume`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ permissionMode, clientId: clientIdRef.current }),
+            });
             if (result.conversation) applyConversationState(result.conversation);
             await loadThreads();
             if (useAgentStore.getState().activeThreadId === threadId) setAgentState({ activeTab: "chat", activity: rt("conversationResumed") });
@@ -1138,13 +1288,13 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (item.type === "command_execution") {
             const detail = activityDetail(current.detail, "command", "inProgress");
             detail.output = isDelta ? `${stringText(detail.output)}${text}` : text;
-            setAgentState({ messages: currentMessages.map((message, itemIndex) => itemIndex === index ? { ...message, detail } : message) });
+            setAgentState({ messages: currentMessages.map((message, itemIndex) => (itemIndex === index ? { ...message, detail } : message)) });
             return;
         }
         const placeholder = activityPlaceholder(item.type);
         if (!text.trim() && current.text === placeholder) return;
         const nextText = isDelta ? `${current.text === placeholder ? "" : current.text}${text}` : mergeStreamText(current.text, text);
-        setAgentState({ messages: currentMessages.map((message, itemIndex) => itemIndex === index ? { ...message, text: nextText, detail: { ...activityDetail(message.detail, activityKind(item.type), "inProgress") } } : message) });
+        setAgentState({ messages: currentMessages.map((message, itemIndex) => (itemIndex === index ? { ...message, text: nextText, detail: { ...activityDetail(message.detail, activityKind(item.type), "inProgress") } } : message)) });
     };
 
     const upsertEventActivity = (event: AgentEventPayload, item: Omit<AgentChatItem, "id">) => {
@@ -1177,7 +1327,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             setAgentState({ messages: currentMessages.filter((_, itemIndex) => itemIndex !== index) });
             return;
         }
-        setAgentState({ messages: currentMessages.map((message, itemIndex) => itemIndex === index ? { ...message, text: reasoningActivityText(activityItems), activityItems, detail: activityDetail(message.detail, "reasoning", "completed") } : message) });
+        setAgentState({
+            messages: currentMessages.map((message, itemIndex) => (itemIndex === index ? { ...message, text: reasoningActivityText(activityItems), activityItems, detail: activityDetail(message.detail, "reasoning", "completed") } : message)),
+        });
     };
 
     const finishPlanActivity = (event: AgentEventPayload) => {
@@ -1187,7 +1339,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (index < 0) return;
         const current = currentMessages[index];
         const detail = activityDetail(current.detail, "todo", turnPlanStatus(current.detail, event.status));
-        setAgentState({ messages: currentMessages.map((message, itemIndex) => itemIndex === index ? { ...message, detail } : message) });
+        setAgentState({ messages: currentMessages.map((message, itemIndex) => (itemIndex === index ? { ...message, detail } : message)) });
     };
 
     const showAgentError = (value: unknown, event?: AgentEventPayload, log = true) => {
@@ -1199,7 +1351,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const current = state.messages.find((message) => message.id === item.id);
         if (current && !normalizeText(value)) return;
         upsertActivityMessage(item);
-        setAgentState({ activity: rt("processingFailed"), pendingApprovals: [] });
+        setAgentState({ activity: rt("processingFailed"), pendingApprovals: [], pendingClarifications: [] });
         if (log) addEventLog(rt("processingFailed"), error.text, value);
     };
 
@@ -1239,7 +1391,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const index = currentMessages.findIndex((message) => message.id === scoped.id);
             if (index >= 0) {
                 const text = stringText(event.item.text);
-                setAgentState({ messages: currentMessages.map((message, itemIndex) => itemIndex === index ? { ...message, text: text || message.text, streamId: undefined } : message) });
+                setAgentState({ messages: currentMessages.map((message, itemIndex) => (itemIndex === index ? { ...message, text: text || message.text, streamId: undefined } : message)) });
                 return;
             }
             addMessage(scoped);
@@ -1291,7 +1443,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const current = useAgentStore.getState();
             setAgentState({
                 activeTurnId: current.activeTurnId === scope.turnId ? "" : current.activeTurnId,
-                messages: current.messages.map((message) => message.threadId === scope.threadId && message.turnId === scope.turnId && message.streamId ? { ...message, streamId: undefined } : message),
+                messages: current.messages.map((message) => (message.threadId === scope.threadId && message.turnId === scope.turnId && message.streamId ? { ...message, streamId: undefined } : message)),
             });
             if (event.status === "failed") showAgentError(event.error?.message, event, !event.replayed);
         }
@@ -1310,7 +1462,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             pushMessage(scoped);
             return;
         }
-        setAgentState({ messages: currentMessages.map((message, itemIndex) => itemIndex === index ? { ...message, text: isDelta ? `${message.text}${text}` : mergeStreamText(message.text, text) } : message) });
+        setAgentState({ messages: currentMessages.map((message, itemIndex) => (itemIndex === index ? { ...message, text: isDelta ? `${message.text}${text}` : mergeStreamText(message.text, text) } : message)) });
     };
 
     const connectionStatus = t(connectError ? "agent.status.failed" : connected ? "agent.status.connected" : enabled ? "agent.status.connecting" : "agent.status.disconnected");
@@ -1327,7 +1479,14 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                         </span>
                         <div className="hidden text-base font-semibold leading-5 @min-[560px]:block">Agent</div>
                         <Tooltip title={t("agent.panel.connectionSettings", { status: connectionStatus })} placement="bottom">
-                            <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.panel.connectionSettingsLabel", { status: connectionStatus })} icon={<PlugZap className="size-3.5" style={{ color: connectionStatusColor }} />} onClick={() => setAgentState({ activeTab: "setup" })}>
+                            <Button
+                                size="small"
+                                type="text"
+                                className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]"
+                                aria-label={t("agent.panel.connectionSettingsLabel", { status: connectionStatus })}
+                                icon={<PlugZap className="size-3.5" style={{ color: connectionStatusColor }} />}
+                                onClick={() => setAgentState({ activeTab: "setup" })}
+                            >
                                 <span className="hidden @min-[560px]:inline">{connectionStatus}</span>
                             </Button>
                         </Tooltip>
@@ -1346,7 +1505,15 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 right={
                     <>
                         <Tooltip title={t("agent.history.newThread")} placement="bottom">
-                            <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.history.newThread")} disabled={!connected || loadingThreads || sending || waiting || conversationBusy} icon={<Plus className="size-3.5" />} onClick={startNewThread}>
+                            <Button
+                                size="small"
+                                type="text"
+                                className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]"
+                                aria-label={t("agent.history.newThread")}
+                                disabled={!connected || loadingThreads || sending || waiting || conversationBusy}
+                                icon={<Plus className="size-3.5" />}
+                                onClick={startNewThread}
+                            >
                                 <span className="hidden @min-[560px]:inline">{t("agent.history.newThread")}</span>
                             </Button>
                         </Tooltip>
@@ -1397,7 +1564,19 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 />
             ) : (
                 <>
-                    <AgentChatTimeline theme={theme} pendingTool={pendingTool} pendingApprovals={pendingApprovals} sending={sending} waiting={waiting} onRejectTool={rejectPendingTool} onApproveTool={approvePendingTool} onApprovalDecision={decideApproval} />
+                    <AgentChatTimeline
+                        theme={theme}
+                        pendingTool={pendingTool}
+                        pendingApprovals={pendingApprovals}
+                        pendingClarifications={pendingClarifications}
+                        sending={sending}
+                        waiting={waiting}
+                        onRejectTool={rejectPendingTool}
+                        onApproveTool={approvePendingTool}
+                        onApprovalDecision={decideApproval}
+                        onClarificationSubmit={submitClarification}
+                        onClarificationCancel={cancelClarification}
+                    />
                     <AgentTaskProgress theme={theme} busy={sending || waiting} />
                     {tokenUsage ? <AgentUsageBar usage={tokenUsage} theme={theme} /> : null}
                     <AgentChatComposer
@@ -1405,11 +1584,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                         attachments={attachments.map((attachment) => agentAttachmentToChatAttachment(attachment, endpoint, token))}
                         disabled={!connected || !conversationReady || loadingThreads}
                         sending={sending || waiting}
-                        placeholder={conversation.status === "idle" || conversation.status === "preparing"
-                            ? t("agent.panel.mcpInitializing")
-                            : conversation.status === "failed"
-                                ? t("agent.panel.initFailed")
-                                : t("agent.panel.placeholder")}
+                        placeholder={conversation.status === "idle" || conversation.status === "preparing" ? t("agent.panel.mcpInitializing") : conversation.status === "failed" ? t("agent.panel.initFailed") : t("agent.panel.placeholder")}
                         theme={theme}
                         onPromptChange={(prompt) => setAgentState({ prompt })}
                         onSubmit={sendPrompt}
@@ -1463,11 +1638,13 @@ function acquireAgentClientId() {
         }
         while (true) {
             const acquired = await new Promise<boolean>((resolve, reject) => {
-                void navigator.locks.request(`infinite-canvas-agent:${clientId}`, { ifAvailable: true }, async (lock) => {
-                    if (!lock) return resolve(false);
-                    resolve(true);
-                    await new Promise<void>(() => undefined);
-                }).catch(reject);
+                void navigator.locks
+                    .request(`infinite-canvas-agent:${clientId}`, { ifAvailable: true }, async (lock) => {
+                        if (!lock) return resolve(false);
+                        resolve(true);
+                        await new Promise<void>(() => undefined);
+                    })
+                    .catch(reject);
             });
             if (acquired) {
                 saveAgentClientId(clientId);
@@ -1516,6 +1693,11 @@ function approvalActivity(pendingApprovals: AgentPendingApproval[], waiting: boo
     return waiting ? rt("codexRunning") : fallback;
 }
 
+function clarificationActivity(pendingClarifications: AgentPendingClarification[], pendingApprovals: AgentPendingApproval[], waiting: boolean, fallback: string) {
+    if (pendingClarifications.length) return rt("awaitingClarification");
+    return approvalActivity(pendingApprovals, waiting, fallback);
+}
+
 async function attachmentNodeOps(endpoint: string, token: string, clientId: string, value: unknown): Promise<CanvasAgentOp[]> {
     const nodes = Array.isArray(value) ? value : [];
     if (!nodes.length) throw new Error(rt("noImageAttachments"));
@@ -1552,9 +1734,7 @@ function createId() {
 }
 
 async function createMessageAttachmentMetadata(item: AgentAttachment) {
-    const url = Math.max(item.width, item.height) > MESSAGE_PREVIEW_LONG_EDGE || item.dataUrl.length > MESSAGE_PREVIEW_MAX_LENGTH
-        ? await upscaleDataUrl(item.dataUrl, { targetLongEdge: MESSAGE_PREVIEW_LONG_EDGE, algorithm: "high" })
-        : item.dataUrl;
+    const url = Math.max(item.width, item.height) > MESSAGE_PREVIEW_LONG_EDGE || item.dataUrl.length > MESSAGE_PREVIEW_MAX_LENGTH ? await upscaleDataUrl(item.dataUrl, { targetLongEdge: MESSAGE_PREVIEW_LONG_EDGE, algorithm: "high" }) : item.dataUrl;
     return { id: item.id, name: item.name, type: item.type, size: item.size, width: item.width, height: item.height, url };
 }
 

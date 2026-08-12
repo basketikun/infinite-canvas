@@ -84,6 +84,11 @@ export async function resolveCodexApproval(requestId: string, decision: string) 
     return Boolean(codexApp?.resolveApproval(requestId, decision));
 }
 
+/** 回复当前 app-server 的待处理业务澄清请求。 */
+export async function resolveCodexClarification(requestId: string, answers: JsonRecord | null) {
+    return Boolean(codexApp?.resolveClarification(requestId, answers));
+}
+
 /** 创建新的 Codex 线程并记录当前线程 ID。 */
 export async function startCodexThread(emit: AgentEmit, cwd?: string, permissionMode: AgentPermissionMode = "request", preheat = false) {
     const app = await getCodexApp(emit);

@@ -23,7 +23,7 @@ export type ConversationState = {
     error?: string;
 };
 type McpInventoryItem = { name: string; authStatus?: string };
-export const AGENT_PROTOCOL_VERSION = 6;
+export const AGENT_PROTOCOL_VERSION = 7;
 
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
@@ -44,6 +44,7 @@ export class CanvasSession {
     private clientFocusOrder = new Map<string, number>();
     private pending = new Map<string, PendingRequest>();
     private pendingApprovals = new Map<string, Record<string, unknown>>();
+    private pendingClarifications = new Map<string, Record<string, unknown>>();
     private canvasStates = new Map<string, CanvasSnapshot>();
     private turnAttachments = new Map<string, TurnAttachment>();
     private codexReplayEvents = new Map<string, ReplayEvent>();
@@ -224,12 +225,22 @@ export class CanvasSession {
         return [...this.pendingApprovals.values()];
     }
 
+    /** 返回刷新后仍需展示的 Codex 业务澄清请求。 */
+    get codexPendingClarifications() {
+        return [...this.pendingClarifications.values()];
+    }
+
     /** 跟踪需要跨页面重连恢复的 Codex 权限请求。 */
     trackCodexEvent(type: string, payload: Record<string, unknown>) {
         const requestId = String(payload.requestId || "");
         if (type === "codex_approval" && requestId) this.pendingApprovals.set(requestId, payload);
         if (type === "codex_approval_resolved" && requestId) this.pendingApprovals.delete(requestId);
-        if (type === "agent_error") this.pendingApprovals.clear();
+        if (type === "agent_clarification" && requestId) this.pendingClarifications.set(requestId, payload);
+        if (type === "agent_clarification_resolved" && requestId) this.pendingClarifications.delete(requestId);
+        if (type === "agent_error") {
+            this.pendingApprovals.clear();
+            this.pendingClarifications.clear();
+        }
     }
 
     /** 更新并广播 Codex 运行状态；静默后台活动可保留上一 turn 的断线重放。 */
@@ -279,7 +290,7 @@ export class CanvasSession {
                 this.clientFocusOrder.set(clientId, ++this.focusSequence);
             }
         }
-        sendEvent(res, "hello", { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, clientId, workspace: { activeThreadId }, conversation: this.conversationStateSnapshot, codex: this.codexState, pendingApprovals: this.codexPendingApprovals });
+        sendEvent(res, "hello", { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, clientId, workspace: { activeThreadId }, conversation: this.conversationStateSnapshot, codex: this.codexState, pendingApprovals: this.codexPendingApprovals, pendingClarifications: this.codexPendingClarifications });
         if (!statusOnly && activeThreadId && this.codexState.threadId === activeThreadId) this.codexReplayEvents.forEach((event) => sendEvent(res, event.type, event.payload));
         const timer = setInterval(() => sendEvent(res, "ping", { time: Date.now() }), 15000);
         res.on("close", () => {

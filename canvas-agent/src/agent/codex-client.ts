@@ -17,6 +17,7 @@ type ActiveTurn = PendingRequest & { threadId: string; turnId: string; prompt: s
 type ItemDeltaParams = { threadId: string; turnId: string; itemId: string; delta: string; summaryIndex?: number };
 type PendingDelta = { delta: string; itemType: string; params: ItemDeltaParams; timer: ReturnType<typeof setTimeout> };
 type ApprovalRequest = { id: number; method: string; params: JsonRecord; decision?: string };
+type ClarificationRequest = { id: number; method: string; params: JsonRecord; result?: JsonRecord };
 type PendingTurnStart = { threadId: string; prompt: string; messageText?: string; turnId?: string; onTurn?: (turnId: string) => void };
 
 const canvasAgentMcp = canvasAgentMcpCommand();
@@ -51,6 +52,7 @@ export class CodexAppClient {
     private nextItemSequences = new Map<string, number>();
     private plansByTurn = new Map<string, CodexPlanUpdate>();
     private approvalRequests = new Map<string, ApprovalRequest>();
+    private clarificationRequests = new Map<string, ClarificationRequest>();
     private finalizingTurns = new Map<string, Promise<void>>();
     private skillReloads = new Map<string, Promise<CodexRequestResult<"skills/list">>>();
     private silentThreadIds = new Set<string>();
@@ -268,6 +270,7 @@ export class CodexAppClient {
         const turnId = this.currentTurnId;
         if (!threadId || !turnId || (requestedThreadId && requestedThreadId !== threadId)) return false;
         try {
+            this.cancelClarifications(threadId);
             logger.warn("Interrupting active Codex turn", { threadId, turnId });
             await this.request("turn/interrupt", { threadId, turnId });
             return true;
@@ -289,6 +292,15 @@ export class CodexAppClient {
             ? { permissions: accepted ? permissions || {} : {}, scope: decision === "acceptForSession" ? "session" : "turn" }
             : { decision };
         this.write({ id: request.id, result });
+        return true;
+    }
+
+    /** 回复网页端已经完成或取消的业务澄清请求。 */
+    resolveClarification(requestId: string, answers: JsonRecord | null) {
+        const request = this.clarificationRequests.get(requestId);
+        if (!request || request.result) return false;
+        request.result = answers === null ? { action: "cancel" } : { action: "accept", content: answers };
+        this.write({ id: request.id, result: request.result });
         return true;
     }
 
@@ -375,6 +387,12 @@ export class CodexAppClient {
             if (request) {
                 this.approvalRequests.delete(requestId);
                 this.emit("codex_approval_resolved", { ...request.params, ...params, requestId, decision: request.decision });
+                return;
+            }
+            const clarification = requestId ? this.clarificationRequests.get(requestId) : undefined;
+            if (clarification) {
+                this.clarificationRequests.delete(requestId);
+                this.emit("agent_clarification_resolved", { ...clarification.params, ...params, requestId, action: clarification.result?.action || "cancel" });
             }
             return;
         }
@@ -666,7 +684,11 @@ export class CodexAppClient {
         const params = (field(message, "params") as JsonRecord) || {};
         const threadId = String(field(params, "threadId") || this.currentThreadId);
         if (this.silentThreadIds.has(threadId)) {
-            const result = method === "item/permissions/requestApproval" ? { permissions: {}, scope: "turn" } : { decision: "decline" };
+            const result = method === "item/permissions/requestApproval"
+                ? { permissions: {}, scope: "turn" }
+                : method === "mcpServer/elicitation/request"
+                    ? { action: "cancel" }
+                    : { decision: "decline" };
             this.write({ id: message.id, result });
             return;
         }
@@ -676,9 +698,26 @@ export class CodexAppClient {
             this.emit("codex_approval", { requestId, method, ...params });
             return;
         }
-        const result = method === "mcpServer/elicitation/request" ? { action: "accept", content: {}, _meta: null } : { decision: "decline" };
+        if (method === "mcpServer/elicitation/request") {
+            const requestId = String(message.id);
+            this.clarificationRequests.set(requestId, { id: Number(message.id), method, params });
+            this.emit("agent_clarification", normalizeClarificationRequest(requestId, params, this.currentThreadId, this.currentTurnId));
+            return;
+        }
+        const result = { decision: "decline" };
         this.write({ id: message.id, result });
         this.emit("agent_event", { agent: "codex", type: "server.request", method, params, result });
+    }
+
+    /** 将指定线程仍在等待的澄清统一取消，避免 turn 中断后永久悬挂。 */
+    private cancelClarifications(threadId: string) {
+        this.clarificationRequests.forEach((request, requestId) => {
+            if (String(field(request.params, "threadId") || this.currentThreadId) !== threadId || request.result) return;
+            request.result = { action: "cancel" };
+            this.write({ id: request.id, result: request.result });
+            this.emit("agent_clarification_resolved", { ...request.params, requestId, action: "cancel" });
+            this.clarificationRequests.delete(requestId);
+        });
     }
 
     /** 完成指定 JSON-RPC 请求。 */
@@ -699,6 +738,7 @@ export class CodexAppClient {
         this.failing = true;
         this.failureMessage = message;
         this.approvalRequests.forEach((request, requestId) => this.emit("codex_approval_resolved", { ...request.params, requestId, decision: request.decision || "cancel" }));
+        this.clarificationRequests.forEach((request, requestId) => this.emit("agent_clarification_resolved", { ...request.params, requestId, action: "cancel" }));
         const failedTurns = new Map<string, { threadId: string; turnId: string; prompt: string; messageText?: string }>();
         this.activeTurns.forEach(({ threadId, turnId, prompt, messageText }, key) => {
             if (this.silentThreadIds.has(threadId)) return;
@@ -726,6 +766,7 @@ export class CodexAppClient {
         this.completedTurns.clear();
         this.completedTurnResults.clear();
         this.approvalRequests.clear();
+        this.clarificationRequests.clear();
         this.silentThreadIds.clear();
         this.pendingSilentThreadStarts.clear();
         this.pendingThreadStartedNotifications.length = 0;
@@ -779,6 +820,7 @@ function canvasAgentMcpCommand() {
     const current = process.argv.find((arg) => /index\.(t|j)s$/.test(arg)) || "";
     const entry = path.resolve(current || fileURLToPath(new URL("../index.js", import.meta.url)));
     const tsx = path.join(path.dirname(entry), "..", "node_modules", "tsx", "dist", "cli.mjs");
+    if (entry.endsWith(".ts") && process.versions.bun) return { command: process.execPath, args: [entry, "mcp"] };
     return entry.endsWith(".ts") ? { command: process.execPath, args: [tsx, entry, "mcp"] } : { command: process.execPath, args: [entry, "mcp"] };
 }
 
@@ -845,6 +887,47 @@ function codexEventScope(params: JsonRecord) {
     const threadId = String(field(params, "threadId") || field(field(params, "thread"), "id") || "");
     const turnId = String(field(params, "turnId") || field(field(params, "turn"), "id") || "");
     return { ...(threadId ? { thread_id: threadId } : {}), ...(turnId ? { turn_id: turnId } : {}) };
+}
+
+function normalizeClarificationRequest(requestId: string, params: JsonRecord, fallbackThreadId: string, fallbackTurnId: string) {
+    const requestedSchema = field(params, "requestedSchema") as JsonRecord || {};
+    const properties = field(requestedSchema, "properties") as JsonRecord || {};
+    const required = new Set(Array.isArray(field(requestedSchema, "required")) ? field(requestedSchema, "required") as unknown[] : []);
+    const meta = field(params, "_meta") as JsonRecord || {};
+    const clarification = field(meta, "infinite-canvas/clarification") as JsonRecord || {};
+    const supplied = Array.isArray(field(clarification, "questions")) ? field(clarification, "questions") as JsonRecord[] : [];
+    const suppliedById = new Map(supplied.map((question) => [String(field(question, "id") || ""), question]));
+    const questions = Object.entries(properties).flatMap(([id, definition]) => {
+        const schema = definition && typeof definition === "object" ? definition as JsonRecord : {};
+        const source = suppliedById.get(id) || {};
+        const type = String(field(schema, "type") || "string");
+        const standardOptions = type === "array" ? field(field(schema, "items"), "anyOf") : field(schema, "oneOf");
+        const kind = field(source, "kind") || (type === "array" ? "multiple" : Array.isArray(field(schema, "enum")) || Array.isArray(standardOptions) ? "single" : "text");
+        const values = type === "array" ? field(field(schema, "items"), "enum") : field(schema, "enum");
+        const enumNames = field(schema, "enumNames");
+        const options = Array.isArray(field(source, "options"))
+            ? field(source, "options")
+            : Array.isArray(standardOptions)
+                ? standardOptions.flatMap((option) => {
+                    const optionValue = field(option, "const");
+                    return typeof optionValue === "string" ? [{ value: optionValue, label: String(field(option, "title") || optionValue) }] : [];
+                })
+            : Array.isArray(values)
+                ? values.map((value, index) => ({ value: String(value), label: Array.isArray(enumNames) ? String(enumNames[index] || value) : String(value) }))
+                : undefined;
+        return id ? [{
+            id,
+            label: String(field(source, "label") || field(schema, "title") || id),
+            ...(String(field(source, "description") || field(schema, "description") || "") ? { description: String(field(source, "description") || field(schema, "description")) } : {}),
+            kind,
+            ...(options ? { options } : {}),
+            required: Boolean(field(source, "required") ?? required.has(id)),
+            ...(String(field(source, "placeholder") || "") ? { placeholder: String(field(source, "placeholder")) } : {}),
+        }] : [];
+    });
+    const threadId = String(field(params, "threadId") || fallbackThreadId);
+    const turnId = String(field(params, "turnId") || fallbackTurnId);
+    return { requestId, ...(threadId ? { threadId } : {}), ...(turnId ? { turnId } : {}), message: String(field(params, "message") || "请补充以下信息。"), questions };
 }
 
 /** 统一 app-server item 的类型和参数格式。 */

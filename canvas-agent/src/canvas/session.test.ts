@@ -221,11 +221,12 @@ test("new clients receive the current Codex state and later updates", (t) => {
     t.after(() => client.close());
 
     const hello = client.event("hello");
-    assert.equal(field(hello, "protocolVersion"), 6);
+    assert.equal(field(hello, "protocolVersion"), 7);
     assert.deepEqual(field(hello, "workspace"), { activeThreadId: "thread-2" });
     assert.deepEqual(field(hello, "conversation"), { revision: 1, conversationId: "thread-2", threadId: "thread-2", status: "ready", mcpStatuses: {} });
     assert.deepEqual(field(hello, "codex"), { busy: true, threadId: "thread-2", turnId: "turn-1" });
     assert.deepEqual(field(hello, "pendingApprovals"), [{ requestId: "approval-1", threadId: "thread-2" }]);
+    assert.deepEqual(field(hello, "pendingClarifications"), []);
 
     session.trackCodexEvent("codex_approval_resolved", { requestId: "approval-1" });
     assert.deepEqual(session.codexPendingApprovals, []);
@@ -235,6 +236,18 @@ test("new clients receive the current Codex state and later updates", (t) => {
     session.trackCodexEvent("agent_error", { message: "app-server exited" });
     assert.deepEqual(session.codexPendingApprovals, []);
     assert.deepEqual(client.event("codex_state"), { busy: false, threadId: "thread-2", turnId: "turn-1" });
+});
+
+test("new clients restore pending Codex clarifications and resolution clears them", (t) => {
+    const session = new CanvasSession("thread-1");
+    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.trackCodexEvent("agent_clarification", { requestId: "question-1", threadId: "thread-1", turnId: "turn-1", message: "请选择", questions: [{ id: "style", label: "形式", kind: "single", options: [{ value: "brand", label: "品牌宣传片" }], required: true }] });
+    const client = connect(session, "first", "thread-1");
+    t.after(() => client.close());
+
+    assert.deepEqual(field(client.event("hello"), "pendingClarifications"), [{ requestId: "question-1", threadId: "thread-1", turnId: "turn-1", message: "请选择", questions: [{ id: "style", label: "形式", kind: "single", options: [{ value: "brand", label: "品牌宣传片" }], required: true }] }]);
+    session.trackCodexEvent("agent_clarification_resolved", { requestId: "question-1" });
+    assert.deepEqual(session.codexPendingClarifications, []);
 });
 
 test("对话 revision 单调递增且 MCP 全部进入终态前保持 preparing", () => {

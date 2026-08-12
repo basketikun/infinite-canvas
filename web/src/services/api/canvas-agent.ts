@@ -1,12 +1,15 @@
 import i18n from "@/i18n";
 import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
-import type { AgentReasoningEffort } from "@/stores/use-agent-store";
+import type { AgentClarificationAnswers, AgentReasoningEffort } from "@/stores/use-agent-store";
 
 type AgentConfigResponse = { ok?: boolean; protocolVersion?: number; url?: string; token?: string; hasToken?: boolean };
 const AGENT_MESSAGE_ASSET_PATTERN = /^agent-asset:([a-f0-9]{64})\/([a-f0-9]{64}\.(?:gif|jpe?g|png|webp))$/;
 
 export class AgentApiError<T = unknown> extends Error {
-    constructor(readonly status: number, readonly response: T & { code?: string; error?: string; msg?: string }) {
+    constructor(
+        readonly status: number,
+        readonly response: T & { code?: string; error?: string; msg?: string },
+    ) {
         super(response.error || response.msg || i18n.t("agent.state.requestFailed"));
         this.name = "AgentApiError";
     }
@@ -66,6 +69,14 @@ export async function postToolResult(endpoint: string, token: string, clientId: 
 
 export async function postCodexApproval(endpoint: string, token: string, requestId: string, decision: "accept" | "acceptForSession" | "decline") {
     await fetchAgentJson(endpoint, token, "/agent/codex/approval", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, decision }) });
+}
+
+export async function postCodexClarification(endpoint: string, token: string, requestId: string, answers?: AgentClarificationAnswers) {
+    await fetchAgentJson(endpoint, token, "/agent/codex/clarification", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ requestId, answers: answers || null }),
+    });
 }
 
 export async function interruptCodexTurn(endpoint: string, token: string, threadId?: string) {

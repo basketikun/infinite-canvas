@@ -55,4 +55,6 @@ The current release needs manual verification in these areas:
 - Asset image download: opening an image that still previews in My Assets and clicking Download image should save the file. Titles with Chinese characters, spaces, or brackets such as `【】` should remain the downloaded filename and must not need renaming. Images saved from the canvas in the same session should download as well.
 - Canvas video task resume: starting an OpenAI-style video generation should store the remote task ID on the video node. After a page refresh, a still-pending video should keep polling automatically; if polling stopped, **Get task status** should resume with that task ID until the video is ready, the task fails, or the status request errors. Task failure should then allow a normal retry that creates a new generation.
 
+- Agent creative clarification: when a Skill or Agent calls `ask_user`, the right panel should render single-choice, multi-choice, or text questions, block continuation until required answers are complete, and resume or cancel the same Codex turn after submission. A page refresh should restore an unresolved question for its thread; creative clarification must remain separate from permission approval.
+
 The Chinese version contains the complete item-by-item acceptance checklist.
