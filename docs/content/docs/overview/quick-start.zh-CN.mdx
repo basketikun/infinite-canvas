@@ -41,6 +41,7 @@ docker run --rm -p 3000:3000 infinite-canvas
 - 先打开右上角配置弹窗，填入自己的 `Base URL`、`API Key` 和模型名。
 - 如果需要提示词仓库内容，打开 `/prompts` 会由浏览器前端直连拉取并缓存到 IndexedDB。
 - 如果需要跨设备同步画布、素材和生成记录，可在配置弹窗中填写 WebDAV。
+- 如果使用本机 Eagle，先启动 Eagle 再启动前端，即可把 Eagle 文件夹和素材作为第二个可选来源；Eagle 未连接时项目本地素材仍可正常使用。
 
 ## 说明
 

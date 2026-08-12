@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchEagleAssets, fetchEagleConnection, type EagleConnection } from "@/services/eagle-assets";
+import { fetchEagleAssets, fetchEagleConnection, type EagleConnection, type EagleFolder } from "@/services/eagle-assets";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 
 export type AssetSourceFilter = "all" | "local" | "eagle";
@@ -8,6 +8,7 @@ export type AssetSourceFilter = "all" | "local" | "eagle";
 export function useAssetCatalog() {
     const localAssets = useAssetStore((state) => state.assets);
     const [eagleAssets, setEagleAssets] = useState<Asset[]>([]);
+    const [eagleFolders, setEagleFolders] = useState<EagleFolder[]>([]);
     const [eagleConnection, setEagleConnection] = useState<EagleConnection>({ connected: false });
     const [eagleLoading, setEagleLoading] = useState(true);
     const [eagleError, setEagleError] = useState<string | null>(null);
@@ -19,11 +20,13 @@ export function useAssetCatalog() {
         void Promise.all([fetchEagleAssets(controller.signal), fetchEagleConnection(controller.signal)])
             .then(([result, connection]) => {
                 setEagleAssets(result.assets);
+                setEagleFolders(result.folders);
                 setEagleConnection(connection);
             })
             .catch((error) => {
                 if (error instanceof DOMException && error.name === "AbortError") return;
                 setEagleAssets([]);
+                setEagleFolders([]);
                 setEagleError(error instanceof Error ? error.message : "Eagle 资产读取失败");
                 setEagleConnection({ connected: false, error: error instanceof Error ? error.message : "Eagle 资产读取失败" });
             })
@@ -34,7 +37,7 @@ export function useAssetCatalog() {
     useEffect(() => refreshEagle(), []);
 
     return useMemo(
-        () => ({ localAssets, eagleAssets, assets: [...localAssets, ...eagleAssets], eagleConnection, eagleLoading, eagleError, refreshEagle }),
-        [eagleAssets, eagleConnection, eagleError, eagleLoading, localAssets],
+        () => ({ localAssets, eagleAssets, eagleFolders, assets: [...localAssets, ...eagleAssets], eagleConnection, eagleLoading, eagleError, refreshEagle }),
+        [eagleAssets, eagleConnection, eagleError, eagleFolders, eagleLoading, localAssets],
     );
 }

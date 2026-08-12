@@ -1,6 +1,7 @@
 import type { Asset } from "@/stores/use-asset-store";
 
-type EagleListResponse = { assets: Asset[]; folders: Array<{ id: string; name: string; parent?: string }> };
+export type EagleFolder = { id: string; name: string; parent?: string };
+type EagleListResponse = { assets: Asset[]; folders: EagleFolder[] };
 export type EagleConnection = { connected: boolean; version?: string; buildVersion?: string; error?: string };
 
 type EagleWriteResponse<T> = { status: "success" | "error"; data?: T; message?: string };
@@ -31,7 +32,7 @@ export async function fetchEagleConnection(signal?: AbortSignal): Promise<EagleC
     }
 }
 
-export async function createEagleAsset(input: { base64: string; name?: string; tags?: string[]; annotation?: string }) {
+export async function createEagleAsset(input: { base64: string; name?: string; tags?: string[]; folders?: string[]; annotation?: string }) {
     return eagleWrite<{ id?: string; ids?: string[] }>("/api/eagle/items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -39,7 +40,7 @@ export async function createEagleAsset(input: { base64: string; name?: string; t
     });
 }
 
-export async function createEagleTextAsset(input: { content: string; name?: string; tags?: string[]; annotation?: string }) {
+export async function createEagleTextAsset(input: { content: string; name?: string; tags?: string[]; folders?: string[]; annotation?: string }) {
     return eagleWrite<{ id?: string; ids?: string[] }>("/api/eagle/items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

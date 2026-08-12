@@ -2,7 +2,9 @@ import type { NavigateFunction } from "react-router-dom";
 
 import i18n from "@/i18n";
 import { fetchPrompts } from "@/services/api/prompts";
+import { fetchEagleAssets } from "@/services/eagle-assets";
 import { uploadImage } from "@/services/image-storage";
+import { saveAssetDraft, type AssetSaveTarget } from "@/services/asset-save";
 import { imageAspectOptions, imageQualityOptions } from "@/components/image-settings-panel";
 import { videoResolutionOptions, videoSecondOptions, videoSizeOptions } from "@/components/video-settings-panel";
 import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
@@ -14,17 +16,7 @@ import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 // Execute site-level Agent tools in the browser, including canvas lists, workbench generation, prompt search, and asset operations.
 // Their data lives locally in the browser through localforage and Zustand, so this module accesses the relevant stores directly.
 
-export const SITE_TOOL_NAMES = [
-    "canvas_list_projects",
-    "generation_get_status",
-    "workbench_image_get_config",
-    "workbench_image_generate",
-    "workbench_video_get_config",
-    "workbench_video_generate",
-    "prompts_search",
-    "assets_list",
-    "assets_add",
-] as const;
+export const SITE_TOOL_NAMES = ["canvas_list_projects", "generation_get_status", "workbench_image_get_config", "workbench_image_generate", "workbench_video_get_config", "workbench_video_generate", "prompts_search", "assets_list", "assets_add"] as const;
 
 export type SiteToolName = (typeof SITE_TOOL_NAMES)[number];
 
@@ -37,21 +29,52 @@ function siteText(key: string, options?: Record<string, unknown>) {
 }
 
 export const SITE_TOOL_LABELS: Record<SiteToolName, string> = {
-    get canvas_list_projects() { return siteText("canvasList"); },
-    get generation_get_status() { return siteText("generationStatus"); },
-    get workbench_image_get_config() { return siteText("imageConfig"); },
-    get workbench_image_generate() { return siteText("imageGenerate"); },
-    get workbench_video_get_config() { return siteText("videoConfig"); },
-    get workbench_video_generate() { return siteText("videoGenerate"); },
-    get prompts_search() { return siteText("promptSearch"); },
-    get assets_list() { return siteText("assetList"); },
-    get assets_add() { return siteText("assetAdd"); },
+    get canvas_list_projects() {
+        return siteText("canvasList");
+    },
+    get generation_get_status() {
+        return siteText("generationStatus");
+    },
+    get workbench_image_get_config() {
+        return siteText("imageConfig");
+    },
+    get workbench_image_generate() {
+        return siteText("imageGenerate");
+    },
+    get workbench_video_get_config() {
+        return siteText("videoConfig");
+    },
+    get workbench_video_generate() {
+        return siteText("videoGenerate");
+    },
+    get prompts_search() {
+        return siteText("promptSearch");
+    },
+    get assets_list() {
+        return siteText("assetList");
+    },
+    get assets_add() {
+        return siteText("assetAdd");
+    },
 };
 
 type SiteToolInput = Record<string, unknown>;
 type SiteToolContext = { canvasSnapshot?: CanvasAgentSnapshot | null };
 type GenerationStatus = "idle" | "queued" | "running" | "succeeded" | "failed";
-type GenerationStatusItem = { id: string; source: "canvas" | "image" | "video"; status: GenerationStatus; kind?: string; title?: string; prompt?: string; projectId?: string; createdAt?: string; updatedAt?: string; successCount?: number; failCount?: number; error?: string };
+type GenerationStatusItem = {
+    id: string;
+    source: "canvas" | "image" | "video";
+    status: GenerationStatus;
+    kind?: string;
+    title?: string;
+    prompt?: string;
+    projectId?: string;
+    createdAt?: string;
+    updatedAt?: string;
+    successCount?: number;
+    failCount?: number;
+    error?: string;
+};
 
 export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navigate: NavigateFunction, context: SiteToolContext = {}): Promise<unknown> {
     switch (name) {
@@ -93,7 +116,16 @@ function getGenerationStatus(input: SiteToolInput, canvasSnapshot?: CanvasAgentS
             if (!status || (nodeIds.size && !nodeIds.has(node.id))) return;
             const metadata = node.metadata || {};
             if (!nodeIds.size && node.type !== "config" && status !== "running" && status !== "failed" && !metadata.generationMode && !metadata.generationType && !metadata.model) return;
-            tasks.push({ id: node.id, source: "canvas", status, kind: metadata.generationMode || node.type, title: node.title, prompt: compactPrompt(metadata.prompt || metadata.composerContent), projectId: canvasSnapshot.projectId, error: metadata.errorDetails });
+            tasks.push({
+                id: node.id,
+                source: "canvas",
+                status,
+                kind: metadata.generationMode || node.type,
+                title: node.title,
+                prompt: compactPrompt(metadata.prompt || metadata.composerContent),
+                projectId: canvasSnapshot.projectId,
+                error: metadata.errorDetails,
+            });
         });
     }
 
@@ -131,7 +163,9 @@ function compactPrompt(prompt: unknown) {
 function listCanvasProjects(input: SiteToolInput) {
     const { projects, hydrated } = useCanvasStore.getState();
     if (!hydrated) throw new Error(siteText("canvasLoading"));
-    const keyword = String(input.keyword || "").trim().toLowerCase();
+    const keyword = String(input.keyword || "")
+        .trim()
+        .toLowerCase();
     const filtered = keyword ? projects.filter((project) => project.title.toLowerCase().includes(keyword)) : projects;
     const { page, pageSize, start, end } = paginate(input, filtered.length, 20);
     const items = filtered.slice(start, end).map((project) => ({
@@ -255,12 +289,22 @@ async function searchPrompts(input: SiteToolInput) {
     };
 }
 
-function listAssets(input: SiteToolInput) {
+async function listAssets(input: SiteToolInput) {
     const { assets, hydrated } = useAssetStore.getState();
     if (!hydrated) throw new Error(siteText("assetsLoading"));
+    let eagleAssets = [] as typeof assets;
+    let eagleError: string | undefined;
+    try {
+        eagleAssets = (await fetchEagleAssets()).assets;
+    } catch (error) {
+        eagleError = error instanceof Error ? error.message : "Eagle 资产读取失败";
+    }
     const kind = input.kind === "text" || input.kind === "image" || input.kind === "video" ? input.kind : "all";
-    const keyword = String(input.keyword || "").trim().toLowerCase();
-    const filtered = assets.filter((asset) => {
+    const keyword = String(input.keyword || "")
+        .trim()
+        .toLowerCase();
+    const allAssets = [...assets, ...eagleAssets];
+    const filtered = allAssets.filter((asset) => {
         if (kind !== "all" && asset.kind !== kind) return false;
         if (!keyword) return true;
         return [asset.title, asset.note, asset.source, ...asset.tags].filter(Boolean).join(" ").toLowerCase().includes(keyword);
@@ -278,7 +322,7 @@ function listAssets(input: SiteToolInput) {
         coverUrl: asset.coverUrl || undefined,
         content: asset.kind === "text" ? asset.data.content : undefined,
     }));
-    return { total: filtered.length, page, pageSize, items };
+    return { total: filtered.length, page, pageSize, items, sources: { local: assets.length, eagle: eagleAssets.length }, ...(eagleError ? { eagleError } : {}) };
 }
 
 async function addAsset(input: SiteToolInput) {
@@ -289,23 +333,38 @@ async function addAsset(input: SiteToolInput) {
     const source = typeof input.source === "string" ? input.source : "Agent";
     const note = typeof input.note === "string" ? input.note : undefined;
     const store = useAssetStore.getState();
+    const target: AssetSaveTarget = input.target === "eagle" ? { provider: "eagle", folderId: typeof input.eagleFolderId === "string" ? input.eagleFolderId : undefined } : { provider: "local" };
     if (kind === "text") {
         const content = String(input.content || "").trim();
         if (!content) throw new Error(siteText("textContentRequired"));
-        const id = store.addAsset({ kind: "text", title, coverUrl: "", tags, source, note, data: { content } });
-        return { ok: true, id, kind: "text" };
+        const result = await saveAssetDraft({ kind: "text", title, coverUrl: "", tags, source, note, data: { content } }, target, store.addAsset);
+        return { ok: true, id: result.id, kind: "text", target: result.provider };
     }
     if (kind === "image") {
         const imageUrl = String(input.imageUrl || "").trim();
         if (!imageUrl) throw new Error(siteText("imageUrlRequired"));
-        let stored;
-        try {
-            stored = await uploadImage(imageUrl);
-        } catch {
-            throw new Error(siteText("imageReadFailed"));
+        let stored: Awaited<ReturnType<typeof uploadImage>> | undefined;
+        if (target.provider === "local") {
+            try {
+                stored = await uploadImage(imageUrl);
+            } catch {
+                throw new Error(siteText("imageReadFailed"));
+            }
         }
-        const id = store.addAsset({ kind: "image", title, coverUrl: stored.url, tags, source, note, data: { dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType } });
-        return { ok: true, id, kind: "image" };
+        const result = await saveAssetDraft(
+            {
+                kind: "image",
+                title,
+                coverUrl: stored?.url || imageUrl,
+                tags,
+                source,
+                note,
+                data: { dataUrl: stored?.url || imageUrl, storageKey: stored?.storageKey, width: stored?.width || 0, height: stored?.height || 0, bytes: stored?.bytes || 0, mimeType: stored?.mimeType || "image/png" },
+            },
+            target,
+            store.addAsset,
+        );
+        return { ok: true, id: result.id, kind: "image", target: result.provider };
     }
     throw new Error(siteText("assetKindUnsupported"));
 }

@@ -34,5 +34,6 @@ docker run --rm -p 3000:3000 infinite-canvas
 - Open Settings and enter your `Base URL`, `API Key`, and model names.
 - Open `/prompts` to fetch prompt repositories directly from the browser and cache them in IndexedDB.
 - Configure WebDAV if you want to synchronize canvases, assets, and generation history across devices.
+- If Eagle is installed locally, start Eagle before the frontend to expose its folders and assets as an optional second asset source. The project-local asset library remains available when Eagle is offline.
 
 Canvas projects and My Assets are primarily stored in the browser. The API key is also stored locally and used by the browser to call OpenAI-compatible endpoints directly.

@@ -60,6 +60,7 @@
 - 插件系统：支持通过 URL 动态安装 / 启用 / 更新 / 卸载远程节点插件，并提供 TypeScript SDK 自行开发画布节点插件。
 - 自定义接口调用：可自定义生图 / 视频接口的调用方式，灵活适配各类中转站与自建服务。
 - 提示词库：浏览器前端直连多个 GitHub 开源项目，并缓存到 IndexedDB。
+- Eagle 资产库：在本地运行 Eagle 时，可将 Eagle 文件夹树作为素材来源，同时保留项目本地素材；图片、视频和文本均可按目标文件夹读写。
 
 完整功能说明见 [功能介绍](docs/content/docs/overview/features.mdx)。
 
@@ -92,6 +93,10 @@ docker compose up -d
 首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
 
 如果默认的OpenAI接口调用方式与您的API不同，可自定义生图/视频脚本调用。
+
+### Eagle 资产库（本地可选）
+
+先启动 Eagle，再启动 Infinite Canvas。开发服务器会通过本机回环地址读取 Eagle 的资产和文件夹；如果 Eagle 未运行，项目本地资产仍可正常使用。资产页、画布资产栏和“选择资产”会显示 Eagle 文件夹树，保存图片、视频或文本时可选择项目本地、Eagle 未分类或 Eagle 子文件夹。
 
 ## 效果展示
 

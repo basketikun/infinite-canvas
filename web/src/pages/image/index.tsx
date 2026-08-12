@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Check, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -9,6 +9,7 @@ import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
+import { AssetSaveButton, type AssetSaveMenuOptions, eagleSaveMessageKey } from "@/components/asset-save-menu";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -18,6 +19,8 @@ import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
+import { useAssetCatalog } from "@/hooks/use-asset-catalog";
+import { saveAssetDraft, type AssetSaveTarget } from "@/services/asset-save";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
@@ -65,7 +68,6 @@ type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
 const LOG_STORE_KEY = "infinite-canvas:image_generation_logs";
-const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate";
 const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
 
 export default function ImagePage() {
@@ -79,8 +81,12 @@ export default function ImagePage() {
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
+    const { eagleFolders, eagleLoading, eagleError, refreshEagle } = useAssetCatalog();
+    const assetSaveOptions: AssetSaveMenuOptions = { eagleFolders, eagleLoading, eagleError, onRefreshEagle: refreshEagle };
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
+    const [referenceResultIds, setReferenceResultIds] = useState<Set<string>>(() => new Set());
+    const [referenceAddingIds, setReferenceAddingIds] = useState<Set<string>>(() => new Set());
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [running, setRunning] = useState(false);
@@ -100,6 +106,8 @@ export default function ImagePage() {
     const updateAgentTask = useWorkbenchAgentStore((state) => state.updateTask);
     const processedCommandRef = useRef(0);
     const agentTaskIdRef = useRef<string | undefined>(undefined);
+    const referenceResultIdsRef = useRef(new Set<string>());
+    const referenceAddingIdsRef = useRef(new Set<string>());
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
@@ -174,6 +182,10 @@ export default function ImagePage() {
         if (agentTaskId) updateAgentTask(agentTaskId, { status: "running", error: undefined });
         setPreviewLog(null);
         setResults(Array.from({ length: generationCount }, () => ({ id: nanoid(), status: "pending" })));
+        referenceResultIdsRef.current.clear();
+        referenceAddingIdsRef.current.clear();
+        setReferenceResultIds(new Set());
+        setReferenceAddingIds(new Set());
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
 
@@ -240,23 +252,39 @@ export default function ImagePage() {
     };
 
     const addResultToReferences = async (image: GeneratedImage, index: number) => {
-        const stored = await uploadImage(image.dataUrl);
-        setReferences((value) => [...value, { id: nanoid(), name: `result-${index + 1}.png`, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
-        message.success(t("imageWorkbench.addedReference"));
+        if (referenceResultIdsRef.current.has(image.id) || referenceAddingIdsRef.current.has(image.id)) return;
+        referenceAddingIdsRef.current.add(image.id);
+        setReferenceAddingIds(new Set(referenceAddingIdsRef.current));
+        try {
+            const stored = await uploadImage(image.dataUrl);
+            setReferences((value) => [...value, { id: nanoid(), name: `result-${index + 1}.png`, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
+            referenceResultIdsRef.current.add(image.id);
+            setReferenceResultIds(new Set(referenceResultIdsRef.current));
+            message.success(t("imageWorkbench.addedReference"));
+        } catch {
+            message.error(t("imageWorkbench.addReferenceFailed"));
+        } finally {
+            referenceAddingIdsRef.current.delete(image.id);
+            setReferenceAddingIds(new Set(referenceAddingIdsRef.current));
+        }
     };
 
-    const saveResultToAssets = async (image: GeneratedImage, index: number) => {
-        const stored = await uploadImage(image.dataUrl);
-        addAsset({
-            kind: "image",
-            title: t("imageWorkbench.resultTitle", { count: index + 1 }),
-            coverUrl: stored.url,
-            tags: [],
-            source: t("imageWorkbench.source"),
-            data: { dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType },
-            metadata: { source: "image-page", prompt },
-        });
-        message.success(t("common.addedToAssets"));
+    const saveResultToAssets = async (image: GeneratedImage, index: number, target: AssetSaveTarget) => {
+        const stored = target.provider === "local" ? await uploadImage(image.dataUrl) : undefined;
+        await saveAssetDraft(
+            {
+                kind: "image",
+                title: t("imageWorkbench.resultTitle", { count: index + 1 }),
+                coverUrl: stored?.url || image.dataUrl,
+                tags: [],
+                source: t("imageWorkbench.source"),
+                data: { dataUrl: target.provider === "local" ? stored?.url || "" : image.dataUrl, storageKey: stored?.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType || "image/png" },
+                metadata: { source: "image-page", prompt },
+            },
+            target,
+            addAsset,
+        );
+        message.success(t(eagleSaveMessageKey("image", target.provider)));
     };
 
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
@@ -279,6 +307,10 @@ export default function ImagePage() {
         setStartedAt(0);
         setSelectedLogIds([]);
         setPreviewLog(null);
+        referenceResultIdsRef.current.clear();
+        referenceAddingIdsRef.current.clear();
+        setReferenceResultIds(new Set());
+        setReferenceAddingIds(new Set());
     };
 
     const deleteSelectedLogs = () => {
@@ -303,6 +335,10 @@ export default function ImagePage() {
         setLogsOpen(false);
         setPrompt(log.prompt);
         setReferences(log.references || []);
+        referenceResultIdsRef.current.clear();
+        referenceAddingIdsRef.current.clear();
+        setReferenceResultIds(new Set());
+        setReferenceAddingIds(new Set());
         if (log.config.imageModel || log.model) updateConfig("imageModel", log.config.imageModel || log.model);
         if (log.config.quality) updateConfig("quality", log.config.quality);
         if (log.config.size) updateConfig("size", log.config.size);
@@ -510,7 +546,17 @@ export default function ImagePage() {
                             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                                 {results.map((result, index) =>
                                     result.status === "success" && result.image ? (
-                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
+                                        <ResultImageCard
+                                            key={result.id}
+                                            image={result.image}
+                                            index={index}
+                                            onAddReference={addResultToReferences}
+                                            onDownload={downloadImage}
+                                            onSaveAsset={saveResultToAssets}
+                                            assetSaveOptions={assetSaveOptions}
+                                            referenceAdded={referenceResultIds.has(result.image.id)}
+                                            referenceAdding={referenceAddingIds.has(result.image.id)}
+                                        />
                                     ) : result.status === "failed" ? (
                                         <FailedImageCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={() => retryResult(index)} />
                                     ) : (
@@ -583,43 +629,52 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
 function ResultImageCard({
     image,
     index,
-    onEdit,
+    onAddReference,
     onDownload,
     onSaveAsset,
+    assetSaveOptions,
+    referenceAdded,
+    referenceAdding,
 }: {
     image: GeneratedImage;
     index: number;
-    onEdit: (image: GeneratedImage, index: number) => void;
+    onAddReference: (image: GeneratedImage, index: number) => void | Promise<void>;
     onDownload: (image: GeneratedImage, index: number) => void;
-    onSaveAsset: (image: GeneratedImage, index: number) => void;
+    onSaveAsset: (image: GeneratedImage, index: number, target: AssetSaveTarget) => void | Promise<void>;
+    assetSaveOptions: AssetSaveMenuOptions;
+    referenceAdded: boolean;
+    referenceAdding: boolean;
 }) {
     const { t } = useTranslation();
     return (
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
             <Image src={image.dataUrl} alt={t("imageWorkbench.resultAlt", { count: index + 1 })} className="aspect-square object-cover" />
             <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
-                <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+                <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
                     <span>
                         {image.width}x{image.height}
                     </span>
                     <span>{formatBytes(image.bytes)}</span>
                     <span>{formatDuration(image.durationMs)}</span>
                 </div>
-                <div className="grid min-w-0 grid-cols-3 gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
                     <Tooltip title={t("common.addToAssets")}>
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
-                            {t("common.addToAssets")}
-                        </Button>
+                        <AssetSaveButton {...assetSaveOptions} className="min-w-0 flex-1" onSave={(target) => onSaveAsset(image, index, target)} label={t("imageWorkbench.addAsset")} />
                     </Tooltip>
                     <Tooltip title={t("imageWorkbench.addReference")}>
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
-                            {t("imageWorkbench.addReference")}
-                        </Button>
+                        <Button
+                            size="small"
+                            className="size-8 shrink-0 !px-0"
+                            loading={referenceAdding}
+                            disabled={referenceAdded || referenceAdding}
+                            type={referenceAdded ? "text" : "default"}
+                            aria-label={t("imageWorkbench.addReference")}
+                            icon={referenceAdded ? <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <PenLine className="size-3.5" />}
+                            onClick={() => void onAddReference(image, index)}
+                        />
                     </Tooltip>
                     <Tooltip title={t("common.download")}>
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
-                            {t("common.download")}
-                        </Button>
+                        <Button size="small" className="size-8 shrink-0 !px-0" aria-label={t("common.download")} icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)} />
                     </Tooltip>
                 </div>
             </div>

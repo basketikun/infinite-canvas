@@ -1,19 +1,23 @@
 import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, Eye, FileText, FolderOpen, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
+import { AssetSaveButton, type AssetSaveMenuOptions } from "@/components/asset-save-menu";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { exportCanvasNodes } from "@/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { cn } from "@/lib/utils";
+import { useAssetCatalog } from "@/hooks/use-asset-catalog";
+import { isEagleAsset } from "@/services/eagle-assets";
 import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dialog";
 import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
+import { saveAssetDraft, type AssetSaveTarget } from "@/services/asset-save";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -32,6 +36,7 @@ type Props = {
     onFocusNode: (nodeId: string) => void;
     onPreviewNode: (nodeId: string) => void;
     onInsertAsset: (payload: InsertAssetPayload) => void;
+    onOpenAssetPicker: () => void;
 };
 
 const NODE_TYPE_ICON: Record<string, typeof Square> = {
@@ -50,7 +55,7 @@ const STATUS_COLOR: Record<string, string> = {
     idle: "transparent",
 };
 
-export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onInsertAsset }: Props) {
+export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onInsertAsset, onOpenAssetPicker }: Props) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
@@ -108,7 +113,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                     {tab === "canvas" ? (
                         <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} theme={theme} />
                     ) : tab === "assets" ? (
-                        <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
+                        <CanvasAssetsTab onInsert={onInsertAsset} onOpenPicker={onOpenAssetPicker} theme={theme} />
                     ) : (
                         <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
                     )}
@@ -198,7 +203,16 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                     <ListChecks className="size-3.5" />
                     {selectMode ? t("common.cancel") : t("canvas.sidePanel.select")}
                 </button>
-                {selectMode ? null : <Select size="small" variant="borderless" className="w-20" value={typeFilter} onChange={setTypeFilter} options={NODE_FILTER_VALUES.map((value) => ({ value, label: value === "all" ? t("common.all") : t(`canvas.sidePanel.filter.${value}`) }))} />}
+                {selectMode ? null : (
+                    <Select
+                        size="small"
+                        variant="borderless"
+                        className="w-20"
+                        value={typeFilter}
+                        onChange={setTypeFilter}
+                        options={NODE_FILTER_VALUES.map((value) => ({ value, label: value === "all" ? t("common.all") : t(`canvas.sidePanel.filter.${value}`) }))}
+                    />
+                )}
             </div>
             <div className="px-3 pb-2.5">
                 <Input size="small" allowClear prefix={<Search className="size-3.5 text-stone-400" />} placeholder={t("canvas.sidePanel.searchNodes")} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
@@ -213,7 +227,12 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                             const active = selectMode ? isChecked : selectedNodeIds.has(node.id);
                             return (
                                 <div key={node.id} className={cn("group flex w-full items-center rounded-lg transition", active ? "" : "hover:bg-black/5 dark:hover:bg-white/5")} style={active ? { background: theme.toolbar.activeBg } : undefined}>
-                                    <button type="button" onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))} className="flex min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left" title={selectMode ? undefined : t("canvas.sidePanel.focusNode")}>
+                                    <button
+                                        type="button"
+                                        onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))}
+                                        className="flex min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left"
+                                        title={selectMode ? undefined : t("canvas.sidePanel.focusNode")}
+                                    >
                                         {selectMode ? <CheckMark checked={isChecked} theme={theme} /> : null}
                                         <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md">
                                             {isImage ? <img src={node.metadata!.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5 opacity-60" />}
@@ -226,7 +245,13 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                                     </button>
                                     {selectMode || !isImage ? null : (
                                         <div className="flex shrink-0 flex-col items-center gap-0.5 pr-1.5">
-                                            <button type="button" onClick={() => onPreviewNode(node.id)} className="grid size-7 place-items-center rounded-md opacity-55 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.sidePanel.preview")} title={t("canvas.sidePanel.preview")}>
+                                            <button
+                                                type="button"
+                                                onClick={() => onPreviewNode(node.id)}
+                                                className="grid size-7 place-items-center rounded-md opacity-55 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                                                aria-label={t("canvas.sidePanel.preview")}
+                                                title={t("canvas.sidePanel.preview")}
+                                            >
                                                 <Eye className="size-3.5" />
                                             </button>
                                         </div>
@@ -285,10 +310,10 @@ function buildInsertPayload(asset: Asset): InsertAssetPayload {
     return { kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title };
 }
 
-const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onInsert: (payload: InsertAssetPayload) => void; theme: CanvasTheme }) {
+const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, onOpenPicker, theme }: { onInsert: (payload: InsertAssetPayload) => void; onOpenPicker: () => void; theme: CanvasTheme }) {
     const { message } = App.useApp();
     const { t } = useTranslation();
-    const assets = useAssetStore((state) => state.assets);
+    const { assets, eagleFolders, eagleLoading, eagleError, refreshEagle } = useAssetCatalog();
     const addAsset = useAssetStore((state) => state.addAsset);
     const removeAsset = useAssetStore((state) => state.removeAsset);
     const [keyword, setKeyword] = useState("");
@@ -296,12 +321,14 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const uploadTargetRef = useRef<AssetSaveTarget>({ provider: "local" });
+    const assetSaveOptions: AssetSaveMenuOptions = { eagleFolders, eagleLoading, eagleError, onRefreshEagle: refreshEagle };
 
     const allTags = useMemo(() => Array.from(new Set(assets.flatMap((asset) => asset.tags || []))).slice(0, 20), [assets]);
 
     const filtered = useMemo(() => {
         const query = keyword.trim().toLowerCase();
-        return assets.filter((asset) => (tagFilter === "all" || (asset.tags || []).includes(tagFilter)) && (!query || [asset.title, ...(asset.tags || [])].join(" ").toLowerCase().includes(query)));
+        return assets.filter((asset) => (tagFilter === "all" || (asset.tags || []).includes(tagFilter)) && (!query || [asset.title, asset.source || "", asset.note || "", ...(asset.tags || [])].join(" ").toLowerCase().includes(query)));
     }, [assets, keyword, tagFilter]);
 
     const groups = useMemo(() => ASSET_GROUPS.map((group) => ({ ...group, items: filtered.filter((asset) => asset.kind === group.kind) })).filter((group) => group.items.length > 0), [filtered]);
@@ -311,20 +338,67 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
         if (!files.length) return;
         setUploading(true);
         const hide = message.loading(t("canvas.sidePanel.addingAssets"), 0);
+        const target = uploadTargetRef.current;
         let added = 0;
         try {
             for (const file of files) {
                 if (file.type.startsWith("image/")) {
-                    const image = await uploadImage(file);
-                    addAsset({ kind: "image", title: file.name || t("assets.kinds.image"), coverUrl: image.url, tags: [], data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType } });
+                    if (target.provider === "local") {
+                        const image = await uploadImage(file);
+                        await saveAssetDraft(
+                            {
+                                kind: "image",
+                                title: file.name || t("assets.kinds.image"),
+                                coverUrl: image.url,
+                                tags: [],
+                                data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType },
+                            },
+                            target,
+                            addAsset,
+                        );
+                    } else {
+                        const sourceUrl = URL.createObjectURL(file);
+                        try {
+                            await saveAssetDraft(
+                                { kind: "image", title: file.name || t("assets.kinds.image"), coverUrl: sourceUrl, tags: [], data: { dataUrl: sourceUrl, width: 0, height: 0, bytes: file.size, mimeType: file.type || "image/png" } },
+                                target,
+                                addAsset,
+                            );
+                        } finally {
+                            URL.revokeObjectURL(sourceUrl);
+                        }
+                    }
                     added += 1;
                 } else if (file.type.startsWith("video/")) {
-                    const media = await uploadMediaFile(file, "video");
-                    addAsset({ kind: "video", title: file.name || t("assets.kinds.video"), coverUrl: "", tags: [], data: { url: media.url, storageKey: media.storageKey, width: media.width || 0, height: media.height || 0, bytes: media.bytes, mimeType: media.mimeType } });
+                    if (target.provider === "local") {
+                        const media = await uploadMediaFile(file, "video");
+                        await saveAssetDraft(
+                            {
+                                kind: "video",
+                                title: file.name || t("assets.kinds.video"),
+                                coverUrl: "",
+                                tags: [],
+                                data: { url: media.url, storageKey: media.storageKey, width: media.width || 0, height: media.height || 0, bytes: media.bytes, mimeType: media.mimeType },
+                            },
+                            target,
+                            addAsset,
+                        );
+                    } else {
+                        const sourceUrl = URL.createObjectURL(file);
+                        try {
+                            await saveAssetDraft(
+                                { kind: "video", title: file.name || t("assets.kinds.video"), coverUrl: "", tags: [], data: { url: sourceUrl, width: 0, height: 0, bytes: file.size, mimeType: file.type || "video/mp4" } },
+                                target,
+                                addAsset,
+                            );
+                        } finally {
+                            URL.revokeObjectURL(sourceUrl);
+                        }
+                    }
                     added += 1;
                 }
             }
-            if (added) message.success(t("canvas.sidePanel.addedAssets", { count: added }));
+            if (added) message.success(target.provider === "eagle" ? t("assets.eagleSaved") : t("canvas.sidePanel.addedAssets", { count: added }));
             else message.warning(t("canvas.sidePanel.mediaOnly"));
         } catch (error) {
             console.error(error);
@@ -337,21 +411,61 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
     };
 
     return (
-        <div className="flex h-full flex-col">
-            <div className="flex items-center gap-2 px-3 pb-2 pt-1">
-                <Input size="small" allowClear prefix={<Search className="size-3.5 text-stone-400" />} placeholder={t("canvas.sidePanel.searchAssets")} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
-                <button
-                    type="button"
-                    disabled={uploading}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
-                    style={{ color: theme.node.text }}
-                >
-                    <Plus className="size-3.5" />
-                    {t("canvas.sidePanel.add")}
-                </button>
-                <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => void handleFiles(e.target.files)} />
+        <div className="@container flex h-full flex-col">
+            <div className="flex items-center gap-1.5 px-3 pb-2 pt-1 @max-[360px]:flex-wrap">
+                <Input
+                    className="min-w-0 flex-1 @max-[360px]:basis-full"
+                    size="small"
+                    allowClear
+                    prefix={<Search className="size-3.5 shrink-0 text-stone-400" />}
+                    placeholder={t("canvas.sidePanel.searchAssets")}
+                    value={keyword}
+                    onChange={(e) => setKeyword(e.target.value)}
+                />
+                <div className="flex shrink-0 items-center gap-1 @max-[360px]:w-full @max-[360px]:justify-start @max-[360px]:pl-0.5">
+                    <button
+                        type="button"
+                        onClick={onOpenPicker}
+                        className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-black/10 bg-black/[0.03] px-2 py-1 text-xs font-semibold leading-none transition hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/10"
+                        style={{ color: theme.node.text }}
+                        title={t("canvas.assetPicker.title")}
+                    >
+                        <FolderOpen className="size-3.5 shrink-0" />
+                        <span>{t("canvas.assetPicker.title")}</span>
+                    </button>
+                    <AssetSaveButton
+                        {...assetSaveOptions}
+                        type="text"
+                        size="small"
+                        disabled={uploading}
+                        className="!h-7 !w-auto !min-w-0 !shrink-0 !px-2"
+                        style={{ color: theme.node.text }}
+                        onSave={(target) => {
+                            uploadTargetRef.current = target;
+                            fileInputRef.current?.click();
+                        }}
+                        label={t("canvas.sidePanel.add")}
+                        icon={<Plus className="size-3.5" />}
+                    />
+                </div>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                        void handleFiles(e.target.files);
+                        e.currentTarget.value = "";
+                    }}
+                />
             </div>
+            {eagleError ? (
+                <button type="button" onClick={refreshEagle} className="mx-3 mb-2 text-left text-[11px] text-amber-600 underline dark:text-amber-400">
+                    {t("assets.eagleUnavailable")} · {t("assets.retryEagle")}
+                </button>
+            ) : null}
+            {eagleLoading ? <div className="px-3 pb-2 text-[11px] opacity-50">{t("assets.eagleLoading")}</div> : null}
             {allTags.length ? (
                 <div className="flex flex-wrap gap-1.5 px-3 pb-2">
                     <Tag.CheckableTag checked={tagFilter === "all"} className={cn("prompt-filter-tag", tagFilter === "all" && "is-active")} onChange={() => setTagFilter("all")}>
@@ -384,7 +498,13 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
                                     {isCollapsed ? null : (
                                         <div className="grid grid-cols-2 gap-2 px-1 pb-2 pt-1">
                                             {group.items.map((asset) => (
-                                                <AssetCard key={asset.id} asset={asset} theme={theme} onInsert={() => onInsert(buildInsertPayload(asset))} onRemove={() => (removeAsset(asset.id), message.success(t("canvas.sidePanel.assetRemoved")))} />
+                                                <AssetCard
+                                                    key={asset.id}
+                                                    asset={asset}
+                                                    theme={theme}
+                                                    onInsert={() => onInsert(buildInsertPayload(asset))}
+                                                    onRemove={isEagleAsset(asset) ? undefined : () => (removeAsset(asset.id), message.success(t("canvas.sidePanel.assetRemoved")))}
+                                                />
                                             ))}
                                         </div>
                                     )}
@@ -400,7 +520,7 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
     );
 });
 
-function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: CanvasTheme; onInsert: () => void; onRemove: () => void }) {
+function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: CanvasTheme; onInsert: () => void; onRemove?: () => void }) {
     const { t } = useTranslation();
     return (
         <div className="group relative aspect-square overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:shadow-lg" style={{ borderColor: theme.node.stroke, background: theme.node.panel }}>
@@ -414,15 +534,17 @@ function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: 
                 >
                     <Plus className="size-4" />
                 </button>
-                <Popconfirm title={t("canvas.sidePanel.removeAssetTitle")} okText={t("canvas.sidePanel.remove")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={onRemove}>
-                    <button
-                        type="button"
-                        className="grid size-8 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-red-500 dark:bg-black/60 dark:text-stone-100 dark:hover:bg-black/80 dark:hover:text-red-400"
-                        aria-label={t("canvas.sidePanel.removeAsset")}
-                    >
-                        <Trash2 className="size-4" />
-                    </button>
-                </Popconfirm>
+                {onRemove ? (
+                    <Popconfirm title={t("canvas.sidePanel.removeAssetTitle")} okText={t("canvas.sidePanel.remove")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={onRemove}>
+                        <button
+                            type="button"
+                            className="grid size-8 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-red-500 dark:bg-black/60 dark:text-stone-100 dark:hover:bg-black/80 dark:hover:text-red-400"
+                            aria-label={t("canvas.sidePanel.removeAsset")}
+                        >
+                            <Trash2 className="size-4" />
+                        </button>
+                    </Popconfirm>
+                ) : null}
             </div>
         </div>
     );
@@ -466,19 +588,23 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { o
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 <div className="space-y-1">
-                    {enabledSources.length ? enabledSources.map((source) => (
-                        <PromptSourceGroup
-                            key={source.id}
-                            sourceId={source.id}
-                            sourceName={source.name}
-                            keyword={keyword}
-                            open={!!expanded[source.id]}
-                            theme={theme}
-                            onToggle={() => setExpanded((prev) => ({ ...prev, [source.id]: !prev[source.id] }))}
-                            onInsert={onInsert}
-                            onView={setDetail}
-                        />
-                    )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("canvas.sidePanel.noPrompts")} className="pt-12" />}
+                    {enabledSources.length ? (
+                        enabledSources.map((source) => (
+                            <PromptSourceGroup
+                                key={source.id}
+                                sourceId={source.id}
+                                sourceName={source.name}
+                                keyword={keyword}
+                                open={!!expanded[source.id]}
+                                theme={theme}
+                                onToggle={() => setExpanded((prev) => ({ ...prev, [source.id]: !prev[source.id] }))}
+                                onInsert={onInsert}
+                                onView={setDetail}
+                            />
+                        ))
+                    ) : (
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("canvas.sidePanel.noPrompts")} className="pt-12" />
+                    )}
                 </div>
             </div>
             <PromptDetailDialog prompt={detail} onClose={() => setDetail(null)} onCopy={(prompt) => void copyPrompt(prompt)} />
@@ -568,7 +694,13 @@ function PromptRow({ item, theme, onInsert, onView }: { item: Prompt; theme: Can
                 <div className="mt-0.5 truncate text-xs leading-snug opacity-50">{item.prompt}</div>
             </button>
             <div className="flex shrink-0 flex-col items-center gap-0.5">
-                <button type="button" onClick={onView} className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.sidePanel.viewDetails")} title={t("canvas.sidePanel.viewDetails")}>
+                <button
+                    type="button"
+                    onClick={onView}
+                    className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                    aria-label={t("canvas.sidePanel.viewDetails")}
+                    title={t("canvas.sidePanel.viewDetails")}
+                >
                     <Eye className="size-3.5" />
                 </button>
                 <button
