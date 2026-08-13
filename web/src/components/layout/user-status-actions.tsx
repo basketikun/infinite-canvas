@@ -1,7 +1,8 @@
 import type { CSSProperties } from "react";
-import { Tooltip } from "antd";
-import { BookOpen, Keyboard, Puzzle, Settings2 } from "lucide-react";
+import { App, Popconfirm, Tooltip } from "antd";
+import { BookOpen, Keyboard, LogOut, Puzzle, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useState } from "react";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { GitHubLink } from "@/components/layout/github-link";
@@ -22,6 +23,8 @@ type UserStatusActionsProps = {
 
 export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
     const { i18n, t } = useTranslation();
+    const { message } = App.useApp();
+    const [exiting, setExiting] = useState(false);
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -34,6 +37,25 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const locale = i18n.resolvedLanguage as AppLocale;
     const nextLocale = locale === "zh-CN" ? "en-US" : "zh-CN";
     const languageLabel = t("topNav.switchLanguage", { language: t(nextLocale === "zh-CN" ? "locale.zhCN" : "locale.enUS") });
+
+    async function exitApp() {
+        setExiting(true);
+        try {
+            const probe = await fetch("/api/app/exit", { method: "GET" });
+            if (!probe.ok) throw new Error("Local exit is unavailable");
+        } catch {
+            message.warning(t("topNav.exitUnavailable"));
+            setExiting(false);
+            return;
+        }
+
+        const payload = new Blob(["{}"], { type: "application/json" });
+        if (!navigator.sendBeacon("/api/app/exit", payload)) {
+            void fetch("/api/app/exit", { method: "POST", keepalive: true }).catch(() => undefined);
+        }
+        window.close();
+        window.setTimeout(() => window.location.replace("about:blank"), 150);
+    }
 
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
@@ -63,6 +85,11 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Keyboard className="size-4" />
                 </button>
             ) : null}
+            <Popconfirm title={t("topNav.exitConfirm")} okText={t("common.confirm")} cancelText={t("common.cancel")} onConfirm={() => void exitApp()}>
+                <button type="button" className={naturalIconClass} style={iconStyle} disabled={exiting} aria-label={t("topNav.exitApp")} title={t("topNav.exitApp")} aria-busy={exiting}>
+                    <LogOut className="size-4" />
+                </button>
+            </Popconfirm>
         </div>
     );
 }

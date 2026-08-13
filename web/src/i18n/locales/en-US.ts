@@ -268,6 +268,7 @@ export default {
             textRequired: "Enter text content",
             textPlaceholder: "Save prompts, copy, reference descriptions, and other text assets",
             imageContent: "Image content",
+            videoPreview: "Video preview",
         },
         selectImageFile: "Select image file",
         noImageSelected: "No image selected",
@@ -839,6 +840,9 @@ export default {
         shortcuts: "Keyboard shortcuts",
         lightTheme: "Switch to light theme",
         darkTheme: "Switch to dark theme",
+        exitApp: "Exit Infinite Canvas",
+        exitConfirm: "Exit Infinite Canvas? The local development service will also stop.",
+        exitUnavailable: "Automatic exit is unavailable here. Please close this browser tab manually.",
     },
     home: {
         promptError: "Failed to load prompts",

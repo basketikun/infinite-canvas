@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } from "vite";
 
 import { parseChangelog } from "./src/lib/release";
 import { eagleBridge } from "./eagle-bridge";
@@ -39,9 +39,40 @@ function localPluginsManifest(): Plugin {
     };
 }
 
+function localExit(): Plugin {
+    const attachExitHandler = (server: ViteDevServer | PreviewServer) => {
+        server.middlewares.use("/api/app/exit", (req, res, _next) => {
+            const address = req.socket.remoteAddress || "";
+            const isLoopback = address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+            if (!isLoopback) {
+                res.statusCode = 403;
+                return res.end(JSON.stringify({ status: "error", message: "Local exit is only available from this computer" }));
+            }
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            if (req.method === "GET") {
+                res.statusCode = 200;
+                return res.end(JSON.stringify({ status: "success", available: true }));
+            }
+            if (req.method !== "POST") {
+                res.statusCode = 405;
+                res.setHeader("Allow", "GET, POST");
+                return res.end(JSON.stringify({ status: "error", message: "Method not allowed" }));
+            }
+            res.statusCode = 200;
+            res.end(JSON.stringify({ status: "success" }));
+            setTimeout(() => process.exit(0), 100);
+        });
+    };
+    return {
+        name: "local-exit",
+        configureServer: attachExitHandler,
+        configurePreviewServer: attachExitHandler,
+    };
+}
+
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
-    plugins: [react(), localPluginsManifest(), eagleBridge()],
+    plugins: [react(), localPluginsManifest(), eagleBridge(), localExit()],
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),

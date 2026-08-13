@@ -80,6 +80,8 @@ bun install
 bun run dev
 ```
 
+Windows 用户也可以直接运行项目根目录的 `启动 Infinite Canvas.ps1`。本地运行时，网页右上角的退出按钮会停止当前 Infinite Canvas 开发服务；如果浏览器禁止脚本关闭标签页，按钮会退回到空白页。
+
 ### Docker 运行
 
 ```bash

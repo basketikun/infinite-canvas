@@ -230,14 +230,59 @@ async function eagleFilePath(id: string, kind: "file" | "thumbnail") {
     return assertInside(join(directory, fallback), imagesRoot);
 }
 
-function sendFile(res: ServerResponse, filePath: string) {
+function sendFile(req: IncomingMessage, res: ServerResponse, filePath: string) {
     if (!existsSync(filePath) || !statSync(filePath).isFile()) return json(res, 404, { status: "error", message: "Eagle file not found" });
+    const fileSize = statSync(filePath).size;
     const extension = extname(filePath).toLowerCase();
-    const mime = extension === ".jpg" || extension === ".jpeg" ? "image/jpeg" : extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : extension === ".gif" ? "image/gif" : extension === ".svg" ? "image/svg+xml" : extension === ".mp4" ? "video/mp4" : extension === ".webm" ? "video/webm" : extension === ".mov" ? "video/quicktime" : "application/octet-stream";
-    res.statusCode = 200;
+    const mime = extension === ".jpg" || extension === ".jpeg" ? "image/jpeg" : extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : extension === ".gif" ? "image/gif" : extension === ".svg" ? "image/svg+xml" : extension === ".heic" ? "image/heic" : extension === ".heif" ? "image/heif" : extension === ".mp4" ? "video/mp4" : extension === ".webm" ? "video/webm" : extension === ".mov" ? "video/quicktime" : "application/octet-stream";
+    const range = req.headers.range;
+    let start = 0;
+    let end = fileSize - 1;
+    if (range) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+        if (!match || (!match[1] && !match[2])) {
+            res.statusCode = 416;
+            res.setHeader("Content-Range", `bytes */${fileSize}`);
+            return res.end();
+        }
+        if (!match[1]) {
+            const suffixLength = Number(match[2]);
+            if (!suffixLength) {
+                res.statusCode = 416;
+                res.setHeader("Content-Range", `bytes */${fileSize}`);
+                return res.end();
+            }
+            start = Math.max(fileSize - suffixLength, 0);
+            end = fileSize - 1;
+        } else {
+            start = Number(match[1]);
+            end = match[2] ? Number(match[2]) : fileSize - 1;
+        }
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= fileSize || end < start) {
+            res.statusCode = 416;
+            res.setHeader("Content-Range", `bytes */${fileSize}`);
+            return res.end();
+        }
+        end = Math.min(end, fileSize - 1);
+        res.statusCode = 206;
+        res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+    } else {
+        res.statusCode = 200;
+    }
     res.setHeader("Content-Type", mime);
     res.setHeader("Cache-Control", "no-store");
-    createReadStream(filePath).pipe(res);
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Content-Length", String(end - start + 1));
+    if (req.method === "HEAD") return res.end();
+    const stream = createReadStream(filePath, { start, end });
+    stream.on("error", (error) => {
+        if (res.headersSent) {
+            res.destroy();
+            return;
+        }
+        json(res, 502, { status: "error", message: error instanceof Error ? error.message : "Eagle file could not be read" });
+    });
+    stream.pipe(res);
 }
 
 async function handleEagleRequest(req: IncomingMessage, res: ServerResponse, next: () => void) {
@@ -293,7 +338,7 @@ async function handleEagleRequest(req: IncomingMessage, res: ServerResponse, nex
         }
 
         const match = pathname.match(/^\/items\/([^/]+)\/(file|thumbnail)$/);
-        if (match) return sendFile(res, await eagleFilePath(decodeURIComponent(match[1]), match[2] as "file" | "thumbnail"));
+        if (match) return sendFile(req, res, await eagleFilePath(decodeURIComponent(match[1]), match[2] as "file" | "thumbnail"));
         return next();
     } catch (error) {
         return json(res, 502, { status: "error", message: error instanceof Error ? error.message : "Eagle bridge failed" });

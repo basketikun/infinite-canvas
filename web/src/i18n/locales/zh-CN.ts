@@ -262,6 +262,7 @@ export default {
             textRequired: "请输入文本内容",
             textPlaceholder: "保存提示词、说明文案、参考描述等文本资产",
             imageContent: "图片内容",
+            videoPreview: "视频预览",
         },
         selectImageFile: "选择图片文件",
         noImageSelected: "未选择图片",
@@ -818,6 +819,9 @@ export default {
         shortcuts: "快捷键",
         lightTheme: "切换到浅色主题",
         darkTheme: "切换到深色主题",
+        exitApp: "退出 Infinite Canvas",
+        exitConfirm: "确定要退出 Infinite Canvas 吗？本地开发服务也会停止。",
+        exitUnavailable: "当前页面不支持自动退出，请手动关闭浏览器标签页。",
     },
     home: {
         promptError: "获取提示词失败",
