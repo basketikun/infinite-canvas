@@ -69,6 +69,11 @@ type ResponseApiPayload = {
     msg?: string;
 };
 type ResponseStreamState = { buffer: string; text: string; payload?: ResponseApiPayload; error?: string };
+type ChatCompletionPayload = {
+    choices?: Array<{ delta?: { content?: string | Array<{ type?: string; text?: string }> }; message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
+    error?: { message?: string };
+};
+type ChatCompletionStreamState = { buffer: string; text: string; error?: string };
 
 type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
@@ -422,7 +427,7 @@ function responseErrorMessage(value: unknown) {
     const error = isRecord(value.error) ? value.error : undefined;
     const response = isRecord(value.response) ? value.response : undefined;
     const responseError = response && isRecord(response.error) ? response.error : undefined;
-    return stringValue(value.msg) || stringValue(error?.message) || stringValue(responseError?.message);
+    return stringValue(value.msg) || stringValue(value.message) || stringValue(error?.message) || stringValue(responseError?.message);
 }
 
 function stringValue(value: unknown) {
@@ -520,6 +525,93 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
     validateResponsePayload(state.payload);
     const result = parseToolResponse(state.payload);
     return { ...result, content: state.text || result.content };
+}
+
+function chatCompletionContent(value: string | Array<{ type?: string; text?: string }> | undefined) {
+    if (typeof value === "string") return value;
+    return value?.map((item) => item.text || "").join("") || "";
+}
+
+function consumeChatCompletionStreamBlock(block: string, state: ChatCompletionStreamState, onDelta?: (text: string) => void) {
+    const data = block
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).replace(/^ /, ""))
+        .join("\n")
+        .trim();
+    if (!data || data === "[DONE]") return;
+    const event = JSON.parse(data) as ChatCompletionPayload;
+    if (event.error?.message) {
+        state.error = event.error.message;
+        return;
+    }
+    const choice = event.choices?.[0];
+    const delta = chatCompletionContent(choice?.delta?.content);
+    if (delta) {
+        state.text += delta;
+        onDelta?.(state.text);
+    }
+}
+
+function consumeChatCompletionStreamText(state: ChatCompletionStreamState, text: string, onDelta?: (text: string) => void, flush = false) {
+    state.buffer += text;
+    for (;;) {
+        const match = state.buffer.match(/\r?\n\r?\n/);
+        if (!match) break;
+        const index = match.index ?? 0;
+        consumeChatCompletionStreamBlock(state.buffer.slice(0, index), state, onDelta);
+        state.buffer = state.buffer.slice(index + match[0].length);
+    }
+    if (flush && state.buffer.trim()) {
+        consumeChatCompletionStreamBlock(state.buffer, state, onDelta);
+        state.buffer = "";
+    }
+}
+
+function chatCompletionMessages(config: AiConfig, messages: AiTextMessage[]) {
+    return withSystemMessage(config, messages)
+        .filter((message): message is AiTextMessage => !(("type" in message) || message.role === "tool"))
+        .map((message) => ({ role: message.role, content: message.content }));
+}
+
+async function requestChatCompletionStreaming(config: AiConfig, messages: AiTextMessage[], onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
+    const response = await fetch(aiApiUrl(config, "/chat/completions"), {
+        method: "POST",
+        headers: { ...aiHeaders(config, "application/json"), Accept: "text/event-stream" },
+        body: JSON.stringify({
+            model: config.model,
+            messages: chatCompletionMessages(config, messages),
+            stream: true,
+            ...(config.reasoningEffort === "auto" ? {} : { reasoning_effort: config.reasoningEffort }),
+        }),
+        signal: options?.signal,
+    });
+    if (!response.ok) throw new Error(await readFetchError(response, apiText("requestFailed")));
+    if (!response.body) {
+        const payload = (await response.json()) as ChatCompletionPayload;
+        if (payload.error?.message) throw new Error(payload.error.message);
+        const content = chatCompletionContent(payload.choices?.[0]?.message?.content);
+        if (content) onDelta?.(content);
+        return { content, toolCalls: [] };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const state: ChatCompletionStreamState = { buffer: "", text: "" };
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        consumeChatCompletionStreamText(state, decoder.decode(value, { stream: true }), onDelta);
+        if (state.error) throw new Error(state.error);
+    }
+    consumeChatCompletionStreamText(state, decoder.decode(), onDelta, true);
+    if (state.error) throw new Error(state.error);
+    return { content: state.text, toolCalls: [] };
+}
+
+function shouldFallbackToChatCompletion(error: unknown) {
+    const text = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    return /not implemented|not found|method not allowed|unsupported/.test(text);
 }
 
 function toGeminiBody(config: AiConfig, messages: ResponseInputMessage[], extra?: Record<string, unknown>) {
@@ -867,7 +959,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     }
 }
 
-export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
+export async function requestTextQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
     const script = resolveModelScript(config, config.model || config.textModel);
     if (script) {
@@ -893,17 +985,32 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
             if (answer === apiText("noContent")) onDelta(answer);
             return answer;
         }
-        const answer = (await requestStreamingResponse(requestConfig, {
-            model: requestConfig.model,
-            input: toResponseInput(withSystemMessage(requestConfig, messages)),
-            ...(requestConfig.reasoningEffort === "auto" ? {} : { reasoning: { effort: requestConfig.reasoningEffort } }),
-        }, onDelta, options)).content || apiText("noContent");
-        if (answer === apiText("noContent")) onDelta(answer);
-        return answer;
+        const answer = requestConfig.apiFormat === "ark"
+            ? (await requestChatCompletionStreaming(requestConfig, messages, onDelta, options)).content
+            : (await requestStreamingResponse(requestConfig, {
+                  model: requestConfig.model,
+                  input: toResponseInput(withSystemMessage(requestConfig, messages)),
+                  ...(requestConfig.reasoningEffort === "auto" ? {} : { reasoning: { effort: requestConfig.reasoningEffort } }),
+              }, onDelta, options)).content;
+        const text = answer || apiText("noContent");
+        if (text === apiText("noContent")) onDelta(text);
+        return text;
     } catch (error) {
+        if (requestConfig.apiFormat !== "gemini" && requestConfig.apiFormat !== "ark" && shouldFallbackToChatCompletion(error)) {
+            try {
+                const answer = (await requestChatCompletionStreaming(requestConfig, messages, onDelta, options)).content || apiText("noContent");
+                if (answer === apiText("noContent")) onDelta(answer);
+                return answer;
+            } catch (fallbackError) {
+                throw new Error(readAxiosError(fallbackError, apiText("requestFailed")));
+            }
+        }
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     }
 }
+
+// Keep the old export for canvas Agent integrations while shared prompt surfaces use the generic name.
+export const requestImageQuestion = requestTextQuestion;
 
 export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">) {
     try {
