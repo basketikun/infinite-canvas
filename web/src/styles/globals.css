@@ -436,20 +436,25 @@
         top: 21px;
     }
 
-    @keyframes canvas-batch-child-in {
-        from {
-            opacity: 0;
-            transform: translate(var(--batch-from-x), var(--batch-from-y)) rotate(var(--batch-from-rotate)) scale(0.72);
+    .canvas-skeleton {
+        background-size: 200% 100%;
+        background-repeat: no-repeat;
+        animation: canvas-skeleton-shimmer 1.4s ease-in-out infinite;
+    }
+
+    @keyframes canvas-skeleton-shimmer {
+        0% {
+            background-position: 200% 0;
         }
 
-        72% {
-            opacity: 1;
-            transform: translate(0, 0) rotate(-1deg) scale(1.015);
+        100% {
+            background-position: -200% 0;
         }
+    }
 
-        to {
-            opacity: 1;
-            transform: translate(0, 0) rotate(0) scale(1);
+    @media (prefers-reduced-motion: reduce) {
+        .canvas-skeleton {
+            animation: none;
         }
     }
 
@@ -551,6 +556,101 @@
 }
 
 .agent-streamdown [data-streamdown="link"] {
+    color: inherit;
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+    text-underline-offset: 0.2em;
+}
+
+.canvas-text-markdown {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.canvas-text-markdown > :first-child {
+    margin-top: 0;
+}
+
+.canvas-text-markdown > :last-child {
+    margin-bottom: 0;
+}
+
+.canvas-text-markdown :is(h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, pre, table) {
+    margin-block: 0.55em;
+}
+
+.canvas-text-markdown p {
+    white-space: pre-wrap;
+}
+
+.canvas-text-markdown :is(h1, h2, h3, h4, h5, h6) {
+    font-weight: 650;
+    line-height: 1.25;
+}
+
+.canvas-text-markdown :is(ul, ol) {
+    padding-left: 1.4em;
+}
+
+.canvas-text-markdown ul {
+    list-style: disc;
+}
+
+.canvas-text-markdown ol {
+    list-style: decimal;
+}
+
+.canvas-text-markdown blockquote {
+    border-left: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+    padding-left: 0.75em;
+    opacity: 0.78;
+}
+
+.canvas-text-markdown [data-streamdown="inline-code"] {
+    border: 0;
+    background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+.canvas-text-markdown [data-streamdown="code-block"] {
+    max-width: 100%;
+    overflow-x: auto;
+    border-color: color-mix(in srgb, currentColor 12%, transparent);
+    background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.canvas-text-markdown table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+}
+
+.canvas-text-markdown :is(th, td) {
+    border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+    padding: 0.35em 0.55em;
+}
+
+.canvas-text-markdown :is(img, video) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.canvas-text-markdown .canvas-markdown-image-load {
+    cursor: pointer;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+    text-underline-offset: 0.2em;
+}
+
+.canvas-text-markdown .canvas-markdown-image-load:hover {
+    opacity: 0.72;
+}
+
+.canvas-text-markdown [data-streamdown="link"] {
     color: inherit;
     text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
     text-underline-offset: 0.2em;

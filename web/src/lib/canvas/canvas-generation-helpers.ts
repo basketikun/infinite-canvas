@@ -46,7 +46,11 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
     return Promise.all(
         nodes.map(async (node) => {
             const content = node.metadata?.content;
-            if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveMediaUrl(node.metadata.storageKey, content) } };
+            if (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) {
+                const history = await Promise.all((node.metadata?.history || []).map(async (item) => (item.storageKey ? { ...item, content: await resolveMediaUrl(item.storageKey, item.content) } : item)));
+                if (node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveMediaUrl(node.metadata.storageKey, content), history } };
+                return history.length ? { ...node, metadata: { ...node.metadata, history } } : node;
+            }
             if (node.type !== CanvasNodeType.Image || !content) return node;
             const images = await Promise.all((node.metadata.images || []).map(async (image) => (image.content ? { ...image, content: await resolveImageUrl(image.storageKey, image.content) } : image)));
             if (node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveImageUrl(node.metadata.storageKey, content), images } };
@@ -118,8 +122,8 @@ export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
                   ...node,
                   metadata: {
                       ...node.metadata,
-                      status: "error" as const,
-                      errorDetails: i18n.t("canvas.generation.interrupted"),
+                      status: node.metadata.content ? ("success" as const) : ("error" as const),
+                      errorDetails: node.metadata.content ? undefined : i18n.t("canvas.generation.interrupted"),
                       images: node.metadata.images?.map((image) => (image.status === "loading" ? { ...image, status: "error" as const, errorDetails: i18n.t("canvas.generation.interrupted") } : image)),
                   },
               }

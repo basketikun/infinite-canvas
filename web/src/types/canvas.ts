@@ -37,6 +37,17 @@ export type CanvasNodeImage = {
     mimeType: string;
 };
 
+export type CanvasNodeHistoryItem = {
+    id: string;
+    content: string;
+    storageKey?: string;
+    naturalWidth?: number;
+    naturalHeight?: number;
+    bytes?: number;
+    mimeType?: string;
+    durationMs?: number;
+};
+
 export type CanvasNodeMetadata = {
     content?: string;
     composerContent?: string;
@@ -66,6 +77,8 @@ export type CanvasNodeMetadata = {
     freeResize?: boolean;
     images?: CanvasNodeImage[];
     primaryImageId?: string;
+    history?: CanvasNodeHistoryItem[];
+    primaryHistoryId?: string;
     storageKey?: string;
     mimeType?: string;
     bytes?: number;

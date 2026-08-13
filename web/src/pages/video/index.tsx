@@ -15,6 +15,8 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS, SEEDANCE_VIDEO_MIME_TYPES } from "@/lib/seedance-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { subscribeAppSyncWorkbenchLogsChanged } from "@/services/app-sync";
+import { appendAppSyncTrashEntry, getAppSyncTargetFingerprint } from "@/services/app-sync-trash";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
@@ -118,6 +120,8 @@ export default function VideoPage() {
     useEffect(() => {
         void refreshLogs();
     }, []);
+
+    useEffect(() => subscribeAppSyncWorkbenchLogsChanged("video-workbench", () => void refreshLogs()), []);
 
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
@@ -312,11 +316,20 @@ export default function VideoPage() {
     };
 
     const deleteSelectedLogs = () => {
-        const mediaKeys = logs
-            .filter((log) => selectedLogIds.includes(log.id))
-            .map((log) => log.video?.storageKey)
-            .filter((key): key is string => Boolean(key));
-        void Promise.all([deleteStoredMedia(mediaKeys), ...selectedLogIds.map((id) => logStore.removeItem(id))]).then(() => refreshLogs());
+        const selectedLogs = logs.filter((log) => selectedLogIds.includes(log.id));
+        const targetFingerprint = getAppSyncTargetFingerprint(useConfigStore.getState().webdav);
+        let persistTrash: Promise<unknown> = Promise.resolve();
+        if (targetFingerprint) {
+            const targetKey = targetFingerprint;
+            persistTrash = Promise.all(selectedLogs.map((log) => appendAppSyncTrashEntry(targetKey, "video-workbench", serializeLog(log))));
+        } else {
+            const mediaKeys = selectedLogs.map((log) => log.video?.storageKey).filter((key): key is string => Boolean(key));
+            persistTrash = deleteStoredMedia(mediaKeys);
+        }
+        void persistTrash
+            .then(() => Promise.all(selectedLogIds.map((id) => logStore.removeItem(id))))
+            .then(() => refreshLogs())
+            .catch((error) => console.error("Failed to delete video log records", error));
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);

@@ -256,7 +256,7 @@ export default {
         },
         node: {
             node: "节点",
-            untitled: "未命名节点", renameHint: "双击修改节点名称", group: "组", nodeCount: "{{count}} 个节点", generating: "生成中", failed: "生成失败", retry: "重试", missingPlugin: "缺少插件", missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用", generateImage: "用文本生图", generate: "生图", editText: "双击编辑文字", emptyImage: "空图片节点", emptyVideo: "空视频节点", emptyAudio: "空音频节点", audio: "音频", batchExpanded: "图片组已展开", batchCollapsed: "图片组已收起", createCopy: "创建副本", setPrimary: "设为主图",
+            untitled: "未命名节点", renameHint: "双击修改节点名称", group: "组", nodeCount: "{{count}} 个节点", generating: "生成中", failed: "生成失败", retry: "重试", missingPlugin: "缺少插件", missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用", generateImage: "用文本生图", generate: "生图", editText: "双击编辑文字", emptyImage: "空图片节点", emptyVideo: "空视频节点", emptyAudio: "空音频节点", audio: "音频", createCopy: "创建副本", setPrimary: "设为主图", focusImages: "定位到图片", focusHistory: "定位到历史", exitCandidateMode: "退出候选选择", historyCount: "历史 {{count}}", prevItem: "上一项", nextItem: "下一项", galleryDot: "图片 {{index}} / {{count}}", galleryDotHistory: "历史 {{index}} / {{count}}", galleryDotCurrent: "当前草稿，第 {{index}} 项，共 {{count}} 项",
         },
         sidePanel: {
             canvas: "画布", assets: "资产", prompts: "提示词库", resize: "调整左侧面板宽度", elements: "画布元素", select: "选择", searchNodes: "搜索节点", focusNode: "定位到节点", preview: "放大预览", noNodes: "画布暂无节点", clearAll: "取消全选", selected: "已选 {{count}}", exporting: "正在导出选中元素…", exportName: "画布元素-{{count}}个", exported: "已导出 {{count}} 个元素", exportFailed: "导出失败，请重试",
@@ -568,7 +568,8 @@ export default {
                 uploadManifest: "上传清单 {{size}}",
                 complete: "完成",
             },
-            errors: { testFailed: "WebDAV 连接测试失败", downloadFailed: "读取 WebDAV 同步文件失败", downloadTimeout: "读取 WebDAV 同步文件超时", emptyUpload: "上传文件为空，已取消上传", uploadFailed: "上传 WebDAV 同步文件失败", directoryFailed: "创建 WebDAV 远程目录失败", requestTimeout: "WebDAV 请求超时，请检查网络或远端服务状态", connectionFailed: "无法连接 WebDAV，请检查地址、HTTPS 证书、CORS 或网络状态", urlRequired: "请先填写 WebDAV 地址", authenticationFailed: "WebDAV 认证失败，请检查用户名、密码或应用密码", pathMissing: "WebDAV 路径不存在，请检查地址和远程目录", responseFailed: "{{fallback}}：{{status}}{{detail}}", syncFailed: "同步失败", invalidManifest: "{{domain}} 同步清单不是当前应用的数据" },
+            errors: { testFailed: "WebDAV 连接测试失败", downloadFailed: "读取 WebDAV 同步文件失败", downloadTimeout: "读取 WebDAV 同步文件超时", emptyUpload: "上传文件为空，已取消上传", uploadFailed: "上传 WebDAV 同步文件失败", deleteFailed: "删除 WebDAV 远程文件失败", unsafePath: "WebDAV 远程文件路径不安全，已取消操作", directoryFailed: "创建 WebDAV 远程目录失败", requestTimeout: "WebDAV 请求超时，请检查网络或远端服务状态", connectionFailed: "无法连接 WebDAV，请检查地址、HTTPS 证书、CORS 或网络状态", urlRequired: "请先填写 WebDAV 地址", authenticationFailed: "WebDAV 认证失败，请检查用户名、密码或应用密码", pathMissing: "WebDAV 路径不存在，请检查地址和远程目录", responseFailed: "{{fallback}}：{{status}}{{detail}}", syncFailed: "同步失败", invalidManifest: "{{domain}} 同步清单不是当前应用的数据", trashNotFound: "未找到可恢复的回收站记录", trashPersistFailed: "保存同步回收站记录失败" },
+            trash: { title: "远端回收站", refresh: "刷新回收站", restore: "恢复", clear: "清空回收站", empty: "回收站为空", loadFailed: "加载回收站失败", restoreSuccess: "恢复成功", restoreFailed: "恢复失败", clearSuccess: "回收站已清空", clearFailed: "清空回收站失败", clearConfirmTitle: "确认清空回收站", clearConfirmContent: "将永久删除远端所有回收站记录及其关联文件，此操作不可撤销。" },
         },
         protocols: {
             ark: "火山方舟",

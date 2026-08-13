@@ -12,3 +12,21 @@ interface ImportMetaEnv {
     // Baidu Analytics site ID
     readonly VITE_ANALYTICS_BAIDU_ID?: string;
 }
+
+declare module "bun:test" {
+    type TestFn = () => void | Promise<void>;
+    type Matcher<T> = {
+        toBe: (expected: T) => void;
+        toEqual: (expected: unknown) => void;
+        toBeNull: () => void;
+        toThrow: () => void;
+        not: {
+            toBe: (expected: unknown) => void;
+        };
+    };
+
+    export const beforeAll: (fn: TestFn) => void;
+    export const describe: (name: string, fn: TestFn) => void;
+    export const expect: <T>(actual: T) => Matcher<T>;
+    export const test: (name: string, fn: TestFn) => void;
+}

@@ -42,6 +42,29 @@ export async function uploadWebdavFile(config: WebdavSyncConfig, path: string, f
     if (!response.ok) await throwWebdavError(response, webdavText("uploadFailed"));
 }
 
+export async function deleteWebdavFile(config: WebdavSyncConfig, path: string) {
+    assertSafeDeleteDirectory(config.directory);
+    assertSafeDeletePath(path);
+    await ensureWebdavDirectory(config);
+    const response = await webdavFetch(config, path, { method: "DELETE" });
+    if (response.ok || response.status === 404) return;
+    await throwWebdavError(response, webdavText("deleteFailed"));
+}
+
+function assertSafeDeletePath(path: string) {
+    const parts = normalizePath(path).split("/");
+    if (!parts.length || parts.some((part) => !part || part === "." || part === "..")) throw new Error(webdavText("unsafePath"));
+}
+
+function assertSafeDeleteDirectory(directory: string) {
+    if (!isSafeWebdavDirectory(directory)) throw new Error(webdavText("unsafePath"));
+}
+
+function isSafeWebdavDirectory(directory: string) {
+    const parts = normalizePath(directory).split("/");
+    return Boolean(parts.length) && parts.every((part) => Boolean(part) && part !== "." && part !== ".." && !part.includes("\\"));
+}
+
 async function ensureWebdavDirectory(config: WebdavSyncConfig) {
     assertWebdavConfig(config);
     await ensureWebdavDirectoryPath(config, config.directory);
@@ -126,3 +149,7 @@ function withTimeout<T>(promise: Promise<T>, message: string) {
         promise.then(resolve, reject).finally(() => window.clearTimeout(timer));
     });
 }
+
+export const __webdavSyncTest = {
+    isSafeWebdavDirectory,
+};

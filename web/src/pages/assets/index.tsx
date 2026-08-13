@@ -177,9 +177,12 @@ export default function AssetsPage() {
 
     const confirmDelete = () => {
         if (!deletingAsset) return;
-        removeAsset(deletingAsset.id);
-        message.success(t("assets.deleted"));
-        setDeletingAsset(null);
+        void removeAsset(deletingAsset.id)
+            .then(() => {
+                message.success(t("assets.deleted"));
+                setDeletingAsset(null);
+            })
+            .catch((error) => console.error("Failed to delete asset", error));
     };
 
     return (
