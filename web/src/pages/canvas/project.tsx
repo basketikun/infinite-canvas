@@ -950,9 +950,12 @@ function InfiniteCanvasPage() {
     }, [createProject, navigate, t]);
 
     const deleteCurrentProject = useCallback(() => {
-        deleteProjects([projectId]);
-        cleanupAssetImages();
-        navigate("/canvas");
+        void deleteProjects([projectId])
+            .then(() => {
+                cleanupAssetImages();
+                navigate("/canvas");
+            })
+            .catch((error) => console.error("Failed to delete canvas project", error));
     }, [cleanupAssetImages, deleteProjects, navigate, projectId]);
 
     const exportCurrentProject = useCallback(async () => {

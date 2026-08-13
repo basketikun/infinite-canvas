@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Puzzle, RefreshCw, Star, Trash2, Video } from "lucide-react";
+import { Modal } from "antd";
+import { ChevronRight, Copy, Download, Group, History, Image as ImageIcon, Music2, Puzzle, RefreshCw, Star, Trash2, Video } from "lucide-react";
+import { Streamdown, type Components, type ExtraProps, type LinkSafetyModalProps } from "streamdown";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -8,13 +10,32 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
-import { CanvasNodeType, type CanvasNodeData, type CanvasNodeImage, type Position } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData, type CanvasNodeHistoryItem, type CanvasNodeImage, type Position } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasPluginHost } from "@/types/canvas-plugin";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { useTranslation } from "react-i18next";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 const selectionBlue = "#2f80ff";
+const markdownInteractiveSelector = "a, button, input, select, textarea, [role='button']";
+const canvasMarkdownComponents: Components = {
+    img: CanvasMarkdownImage,
+};
+
+function CanvasMarkdownImage({ node: _node, src, ...props }: React.ComponentPropsWithoutRef<"img"> & ExtraProps) {
+    const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+    const imageUrl = src && URL.canParse(src, window.location.href) ? new URL(src, window.location.href) : null;
+    const external = imageUrl ? (imageUrl.protocol === "http:" || imageUrl.protocol === "https:") && imageUrl.origin !== window.location.origin : false;
+
+    if (external && loadedSrc !== src) {
+        return (
+            <button type="button" className="canvas-markdown-image-load" onClick={() => setLoadedSrc(src || null)}>
+                加载外部图片
+            </button>
+        );
+    }
+    return <img {...props} src={src} loading="lazy" referrerPolicy="no-referrer" />;
+}
 
 type CanvasNodeProps = {
     data: CanvasNodeData;
@@ -47,6 +68,7 @@ type CanvasNodeProps = {
     onTitleChange: (nodeId: string, title: string) => void;
     onToggleBatch?: (nodeId: string) => void;
     onSetBatchPrimary?: (nodeId: string, imageId: string) => void;
+    onSetHistoryPrimary?: (nodeId: string, historyId: string) => void;
     onDuplicateBatchImage?: (node: CanvasNodeData, imageId: string) => void;
     onDownloadBatchImage?: (node: CanvasNodeData, imageId: string) => void;
     onRetryBatchImage?: (node: CanvasNodeData, imageId: string) => void;
@@ -68,12 +90,14 @@ type NodeContentRendererProps = {
     renderNodeContent?: (node: CanvasNodeData) => ReactNode;
     pluginContext?: CanvasNodeContext | null;
     onContentChange: (nodeId: string, content: string) => void;
+    onStartEditing: () => void;
     onStopEditing: () => void;
     mentionReferences: CanvasResourceReference[];
     onRetry?: (node: CanvasNodeData) => void;
     onGenerateImage?: (node: CanvasNodeData) => void;
     onToggleBatch?: () => void;
     onSetBatchPrimary?: (imageId: string) => void;
+    onSetHistoryPrimary?: (historyId: string) => void;
     onDuplicateBatchImage?: (imageId: string) => void;
     onDownloadBatchImage?: (imageId: string) => void;
     onRetryBatchImage?: (imageId: string) => void;
@@ -111,6 +135,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     onTitleChange,
     onToggleBatch,
     onSetBatchPrimary,
+    onSetHistoryPrimary,
     onDuplicateBatchImage,
     onDownloadBatchImage,
     onRetryBatchImage,
@@ -405,11 +430,13 @@ export const CanvasNode = React.memo(function CanvasNode({
                         pluginContext={pluginContext}
                         mentionReferences={mentionReferences}
                         onContentChange={onContentChange}
+                        onStartEditing={() => setIsEditingContent(true)}
                         onStopEditing={() => setIsEditingContent(false)}
                         onRetry={onRetry}
                         onGenerateImage={onGenerateImage}
                         onToggleBatch={() => onToggleBatch?.(data.id)}
                         onSetBatchPrimary={(imageId) => onSetBatchPrimary?.(data.id, imageId)}
+                        onSetHistoryPrimary={(historyId) => onSetHistoryPrimary?.(data.id, historyId)}
                         onDuplicateBatchImage={(imageId) => onDuplicateBatchImage?.(data, imageId)}
                         onDownloadBatchImage={(imageId) => onDownloadBatchImage?.(data, imageId)}
                         onRetryBatchImage={(imageId) => onRetryBatchImage?.(data, imageId)}
@@ -524,13 +551,17 @@ function MissingPluginContent({ theme, type }: Pick<NodeContentRendererProps, "t
     );
 }
 
-function TextContent({ node, theme, isEditingContent, textareaRef, mentionReferences, onContentChange, onStopEditing, onGenerateImage }: NodeContentRendererProps) {
+function TextContent({ node, theme, isEditingContent, textareaRef, mentionReferences, onContentChange, onStartEditing, onStopEditing, onGenerateImage, onSetHistoryPrimary }: NodeContentRendererProps) {
     const { t } = useTranslation();
+    const previewPressRef = useRef<{ pointerId: number; x: number; y: number; hasMoved: boolean } | null>(null);
     const fontSize = node.metadata?.fontSize || 14;
+    const history = node.metadata?.history || [];
+    const hasHistory = history.length > 1;
     const textStyle = { fontSize: `${fontSize}px`, lineHeight: `${Math.round(fontSize * 1.65)}px`, color: theme.node.text, boxSizing: "border-box" } as React.CSSProperties;
 
     return (
         <div className="flex h-full w-full flex-col overflow-hidden pt-8">
+            <HistorySelector node={node} items={history} placement="text" onSelect={onSetHistoryPrimary} />
             <button
                 type="button"
                 className="absolute right-3 top-3 z-20 inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-medium opacity-85 backdrop-blur-md transition hover:scale-[1.02] hover:opacity-100"
@@ -550,7 +581,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
             {isEditingContent ? (
                 <CanvasResourceMentionTextarea
                     ref={textareaRef}
-                    className="thin-scrollbar block h-full w-full resize-none overflow-y-auto whitespace-pre-wrap break-words border-none bg-transparent pl-4 pr-14 pt-0 pb-4 m-0 font-mono outline-none select-text appearance-none"
+                    className={`thin-scrollbar block h-full w-full resize-none overflow-y-auto whitespace-pre-wrap break-words border-none bg-transparent pl-4 pr-14 pt-0 m-0 font-mono outline-none select-text appearance-none ${hasHistory ? "pb-28" : "pb-4"}`}
                     style={textStyle}
                     value={node.metadata?.content || ""}
                     references={mentionReferences}
@@ -566,14 +597,87 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                 />
             ) : (
                 <div
-                    className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono"
+                    className={`thin-scrollbar block h-full w-full overflow-y-auto bg-transparent pl-4 pr-14 pt-0 font-mono ${hasHistory ? "pb-28" : "pb-4"}`}
                     style={textStyle}
+                    onClick={(event) => {
+                        const target = event.target;
+                        if (target instanceof Element && target.closest(markdownInteractiveSelector)) return;
+                        const press = previewPressRef.current;
+                        previewPressRef.current = null;
+                        if (!press || press.hasMoved || Math.abs(event.clientX - press.x) > 3 || Math.abs(event.clientY - press.y) > 3) return;
+                        event.stopPropagation();
+                        onStartEditing();
+                    }}
+                    onMouseDown={(event) => {
+                        const target = event.target;
+                        if (target instanceof Element && target.closest(markdownInteractiveSelector)) {
+                            previewPressRef.current = null;
+                            event.stopPropagation();
+                            return;
+                        }
+                    }}
+                    onPointerDown={(event) => {
+                        const target = event.target;
+                        if (target instanceof Element && target.closest(markdownInteractiveSelector)) return;
+                        if (event.button !== 0) {
+                            previewPressRef.current = null;
+                            return;
+                        }
+                        previewPressRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, hasMoved: false };
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                    }}
+                    onPointerMove={(event) => {
+                        const press = previewPressRef.current;
+                        if (!press || press.pointerId !== event.pointerId || press.hasMoved) return;
+                        if (Math.abs(event.clientX - press.x) > 3 || Math.abs(event.clientY - press.y) > 3) press.hasMoved = true;
+                    }}
+                    onPointerUp={(event) => {
+                        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                    }}
+                    onPointerCancel={() => {
+                        previewPressRef.current = null;
+                    }}
                     onWheel={(event) => event.stopPropagation()}
                 >
-                    {node.metadata?.content || <span style={{ color: theme.node.placeholder }}>{t("canvas.node.editText")}</span>}
+                    {node.metadata?.content ? (
+                        <Streamdown
+                            className="canvas-text-markdown"
+                            components={canvasMarkdownComponents}
+                            linkSafety={{ enabled: true, renderModal: (props) => <CanvasLinkModal {...props} /> }}
+                            mode="static"
+                            skipHtml
+                        >
+                            {node.metadata.content}
+                        </Streamdown>
+                    ) : (
+                        <span style={{ color: theme.node.placeholder }}>{t("canvas.node.editText")}</span>
+                    )}
                 </div>
             )}
         </div>
+    );
+}
+
+function CanvasLinkModal({ isOpen, onClose, onConfirm, url }: LinkSafetyModalProps) {
+    const { t } = useTranslation();
+    return (
+        <Modal
+            open={isOpen}
+            centered
+            destroyOnHidden
+            width={400}
+            title={t("agent.message.openExternal")}
+            okText={t("agent.message.continueOpen")}
+            cancelText={t("agent.message.close")}
+            onOk={() => {
+                onConfirm();
+                onClose();
+            }}
+            onCancel={onClose}
+        >
+            <div className="text-sm text-black/55 dark:text-white/55">{t("agent.message.externalDescription")}</div>
+            <div className="mt-3 max-h-28 overflow-auto break-all rounded-lg bg-black/[.035] px-3 py-2 font-mono text-xs leading-5 dark:bg-white/[.06]">{url}</div>
+        </Modal>
     );
 }
 
@@ -606,7 +710,7 @@ function EmptyImageContent({ theme }: NodeContentRendererProps) {
     );
 }
 
-function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
+function VideoNodeContent({ node, theme, onSetHistoryPrimary }: NodeContentRendererProps) {
     const { t } = useTranslation();
     if (!node.metadata?.content)
         return (
@@ -615,7 +719,61 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
                 <span className="text-sm">{t("canvas.node.emptyVideo")}</span>
             </div>
         );
-    return <video src={node.metadata.content} controls className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-no-zoom />;
+    return (
+        <div className="relative h-full w-full">
+            <video src={node.metadata.content} controls className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-no-zoom />
+            <HistorySelector node={node} items={node.metadata.history || []} placement="video" onSelect={onSetHistoryPrimary} />
+        </div>
+    );
+}
+
+function HistorySelector({ node, items, placement, onSelect }: { node: CanvasNodeData; items: CanvasNodeHistoryItem[]; placement: "text" | "video"; onSelect?: (historyId: string) => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const { t } = useTranslation();
+    const [expanded, setExpanded] = useState(false);
+    if (items.length < 2) return null;
+    return (
+        <div className={`absolute left-3 z-30 flex max-w-[calc(100%-24px)] flex-col items-start gap-1.5 ${placement === "video" ? "bottom-14" : "bottom-3"}`} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+            {expanded ? (
+                <div className="thin-scrollbar flex max-w-full gap-1.5 overflow-x-auto rounded-xl border p-1.5 backdrop-blur-md" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }} onWheel={(event) => event.stopPropagation()}>
+                    {items.map((item, index) => {
+                        const active = item.id === node.metadata?.primaryHistoryId;
+                        return (
+                            <button
+                                key={item.id}
+                                type="button"
+                                className="flex h-10 min-w-20 max-w-28 items-center justify-center rounded-lg px-2 text-[10px] font-medium transition hover:opacity-80"
+                                style={{ background: active ? theme.toolbar.activeBg : "transparent", color: active ? theme.toolbar.activeText : theme.toolbar.item }}
+                                title={node.type === CanvasNodeType.Text ? item.content : t("canvas.node.historyItem", { index: index + 1 })}
+                                aria-pressed={active}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onSelect?.(item.id);
+                                }}
+                            >
+                                <span className="truncate">{node.type === CanvasNodeType.Text ? item.content : t("canvas.node.historyItem", { index: index + 1 })}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            ) : null}
+            <button
+                type="button"
+                className="flex h-10 min-w-10 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium backdrop-blur-md transition hover:opacity-80"
+                style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.activeText }}
+                aria-label={expanded ? t("canvas.node.historyExpanded") : t("canvas.node.historyCollapsed")}
+                aria-expanded={expanded}
+                onClick={(event) => {
+                    event.stopPropagation();
+                    setExpanded((current) => !current);
+                }}
+            >
+                <History className="size-3.5" />
+                {t("canvas.node.history", { count: items.length })}
+                <ChevronRight className={`size-3.5 transition-transform ${expanded ? "-rotate-90" : ""}`} />
+            </button>
+        </div>
+    );
 }
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {

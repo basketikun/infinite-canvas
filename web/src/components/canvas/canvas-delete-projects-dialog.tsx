@@ -13,10 +13,13 @@ export function CanvasDeleteProjectsDialog() {
     const deleteProjects = useCanvasStore((state) => state.deleteProjects);
     const cleanupImages = useAssetStore((state) => state.cleanupImages);
     const confirm = () => {
-        deleteProjects(ids);
-        cleanupImages();
-        removeSelectedIds(ids);
-        setDeleteIds([]);
+        void deleteProjects(ids)
+            .then(() => {
+                cleanupImages();
+                removeSelectedIds(ids);
+                setDeleteIds([]);
+            })
+            .catch((error) => console.error("Failed to delete canvas projects", error));
     };
 
     return (

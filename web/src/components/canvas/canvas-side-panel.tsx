@@ -384,7 +384,17 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
                                     {isCollapsed ? null : (
                                         <div className="grid grid-cols-2 gap-2 px-1 pb-2 pt-1">
                                             {group.items.map((asset) => (
-                                                <AssetCard key={asset.id} asset={asset} theme={theme} onInsert={() => onInsert(buildInsertPayload(asset))} onRemove={() => (removeAsset(asset.id), message.success(t("canvas.sidePanel.assetRemoved")))} />
+                                                <AssetCard
+                                                    key={asset.id}
+                                                    asset={asset}
+                                                    theme={theme}
+                                                    onInsert={() => onInsert(buildInsertPayload(asset))}
+                                                    onRemove={() => {
+                                                        void removeAsset(asset.id)
+                                                            .then(() => message.success(t("canvas.sidePanel.assetRemoved")))
+                                                            .catch((error) => console.error("Failed to remove asset", error));
+                                                    }}
+                                                />
                                             ))}
                                         </div>
                                     )}

@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import i18n from "@/i18n";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
+import { appendAppSyncTrashEntry, getAppSyncTargetFingerprint } from "@/services/app-sync-trash";
+import { useConfigStore } from "@/stores/use-config-store";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 
 export type CanvasProject = {
@@ -28,7 +30,7 @@ type CanvasStore = {
     importProject: (project: Partial<CanvasProject>) => string;
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
-    deleteProjects: (ids: string[]) => void;
+    deleteProjects: (ids: string[]) => Promise<void>;
     replaceProjects: (projects: CanvasProject[]) => void;
     updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
 };
@@ -109,11 +111,12 @@ export const useCanvasStore = create<CanvasStore>()(
                 set((state) => ({
                     projects: state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project)),
                 })),
-            deleteProjects: (ids) =>
-                set((state) => {
-                    const projects = state.projects.filter((project) => !ids.includes(project.id));
-                    return { projects };
-                }),
+            deleteProjects: async (ids) => {
+                const projectsToDelete = get().projects.filter((project) => ids.includes(project.id));
+                const targetFingerprint = getAppSyncTargetFingerprint(useConfigStore.getState().webdav);
+                if (targetFingerprint) await Promise.all(projectsToDelete.map((project) => appendAppSyncTrashEntry(targetFingerprint, "canvas", project)));
+                set((state) => ({ projects: state.projects.filter((project) => !ids.includes(project.id)) }));
+            },
             replaceProjects: (projects) => set({ projects }),
             updateProject: (id, patch) =>
                 set((state) => ({
