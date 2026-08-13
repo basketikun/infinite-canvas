@@ -16,7 +16,9 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
+import { subscribeAppSyncWorkbenchLogsChanged } from "@/services/app-sync";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { appendAppSyncTrashEntry, getAppSyncTargetFingerprint } from "@/services/app-sync-trash";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import type { ReferenceImage } from "@/types/image";
@@ -114,6 +116,8 @@ export default function ImagePage() {
     useEffect(() => {
         void refreshLogs();
     }, []);
+
+    useEffect(() => subscribeAppSyncWorkbenchLogsChanged("image-workbench", () => void refreshLogs()), []);
 
     const addReferences = async (files?: FileList | null) => {
         const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
@@ -282,8 +286,20 @@ export default function ImagePage() {
     };
 
     const deleteSelectedLogs = () => {
-        const imageKeys = logs.filter((log) => selectedLogIds.includes(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
-        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => logStore.removeItem(id))]).then(refreshLogs);
+        const selectedLogs = logs.filter((log) => selectedLogIds.includes(log.id));
+        const targetFingerprint = getAppSyncTargetFingerprint(useConfigStore.getState().webdav);
+        let persistTrash: Promise<unknown> = Promise.resolve();
+        if (targetFingerprint) {
+            const targetKey = targetFingerprint;
+            persistTrash = Promise.all(selectedLogs.map((log) => appendAppSyncTrashEntry(targetKey, "image-workbench", serializeLog(log))));
+        } else {
+            const imageKeys = selectedLogs.flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
+            persistTrash = deleteStoredImages(imageKeys);
+        }
+        void persistTrash
+            .then(() => Promise.all(selectedLogIds.map((id) => logStore.removeItem(id))))
+            .then(refreshLogs)
+            .catch((error) => console.error("Failed to delete image log records", error));
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);

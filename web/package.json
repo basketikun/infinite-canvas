@@ -6,6 +6,7 @@
     "scripts": {
         "dev": "vite --host 0.0.0.0 --port 3000",
         "build": "vite build",
+        "test": "bun test",
         "typecheck": "tsc --noEmit",
         "start": "vite preview --host 0.0.0.0 --port 3000",
         "format": "prettier --write .",

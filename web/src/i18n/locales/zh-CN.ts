@@ -568,7 +568,8 @@ export default {
                 uploadManifest: "上传清单 {{size}}",
                 complete: "完成",
             },
-            errors: { testFailed: "WebDAV 连接测试失败", downloadFailed: "读取 WebDAV 同步文件失败", downloadTimeout: "读取 WebDAV 同步文件超时", emptyUpload: "上传文件为空，已取消上传", uploadFailed: "上传 WebDAV 同步文件失败", directoryFailed: "创建 WebDAV 远程目录失败", requestTimeout: "WebDAV 请求超时，请检查网络或远端服务状态", connectionFailed: "无法连接 WebDAV，请检查地址、HTTPS 证书、CORS 或网络状态", urlRequired: "请先填写 WebDAV 地址", authenticationFailed: "WebDAV 认证失败，请检查用户名、密码或应用密码", pathMissing: "WebDAV 路径不存在，请检查地址和远程目录", responseFailed: "{{fallback}}：{{status}}{{detail}}", syncFailed: "同步失败", invalidManifest: "{{domain}} 同步清单不是当前应用的数据" },
+            errors: { testFailed: "WebDAV 连接测试失败", downloadFailed: "读取 WebDAV 同步文件失败", downloadTimeout: "读取 WebDAV 同步文件超时", emptyUpload: "上传文件为空，已取消上传", uploadFailed: "上传 WebDAV 同步文件失败", deleteFailed: "删除 WebDAV 远程文件失败", unsafePath: "WebDAV 远程文件路径不安全，已取消操作", directoryFailed: "创建 WebDAV 远程目录失败", requestTimeout: "WebDAV 请求超时，请检查网络或远端服务状态", connectionFailed: "无法连接 WebDAV，请检查地址、HTTPS 证书、CORS 或网络状态", urlRequired: "请先填写 WebDAV 地址", authenticationFailed: "WebDAV 认证失败，请检查用户名、密码或应用密码", pathMissing: "WebDAV 路径不存在，请检查地址和远程目录", responseFailed: "{{fallback}}：{{status}}{{detail}}", syncFailed: "同步失败", invalidManifest: "{{domain}} 同步清单不是当前应用的数据", trashNotFound: "未找到可恢复的回收站记录", trashPersistFailed: "保存同步回收站记录失败" },
+            trash: { title: "远端回收站", refresh: "刷新回收站", restore: "恢复", clear: "清空回收站", empty: "回收站为空", loadFailed: "加载回收站失败", restoreSuccess: "恢复成功", restoreFailed: "恢复失败", clearSuccess: "回收站已清空", clearFailed: "清空回收站失败", clearConfirmTitle: "确认清空回收站", clearConfirmContent: "将永久删除远端所有回收站记录及其关联文件，此操作不可撤销。" },
         },
         protocols: {
             ark: "火山方舟",

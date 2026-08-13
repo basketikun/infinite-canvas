@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { cleanupUnusedImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
+import { appendAppSyncTrashEntry, getAppSyncTargetFingerprint, listAllLocalAppSyncTrash } from "@/services/app-sync-trash";
+import { useConfigStore } from "@/stores/use-config-store";
 
 export type AssetKind = "text" | "image" | "video";
 export type TextAsset = AssetBase<"text"> & { data: { content: string } };
@@ -30,7 +32,7 @@ type AssetStore = {
     assets: Asset[];
     addAsset: (asset: Omit<Asset, "id" | "createdAt" | "updatedAt">) => string;
     updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
-    removeAsset: (id: string) => void;
+    removeAsset: (id: string) => Promise<void>;
     replaceAssets: (assets: Asset[]) => void;
     cleanupImages: (extra?: unknown) => void;
 };
@@ -78,18 +80,22 @@ export const useAssetStore = create<AssetStore>()(
                 set((state) => ({
                     assets: state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset)),
                 })),
-            removeAsset: (id) =>
-                set((state) => {
-                    const assets = state.assets.filter((asset) => asset.id !== id);
-                    get().cleanupImages({ assets });
-                    return { assets };
-                }),
+            removeAsset: async (id) => {
+                const removed = get().assets.find((asset) => asset.id === id);
+                if (!removed) return;
+                const targetFingerprint = getAppSyncTargetFingerprint(useConfigStore.getState().webdav);
+                if (targetFingerprint) await appendAppSyncTrashEntry(targetFingerprint, "assets", removed);
+                const assets = get().assets.filter((asset) => asset.id !== id);
+                set({ assets });
+                get().cleanupImages({ assets, removed });
+            },
             replaceAssets: (assets) => set({ assets }),
             cleanupImages: (extra) => {
                 window.setTimeout(async () => {
                     const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
-                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                    const trash = await listAllLocalAppSyncTrash();
+                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, trash, extra });
+                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, trash, extra });
                 }, 0);
             },
         }),
