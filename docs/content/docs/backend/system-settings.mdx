@@ -22,6 +22,10 @@ description: settings 表中 public 和 private 配置结构说明
       { "model": "gpt-5.5", "credits": 1 },
       { "model": "gpt-image-2", "credits": 10 }
     ],
+    "imageModelCapabilities": {
+      "gpt-image-2-4K": { "sizes": ["4k", "3840x2160", "1024x1024", "1024x1536", "1536x1024", "auto"] },
+      "grok-imagine-image": { "resolutions": ["1k", "2k"], "aspectRatios": ["1:1", "16:9", "9:16"] }
+    },
     "defaultModel": "gpt-image-2",
     "defaultImageModel": "gpt-image-2",
     "defaultTextModel": "gpt-5.5",
@@ -48,6 +52,7 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型；保存设置时会自动合并所有已启用私有渠道的模型 |
 | `modelCosts` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；未配置默认不扣除 |
+| `imageModelCapabilities` | object | 可选的图片模型参数限制，按模型名配置 `sizes`、`resolutions`、`aspectRatios`；前端会据此禁用不支持的尺寸、Grok 分辨率和画幅比例 |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
 | `defaultImageModel` | string | 默认图片模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedream`、`image`、`gpt-image` 模型 |
 | `defaultVideoModel` | string | 默认视频模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedance`、`video` 模型 |
@@ -61,6 +66,14 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `model` | string | 模型名称 |
 | `credits` | number | 每次后端模型接口调用前预扣的算力点 |
+
+`imageModelCapabilities` 每个模型的可选字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `sizes` | string[] | 该图片模型允许的 `size` 参数，例如 `1024x1024`、`1536x1024`、`4k`、`auto`；留空表示不额外限制 |
+| `resolutions` | string[] | `grok-imagine-image` 可用分辨率，例如 `1k`、`2k`；留空表示不额外限制 |
+| `aspectRatios` | string[] | `grok-imagine-image` 可用画幅比例，例如 `1:1`、`16:9`、`9:16`；留空表示不额外限制 |
 
 用户侧请求模式：
 

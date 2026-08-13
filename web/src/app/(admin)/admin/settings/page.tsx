@@ -3,11 +3,12 @@
 import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Checkbox, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import type { FormInstance } from "antd";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
-import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminModelChannel, type AdminModelCost, type AdminPublicModelChannelSettings, type AdminSettings } from "@/services/api/admin";
+import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminImageModelCapability, type AdminModelChannel, type AdminModelCost, type AdminPublicModelChannelSettings, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -31,6 +32,7 @@ const emptySettings: AdminSettings = {
             modelCosts: [],
             defaultModel: "",
             defaultImageModel: "",
+            imageModelCapabilities: {},
             defaultVideoModel: "",
             defaultTextModel: "",
             systemPrompt: "",
@@ -78,7 +80,9 @@ export default function AdminSettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
     const [knownModels, setKnownModels] = useState<string[]>([]);
-    const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
+    const publicModelChannel = Form.useWatch(["public", "modelChannel"], form) || emptySettings.public.modelChannel;
+    const publicModels = publicModelChannel.availableModels || [];
+    const imageModelCapabilities = publicModelChannel.imageModelCapabilities || {};
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
     const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index, _rowKey: `${index}-${channel.name}-${channel.baseUrl}` })), [channels]);
     const activeMode = editorMode[activeTab];
@@ -478,6 +482,33 @@ export default function AdminSettingsPage() {
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
+                                        <Typography.Title level={5}>图片模型参数限制</Typography.Title>
+                                        <Table
+                                            rowKey="model"
+                                            pagination={false}
+                                            size="small"
+                                            dataSource={publicModels.map((model) => ({ model, capability: imageModelCapabilities[model] || {} }))}
+                                            columns={[
+                                                { title: "模型", dataIndex: "model" },
+                                                {
+                                                    title: "可用尺寸",
+                                                    dataIndex: "capability",
+                                                    render: (capability: AdminImageModelCapability, item) => <Input placeholder="留空不限制，例如 1024x1024,1536x1024,auto" value={(capability.sizes || []).join(",")} onChange={(event) => setImageModelCapability(form, item.model, "sizes", event.target.value)} />,
+                                                },
+                                                {
+                                                    title: "Grok 分辨率",
+                                                    dataIndex: "capability",
+                                                    render: (capability: AdminImageModelCapability, item) => <Input placeholder="留空不限制，例如 1k,2k" value={(capability.resolutions || []).join(",")} onChange={(event) => setImageModelCapability(form, item.model, "resolutions", event.target.value)} />,
+                                                },
+                                                {
+                                                    title: "Grok 画幅比例",
+                                                    dataIndex: "capability",
+                                                    render: (capability: AdminImageModelCapability, item) => <Input placeholder="留空不限制，例如 1:1,16:9,9:16" value={(capability.aspectRatios || []).join(",")} onChange={(event) => setImageModelCapability(form, item.model, "aspectRatios", event.target.value)} />,
+                                                },
+                                            ]}
+                                        />
+                                    </Col>
+                                    <Col span={24}>
                                         <Typography.Title level={5}>模型算力点</Typography.Title>
                                         <Table
                                             rowKey="model"
@@ -862,6 +893,7 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             allowRemoteChannel: inputModelChannel.allowRemoteChannel !== false,
             availableModels: inputModelChannel.availableModels || [],
             modelCosts: normalizeModelCosts(inputModelChannel.modelCosts || []),
+            imageModelCapabilities: normalizeImageModelCapabilities(inputModelChannel.imageModelCapabilities || {}),
         },
         auth: {
             allowRegister: setting.auth?.allowRegister !== false,
@@ -878,6 +910,28 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
 
 function normalizeModelCosts(items: Partial<AdminSettings["public"]["modelChannel"]["modelCosts"][number]>[]) {
     return items.filter((item) => item.model).map((item) => ({ model: item.model || "", credits: Math.max(0, Number(item.credits) || 0) }));
+}
+
+function normalizeImageModelCapabilities(input: Record<string, Partial<AdminImageModelCapability>> = {}) {
+    return Object.fromEntries(
+        Object.entries(input)
+            .map(([model, capability]) => [model.trim(), { sizes: normalizeStringList(capability.sizes), resolutions: normalizeStringList(capability.resolutions), aspectRatios: normalizeStringList(capability.aspectRatios) }] as const)
+            .filter(([model, capability]) => model && (capability.sizes.length || capability.resolutions.length || capability.aspectRatios.length)),
+    );
+}
+
+function normalizeStringList(value: string[] | string | undefined) {
+    const items = Array.isArray(value) ? value : String(value || "").split(",");
+    return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
+}
+
+function setImageModelCapability(form: FormInstance<AdminSettings>, model: string, key: keyof AdminImageModelCapability, value: string) {
+    const current = normalizeImageModelCapabilities(form.getFieldValue(["public", "modelChannel", "imageModelCapabilities"]) || {});
+    const nextValue = normalizeStringList(value);
+    const nextCapability = { ...(current[model] || {}), [key]: nextValue };
+    const next = { ...current, [model]: nextCapability };
+    if (!nextCapability.sizes?.length && !nextCapability.resolutions?.length && !nextCapability.aspectRatios?.length) delete next[model];
+    form.setFieldValue(["public", "modelChannel", "imageModelCapabilities"], next);
 }
 
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {
@@ -913,7 +967,7 @@ function modelCostCredits(items: AdminSettings["public"]["modelChannel"]["modelC
     return items.find((item) => item.model === model)?.credits || 0;
 }
 
-function setModelCost(form: any, setModelCosts: (items: AdminModelCost[]) => void, model: string, credits: number) {
+function setModelCost(form: FormInstance<AdminSettings>, setModelCosts: (items: AdminModelCost[]) => void, model: string, credits: number) {
     const current = (form.getFieldValue(["public", "modelChannel", "modelCosts"]) || []) as AdminSettings["public"]["modelChannel"]["modelCosts"];
     const next = current.filter((item) => item.model !== model);
     next.push({ model, credits: Math.max(0, credits) });
@@ -971,7 +1025,7 @@ function parseTabJson(tab: SettingsTabKey, value: string): AdminSettings[Setting
     }
 }
 
-async function collectSettings(form: any, editorMode: Record<SettingsTabKey, EditorMode>, jsonText: Record<SettingsTabKey, string>, message: { error: (value: string) => void }) {
+async function collectSettings(form: FormInstance<AdminSettings>, editorMode: Record<SettingsTabKey, EditorMode>, jsonText: Record<SettingsTabKey, string>, message: { error: (value: string) => void }) {
     const values = normalizeSettings(form.getFieldsValue(true) as AdminSettings);
     if (editorMode.public === "json") {
         const publicSetting = parseTabJson("public", jsonText.public);

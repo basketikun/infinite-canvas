@@ -5,10 +5,11 @@ import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
-import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
+import { ImageSettingsPanel, imageAspectRatioLabel, imageQualityLabel, imageResolutionLabel, imageSizeLabel } from "@/components/image-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import type { AiConfig } from "@/stores/use-config-store";
+import { resolveCapabilityModel, type AiConfig } from "@/stores/use-config-store";
+import { isGrokImageModel } from "@/lib/image-model-capabilities";
 
 type CanvasImageSettingsPopoverProps = {
     config: AiConfig;
@@ -27,9 +28,10 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+    const model = resolveCapabilityModel(config, "image", config.model);
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const activeSize = config.size || "auto";
+    const label = isGrokImageModel(model) ? `${imageResolutionLabel(config.imageResolution)} · ${imageAspectRatioLabel(config.imageAspectRatio)} · ${count} 张` : `${imageQualityLabel(quality)} · ${imageSizeLabel(config.size || "auto")} · ${count} 张`;
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -57,16 +59,13 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
             window.removeEventListener("pointerdown", closeOnOutsidePointer, true);
         };
     }, [onOpenChange, open]);
-
-    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} /> : null;
+    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} model={model} onConfigChange={onConfigChange} /> : null;
 
     return (
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
-                    <span className="truncate">
-                        {imageQualityLabel(quality)} · {imageSizeLabel(activeSize)} · {count} 张
-                    </span>
+                    <span className="truncate">{label}</span>
                 </Button>
             </span>
             {panel}
@@ -80,6 +79,7 @@ function ImageSettingsPortal({
     placement,
     theme,
     config,
+    model,
     onConfigChange,
 }: {
     buttonRect: DOMRect;
@@ -87,6 +87,7 @@ function ImageSettingsPortal({
     placement: CanvasImageSettingsPopoverProps["placement"];
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
+    model: string;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
 }) {
     const width = 356;
@@ -119,7 +120,7 @@ function ImageSettingsPortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
+            <ImageSettingsPanel config={config} model={model} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4 rounded-2xl px-1 py-0.5" />
         </div>,
         document.body,
     );

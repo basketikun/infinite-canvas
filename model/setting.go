@@ -27,19 +27,27 @@ type ModelCost struct {
 	Credits int    `json:"credits"`
 }
 
+// ImageModelCapability describes optional frontend parameter constraints for an image model.
+type ImageModelCapability struct {
+	Sizes        []string `json:"sizes"`
+	Resolutions  []string `json:"resolutions"`
+	AspectRatios []string `json:"aspectRatios"`
+}
+
 // PublicModelChannelSetting 公开模型渠道配置。
 type PublicModelChannelSetting struct {
-	AvailableModels    []string    `json:"availableModels"`
-	ModelCosts         []ModelCost `json:"modelCosts"`
-	DefaultModel       string      `json:"defaultModel"`
-	DefaultImageModel  string      `json:"defaultImageModel"`
-	DefaultVideoModel  string      `json:"defaultVideoModel"`
-	DefaultTextModel   string      `json:"defaultTextModel"`
-	SystemPrompt       string      `json:"systemPrompt"`
-	AllowCustomChannel *bool       `json:"allowCustomChannel"`
-	AllowLocalChannel  *bool       `json:"allowLocalChannel"`
-	AllowNewAPIChannel *bool       `json:"allowNewApiChannel"`
-	AllowRemoteChannel *bool       `json:"allowRemoteChannel"`
+	AvailableModels        []string                        `json:"availableModels"`
+	ModelCosts             []ModelCost                     `json:"modelCosts"`
+	DefaultModel           string                          `json:"defaultModel"`
+	DefaultImageModel      string                          `json:"defaultImageModel"`
+	ImageModelCapabilities map[string]ImageModelCapability `json:"imageModelCapabilities"`
+	DefaultVideoModel      string                          `json:"defaultVideoModel"`
+	DefaultTextModel       string                          `json:"defaultTextModel"`
+	SystemPrompt           string                          `json:"systemPrompt"`
+	AllowCustomChannel     *bool                           `json:"allowCustomChannel"`
+	AllowLocalChannel      *bool                           `json:"allowLocalChannel"`
+	AllowNewAPIChannel     *bool                           `json:"allowNewApiChannel"`
+	AllowRemoteChannel     *bool                           `json:"allowRemoteChannel"`
 }
 
 // PublicSetting 公开配置。

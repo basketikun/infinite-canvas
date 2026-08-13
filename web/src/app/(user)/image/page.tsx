@@ -20,6 +20,7 @@ import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
+import { imageModelParameterPatch, getImageParameterIssue } from "@/lib/image-model-capabilities";
 
 type GeneratedImage = {
     id: string;
@@ -148,6 +149,10 @@ export default function ImagePage() {
             openConfigDialog(true);
             return;
         }
+        if (getImageParameterIssue(effectiveConfig, model)) {
+            message.error("当前模型不支持该尺寸或参数，请切换模型或选择支持的尺寸。");
+            return;
+        }
 
         const snapshot = buildRequestSnapshot();
         if (!snapshot) return;
@@ -265,7 +270,7 @@ export default function ImagePage() {
         if (log.config.quality) updateConfig("quality", log.config.quality);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.count) updateConfig("count", log.config.count);
-        setResults(log.images.map((image) => ({ id: image.id, status: "success", image })));
+        setResults(log.images.map((image) => (image.dataUrl ? { id: image.id, status: "success", image } : { id: image.id, status: "failed", error: "本地图片文件已丢失，无法预览；可以点击重试重新生成" })));
     };
 
     const buildRequestSnapshot = () => {
@@ -409,7 +414,7 @@ export default function ImagePage() {
                         </div>
 
                         <div className="mt-auto pt-6">
-                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
+                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running || Boolean(getImageParameterIssue(effectiveConfig, model))} onClick={() => void generate()}>
                                 开始生成
                             </Button>
                         </div>
@@ -486,13 +491,21 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
-                <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                <ModelPicker config={config} value={model} onChange={(value) => updateImageModel(updateConfig, config, value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
-                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
+                <ImageSettingsPanel config={config} model={model} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
             </div>
         </>
     );
+}
+
+function updateImageModel(updateConfig: UpdateAiConfig, config: AiConfig, model: string) {
+    const patch = imageModelParameterPatch(model, config);
+    updateConfig("imageModel", model);
+    if (patch.size !== undefined) updateConfig("size", patch.size);
+    if (patch.imageResolution !== undefined) updateConfig("imageResolution", patch.imageResolution);
+    if (patch.imageAspectRatio !== undefined) updateConfig("imageAspectRatio", patch.imageAspectRatio);
 }
 
 function ResultImageCard({

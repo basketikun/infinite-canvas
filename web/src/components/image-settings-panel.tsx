@@ -1,10 +1,20 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
-import { ConfigProvider, Switch } from "antd";
+import { ConfigProvider, Switch, Tooltip } from "antd";
 
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import { GPT_IMAGE_CONFIG_SIZE_TIP, GPT_IMAGE_ENTERPRISE_SIZE_TIP, GROK_IMAGE_ASPECT_RATIOS, GROK_IMAGE_RESOLUTIONS, getImageParameterIssue, imageAspectRatioLabel, imageResolutionLabel, isGptImage2Model, isGptImageRestrictedModel, isGrokImageModel, isImageAspectRatioAllowed, isImageResolutionAllowed, isImageSizeAllowed } from "@/lib/image-model-capabilities";
 import type { AiConfig } from "@/stores/use-config-store";
+
+type ImageSizeOption = {
+    value: string;
+    label: string;
+    width: number;
+    height: number;
+    icon: "square" | "landscape" | "portrait" | "auto";
+    size?: string;
+};
 
 const qualityOptions = [
     { value: "auto", label: "自动" },
@@ -14,7 +24,7 @@ const qualityOptions = [
 ];
 const DIMENSION_STEP = 16;
 
-const aspectOptions = [
+const aspectOptions: ImageSizeOption[] = [
     { value: "1:1", label: "1:1", width: 1024, height: 1024, icon: "square" },
     { value: "3:2", label: "3:2", width: 1536, height: 1024, icon: "landscape" },
     { value: "2:3", label: "2:3", width: 1024, height: 1536, icon: "portrait" },
@@ -29,29 +39,49 @@ const aspectOptions = [
     { value: "9:16-4k", label: "9:16(4k)", size: "2160x3840", width: 2160, height: 3840, icon: "portrait" },
     { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
 ];
+const enterpriseSizeOptions: ImageSizeOption[] = [
+    { value: "1024x1024", label: "1024x1024", width: 1024, height: 1024, icon: "square" },
+    { value: "1024x1536", label: "1024x1536", width: 1024, height: 1536, icon: "portrait" },
+    { value: "1536x1024", label: "1536x1024", width: 1536, height: 1024, icon: "landscape" },
+    { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
+];
+const gptImage2SizeOptions: ImageSizeOption[] = [{ value: "4k", label: "4K", width: 3840, height: 2160, icon: "landscape" }, { value: "3840x2160", label: "3840x2160", width: 3840, height: 2160, icon: "landscape" }, ...enterpriseSizeOptions];
+const grokResolutionOptions = GROK_IMAGE_RESOLUTIONS.map((value) => ({ value, label: value.toUpperCase() }));
+const grokAspectOptions = GROK_IMAGE_ASPECT_RATIOS.map((value) => ({ value, label: value }));
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "quality" | "size" | "count", value: string) => void;
+    onConfigChange: (key: "quality" | "size" | "count" | "imageResolution" | "imageAspectRatio", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
     maxCount?: number;
     quickCount?: number;
+    model?: string;
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, onConfigChange, theme, model: modelOverride, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
+    const model = modelOverride || config.model || config.imageModel;
+    const isEnterprise = isGptImageRestrictedModel(model);
+    const isGpt2 = isGptImage2Model(model);
+    const isGrok = isGrokImageModel(model);
+    const fixedSizeOnly = isEnterprise || isGpt2;
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const activeSize = config.size || "auto";
-    const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
+    const activeSize = config.size || (fixedSizeOnly || isGrok ? "" : "auto");
+    const sizeOptions = isEnterprise ? [...enterpriseSizeOptions, ...aspectOptions.filter((item) => item.value !== "auto")] : isGpt2 ? gptImage2SizeOptions : aspectOptions;
+    const selectedAspect = sizeOptions.find((item) => imageSizeOptionValue(item) === activeSize || item.value === activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
+    const parameterIssue = getImageParameterIssue(config, model);
     const selectAspect = (value: string) => {
-        const option = aspectOptions.find((item) => item.value === value);
-        onConfigChange("size", option?.size || option?.value || "auto");
+        const option = sizeOptions.find((item) => item.value === value);
+        const size = option ? imageSizeOptionValue(option) : "auto";
+        if (!isImageSizeAllowed(model, size, config)) return;
+        onConfigChange("size", size);
     };
     const updateDimension = (key: "width" | "height", value: number | null) => {
+        if (fixedSizeOnly || isGrok) return;
         const next = Math.max(1, Math.floor(value || dimensions[key] || 1024));
         const width = key === "width" ? next : dimensions.width;
         const height = key === "height" ? next : dimensions.height;
@@ -70,52 +100,107 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 }}
             >
                 {showTitle ? <div className="text-lg font-semibold">图像设置</div> : null}
-                <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>质量</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {qualityOptions.map((item) => (
-                            <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
-                                {item.label}
-                            </OptionPill>
-                        ))}
-                    </div>
-                </div>
-                <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                        <SettingTitle color={theme.node.muted}>尺寸</SettingTitle>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
-                                16倍数对齐
-                            </span>
-                            <span title="输入完成后自动向上补成 16 的倍数" onMouseDown={(event) => event.stopPropagation()}>
-                                <Switch size="small" checked={snapDimensionToStep} onChange={setSnapDimensionToStep} />
-                            </span>
+                {parameterIssue ? <div className="rounded-lg border border-amber-400/50 px-2.5 py-2 text-xs text-amber-500 dark:text-amber-300">{parameterIssue}</div> : null}
+                {isGrok ? (
+                    <>
+                        <div className="space-y-2.5">
+                            <SettingTitle color={theme.node.muted}>分辨率</SettingTitle>
+                            <div className="grid grid-cols-2 gap-2.5">
+                                {grokResolutionOptions.map((item) => {
+                                    const disabled = !isImageResolutionAllowed(model, item.value, config);
+                                    return (
+                                        <Tooltip key={item.value} title={disabled ? GPT_IMAGE_CONFIG_SIZE_TIP : ""}>
+                                            <span className="block">
+                                                <OptionPill disabled={disabled} selected={imageResolutionLabel(config.imageResolution) === item.label} theme={theme} onClick={() => onConfigChange("imageResolution", item.value)}>
+                                                    {item.label}
+                                                </OptionPill>
+                                            </span>
+                                        </Tooltip>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("width", value)} />
-                        <span className="text-lg opacity-45">↔</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("height", value)} />
-                    </div>
-                </div>
-                <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>宽高比</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {aspectOptions.map((item) => (
-                            <button
-                                key={item.value}
-                                type="button"
-                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
-                                style={{ borderColor: selectedAspect?.value === item.value ? theme.node.text : theme.node.stroke, background: "transparent", color: theme.node.text }}
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => selectAspect(item.value)}
-                            >
-                                <AspectIcon type={item.icon} width={item.width} height={item.height} color={theme.node.text} />
-                                <span>{item.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                        <div className="space-y-2.5">
+                            <SettingTitle color={theme.node.muted}>画幅比例</SettingTitle>
+                            <div className="grid grid-cols-4 gap-2.5">
+                                {grokAspectOptions.map((item) => {
+                                    const disabled = !isImageAspectRatioAllowed(model, item.value, config);
+                                    return (
+                                        <Tooltip key={item.value} title={disabled ? GPT_IMAGE_CONFIG_SIZE_TIP : ""}>
+                                            <span className="block">
+                                                <OptionPill disabled={disabled} selected={imageAspectRatioLabel(config.imageAspectRatio) === item.label} theme={theme} onClick={() => onConfigChange("imageAspectRatio", item.value)}>
+                                                    {item.label}
+                                                </OptionPill>
+                                            </span>
+                                        </Tooltip>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="space-y-2.5">
+                            <SettingTitle color={theme.node.muted}>质量</SettingTitle>
+                            <div className="grid grid-cols-4 gap-2.5">
+                                {qualityOptions.map((item) => (
+                                    <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
+                                        {item.label}
+                                    </OptionPill>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="space-y-2.5">
+                            <div className="flex items-center justify-between gap-3">
+                                <SettingTitle color={theme.node.muted}>尺寸</SettingTitle>
+                                {!fixedSizeOnly ? (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
+                                            16倍数对齐
+                                        </span>
+                                        <span title="输入完成后自动向上补成 16 的倍数" onMouseDown={(event) => event.stopPropagation()}>
+                                            <Switch size="small" checked={snapDimensionToStep} onChange={setSnapDimensionToStep} />
+                                        </span>
+                                    </div>
+                                ) : null}
+                            </div>
+                            {!fixedSizeOnly ? (
+                                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+                                    <DimensionInput prefix="W" value={dimensions.width} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("width", value)} />
+                                    <span className="text-lg opacity-45">↔</span>
+                                    <DimensionInput prefix="H" value={dimensions.height} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("height", value)} />
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="space-y-2.5">
+                            <SettingTitle color={theme.node.muted}>{fixedSizeOnly ? "可用尺寸" : "宽高比"}</SettingTitle>
+                            <div className="grid grid-cols-4 gap-2.5">
+                                {sizeOptions.map((item) => {
+                                    const size = imageSizeOptionValue(item);
+                                    const disabled = !isImageSizeAllowed(model, size, config);
+                                    const disabledTip = isEnterprise ? GPT_IMAGE_ENTERPRISE_SIZE_TIP : GPT_IMAGE_CONFIG_SIZE_TIP;
+                                    return (
+                                        <Tooltip key={`${item.value}-${size}`} title={disabled ? disabledTip : ""}>
+                                            <span className="block">
+                                                <button
+                                                    type="button"
+                                                    disabled={disabled}
+                                                    className={`flex h-[72px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition ${disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer hover:opacity-80"}`}
+                                                    style={{ borderColor: selectedAspect?.value === item.value ? theme.node.text : theme.node.stroke, background: "transparent", color: theme.node.text }}
+                                                    onMouseDown={(event) => event.stopPropagation()}
+                                                    onClick={() => selectAspect(item.value)}
+                                                >
+                                                    <AspectIcon type={item.icon} width={item.width} height={item.height} color={theme.node.text} />
+                                                    <span>{item.label}</span>
+                                                </button>
+                                            </span>
+                                        </Tooltip>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </>
+                )}
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>生成张数</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
@@ -150,17 +235,23 @@ export function imageQualityLabel(value: string) {
 }
 
 export function imageSizeLabel(size: string) {
+    if (String(size).toLowerCase() === "4k") return "4K";
     return aspectOptions.find((item) => (item.size || item.value) === size || item.value === size)?.label || size;
 }
 
-function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
+export { imageAspectRatioLabel, imageResolutionLabel };
+
+function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
     return (
         <button
             type="button"
-            className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80"
+            disabled={disabled}
+            className={`h-9 rounded-full border px-2 text-sm transition ${disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer hover:opacity-80"}`}
             style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
-            onClick={onClick}
+            onClick={() => {
+                if (!disabled) onClick();
+            }}
         >
             {children}
         </button>
@@ -231,6 +322,10 @@ function SettingTitle({ children, color }: { children: string; color: string }) 
             {children}
         </div>
     );
+}
+
+function imageSizeOptionValue(option: ImageSizeOption) {
+    return option.size || option.value;
 }
 
 function readSizeDimensions(size: string, fallback: { width: number; height: number }) {

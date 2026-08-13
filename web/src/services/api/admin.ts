@@ -176,11 +176,18 @@ export type AdminModelChannel = {
     remark: string;
 };
 
+export type AdminImageModelCapability = {
+    sizes?: string[];
+    resolutions?: string[];
+    aspectRatios?: string[];
+};
+
 export type AdminPublicModelChannelSettings = {
     availableModels: string[];
     modelCosts: AdminModelCost[];
     defaultModel: string;
     defaultImageModel: string;
+    imageModelCapabilities: Record<string, AdminImageModelCapability>;
     defaultVideoModel: string;
     defaultTextModel: string;
     systemPrompt: string;

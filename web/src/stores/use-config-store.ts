@@ -6,6 +6,7 @@ import { persist } from "zustand/middleware";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
+import { cleanImageParametersForModel, type ImageModelCapability } from "@/lib/image-model-capabilities";
 
 export type AiConfig = {
     channelMode: "remote" | "local" | "newapi";
@@ -37,6 +38,9 @@ export type AiConfig = {
     audioModels: string[];
     quality: string;
     size: string;
+    imageResolution: string;
+    imageAspectRatio: string;
+    imageModelCapabilities: Record<string, ImageModelCapability>;
     count: string;
     canvasImageCount: string;
 };
@@ -82,6 +86,9 @@ export const defaultConfig: AiConfig = {
     audioModels: [],
     quality: "auto",
     size: "1:1",
+    imageResolution: "1k",
+    imageAspectRatio: "1:1",
+    imageModelCapabilities: {},
     count: "1",
     canvasImageCount: "3",
 };
@@ -104,7 +111,7 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
     const channelMode = resolveAllowedChannelMode(config.channelMode, modelChannel);
     if (channelMode === "newapi") {
         return applyFetchedModelsToConfig(
-            { ...config, channelMode },
+            { ...config, channelMode, imageModelCapabilities: modelChannel?.imageModelCapabilities || config.imageModelCapabilities },
             {
                 models: config.models,
                 imageModels: config.imageModels,
@@ -138,6 +145,7 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
         audioModels,
         model: textModels.includes(config.model) ? config.model : fallbackModel,
         imageModel: imageModels.includes(config.imageModel) ? config.imageModel : fallbackImageModel,
+        imageModelCapabilities: modelChannel.imageModelCapabilities || {},
         videoModel: videoModels.includes(config.videoModel) ? config.videoModel : fallbackVideoModel,
         textModel: textModels.includes(config.textModel) ? config.textModel : fallbackTextModel || fallbackModel,
         audioModel: audioModels.includes(config.audioModel) ? config.audioModel : fallbackAudioModel,
@@ -287,12 +295,10 @@ export const useConfigStore = create<ConfigStore>()(
             isConfigOpen: false,
             shouldPromptContinue: false,
             updateConfig: (key, value) =>
-                set((state) => ({
-                    config: {
-                        ...state.config,
-                        [key]: value,
-                    },
-                })),
+                set((state) => {
+                    const config = { ...state.config, [key]: value };
+                    return { config: key === "imageModel" ? cleanImageParametersForModel(config, String(value)) : config };
+                }),
             loadPublicSettings: async () => {
                 if (get().isPublicSettingsLoading) return;
                 set({ isPublicSettingsLoading: true });
@@ -336,6 +342,9 @@ export const useConfigStore = create<ConfigStore>()(
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "3",
+                        imageResolution: config.imageResolution || defaultConfig.imageResolution,
+                        imageAspectRatio: config.imageAspectRatio || defaultConfig.imageAspectRatio,
+                        imageModelCapabilities: config.imageModelCapabilities || {},
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels) : filterModelsByCapability(config.models, "image"),
                         videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels) : filterModelsByCapability(config.models, "video"),
                         textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels) : filterModelsByCapability(config.models, "text"),

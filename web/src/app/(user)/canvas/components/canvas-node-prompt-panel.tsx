@@ -9,6 +9,7 @@ import { defaultConfig, resolveCapabilityModel, useConfigStore, useEffectiveConf
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { getImageParameterIssue, imageModelParameterPatch } from "@/lib/image-model-capabilities";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
@@ -42,6 +43,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? config.count : 1 });
+    const imageParameterIssue = mode === "image" ? getImageParameterIssue(config, config.model) : "";
 
     useEffect(() => {
         setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
@@ -82,7 +84,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     <CanvasPromptLibrary onSelect={updatePrompt} />
                     {mode === "image" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model, modelOverride: true })} capability="image" onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model, modelOverride: true, ...imageModelParameterPatch(model, config) })} capability="image" onMissingConfig={() => openConfigDialog(true)} />
                             <CanvasImageSettingsPopover
                                 config={config}
                                 placement="topLeft"
@@ -106,7 +108,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                         <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="text" onMissingConfig={() => openConfigDialog(true)} />
                     )}
                 </div>
-                <Button type="primary" className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3" disabled={isRunning || !prompt.trim()} onClick={submit} aria-label="生成">
+                <Button type="primary" className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3" disabled={isRunning || !prompt.trim() || Boolean(imageParameterIssue)} onClick={submit} aria-label="生成">
                     <span className="flex items-center gap-1.5">
                         {showCreditBalance ? (
                             <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">
@@ -118,6 +120,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     </span>
                 </Button>
             </div>
+            {imageParameterIssue ? <div className="mt-2 text-xs text-amber-500 dark:text-amber-300">{imageParameterIssue}</div> : null}
         </div>
     );
 }
@@ -131,6 +134,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
     const model = resolveCapabilityModel(globalConfig, mode, preferredModel);
     return {
         ...globalConfig,
+        imageResolution: node.metadata?.imageResolution || globalConfig.imageResolution || defaultConfig.imageResolution,
+        imageAspectRatio: node.metadata?.imageAspectRatio || globalConfig.imageAspectRatio || defaultConfig.imageAspectRatio,
         model,
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         size: node.metadata?.size || globalConfig.size || defaultConfig.size,

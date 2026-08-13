@@ -118,6 +118,7 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型列表 |
 | `modelCosts` | object[] | 模型算力点配置 |
+| `imageModelCapabilities` | object | 图片模型参数限制配置，按模型名保存 `sizes`、`resolutions`、`aspectRatios` |
 | `defaultModel` | string | 默认模型 |
 | `defaultImageModel` | string | 默认图片模型 |
 | `defaultVideoModel` | string | 默认视频模型 |
@@ -131,6 +132,14 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `model` | string | 模型名称 |
 | `credits` | number | 每次后端模型接口调用前预扣的算力点，未配置默认不扣除 |
+
+`imageModelCapabilities` 每个模型的可选字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `sizes` | string[] | 允许的图片 `size` 参数列表 |
+| `resolutions` | string[] | 允许的 Grok 图片分辨率列表 |
+| `aspectRatios` | string[] | 允许的 Grok 图片画幅比例列表 |
 
 `auth.linuxDo` 当前字段：
 

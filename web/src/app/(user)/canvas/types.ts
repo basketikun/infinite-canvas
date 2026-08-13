@@ -34,6 +34,8 @@ export type CanvasNodeMetadata = {
     modelOverride?: boolean;
     size?: string;
     quality?: string;
+    imageResolution?: string;
+    imageAspectRatio?: string;
     count?: number;
     seconds?: string;
     vquality?: string;

@@ -8,6 +8,7 @@ import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl, setImageBlob } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
 import { aiApiUrl, aiHeaders, aiRequestConfig, withSystemMessage, withSystemPrompt, refreshRemoteUser, readAxiosError } from "@/services/api/ai-utils";
+import { UNSUPPORTED_IMAGE_PARAMETER_MESSAGE, getImageParameterIssue, isGptImage2Model, isGptImageRestrictedModel, isGrokImageModel, normalizeGptImageEnterpriseSize, normalizeGrokImageAspectRatio, normalizeGrokImageResolution } from "@/lib/image-model-capabilities";
 
 export type ChatCompletionMessage = {
     role: "system" | "user" | "assistant";
@@ -117,6 +118,36 @@ function resolveRequestSize(quality: string | undefined, size: string) {
     if (value.includes(":")) return resolveSize(quality, value);
     throw new Error("图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024");
 }
+function resolveCapabilityRequestSize(model: string, quality: string | undefined, size: string) {
+    const value = String(size || "").trim().toLowerCase();
+    if (isGptImageRestrictedModel(model)) return normalizeGptImageEnterpriseSize(size);
+    if (isGptImage2Model(model) && (!value || value === "auto" || value === "4k")) return value || "auto";
+    if (isGptImage2Model(model) && value === "3840x2160") return value;
+    return resolveRequestSize(quality, size);
+}
+export function assertSupportedImageParameters(config: AiConfig, model = resolveCapabilityModel(config, "image")) {
+    if (getImageParameterIssue(config, model)) throw new Error(UNSUPPORTED_IMAGE_PARAMETER_MESSAGE);
+}
+
+function buildImageRequestParameters(config: AiConfig, model: string) {
+    assertSupportedImageParameters(config, model);
+    if (isGrokImageModel(model)) {
+        return {
+            quality: undefined,
+            requestSize: undefined,
+            extraFields: {
+                resolution: normalizeGrokImageResolution(config.imageResolution),
+                aspect_ratio: normalizeGrokImageAspectRatio(config.imageAspectRatio),
+            },
+        };
+    }
+    const quality = normalizeQuality(config.quality);
+    return {
+        quality,
+        requestSize: resolveCapabilityRequestSize(model, quality, config.size),
+        extraFields: undefined,
+    };
+}
 
 async function resolveImageDataUrl(item: Record<string, unknown>, config?: AiConfig) {
     if (typeof item.b64_json === "string" && item.b64_json) {
@@ -181,16 +212,16 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     const model = resolveCapabilityModel(config, "image");
     assertImageModel(model);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const { quality, requestSize, extraFields } = buildImageRequestParameters(config, model);
     const payload = {
         model,
         prompt: withSystemPrompt(config, prompt),
         n,
         ...(quality ? { quality } : {}),
         ...(requestSize ? { size: requestSize } : {}),
+        ...(extraFields ? { extra_fields: extraFields } : {}),
         response_format: "b64_json",
-        output_format: IMAGE_OUTPUT_FORMAT,
+        ...(!isGrokImageModel(model) ? { output_format: IMAGE_OUTPUT_FORMAT } : {}),
     };
     if (isNewApiConfig(config)) {
         return requestNewApiImageTask(config, payload);
@@ -246,21 +277,21 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const model = resolveCapabilityModel(config, "image");
     assertImageModel(model);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const { quality, requestSize, extraFields } = buildImageRequestParameters(config, model);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     const formData = new FormData();
     formData.set("model", model);
     formData.set("prompt", withSystemPrompt(config, requestPrompt));
     formData.set("n", String(n));
     formData.set("response_format", "b64_json");
-    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    if (!isGrokImageModel(model)) formData.set("output_format", IMAGE_OUTPUT_FORMAT);
     if (quality) {
         formData.set("quality", quality);
     }
     if (requestSize) {
         formData.set("size", requestSize);
     }
+    if (extraFields) formData.set("extra_fields", JSON.stringify(extraFields));
     const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => formData.append("image", file));
     if (mask) formData.set("mask", dataUrlToFile(mask));

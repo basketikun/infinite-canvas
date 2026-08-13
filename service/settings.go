@@ -79,6 +79,9 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	if setting.ModelChannel.ModelCosts == nil {
 		setting.ModelChannel.ModelCosts = []model.ModelCost{}
 	}
+	if setting.ModelChannel.ImageModelCapabilities == nil {
+		setting.ModelChannel.ImageModelCapabilities = map[string]model.ImageModelCapability{}
+	}
 	for i := range setting.ModelChannel.ModelCosts {
 		setting.ModelChannel.ModelCosts[i].Model = strings.TrimSpace(setting.ModelChannel.ModelCosts[i].Model)
 		if setting.ModelChannel.ModelCosts[i].Credits < 0 {

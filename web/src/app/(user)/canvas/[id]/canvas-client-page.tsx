@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { BookOpen, Home, ImageIcon, Images, List, Menu, MessageSquare, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 
-import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
+import { assertSupportedImageParameters, requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { DOCS_URL } from "@/constant/env";
@@ -16,6 +16,7 @@ import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
+import { UNSUPPORTED_IMAGE_PARAMETER_MESSAGE } from "@/lib/image-model-capabilities";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -1527,6 +1528,12 @@ function InfiniteCanvasPage() {
                 openConfigDialog(true);
                 return;
             }
+            try {
+                assertSupportedImageParameters(generationConfig, generationConfig.model);
+            } catch {
+                message.error(UNSUPPORTED_IMAGE_PARAMETER_MESSAGE);
+                return;
+            }
             const userPrompt = payload.prompt.trim();
             const prompt = `只修改蒙版透明区域，其他区域保持不变。${userPrompt}`;
             const childId = nanoid();
@@ -1597,6 +1604,12 @@ function InfiniteCanvasPage() {
             const generationConfig = { ...buildGenerationConfig(effectiveConfig, node, "image"), count: "1" };
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
+                return;
+            }
+            try {
+                assertSupportedImageParameters(generationConfig, generationConfig.model);
+            } catch {
+                message.error(UNSUPPORTED_IMAGE_PARAMETER_MESSAGE);
                 return;
             }
             const childId = nanoid();
@@ -1774,6 +1787,14 @@ function InfiniteCanvasPage() {
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
                 return;
+            }
+            if (mode === "image") {
+                try {
+                    assertSupportedImageParameters(generationConfig, generationConfig.model);
+                } catch {
+                    message.error(UNSUPPORTED_IMAGE_PARAMETER_MESSAGE);
+                    return;
+                }
             }
 
             setRunningNodeId(nodeId);
@@ -2068,6 +2089,14 @@ function InfiniteCanvasPage() {
                 openConfigDialog(true);
                 return;
             }
+            if (node.type === CanvasNodeType.Image) {
+                try {
+                    assertSupportedImageParameters(generationConfig, generationConfig.model);
+                } catch {
+                    message.error(UNSUPPORTED_IMAGE_PARAMETER_MESSAGE);
+                    return;
+                }
+            }
 
             const context = hasSavedImageMetadata ? null : await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourceNode.metadata?.prompt || node.metadata?.prompt || ""));
             const prompt = (savedImageMetadata?.prompt || context?.prompt || "").trim();
@@ -2088,7 +2117,6 @@ function InfiniteCanvasPage() {
 
             setRunningNodeId(node.id);
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
-
             try {
                 if (node.type === CanvasNodeType.Text) {
                     if (!context) return;
@@ -2117,7 +2145,7 @@ function InfiniteCanvasPage() {
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
                 const generationMetadata = savedImageMetadata?.generationType
-                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
+                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, imageResolution: generationConfig.imageResolution, imageAspectRatio: generationConfig.imageAspectRatio, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
                     : buildImageGenerationMetadata(useReferenceImages ? "edit" : "generation", generationConfig, 1, retryImages);
                 setNodes((prev) =>
                     prev.map((item) =>
@@ -2794,6 +2822,8 @@ function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: A
         model: config.model,
         size: config.size,
         quality: config.quality,
+        imageResolution: config.imageResolution,
+        imageAspectRatio: config.imageAspectRatio,
         count,
         references: references.map(referenceUrl).filter((url): url is string => Boolean(url)),
     };
@@ -2917,6 +2947,8 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         ...capabilityModelPatch(mode, model),
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         size: node?.metadata?.size || config.size || defaultConfig.size,
+        imageResolution: node?.metadata?.imageResolution || config.imageResolution || defaultConfig.imageResolution,
+        imageAspectRatio: node?.metadata?.imageAspectRatio || config.imageAspectRatio || defaultConfig.imageAspectRatio,
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,
         videoGenerateAudio: node?.metadata?.generateAudio || config.videoGenerateAudio || defaultConfig.videoGenerateAudio,
@@ -2937,6 +2969,8 @@ function buildSavedImageGenerationConfig(config: AiConfig, metadata: CanvasNodeM
         imageModel: model,
         quality: metadata.quality || config.quality,
         size: metadata.size || config.size,
+        imageResolution: metadata.imageResolution || config.imageResolution,
+        imageAspectRatio: metadata.imageAspectRatio || config.imageAspectRatio,
         count: "1",
     };
 }
