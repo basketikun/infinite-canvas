@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ArrowUp, LoaderCircle, Maximize2, Sparkles, Square } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUp, LoaderCircle, Maximize2, Square } from "lucide-react";
 import { Button, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -14,6 +14,7 @@ import { CanvasPromptChipInput } from "./canvas-prompt-chip-input";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasTextSettingsPopover } from "./canvas-text-settings-popover";
 import { PromptAssistantDrawer } from "@/components/prompt-assistant/prompt-assistant-drawer";
+import { PromptAssistantInputAction } from "@/components/prompt-assistant/prompt-assistant-input-action";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 
@@ -44,6 +45,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const [prompt, setPrompt] = useState(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
     const [expanded, setExpanded] = useState(false);
     const [promptAssistantOpen, setPromptAssistantOpen] = useState(false);
+    const promptAssistantAnchorRef = useRef<HTMLDivElement>(null);
 
     // Restore prompts only when switching nodes; preserve the current input after generation on the same node.
     useEffect(() => {
@@ -76,23 +78,29 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
         >
-            <CanvasPromptChipInput
-                value={prompt}
-                references={mentionReferences}
-                onChange={updatePrompt}
-                onSubmit={submit}
-                className="thin-scrollbar h-40 w-full cursor-text resize-none rounded-xl px-3 py-2 text-sm leading-5 outline-none"
-                style={{ background: "transparent", color: theme.node.text }}
-                placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
-            />
+            <div ref={promptAssistantAnchorRef} className="relative">
+                <CanvasPromptChipInput
+                    value={prompt}
+                    references={mentionReferences}
+                    onChange={updatePrompt}
+                    onSubmit={submit}
+                    className="thin-scrollbar h-40 w-full cursor-text resize-none rounded-xl px-3 py-2 !pb-12 text-sm leading-5 outline-none"
+                    style={{ background: "transparent", color: theme.node.text }}
+                    placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
+                />
+                <PromptAssistantInputAction
+                    label={t("promptAssistant.title")}
+                    onClick={() => setPromptAssistantOpen(true)}
+                    showLabel={false}
+                    className="!w-7 !min-w-7 !border-transparent !bg-transparent !px-0 !text-inherit !shadow-none hover:!bg-black/5 dark:hover:!bg-white/10"
+                    style={{ color: theme.node.text, borderColor: theme.toolbar.border, background: theme.toolbar.panel }}
+                />
+            </div>
 
             <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                     <Tooltip title={t("canvas.promptPanel.expandEditor")}>
                         <Button type="text" className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0" style={{ color: theme.node.text }} icon={<Maximize2 className="size-3.5" />} onClick={openExpandedEditor} aria-label={t("canvas.promptPanel.expandEditor")} />
-                    </Tooltip>
-                    <Tooltip title={t("promptAssistant.title")}>
-                        <Button type="text" className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0" style={{ color: theme.node.text }} icon={<Sparkles className="size-3.5" />} onClick={() => setPromptAssistantOpen(true)} aria-label={t("promptAssistant.title")} />
                     </Tooltip>
                     <CanvasPromptLibrary onSelect={updatePrompt} />
                     {mode === "image" ? (
@@ -145,7 +153,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     </span>
                 </Button>
             </div>
-            <PromptAssistantDrawer mode={mode} open={promptAssistantOpen} prompt={prompt} onClose={() => setPromptAssistantOpen(false)} onApply={updatePrompt} />
+            <PromptAssistantDrawer anchorRef={promptAssistantAnchorRef} mode={mode} open={promptAssistantOpen} prompt={prompt} onClose={() => setPromptAssistantOpen(false)} onApply={updatePrompt} />
             <Modal title={t("canvas.promptPanel.editorTitle")} open={expanded} centered width={760} footer={null} onCancel={() => setExpanded(false)} destroyOnHidden>
                 <div data-canvas-no-zoom className="pt-2" onWheelCapture={(event) => event.stopPropagation()}>
                     <CanvasPromptChipInput

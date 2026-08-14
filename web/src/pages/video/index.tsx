@@ -10,6 +10,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { AssetSaveButton, type AssetSaveMenuOptions, eagleSaveMessageKey } from "@/components/asset-save-menu";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptAssistantDrawer } from "@/components/prompt-assistant/prompt-assistant-drawer";
+import { PromptAssistantInputAction } from "@/components/prompt-assistant/prompt-assistant-input-action";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -99,6 +100,7 @@ export default function VideoPage() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [promptDialogOpen, setPromptDialogOpen] = useState(false);
     const [promptAssistantOpen, setPromptAssistantOpen] = useState(false);
+    const promptAssistantAnchorRef = useRef<HTMLDivElement>(null);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [startedAt, setStartedAt] = useState(0);
     const [elapsedMs, setElapsedMs] = useState(0);
@@ -463,9 +465,6 @@ export default function VideoPage() {
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">{t("workbench.prompt")}</span>
                                     <div className="flex gap-2">
-                                        <Button size="small" type="primary" ghost icon={<Sparkles className="size-3.5" />} onClick={() => setPromptAssistantOpen(true)}>
-                                            {t("promptAssistant.title")}
-                                        </Button>
                                         <Button size="small" icon={<BookOpen className="size-3.5" />} onClick={() => setPromptDialogOpen(true)}>
                                             {t("workbench.viewPrompts")}
                                         </Button>
@@ -474,7 +473,14 @@ export default function VideoPage() {
                                         </Button>
                                     </div>
                                 </div>
-                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder={t("videoWorkbench.promptPlaceholder")} />
+                                <div ref={promptAssistantAnchorRef} className="relative">
+                                    <Input.TextArea className="!pb-11" value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder={t("videoWorkbench.promptPlaceholder")} />
+                                    <PromptAssistantInputAction
+                                        label={t("promptAssistant.title")}
+                                        onClick={() => setPromptAssistantOpen(true)}
+                                        className="!border-stone-200 !bg-stone-50/90 !text-stone-600 hover:!border-stone-300 hover:!bg-stone-100 hover:!text-stone-950 dark:!border-stone-700 dark:!bg-stone-900/90 dark:!text-stone-300 dark:hover:!border-stone-600 dark:hover:!bg-stone-800 dark:hover:!text-stone-50"
+                                    />
+                                </div>
                             </div>
 
                             <div className="min-w-0">
@@ -675,7 +681,7 @@ export default function VideoPage() {
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
-            <PromptAssistantDrawer mode="video" open={promptAssistantOpen} prompt={prompt} onClose={() => setPromptAssistantOpen(false)} onApply={setPrompt} />
+            <PromptAssistantDrawer anchorRef={promptAssistantAnchorRef} mode="video" open={promptAssistantOpen} prompt={prompt} onClose={() => setPromptAssistantOpen(false)} onApply={setPrompt} />
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
             <Modal title={t("workbench.deleteLogs")} open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
                 {t("workbench.deleteLogsConfirm", { count: selectedLogIds.length })}

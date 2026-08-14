@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import { Button, Image } from "antd";
-import { FileText, Image as ImageIcon, Music2, Sparkles, Video, X } from "lucide-react";
+import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -9,6 +9,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { NodeGenerationInput } from "./canvas-node-generation";
 import { PromptAssistantDrawer } from "@/components/prompt-assistant/prompt-assistant-drawer";
+import { PromptAssistantInputAction } from "@/components/prompt-assistant/prompt-assistant-input-action";
 import type { CanvasGenerationMode } from "@/types/canvas";
 
 type CanvasConfigComposerProps = {
@@ -38,6 +39,7 @@ export function CanvasConfigComposer({ value, inputs, mode, onChange, onClose }:
     const [activeIndex, setActiveIndex] = useState(0);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [promptAssistantOpen, setPromptAssistantOpen] = useState(false);
+    const promptAssistantAnchorRef = useRef<HTMLDivElement>(null);
     const tokens = useMemo(() => parseComposerTokens(value), [value]);
     const referenceById = useMemo(() => new Map(inputs.map((input) => [input.nodeId, input])), [inputs]);
     const candidates = useMemo(() => {
@@ -126,17 +128,16 @@ export function CanvasConfigComposer({ value, inputs, mode, onChange, onClose }:
                     <div className="truncate text-[11px] opacity-55">{t("canvas.composer.description")}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                    <Button size="small" type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<Sparkles className="size-3.5" />} onClick={() => setPromptAssistantOpen(true)} aria-label={t("promptAssistant.title")} />
                     <Button size="small" type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<X className="size-3.5" />} onClick={onClose} />
                 </div>
             </div>
-            <div className="relative rounded-xl">
+            <div ref={promptAssistantAnchorRef} className="relative rounded-xl">
                 {!value.trim() ? <div className="pointer-events-none absolute left-3 top-2 text-sm leading-7" style={{ color: theme.node.placeholder }}>{t("canvas.composer.placeholder")}</div> : null}
                 <div
                     ref={editorRef}
                     contentEditable
                     suppressContentEditableWarning
-                    className="thin-scrollbar min-h-28 max-h-72 w-full overflow-y-auto overscroll-contain whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
+                    className="thin-scrollbar min-h-28 max-h-72 w-full overflow-y-auto overscroll-contain whitespace-pre-wrap break-words px-3 py-2 !pb-11 text-sm leading-7 outline-none"
                     style={{ color: theme.node.text }}
                     onInput={() => {
                         if (!composingRef.current) syncFromEditor();
@@ -181,9 +182,16 @@ export function CanvasConfigComposer({ value, inputs, mode, onChange, onClose }:
                     }}
                     onBlur={() => window.setTimeout(closeMention, 120)}
                 />
+                <PromptAssistantInputAction
+                    label={t("promptAssistant.title")}
+                    onClick={() => setPromptAssistantOpen(true)}
+                    showLabel={false}
+                    className="!w-7 !min-w-7 !border-transparent !bg-transparent !px-0 !text-inherit !shadow-none hover:!bg-black/5 dark:hover:!bg-white/10"
+                    style={{ color: theme.node.text, borderColor: theme.toolbar.border, background: theme.toolbar.panel }}
+                />
                 {mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null}
             </div>
-            <PromptAssistantDrawer mode={mode} open={promptAssistantOpen} prompt={value} onClose={() => setPromptAssistantOpen(false)} onApply={onChange} />
+            <PromptAssistantDrawer anchorRef={promptAssistantAnchorRef} mode={mode} open={promptAssistantOpen} prompt={value} onClose={() => setPromptAssistantOpen(false)} onApply={onChange} />
             {imagePreview ? <Image src={imagePreview} alt={t("canvas.composer.imagePreview")} style={{ display: "none" }} preview={{ visible: true, src: imagePreview, onVisibleChange: (visible) => !visible && setImagePreview(null) }} /> : null}
         </div>
     );

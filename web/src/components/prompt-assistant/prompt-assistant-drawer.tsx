@@ -1,6 +1,7 @@
 import { ArrowUp, Bot, Check, Cpu, RotateCcw, Sparkles, UserRound, X } from "lucide-react";
-import { App, Button, Drawer, Input } from "antd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { App, Button, Input } from "antd";
+import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import { requestTextQuestion, type AiTextMessage } from "@/services/api/image";
@@ -12,6 +13,7 @@ type PromptAssistantDrawerProps = {
     open: boolean;
     prompt: string;
     mode: PromptAssistantMode;
+    anchorRef?: RefObject<HTMLElement | null>;
     onClose: () => void;
     onApply: (prompt: string) => void;
 };
@@ -21,7 +23,59 @@ type ChatMessage = {
     content: string;
 };
 
-export function PromptAssistantDrawer({ open, prompt, mode, onClose, onApply }: PromptAssistantDrawerProps) {
+type PanelRect = { left: number; top: number; width: number; height: number };
+type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+type ResizeState = { direction: ResizeDirection; startX: number; startY: number; rect: PanelRect };
+type DragState = { startX: number; startY: number; rect: PanelRect };
+
+const DEFAULT_PANEL_WIDTH = 460;
+const DEFAULT_PANEL_HEIGHT = 520;
+const MIN_PANEL_WIDTH = 320;
+const MIN_PANEL_HEIGHT = 360;
+const PANEL_MARGIN = 12;
+
+const resizeHandles: Array<{ direction: ResizeDirection; className: string }> = [
+    { direction: "n", className: "-top-1 left-5 right-5 h-2 cursor-n-resize" },
+    { direction: "ne", className: "-right-1 -top-1 size-3 cursor-ne-resize" },
+    { direction: "e", className: "-bottom-5 -right-1 -top-5 w-2 cursor-e-resize" },
+    { direction: "se", className: "-bottom-1 -right-1 size-3 cursor-se-resize" },
+    { direction: "s", className: "-bottom-1 left-5 right-5 h-2 cursor-s-resize" },
+    { direction: "sw", className: "-bottom-1 -left-1 size-3 cursor-sw-resize" },
+    { direction: "w", className: "-bottom-5 -left-1 -top-5 w-2 cursor-w-resize" },
+    { direction: "nw", className: "-left-1 -top-1 size-3 cursor-nw-resize" },
+];
+
+function clampPanelRect(rect: PanelRect): PanelRect {
+    if (typeof window === "undefined") return rect;
+    const availableWidth = Math.max(0, window.innerWidth - PANEL_MARGIN * 2);
+    const availableHeight = Math.max(0, window.innerHeight - PANEL_MARGIN * 2);
+    const maxWidth = Math.max(MIN_PANEL_WIDTH, availableWidth);
+    const maxHeight = Math.max(MIN_PANEL_HEIGHT, availableHeight);
+    const width = Math.min(Math.max(rect.width, Math.min(MIN_PANEL_WIDTH, maxWidth)), maxWidth);
+    const height = Math.min(Math.max(rect.height, Math.min(MIN_PANEL_HEIGHT, maxHeight)), maxHeight);
+    const maxLeft = Math.max(PANEL_MARGIN, window.innerWidth - width - PANEL_MARGIN);
+    const maxTop = Math.max(PANEL_MARGIN, window.innerHeight - height - PANEL_MARGIN);
+    return { left: Math.min(Math.max(rect.left, PANEL_MARGIN), maxLeft), top: Math.min(Math.max(rect.top, PANEL_MARGIN), maxTop), width, height };
+}
+
+function resizePanelRect(rect: PanelRect, direction: ResizeDirection, deltaX: number, deltaY: number): PanelRect {
+    let next = { ...rect };
+    if (direction.includes("e")) next.width = rect.width + deltaX;
+    if (direction.includes("s")) next.height = rect.height + deltaY;
+    if (direction.includes("w")) {
+        next.width = rect.width - deltaX;
+        next.left = rect.left + deltaX;
+    }
+    if (direction.includes("n")) {
+        next.height = rect.height - deltaY;
+        next.top = rect.top + deltaY;
+    }
+    if (direction.includes("w") && next.width < MIN_PANEL_WIDTH) next.left = rect.left + rect.width - MIN_PANEL_WIDTH;
+    if (direction.includes("n") && next.height < MIN_PANEL_HEIGHT) next.top = rect.top + rect.height - MIN_PANEL_HEIGHT;
+    return clampPanelRect(next);
+}
+
+export function PromptAssistantDrawer({ open, prompt, mode, anchorRef, onClose, onApply }: PromptAssistantDrawerProps) {
     const { t } = useTranslation();
     const { message } = App.useApp();
     const effectiveConfig = useEffectiveConfig();
@@ -36,19 +90,112 @@ export function PromptAssistantDrawer({ open, prompt, mode, onClose, onApply }: 
     const [error, setError] = useState("");
     const scrollRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
+    const dragRef = useRef<DragState | null>(null);
+    const resizeRef = useRef<ResizeState | null>(null);
+    const manualPositionRef = useRef(false);
+    const [panelRect, setPanelRect] = useState<PanelRect>({ left: PANEL_MARGIN, top: PANEL_MARGIN, width: DEFAULT_PANEL_WIDTH, height: DEFAULT_PANEL_HEIGHT });
+    const [dragging, setDragging] = useState(false);
+    const [resizing, setResizing] = useState(false);
     const currentPrompt = prompt.trim();
-    useEffect(() => {
-        if (!open || !scrollRef.current) return;
-        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-    }, [messages, open, streamingText]);
 
-    const close = () => {
+    const placePanel = useCallback(() => {
+        if (typeof window === "undefined") return;
+        const width = Math.min(DEFAULT_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, window.innerWidth - PANEL_MARGIN * 2));
+        const height = Math.min(DEFAULT_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT, window.innerHeight - PANEL_MARGIN * 2));
+        const anchor = anchorRef?.current?.getBoundingClientRect();
+        let left = (window.innerWidth - width) / 2;
+        let top = (window.innerHeight - height) / 2;
+        if (anchor) {
+            left = anchor.left + (anchor.width - width) / 2;
+            const below = anchor.bottom + 16;
+            const above = anchor.top - height - 16;
+            top = below + height <= window.innerHeight - PANEL_MARGIN ? below : above >= PANEL_MARGIN ? above : anchor.top + (anchor.height - height) / 2;
+        }
+        setPanelRect(clampPanelRect({ left, top, width, height }));
+    }, [anchorRef]);
+
+    useEffect(() => {
+        if (!open) return;
+        manualPositionRef.current = false;
+        setDragging(false);
+        setResizing(false);
+        placePanel();
+        const handleViewportChange = () => {
+            if (manualPositionRef.current) setPanelRect((value) => clampPanelRect(value));
+            else placePanel();
+        };
+        window.addEventListener("resize", handleViewportChange);
+        window.addEventListener("scroll", handleViewportChange, true);
+        return () => {
+            window.removeEventListener("resize", handleViewportChange);
+            window.removeEventListener("scroll", handleViewportChange, true);
+        };
+    }, [open, placePanel]);
+
+    const close = useCallback(() => {
         abortRef.current?.abort();
         abortRef.current = null;
         setLoading(false);
         setStreamingText("");
         onClose();
+    }, [onClose]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            close();
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [close, open]);
+
+    const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+        dragRef.current = { startX: event.clientX, startY: event.clientY, rect: panelRect };
+        manualPositionRef.current = true;
+        setDragging(true);
+        event.currentTarget.setPointerCapture(event.pointerId);
     };
+
+    const handleHeaderPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        setPanelRect(clampPanelRect({ ...drag.rect, left: drag.rect.left + event.clientX - drag.startX, top: drag.rect.top + event.clientY - drag.startY }));
+    };
+
+    const endHeaderDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+        dragRef.current = null;
+        setDragging(false);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    };
+
+    const handleResizePointerDown = (direction: ResizeDirection, event: ReactPointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        resizeRef.current = { direction, startX: event.clientX, startY: event.clientY, rect: panelRect };
+        manualPositionRef.current = true;
+        setResizing(true);
+        event.currentTarget.setPointerCapture(event.pointerId);
+    };
+
+    const handleResizePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const resize = resizeRef.current;
+        if (!resize) return;
+        setPanelRect(resizePanelRect(resize.rect, resize.direction, event.clientX - resize.startX, event.clientY - resize.startY));
+    };
+
+    const endResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+        resizeRef.current = null;
+        setResizing(false);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    };
+
+    useEffect(() => {
+        if (!open || !scrollRef.current) return;
+        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    }, [messages, open, streamingText]);
 
     const resetConversation = () => {
         abortRef.current?.abort();
@@ -111,17 +258,51 @@ export function PromptAssistantDrawer({ open, prompt, mode, onClose, onApply }: 
         close();
     };
 
-    return (
-        <Drawer open={open} placement="right" width={420} closable={false} onClose={close} styles={{ body: { padding: 0 } }}>
-            <div className="flex h-full min-h-0 flex-col bg-card">
-                <div className="border-b border-stone-200 px-4 pb-3 pt-4 dark:border-stone-800">
+    if (!open || typeof document === "undefined") return null;
+
+    const panel = (
+        <div
+            className="fixed inset-0 z-[1000] bg-black/[0.035]"
+            onPointerDown={(event) => {
+                if (event.target === event.currentTarget) close();
+            }}
+        >
+            <section
+                role="dialog"
+                aria-modal="false"
+                aria-labelledby={`prompt-assistant-title-${mode}`}
+                data-prompt-assistant-panel
+                className={`fixed flex min-h-0 flex-col overflow-visible rounded-2xl border border-stone-200 bg-card shadow-[0_24px_80px_-28px_rgba(15,23,42,0.45)] dark:border-stone-700 dark:bg-stone-950 dark:shadow-[0_24px_80px_-28px_rgba(0,0,0,0.75)] ${dragging ? "cursor-grabbing" : resizing ? "cursor-default" : ""}`}
+                style={{ left: panelRect.left, top: panelRect.top, width: panelRect.width, height: panelRect.height }}
+                onPointerDown={(event) => event.stopPropagation()}
+            >
+                {resizeHandles.map((handle) => (
+                    <div
+                        key={handle.direction}
+                        aria-hidden="true"
+                        data-prompt-assistant-resize={handle.direction}
+                        className={`absolute z-20 touch-none ${handle.className}`}
+                        onPointerDown={(event) => handleResizePointerDown(handle.direction, event)}
+                        onPointerMove={handleResizePointerMove}
+                        onPointerUp={endResize}
+                        onPointerCancel={endResize}
+                    />
+                ))}
+
+                <div
+                    className={`shrink-0 select-none border-b border-stone-200 px-4 pb-3 pt-4 dark:border-stone-800 ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+                    onPointerDown={handleHeaderPointerDown}
+                    onPointerMove={handleHeaderPointerMove}
+                    onPointerUp={endHeaderDrag}
+                    onPointerCancel={endHeaderDrag}
+                >
                     <div className="flex items-start gap-3">
                         <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-stone-700 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-200">
                             <Sparkles className="size-4" />
                         </div>
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                                <h2 className="text-sm font-semibold">{t("promptAssistant.title")}</h2>
+                                <h2 id={`prompt-assistant-title-${mode}`} className="text-sm font-semibold">{t("promptAssistant.title")}</h2>
                                 <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-stone-400">AI</span>
                             </div>
                             <p className="mt-0.5 text-[11px] leading-4 text-stone-500 dark:text-stone-400">{t(`promptAssistant.modeDescription.${mode}`)}</p>
@@ -188,9 +369,11 @@ export function PromptAssistantDrawer({ open, prompt, mode, onClose, onApply }: 
                         </div>
                     </div>
                 </div>
-            </div>
-        </Drawer>
+            </section>
+        </div>
     );
+
+    return createPortal(panel, document.body);
 }
 
 function PromptAssistantMessage({ item, pending = false, onApply }: { item: ChatMessage; pending?: boolean; onApply?: (prompt: string) => void }) {
