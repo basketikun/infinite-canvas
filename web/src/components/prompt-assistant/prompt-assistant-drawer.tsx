@@ -303,7 +303,6 @@ export function PromptAssistantDrawer({ open, prompt, mode, anchorRef, onClose, 
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                                 <h2 id={`prompt-assistant-title-${mode}`} className="text-sm font-semibold">{t("promptAssistant.title")}</h2>
-                                <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-stone-400">AI</span>
                             </div>
                             <p className="mt-0.5 text-[11px] leading-4 text-stone-500 dark:text-stone-400">{t(`promptAssistant.modeDescription.${mode}`)}</p>
                         </div>
