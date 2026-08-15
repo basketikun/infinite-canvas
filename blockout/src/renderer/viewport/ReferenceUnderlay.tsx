@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { uiText } from '../i18n'
 
 export function ReferenceUnderlay(): JSX.Element | null {
   const doc = useStore((s) => s.doc)
@@ -114,17 +115,17 @@ export function ReferenceControls(): JSX.Element | null {
       }
     })
     setOpen(true)
-    toast('Reference attached — match your blocking against it.', 'success')
+    toast('参考视频已添加——可用它对齐场景走位。', 'success')
   }
 
   return (
     <div style={{ position: 'relative' }}>
       <button
         className={`btn small ${ref ? 'active' : ''}`}
-        title="Reference video underlay — match an existing shot by eye"
+        title={uiText('Reference video underlay — match an existing shot by eye')}
         onClick={() => (ref ? setOpen(!open) : void attach())}
       >
-        🎞 Ref
+        🎞 参考
       </button>
       {open && ref && (
         <div
@@ -141,7 +142,7 @@ export function ReferenceControls(): JSX.Element | null {
           }}
         >
           <div className="field">
-            <label>Opacity ({Math.round(ref.opacity * 100)}%)</label>
+            <label>{uiText('Opacity')}（{Math.round(ref.opacity * 100)}%）</label>
             <input
               type="range"
               min={0.1}
@@ -159,7 +160,7 @@ export function ReferenceControls(): JSX.Element | null {
             />
           </div>
           <div className="field">
-            <label>Mode</label>
+            <label>{uiText('Mode')}</label>
             <div className="seg">
               {(['ghost', 'pip'] as const).map((m) => (
                 <button
@@ -174,13 +175,13 @@ export function ReferenceControls(): JSX.Element | null {
                     })
                   }
                 >
-                  {m === 'ghost' ? 'Ghost overlay' : 'PiP'}
+                  {m === 'ghost' ? '幽灵叠加' : '画中画'}
                 </button>
               ))}
             </div>
           </div>
           <div className="field">
-            <label>Time offset ({ref.timeOffset.toFixed(1)}s)</label>
+            <label>{uiText('Time offset')}（{ref.timeOffset.toFixed(1)} 秒）</label>
             <input
               type="range"
               min={-10}
@@ -210,7 +211,7 @@ export function ReferenceControls(): JSX.Element | null {
               setOpen(false)
             }}
           >
-            Remove reference
+            {uiText('Remove reference')}
           </button>
         </div>
       )}

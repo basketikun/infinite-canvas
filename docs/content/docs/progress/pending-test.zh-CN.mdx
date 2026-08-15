@@ -83,3 +83,6 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Director 第六阶段：启动 `director-export-service`（默认 `127.0.0.1:8787`），在嵌入式 Blockout Deliver 面板导出一个短镜头；确认 Clean/Depth/Normal MP4 按镜头原始 FPS 和尺寸接收 RGBA 帧，并验证 Stills、Prompt、Metadata、ComfyUI workflow、GLB/glTF 文件、取消、拼接、产物列表和 ZIP 打包。停止服务后，Workspace 应显示明确的导出服务错误，不应一直等待。
 - Director 第七阶段：成功导出镜头后，确认画布自动创建或更新 `Director Reference MP4`、`Director Main Still`、`Director Prompt` 三个节点，并写入可用的视频/图片/文本内容，同时自动建立 `Director → Output` 连线；重复导出时应更新原节点而不是重复创建。GLB、Metadata、ComfyUI JSON 和完整 ZIP 仍应保留在 Director 导出包中，不默认创建额外节点。
 - Director 第八阶段：连接 Canvas Agent 后，对 Director 节点调用 `canvas_plugin_get_actions` 和 `canvas_plugin_call`；确认状态读取、添加/移动人物、Camera Mark、镜头修改、自动构图、时间控制、播放、截图、编舞和导出均通过 Infinite Canvas Agent 执行，不依赖 Blockout MCP、本地发现服务或鼠标模拟。关闭 Workspace 后，确认 Director 节点摘要 metadata 反映场景/镜头/FPS/镜头焦距/实体数量，并显示最后一帧缩略图。
+- Director Workspace 中文化与主题同步：在画布浅色、深色主题下打开 Director，确认 Blockout 背景、面板、边框、文字和交互状态跟随当前画布配色；切换画布语言后重新打开 Workspace，确认主要界面文案同步为中文或英文；确认「布景 / 拍摄 / 交付」三个模式均保留且切换、保存、导出和返回画布不受影响。
+- Director Workspace 视口控件主题适配：在画布浅色、深色主题下确认 HUD、拍摄工具条、悬浮按钮和提示条的背景、边框、文字、悬浮态与选中态跟随当前画布配色，同时保留深色 3D 视口的电影预览层次。
+- Director Workspace 全量中文文案：在「布景 / 拍摄 / 交付」三个模式中检查素材库、编舞器、动作/相机预设、检查器、标记步态、参考视频、时间线、帮助和导出控件；确认常用可见 UI 不再出现英文，生成器名称、品牌名、技术缩写和交给 AI 的英文提示词可保留；确认点击动作预设、添加标记、帮助搜索和导出按钮时功能仍正常。

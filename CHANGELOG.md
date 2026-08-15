@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [调整] Director Blockout Workspace 接入画布主题与语言桥接，保留「布景 / 拍摄 / 交付」模式切换并完成首轮中文化与配色同步。
++ [调整] Blockout Workspace 完成检查器、相机、动画、时间线、素材目录、帮助和交付页面的中文显示，保留生成器提示词与项目数据字段原样。
++ [优化] Blockout Workspace 的视口 HUD、拍摄工具条和悬浮按钮接入画布主题，浅色工作台下不再固定显示深色控件。
 + [新增] 插件系统支持通用全屏 Workspace，可通过节点双击打开并使用 ESC 返回画布。
 + [新增] 增加 Director 导演台插件壳，支持独立节点摘要和全屏 iframe Workspace 测试页。
 + [新增] Blockout 增加浏览器 Web 入口、共享 BlockoutAPI 和 Director Embed Bridge，Director Workspace 可加载真实 Blockout Web。

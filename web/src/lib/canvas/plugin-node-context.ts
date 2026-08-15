@@ -5,11 +5,12 @@ import type { CanvasNodeData } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasPluginHost } from "@/types/canvas-plugin";
 
 // Assemble host capabilities, node data, theme, and scale into the context injected into plugin nodes.
-export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, theme: CanvasTheme, scale: number, isSelected = false): CanvasNodeContext {
+export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, theme: CanvasTheme, scale: number, isSelected = false, locale: "zh-CN" | "en-US" = "zh-CN"): CanvasNodeContext {
     const storage = createPluginStorage(getNodePluginId(node.type));
     return {
         node,
         theme,
+        locale,
         scale,
         isSelected,
         updateMetadata: (patch) => host.updateMetadata(node.id, patch),

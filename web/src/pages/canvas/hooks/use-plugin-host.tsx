@@ -35,7 +35,8 @@ type PluginHostParams = {
  * through plugin-callable host/ai objects. Loads installed remote plugins on mount and returns renderers for plugin panels and toolbars.
  */
 export function usePluginHost(params: PluginHostParams) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+    const locale = i18n.resolvedLanguage === "en-US" ? "en-US" : "zh-CN";
     const { effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
     const [workspaceNodeId, setWorkspaceNodeId] = useState<string | null>(null);
 
@@ -136,24 +137,24 @@ export function usePluginHost(params: PluginHostParams) {
         const node = pluginHost.getNode(nodeId);
         const listActions = node ? getNodeDefinition(node.type)?.agent?.listActions : undefined;
         if (!node || !listActions) return [];
-        return await listActions(buildNodeContext(pluginHost, node, theme, viewportRef.current.k));
-    }, [pluginHost, theme, viewportRef]);
+        return await listActions(buildNodeContext(pluginHost, node, theme, viewportRef.current.k, false, locale));
+    }, [locale, pluginHost, theme, viewportRef]);
 
     const callPluginAction = useCallback(async (nodeId: string, action: string, params: Record<string, unknown>) => {
         const node = pluginHost.getNode(nodeId);
         const call = node ? getNodeDefinition(node.type)?.agent?.call : undefined;
         if (!node || !call) throw new Error("该节点没有可调用的 Plugin Agent Actions。");
-        return await call(buildNodeContext(pluginHost, node, theme, viewportRef.current.k), action, params);
-    }, [pluginHost, theme, viewportRef]);
+        return await call(buildNodeContext(pluginHost, node, theme, viewportRef.current.k, false, locale), action, params);
+    }, [locale, pluginHost, theme, viewportRef]);
 
     const renderPluginPanel = useCallback(
         (panelNode: CanvasNodeData) => {
             const Panel = getNodeDefinition(panelNode.type)?.Panel;
             if (!Panel) return null;
-            const ctx = buildNodeContext(pluginHost, panelNode, theme, viewportRef.current.k);
+            const ctx = buildNodeContext(pluginHost, panelNode, theme, viewportRef.current.k, false, locale);
             return <Panel ctx={ctx} onClose={() => setDialogNodeId(null)} />;
         },
-        [pluginHost, theme],
+        [locale, pluginHost, theme],
     );
 
     const renderPluginWorkspace = useCallback(() => {
@@ -161,15 +162,15 @@ export function usePluginHost(params: PluginHostParams) {
         const workspaceNode = pluginHost.getNode(workspaceNodeId);
         const definition = workspaceNode ? getNodeDefinition(workspaceNode.type) : undefined;
         if (!workspaceNode || !definition?.Workspace) return null;
-        const ctx = buildNodeContext(pluginHost, workspaceNode, theme, viewportRef.current.k, true);
+        const ctx = buildNodeContext(pluginHost, workspaceNode, theme, viewportRef.current.k, true, locale);
         return <CanvasPluginWorkspace key={workspaceNode.id} definition={definition} ctx={ctx} onClose={closeWorkspace} />;
-    }, [closeWorkspace, pluginHost, theme, viewportRef, workspaceNodeId]);
+    }, [closeWorkspace, locale, pluginHost, theme, viewportRef, workspaceNodeId]);
 
     // Build the node toolbar from plugin items and a host-provided interaction/move toggle when enabled.
     const buildNodeToolbarItems = useCallback(
         (node: CanvasNodeData): CanvasNodeToolbarItem[] => {
             const definition = getNodeDefinition(node.type);
-            const ctx = buildNodeContext(pluginHost, node, theme, viewportRef.current.k);
+            const ctx = buildNodeContext(pluginHost, node, theme, viewportRef.current.k, false, locale);
             const custom = definition?.toolbar?.(ctx) || [];
             // Show the interaction/move toggle only for nodes with content that are not forced into an interactive state.
             if (!definition?.interactionToggle || !node.metadata?.content || definition.forceInteractive?.(node)) return custom;
@@ -184,7 +185,7 @@ export function usePluginHost(params: PluginHostParams) {
             };
             return [toggle, ...custom];
         },
-        [pluginHost, t, theme],
+        [locale, pluginHost, t, theme],
     );
 
     // Load installed remote plugins on startup.

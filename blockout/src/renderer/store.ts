@@ -398,7 +398,7 @@ export const useStore = create<BlockoutState>((set, get) => ({
       }
     })
     set({ selection: null })
-    get().toast(n > 1 ? `Deleted ${n} marks.` : 'Mark deleted.', 'info')
+    get().toast(n > 1 ? `已删除 ${n} 个标记。` : '标记已删除。', 'info')
   },
   setHelpOpen: (helpOpen) => set({ helpOpen }),
   setShowMarks: (showMarks) => set({ showMarks }),
@@ -745,7 +745,7 @@ export const useStore = create<BlockoutState>((set, get) => ({
     })
     if (added) {
       set({ selection: { kind: 'camera' } })
-      get().toast(`Camera ${added} added — frame it and drop marks. Switch cameras with the A/B chips.`, 'success')
+      get().toast(`已添加相机 ${added}——请完成构图并添加标记，可使用 A/B 按钮切换相机。`, 'success')
     }
   },
 
@@ -757,7 +757,7 @@ export const useStore = create<BlockoutState>((set, get) => ({
         scene?.shots.find((s) => s.id === shotId) ?? scene?.drafts?.find((s) => s.id === shotId)
       if (shot) shot.camera.marks = []
     })
-    get().toast('Camera move cleared — record or drop new marks.', 'info')
+      get().toast('相机运动已清除——请重新录制或添加标记。', 'info')
   },
 
   saveDraftOfShot() {
@@ -1139,14 +1139,14 @@ export const useStore = create<BlockoutState>((set, get) => ({
       blocking: structuredClone(scene.blocking)
     }
     const res = await window.blockout.presetSave(name, JSON.stringify(payload))
-    if (res.ok) get().toast(`Preset "${name}" saved — reuse it from the Library in any project.`, 'success')
+    if (res.ok) get().toast(`预设“${name}”已保存——可在素材库中用于任何项目。`, 'success')
     else get().toast(`Could not save preset: ${res.error ?? 'unknown error'}`, 'error')
   },
 
   async applyStagePreset(id) {
     const json = await window.blockout.presetLoad(id)
     if (!json) {
-      get().toast('Preset not found — it may have been deleted.', 'error')
+      get().toast('找不到预设，可能已被删除。', 'error')
       return
     }
     let payload: {

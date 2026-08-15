@@ -1,6 +1,6 @@
 /* Modified for cross-platform Windows support in 2026; see MODIFICATIONS.md. */
 
-/* Blockout design system — dark, quiet chrome; the viewport is the star. */
+/* Blockout design system — semantic tokens are supplied by the Canvas host when embedded. */
 
 :root {
   --bg: #111113;
@@ -14,6 +14,13 @@
   --text-faint: #5f5f6b;
   --accent: #f5a524;          /* spike-tape amber */
   --accent-text: #16130b;
+  --accent-soft: rgba(245, 165, 36, 0.12);
+  --viewport-grid: rgba(245, 245, 244, 0.10);
+  /* Viewport chrome follows the host canvas theme; the 3D stage stays cinematic. */
+  --viewport-chrome: rgba(17, 17, 19, 0.86);
+  --viewport-chrome-border: var(--border);
+  --viewport-chrome-hover: var(--bg-hover);
+  --viewport-chrome-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   --danger: #e5484d;
   --success: #46a758;
   --mono: 'SF Mono', ui-monospace, Menlo, monospace;
@@ -53,6 +60,12 @@ body {
 }
 
 .app:not(.platform-macos) .titlebar { padding-left: 16px; }
+
+.app.embedded { grid-template-rows: 42px 1fr; }
+.app.embedded .titlebar { padding: 0 14px; gap: 10px; }
+.app.embedded .titlebar .app-name { display: none; }
+.app.embedded .mode-switch { margin-left: 8px; margin-right: auto; }
+.app.embedded .mode-switch button { padding-inline: 16px; letter-spacing: 0.04em; }
 
 .titlebar > * { -webkit-app-region: no-drag; }
 
@@ -369,11 +382,12 @@ input[type='color'] {
   flex-wrap: wrap;
   gap: 2px;
   max-width: 40%;
-  background: rgba(17, 17, 19, 0.82);
-  border: 1px solid var(--border);
+  background: var(--viewport-chrome);
+  border: 1px solid var(--viewport-chrome-border);
   border-radius: 10px;
   padding: 4px;
   backdrop-filter: blur(12px);
+  box-shadow: var(--viewport-chrome-shadow);
   z-index: 5;
 }
 
@@ -398,7 +412,12 @@ input[type='color'] {
   gap: 6px;
 }
 
-.viewport-tools .btn { background: rgba(17,17,19,0.82); backdrop-filter: blur(12px); }
+.viewport-tools .btn {
+  background: var(--viewport-chrome);
+  border-color: var(--viewport-chrome-border);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--viewport-chrome-shadow);
+}
 .viewport-tools .btn.active { border-color: var(--accent); color: var(--accent); }
 
 .hud button {
@@ -407,20 +426,25 @@ input[type='color'] {
   padding: 5px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
 
-.hud button:hover { background: var(--bg-hover); }
+.hud button:hover { background: var(--viewport-chrome-hover); }
 .hud button .hud-label { color: var(--text-faint); margin-right: 5px; font-size: 9px; letter-spacing: 0.08em; }
 
 .viewport-toolbar {
   position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 5;
 }
 
-.viewport-toolbar .btn { background: rgba(17,17,19,0.82); backdrop-filter: blur(12px); }
+.viewport-toolbar .btn {
+  background: var(--viewport-chrome);
+  border-color: var(--viewport-chrome-border);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--viewport-chrome-shadow);
+}
 .viewport-toolbar .btn.active { border-color: var(--accent); color: var(--accent); }
 
 .viewport-hint {
   /* Bottom-left: keeps clear of the PiP preview (bottom-right). */
   position: absolute; bottom: 14px; left: 14px;
-  background: rgba(17,17,19,0.85); border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 92%, transparent); border: 1px solid var(--border);
   color: var(--text-dim); padding: 8px 16px; border-radius: 20px;
   font-size: 12px; z-index: 5; pointer-events: none;
   max-width: 55%; white-space: normal; line-height: 1.4;
@@ -559,7 +583,7 @@ input[type='color'] {
 
 .warning-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  background: rgba(245, 165, 36, 0.12); border: 1px solid var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent);
   color: var(--accent); border-radius: 6px; padding: 4px 10px;
   font-size: 11px; font-weight: 600; margin: 4px 0;
 }

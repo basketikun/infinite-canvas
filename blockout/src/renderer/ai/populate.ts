@@ -73,7 +73,7 @@ export async function populateFromReference(): Promise<void> {
 
   const camNote =
     useStore.getState().shot()?.camera.marks.length === 1
-      ? ' Camera Mark 1 set to match the reference framing — check the shot preview.'
+      ? ' 已设置相机标记 1 以匹配参考构图，请检查镜头预览。'
       : ''
   s.toast(`Staged ${layout.entities.length} elements from the reference.${camNote} ${layout.notes}`, 'success')
 }

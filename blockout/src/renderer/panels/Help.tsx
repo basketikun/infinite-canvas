@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { useBlockoutI18n } from '../i18n'
 
 const MOD = window.blockout.platform.primaryModifier
 const ALT = window.blockout.platform.alternateModifier
@@ -64,6 +65,43 @@ const CARDS: Card[] = [
     body: 'Pick your generator and export the package: video, depth pass, stills, and a written prompt.',
     then: 'then: paste the prompt straight into the generator.'
   }
+]
+
+const CARDS_ZH: Card[] = [
+  { emoji: '🏗', title: '布置场景', body: '从素材库添加环境和人物，再点击地面放置。', then: '然后：给主角命名并设置灯光。' },
+  { emoji: '🎬', title: '一键生成编排', body: '舞蹈、打斗和追逐都可以一键生成，再点击地面放置演员。', then: '然后：每位表演者都能单独编辑。' },
+  { emoji: '🚶', title: '让角色移动', body: '选择角色，按 M 后点击地面添加标记，也可以点击录制用光标操控。', then: '然后：在时间线上调整标记。' },
+  { emoji: '✨', title: '动画面板', body: '为角色添加打斗、舞蹈、坐下、饮酒和跳跃等动作。', then: '然后：像普通标记一样调整姿态。' },
+  { emoji: '🎥', title: '构图与移动相机', body: '选择景别、相机运动，或跟踪主体锁定瞄准方向。', then: '然后：点击播放镜头查看最终画面。' },
+  { emoji: '📦', title: '交付导出', body: '选择生成器并导出视频、深度层、静帧和文字提示词。', then: '然后：将提示词粘贴到生成器中。' }
+]
+
+interface SimpleTask {
+  q: string
+  a: string
+}
+
+const TASKS_ZH: { area: string; items: SimpleTask[] }[] = [
+  { area: '布景', items: [
+    { q: '如何把人物和环境放入场景？', a: '在布景模式中点击素材库项目，再点击地面放置；按 Esc 取消。' },
+    { q: '如何移动、旋转或复制对象？', a: '点击对象后拖动控件移动，按 R 旋转，按 G 切回移动，使用系统复制快捷键复制。' },
+    { q: '如何设置灯光？', a: '取消选择后，右侧检查器会显示场景灯光预设、太阳方向和雾效。' },
+    { q: '如何导入自己的 3D 模型？', a: '在素材库中点击“导入 3D 模型”，支持 GLB、glTF 和 OBJ。' }
+  ] },
+  { area: '拍摄', items: [
+    { q: '如何添加角色或相机标记？', a: '选择角色或相机，按 M，再点击地面添加标记；拖动时间线上的标记可调整时间。' },
+    { q: '如何录制相机或表演？', a: '在拍摄工具栏点击录制，移动视图或用光标操控选中的表演者。' },
+    { q: '如何让相机跟踪主体？', a: '打开相机检查器，在“跟踪主体”中选择需要锁定的对象。' }
+  ] },
+  { area: '交付', items: [
+    { q: '如何导出镜头包？', a: '打开交付模式，选择目标生成器、输出通道、分辨率和标注方式，然后点击导出。' },
+    { q: '如何导出当前帧？', a: '先将播放头移到目标时刻，再点击“导出当前帧”。' },
+    { q: '如何复制提示词？', a: '在交付面板的提示词区域点击“复制提示词”。' }
+  ] },
+  { area: '项目', items: [
+    { q: '如何保存可复用的布景？', a: '在素材库的布景预设区域保存当前场景，之后可在其他项目中作为新场景使用。' },
+    { q: '如何从另一个角度拍摄同一段动作？', a: '新建镜头即可复用场景走位，只需重新设置相机。' }
+  ] }
 ]
 
 /* ------------------------------- How do I…? ------------------------------- */
@@ -523,6 +561,26 @@ const SHORTCUTS: [string, string][] = [
   ['?', 'Open this help']
 ]
 
+function shortcutZh(desc: string): string {
+  const labels: Record<string, string> = {
+    'Play / pause the shot': '播放 / 暂停镜头',
+    'Drop marks for the selection (click the floor)': '为选择添加标记（点击地面）',
+    'Look through the shot camera': '通过镜头相机取景',
+    'Gizmo: move / rotate': '控件：移动 / 旋转',
+    'Multi-select entities, or marks on the timeline': '多选对象或时间线标记',
+    'Select all marks in the shot / in the current lane': '选择镜头中的全部标记 / 当前轨道中的全部标记',
+    'Duplicate selection': '复制选择',
+    'Delete selection (all of a multi-selection)': '删除选择（包括多选对象）',
+    'Undo / redo — every action is undoable': '撤销 / 重做——每个操作都支持撤销',
+    'Save project': '保存项目',
+    'Jump to camera mark N': '跳转到第 N 个相机标记',
+    'Place multiple copies while staging': '布景时连续放置多个副本',
+    'Cancel placement / mark-dropping / selection': '取消放置 / 添加标记 / 选择',
+    'Open this help': '打开帮助'
+  }
+  return labels[desc] ?? desc
+}
+
 /* --------------------------- Blocking coach ------------------------------ */
 
 interface CoachStep {
@@ -540,12 +598,22 @@ const COACH_STEPS: CoachStep[] = [
   { key: 'export', label: 'Open DELIVER to export', hint: 'Switch to Deliver for the reference package.' }
 ]
 
+const COACH_STEPS_ZH: CoachStep[] = [
+  { key: 'select', label: '选择角色或车辆', hint: '点击视图中的角色。' },
+  { key: 'mark1', label: '按 M 添加第一个标记', hint: '按 M，然后点击角色的起点。' },
+  { key: 'mark2', label: '添加第二个标记', hint: '在前方再次点击，角色会在标记之间行走。' },
+  { key: 'play', label: '按空格观看移动', hint: '空格播放镜头，路径会显示移动路线。' },
+  { key: 'record', label: '尝试录制操控', hint: '在拍摄工具栏录制相机或表演。' },
+  { key: 'export', label: '打开交付进行导出', hint: '切换到交付模式生成参考包。' }
+]
+
 /**
  * "Set your marks" walkthrough. A lightweight renderer-side component that
  * watches the store: each step ticks itself off when the app reaches the
  * matching state. Dismissible; re-openable from Help. Mounted at the app root.
  */
 export function BlockingCoach(): JSX.Element | null {
+  const { locale } = useBlockoutI18n()
   const open = useStore((s) => s.coachOpen)
   const setOpen = useStore((s) => s.setCoachOpen)
   const [done, setDone] = useState<Record<string, boolean>>({})
@@ -575,7 +643,8 @@ export function BlockingCoach(): JSX.Element | null {
   }, [open])
 
   if (!open) return null
-  const currentIdx = COACH_STEPS.findIndex((st) => !done[st.key])
+  const coachSteps = locale === 'zh-CN' ? COACH_STEPS_ZH : COACH_STEPS
+  const currentIdx = coachSteps.findIndex((st) => !done[st.key])
   const allDone = currentIdx === -1
 
   return (
@@ -595,14 +664,14 @@ export function BlockingCoach(): JSX.Element | null {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ fontSize: 15 }}>🎯</span>
-        <b style={{ fontSize: 13 }}>Set your marks</b>
+        <b style={{ fontSize: 13 }}>{locale === 'zh-CN' ? '设置你的标记' : 'Set your marks'}</b>
         <span style={{ flex: 1 }} />
         <button className="btn small" style={{ padding: '2px 8px' }} onClick={() => setOpen(false)} title="Dismiss (re-open from Help)">
           ✕
         </button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-        {COACH_STEPS.map((st, i) => {
+        {coachSteps.map((st, i) => {
           const isDone = !!done[st.key]
           const isCurrent = i === currentIdx
           return (
@@ -620,7 +689,7 @@ export function BlockingCoach(): JSX.Element | null {
       </div>
       {allDone && (
         <div style={{ marginTop: 10, fontSize: 12, color: 'var(--success, #46a758)' }}>
-          That&apos;s the whole loop — nice. Close this any time.
+          {locale === 'zh-CN' ? '整个流程完成了，很好。随时可以关闭。' : 'That&apos;s the whole loop — nice. Close this any time.'}
         </div>
       )}
     </div>
@@ -632,11 +701,21 @@ export function BlockingCoach(): JSX.Element | null {
 type Tab = 'quickstart' | 'tasks' | 'shortcuts'
 
 export function HelpOverlay(): JSX.Element | null {
+  const { locale } = useBlockoutI18n()
   const helpOpen = useStore((s) => s.helpOpen)
   const setHelpOpen = useStore((s) => s.setHelpOpen)
   const setCoachOpen = useStore((s) => s.setCoachOpen)
   const [tab, setTab] = useState<Tab>('quickstart')
   const [query, setQuery] = useState('')
+  const cards = locale === 'zh-CN' ? CARDS_ZH : CARDS
+  const filteredZh = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return TASKS_ZH
+    return TASKS_ZH.map((group) => ({
+      area: group.area,
+      items: group.items.filter((item) => `${item.q} ${item.a}`.toLowerCase().includes(q))
+    })).filter((group) => group.items.length > 0)
+  }, [query])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -663,21 +742,21 @@ export function HelpOverlay(): JSX.Element | null {
               className={tab === 'quickstart' ? 'active' : ''}
               onClick={() => setTab('quickstart')}
             >
-              Quick start
+              {locale === 'zh-CN' ? '快速开始' : 'Quick start'}
             </button>
             <button className={tab === 'tasks' ? 'active' : ''} onClick={() => setTab('tasks')}>
-              How do I…?
+              {locale === 'zh-CN' ? '如何操作？' : 'How do I…?'}
             </button>
             <button
               className={tab === 'shortcuts' ? 'active' : ''}
               onClick={() => setTab('shortcuts')}
             >
-              Shortcuts
+              {locale === 'zh-CN' ? '快捷键' : 'Shortcuts'}
             </button>
           </div>
           <span style={{ flex: 1 }} />
           <button className="btn small" onClick={() => setHelpOpen(false)}>
-            Done
+            {locale === 'zh-CN' ? '完成' : 'Done'}
           </button>
         </div>
 
@@ -685,12 +764,16 @@ export function HelpOverlay(): JSX.Element | null {
           {tab === 'quickstart' && (
             <div className="help-v4-inner">
               <p className="help-intro">
-                The whole app is three verbs: <b>STAGE</b> the scene, <b>SHOOT</b> the motion,{' '}
-                <b>DELIVER</b> the reference package to your AI generator. Here&apos;s the whole
-                thing at a glance.
+                {locale === 'zh-CN' ? (
+                  <>整个应用可以概括为三个动作：<b>布景</b>场景、<b>拍摄</b>动作、<b>交付</b>参考包给 AI 生成器。这里可以快速了解完整流程。</>
+                ) : (
+                  <>The whole app is three verbs: <b>STAGE</b> the scene, <b>SHOOT</b> the motion,{' '}
+                  <b>DELIVER</b> the reference package to your AI generator. Here&apos;s the whole
+                  thing at a glance.</>
+                )}
               </p>
               <div className="help-cards">
-                {CARDS.map((c) => (
+                {cards.map((c) => (
                   <div key={c.title} className="help-card">
                     <div className="help-card-emoji">{c.emoji}</div>
                     <div className="help-card-title">{c.title}</div>
@@ -706,12 +789,12 @@ export function HelpOverlay(): JSX.Element | null {
                     setCoachOpen(true)
                     setHelpOpen(false)
                   }}
-                  title="Open the Set your marks interactive walkthrough"
+                  title={locale === 'zh-CN' ? '打开“设置你的标记”交互引导' : 'Open the Set your marks interactive walkthrough'}
                 >
-                  🎯 Start the “Set your marks” coach
+                  {locale === 'zh-CN' ? '🎯 开始“设置你的标记”引导' : '🎯 Start the “Set your marks” coach'}
                 </button>
                 <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-                  A checklist that ticks itself off as you block your first move.
+                  {locale === 'zh-CN' ? '完成第一个动作走位时，清单会自动勾选。' : 'A checklist that ticks itself off as you block your first move.'}
                 </span>
               </div>
             </div>
@@ -722,12 +805,28 @@ export function HelpOverlay(): JSX.Element | null {
               <input
                 className="help-search"
                 type="text"
-                placeholder="Search tasks — e.g. “fight”, “track a plane”, “720p”…"
+                placeholder={locale === 'zh-CN' ? '搜索任务，例如“打斗”“跟踪飞机”“720p”…' : 'Search tasks — e.g. “fight”, “track a plane”, “720p”…'}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoFocus
               />
-              {filtered.length === 0 ? (
+              {locale === 'zh-CN' ? (
+                filteredZh.length === 0 ? (
+                  <p className="help-empty">没有匹配“{query}”的任务。</p>
+                ) : (
+                  filteredZh.map((group) => (
+                    <div key={group.area} className="help-task-group">
+                      <div className="help-task-area">{group.area}</div>
+                      {group.items.map((item) => (
+                        <div key={item.q} className="help-task">
+                          <div className="help-task-q">{item.q}</div>
+                          <div className="help-task-a">{item.a}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                )
+              ) : filtered.length === 0 ? (
                 <p className="help-empty">No tasks match “{query}”.</p>
               ) : (
                 filtered.map((group) => (
@@ -747,7 +846,7 @@ export function HelpOverlay(): JSX.Element | null {
 
           {tab === 'shortcuts' && (
             <div className="help-v4-inner">
-              <p className="help-intro">Keyboard shortcuts — every action is undoable.</p>
+              <p className="help-intro">{locale === 'zh-CN' ? '键盘快捷键——每个操作都支持撤销。' : 'Keyboard shortcuts — every action is undoable.'}</p>
               <div className="help-kbd-grid">
                 {SHORTCUTS.map(([key, desc]) => (
                   <div key={key} className="help-kbd-row">
@@ -759,7 +858,7 @@ export function HelpOverlay(): JSX.Element | null {
                         </span>
                       ))}
                     </div>
-                    <div className="help-kbd-desc">{desc}</div>
+                    <div className="help-kbd-desc">{locale === 'zh-CN' ? shortcutZh(desc) : desc}</div>
                   </div>
                 ))}
               </div>

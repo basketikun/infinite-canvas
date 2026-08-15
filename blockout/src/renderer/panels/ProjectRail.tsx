@@ -7,6 +7,7 @@ import { useState } from 'react'
 import type { Scene, Shot } from '@engine/types'
 import { newId } from '@engine/ids'
 import { useStore } from '../store'
+import { useBlockoutI18n } from '../i18n'
 
 /** Deep-clone a shot with fresh ids for the shot and every camera mark. */
 function cloneShot(shot: Shot, name: string): Shot {
@@ -24,6 +25,7 @@ interface RenameState {
 }
 
 export function ProjectRail(): JSX.Element {
+  const { t } = useBlockoutI18n()
   const doc = useStore((s) => s.doc)
   const sceneId = useStore((s) => s.sceneId)
   const shotId = useStore((s) => s.shotId)
@@ -67,7 +69,7 @@ export function ProjectRail(): JSX.Element {
 
   const deleteScene = (scene: Scene): void => {
     if (doc.scenes.length <= 1) {
-      toast('A project needs at least one scene.', 'error')
+      toast('项目至少需要一个场景。', 'error')
       return
     }
     const wasCurrent = scene.id === sceneId
@@ -93,7 +95,7 @@ export function ProjectRail(): JSX.Element {
 
   const deleteShot = (scene: Scene, shot: Shot): void => {
     if (scene.shots.length <= 1) {
-      toast('A scene needs at least one shot.', 'error')
+      toast('场景至少需要一个镜头。', 'error')
       return
     }
     const wasCurrent = shot.id === shotId
@@ -112,10 +114,10 @@ export function ProjectRail(): JSX.Element {
     <div className="panel-section">
       <div className="rail-header">
         <div className="panel-title" style={{ marginBottom: 0 }}>
-          Scenes &amp; Shots
+          {t('rail.scenesShots')}
         </div>
         <button className="btn small" onClick={() => addSceneAfter()}>
-          + Scene
+          {t('rail.addScene')}
         </button>
       </div>
 
@@ -150,12 +152,12 @@ export function ProjectRail(): JSX.Element {
               ) : (
                 <>
                   <span className="rail-label">
-                    Scene {scene.number} — {scene.name}
+                    场景 {scene.number} — {scene.name}
                   </span>
                   <span className="rail-actions">
                     <button
                       className="rail-btn"
-                      title="Add shot"
+                      title={t('rail.addShot')}
                       onClick={(e) => {
                         e.stopPropagation()
                         addShotToScene(scene.id)
@@ -165,7 +167,7 @@ export function ProjectRail(): JSX.Element {
                     </button>
                     <button
                       className="rail-btn"
-                      title="Delete scene"
+                      title={t('rail.deleteScene')}
                       onClick={(e) => {
                         e.stopPropagation()
                         deleteScene(scene)
@@ -216,18 +218,18 @@ export function ProjectRail(): JSX.Element {
                             {isCurrentShot && (
                               <button
                                 className="rail-btn"
-                                title="Save current shot as a draft"
+                                title={t('rail.saveDraft')}
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   saveDraftOfShot()
                                 }}
                               >
-                                + Draft
+                                {t('rail.draft')}
                               </button>
                             )}
                             <button
                               className="rail-btn"
-                              title="Duplicate shot"
+                              title={t('rail.duplicateShot')}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 duplicateShot(scene, shot)
@@ -237,7 +239,7 @@ export function ProjectRail(): JSX.Element {
                             </button>
                             <button
                               className="rail-btn"
-                              title="Delete shot"
+                              title={t('rail.deleteShot')}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 deleteShot(scene, shot)
@@ -262,7 +264,7 @@ export function ProjectRail(): JSX.Element {
                           <span className="rail-actions">
                             <button
                               className="rail-btn"
-                              title="Make this the shot"
+                              title={t('rail.saveDraftAsShot')}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 promoteDraft(draft.id)
@@ -272,7 +274,7 @@ export function ProjectRail(): JSX.Element {
                             </button>
                             <button
                               className="rail-btn"
-                              title="Delete draft"
+                              title={t('rail.deleteDraft')}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 deleteDraft(draft.id)

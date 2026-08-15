@@ -48,6 +48,7 @@ export type CanvasNodeToolbarItem = {
 export type CanvasNodeContext = {
     node: CanvasNodeData;
     theme: CanvasTheme;
+    locale: "zh-CN" | "en-US";
     scale: number;
     isSelected: boolean; // Whether this node is selected, used to enable iframe interaction on demand.
     // Node data.

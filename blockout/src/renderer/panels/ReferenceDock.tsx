@@ -1,16 +1,18 @@
 import { useSyncExternalStore } from 'react'
 import { getDirectorResources, subscribeDirectorResources, type DirectorUpstreamResource } from '../../web/director-bridge-state'
+import { useBlockoutI18n } from '../i18n'
 
 const IS_EMBEDDED = window.parent !== window
 
-function kindLabel(kind: DirectorUpstreamResource['resource']['kind']): string {
-  if (kind === 'image') return 'IMAGE'
-  if (kind === 'video') return 'VIDEO'
-  if (kind === 'text') return 'BRIEF'
-  return 'AUDIO'
+function kindLabel(kind: DirectorUpstreamResource['resource']['kind'], t: ReturnType<typeof useBlockoutI18n>['t']): string {
+  if (kind === 'image') return t('reference.image')
+  if (kind === 'video') return t('reference.video')
+  if (kind === 'text') return t('reference.brief')
+  return t('reference.audio')
 }
 
 function ReferenceCard({ item }: { item: DirectorUpstreamResource }): JSX.Element {
+  const { t } = useBlockoutI18n()
   const { resource } = item
   return (
     <article className="reference-card">
@@ -21,7 +23,7 @@ function ReferenceCard({ item }: { item: DirectorUpstreamResource }): JSX.Elemen
         {!resource.url && resource.kind !== 'text' ? <span>◇</span> : null}
       </div>
       <div className="reference-copy">
-        <span className="reference-kind">{kindLabel(resource.kind)}</span>
+        <span className="reference-kind">{kindLabel(resource.kind, t)}</span>
         <strong title={item.title}>{item.title}</strong>
         {resource.kind === 'text' && resource.text ? <p>{resource.text}</p> : null}
       </div>
@@ -30,19 +32,20 @@ function ReferenceCard({ item }: { item: DirectorUpstreamResource }): JSX.Elemen
 }
 
 export function ReferenceDock(): JSX.Element | null {
+  const { t } = useBlockoutI18n()
   const resources = useSyncExternalStore(subscribeDirectorResources, getDirectorResources, getDirectorResources)
   if (!IS_EMBEDDED) return null
 
   return (
-    <section className="reference-dock" aria-label="Director references">
+    <section className="reference-dock" aria-label={t('reference.heading')}>
       <div className="reference-dock-heading">
-        <span>REFERENCES</span>
+        <span>{t('reference.heading')}</span>
         <span className="reference-count">{resources.length}</span>
       </div>
       {resources.length ? (
         <div className="reference-list">{resources.map((item) => <ReferenceCard key={item.nodeId} item={item} />)}</div>
       ) : (
-        <p className="reference-empty">Connect an image, video, or text node to use it as a reference.</p>
+        <p className="reference-empty">{t('reference.empty')}</p>
       )}
     </section>
   )

@@ -1,5 +1,5 @@
 import { definePlugin, useEffect, useRef } from "@infinite-canvas/plugin-sdk";
-import type { CanvasNodeContentProps, CanvasNodeWorkspaceProps, CanvasUpstreamResource, PluginAgentAction } from "@infinite-canvas/plugin-sdk";
+import type { CanvasNodeContentProps, CanvasNodeWorkspaceProps, CanvasTheme, CanvasUpstreamResource, PluginAgentAction } from "@infinite-canvas/plugin-sdk";
 
 type DirectorContext = CanvasNodeContentProps["ctx"];
 type DirectorAgentCall = (action: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -80,6 +80,13 @@ function DirectorContent({ ctx }: CanvasNodeContentProps) {
 }
 
 const DIRECTOR_PROTOCOL = "infinite-canvas-director-v1";
+
+function blockoutThemePayload(theme: CanvasTheme) {
+    return {
+        mode: theme.canvas.background === "#181715" ? "dark" : "light",
+        theme,
+    } as const;
+}
 
 type DirectorMessage = {
     protocol: typeof DIRECTOR_PROTOCOL;
@@ -197,6 +204,17 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
     useEffect(() => {
         if (!storedProjectId) ctx.updateMetadata({ blockoutProjectId: projectId });
     }, [ctx.node.id, ctx.updateMetadata, projectId, storedProjectId]);
+
+    useEffect(() => {
+        iframeRef.current?.contentWindow?.postMessage(
+            {
+                protocol: DIRECTOR_PROTOCOL,
+                type: "THEME_UPDATE",
+                payload: { locale: ctx.locale, theme: blockoutThemePayload(ctx.theme) },
+            },
+            window.location.origin,
+        );
+    }, [ctx.locale, ctx.theme]);
 
     useEffect(() => {
         const respond = (requestId: string, type: string, origin: string, payload?: unknown, error?: unknown) => {
@@ -394,7 +412,7 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
                     {
                         protocol: DIRECTOR_PROTOCOL,
                         type: "INIT",
-                        payload: { nodeId: ctx.node.id, projectId, projectName, upstream },
+                        payload: { nodeId: ctx.node.id, projectId, projectName, upstream, locale: ctx.locale, theme: blockoutThemePayload(ctx.theme) },
                     },
                     event.origin,
                 );
@@ -438,11 +456,11 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
             });
             pendingAgentCalls.current.clear();
         };
-    }, [ctx.node.id, ctx.storage, onClose, projectId, projectName]);
+    }, [ctx.locale, ctx.node.id, ctx.storage, ctx.theme, onClose, projectId, projectName]);
 
     return (
-        <div style={{ display: "flex", minHeight: 0, flex: 1, flexDirection: "column", background: "#111113", color: ctx.theme.node.text }}>
-            <iframe ref={iframeRef} title="Blockout Web" src={blockoutWebUrl} style={{ minHeight: 0, width: "100%", flex: 1, border: 0, background: "#111113" }} />
+        <div style={{ display: "flex", minHeight: 0, flex: 1, flexDirection: "column", background: ctx.theme.canvas.background, color: ctx.theme.node.text }}>
+            <iframe ref={iframeRef} title="Blockout Web" src={blockoutWebUrl} style={{ minHeight: 0, width: "100%", flex: 1, border: 0, background: ctx.theme.canvas.background }} />
         </div>
     );
 }

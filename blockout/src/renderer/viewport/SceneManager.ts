@@ -1329,7 +1329,7 @@ export class SceneManager {
     const s = this.currentState()
     const ids = selectedEntityIds(s.selection)
     if (ids.length === 0) {
-      s.toast('Select something to snap to the ground first.', 'info')
+      s.toast('请先选择一个对象，再将其落到地面。', 'info')
       return
     }
     const updates = new Map<string, number>()
@@ -1984,7 +1984,7 @@ export class SceneManager {
     s.setTime(0)
     s.setPlaying(true)
     s.toast(
-      `Performance recorded — ${marks.length} marks over ${length.toFixed(1)}s. Now select the camera and ● Record to fly it while this replays.`,
+      `表演已录制——${marks.length} 个标记，时长 ${length.toFixed(1)} 秒。现在选择相机并点击 ● 录制，可在回放表演时移动相机。`,
       'success'
     )
   }

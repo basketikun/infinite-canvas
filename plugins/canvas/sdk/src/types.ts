@@ -219,6 +219,7 @@ export type CanvasNodeContext = {
     // 自身数据
     node: CanvasNodeData;
     theme: CanvasTheme;
+    locale: "zh-CN" | "en-US";
     scale: number;
     isSelected: boolean; // 该节点当前是否被选中(用于按需启用 iframe 交互等)
     updateMetadata: (patch: CanvasNodeMetadata) => void;

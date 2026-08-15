@@ -10,6 +10,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useStore } from '../store'
 import { ShotEvaluator } from '@engine/evaluate'
+import { uiText, useBlockoutI18n } from '../i18n'
 import { GAITS } from '@engine/gaits'
 import type { ActorMark, CameraMark, MarkBase, Scene, Shot } from '@engine/types'
 
@@ -17,9 +18,9 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v
 
 /** Human-readable label for a speed-warning suggestion. */
 function suggestionLabel(suggestion: string): string {
-  if (suggestion === 'addTime') return 'more time'
+  if (suggestion === 'addTime') return '更多时间'
   const g = GAITS[suggestion as keyof typeof GAITS]
-  return g ? g.name.toLowerCase() : suggestion
+  return g ? uiText(g.name).toLowerCase() : suggestion
 }
 
 interface TimelineLane {
@@ -39,6 +40,7 @@ interface DragState {
 }
 
 export function Timeline(): JSX.Element {
+  const { t } = useBlockoutI18n()
   const scene = useStore((s) => s.scene())
   const shot = useStore((s) => s.shot())
   const time = useStore((s) => s.time)
@@ -87,7 +89,7 @@ export function Timeline(): JSX.Element {
   const laneLabelProps = (entityId: string | 'camera'): React.HTMLAttributes<HTMLSpanElement> => ({
     onClick: () => selectAllMarksInLane(entityId),
     style: { cursor: 'pointer' },
-    title: 'Click: select ALL marks in this lane (⌫ deletes them together)'
+    title: '点击：选择此轨道的全部标记（⌫ 可一起删除）'
   })
 
   const lanes: TimelineLane[] = []
@@ -96,7 +98,7 @@ export function Timeline(): JSX.Element {
     entityId: 'camera',
     label: (
       <span className="timeline-track-label" {...laneLabelProps('camera')}>
-        🎥 CAMERA
+        🎥 相机
       </span>
     ),
     marks: shot.camera.marks
@@ -266,7 +268,7 @@ export function Timeline(): JSX.Element {
           t={time.toFixed(1)}s / {duration.toFixed(1)}s
         </span>
         <label className="timeline-field">
-          <span>Dur</span>
+          <span>{t('timeline.duration')}</span>
           <input
             type="number"
             min={0.5}
@@ -289,18 +291,18 @@ export function Timeline(): JSX.Element {
           className="btn small"
           disabled={!anyMarks}
           onClick={() => useStore.getState().selectAllMarks()}
-          title={`Select every mark on every lane (${window.blockout.platform.primaryModifier}A) — then ⌫ deletes them all, or shift times together in the inspector`}
+          title={`选择所有轨道的全部标记（${window.blockout.platform.primaryModifier}A）——然后按 ⌫ 全部删除，或在检查器中一起调整时间`}
         >
-          Select all
+          {t('timeline.selectAll')}
         </button>
         <div className="timeline-warnings">
           {evaluator?.lineCrossings().map((c) => (
             <span
               key={`line-${c.fromMark}-${c.toMark}`}
               className="warning-chip"
-              title="The camera crosses the 180° line (the axis between your two lead characters) between these marks — screen direction will flip. Intentional crossings are fine; otherwise keep coverage on one side."
+              title="相机在这些标记之间越过 180° 轴线（两位主角之间的轴线），屏幕方向会翻转；有意越轴没有问题，否则请保持在同一侧拍摄。"
             >
-              🎬 180° line crossed: cam mark {c.fromMark} → {c.toMark}
+              🎬 越过 180° 轴线：相机标记 {c.fromMark} → {c.toMark}
             </span>
           ))}
           {evaluator?.warnings().map((w) => (
@@ -312,7 +314,7 @@ export function Timeline(): JSX.Element {
                 setSelection({ kind: 'mark', entityId: w.entityId, markId: w.toMarkId })
               }
             >
-              ⚠ {w.entityName}: implied {w.verdict.impliedSpeed.toFixed(1)} m/s — try{' '}
+              ⚠ {w.entityName}：推算速度 {w.verdict.impliedSpeed.toFixed(1)} 米/秒——建议{' '}
               {suggestionLabel(w.verdict.suggestion)}
             </span>
           ))}
@@ -356,7 +358,7 @@ export function Timeline(): JSX.Element {
         ))}
         {!anyMarks && (
           <div className="timeline-empty">
-            Select the camera or an actor and press M, then click the floor to drop marks.
+            {t('timeline.empty')}
           </div>
         )}
         <div className="playhead" style={{ left: playheadLeft }} />
