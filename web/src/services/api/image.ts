@@ -3,6 +3,7 @@ import axios from "axios";
 import i18n from "@/i18n";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
+import { isWangsuConfig, requestWangsuEdit, requestWangsuGeneration } from "./wangsu";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -763,6 +764,9 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
+    if (isWangsuConfig(requestConfig)) {
+        return requestWangsuGeneration(requestConfig, prompt, n, options);
+    }
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
@@ -823,6 +827,12 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
+    }
+
+    if (isWangsuConfig(requestConfig)) {
+        // 网宿图生图直接上传参考图，prompt 不预加「参考图N」标注（对齐参考实现）
+        if (mask) throw new Error(apiText("maskModelUnsupported"));
+        return requestWangsuEdit(requestConfig, prompt, references, n, options);
     }
 
     if (requestConfig.apiFormat === "ark") {
@@ -890,6 +900,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
     const script = resolveModelScript(config, config.model || config.textModel);
+    if (isWangsuConfig(requestConfig)) {
+        // 网宿仅接入图片生成协议，聊天/看图模型走这里会给出明确提示而不是误用 OpenAI 路径
+        throw new Error(apiText("wangsuImageOnly"));
+    }
     if (script) {
         try {
             const answer = await runModelPlugin<string>({

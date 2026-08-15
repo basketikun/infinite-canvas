@@ -3,7 +3,7 @@ import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, WANGSU_PRESET_MODELS, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
 
@@ -18,6 +18,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
         { label: "OpenAI", value: "openai" },
         { label: "Gemini", value: "gemini" },
         { label: t("config.protocols.ark"), value: "ark" },
+        { label: t("config.protocols.wangsu"), value: "wangsu" },
     ];
     const capabilityOptions: Array<{ label: string; value: ModelCapability }> = ["image", "video", "text", "audio"].map((value) => ({ label: t(`config.channelEditor.capabilities.${value}`), value: value as ModelCapability }));
 
@@ -32,7 +33,9 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
 
     const changeApiFormat = (apiFormat: ApiCallFormat) => {
         const baseUrl = !draft.baseUrl.trim() || draft.baseUrl.trim() === defaultBaseUrlForApiFormat(draft.apiFormat) ? defaultBaseUrlForApiFormat(apiFormat) : draft.baseUrl;
-        patch({ apiFormat, baseUrl });
+        // 切到网宿协议时自动填入其支持的预置模型（能力标记为生图），免去手动逐个添加
+        const models = apiFormat === "wangsu" ? WANGSU_PRESET_MODELS.map((model) => ({ ...model })) : draft.models;
+        patch({ apiFormat, baseUrl, models });
     };
 
     const applySelection = (names: string[]) => {
@@ -82,6 +85,28 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                     <span className="mb-1 block text-sm font-medium">API Key</span>
                     <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
                 </label>
+                {draft.apiFormat === "wangsu" ? (
+                    <>
+                        <label className="block md:col-span-2">
+                            <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.wangsuDoubaoKey")}</span>
+                            <Input.Password
+                                value={draft.extraSecrets?.doubaoApiKey || ""}
+                                onChange={(event) => patch({ extraSecrets: { ...(draft.extraSecrets || {}), doubaoApiKey: event.target.value } })}
+                                placeholder={t("config.channelEditor.wangsuDoubaoKeyPlaceholder")}
+                            />
+                            <span className="mt-1 block text-xs text-stone-500">{t("config.channelEditor.wangsuDoubaoKeyHint")}</span>
+                        </label>
+                        <label className="block md:col-span-2">
+                            <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.wangsuEditKey")}</span>
+                            <Input.Password
+                                value={draft.extraSecrets?.doubaoEditApiKey || ""}
+                                onChange={(event) => patch({ extraSecrets: { ...(draft.extraSecrets || {}), doubaoEditApiKey: event.target.value } })}
+                                placeholder={t("config.channelEditor.wangsuEditKeyPlaceholder")}
+                            />
+                            <span className="mt-1 block text-xs text-stone-500">{t("config.channelEditor.wangsuEditKeyHint")}</span>
+                        </label>
+                    </>
+                ) : null}
             </div>
 
             <div className="mt-6 mb-3 flex flex-wrap items-center justify-between gap-2">
