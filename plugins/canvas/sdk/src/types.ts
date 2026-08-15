@@ -134,6 +134,7 @@ export type CanvasAgentOp =
 
 export type CanvasResourceKind = "image" | "video" | "audio" | "text";
 export type CanvasNodeResource = { kind: CanvasResourceKind; text?: string; url?: string };
+export type CanvasUpstreamResource = { nodeId: string; title: string; resource: CanvasNodeResource };
 
 // ---------------------------------------------------------------------------
 // AI 生成:插件直接复用宿主的模型/密钥配置发起生成(生图/生视频/生文本/生音频)
@@ -223,6 +224,8 @@ export type CanvasNodeContext = {
     getConnections: () => CanvasConnection[];
     getUpstream: () => CanvasNodeData[];
     getDownstream: () => CanvasNodeData[];
+    getResource: (nodeId: string) => CanvasNodeResource | null;
+    getUpstreamResources: () => CanvasUpstreamResource[];
     // 画布操作(复用 Agent 指令集)
     applyOps: (ops: CanvasAgentOp[]) => void;
     // 节点间/插件间通信

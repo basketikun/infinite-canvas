@@ -19,6 +19,8 @@ export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, t
         getConnections: () => host.getConnections(),
         getUpstream: () => host.getUpstream(node.id),
         getDownstream: () => host.getDownstream(node.id),
+        getResource: (nodeId) => host.getResource(nodeId),
+        getUpstreamResources: () => host.getUpstreamResources(node.id),
         applyOps: (ops) => host.applyOps(ops),
         emit: (event, payload) => emitCanvasEvent(event, payload),
         on: (event, handler) => onCanvasEvent(event, handler),

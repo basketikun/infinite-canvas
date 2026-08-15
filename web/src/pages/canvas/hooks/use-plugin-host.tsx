@@ -107,6 +107,19 @@ export function usePluginHost(params: PluginHostParams) {
                     .filter((conn) => conn.fromNodeId === nodeId)
                     .map((conn) => nodesRef.current.find((node) => node.id === conn.toNodeId))
                     .filter((node): node is CanvasNodeData => Boolean(node)),
+            getResource: (nodeId) => {
+                const node = nodesRef.current.find((item) => item.id === nodeId);
+                return node ? getNodeDefinition(node.type)?.resource?.(node) || null : null;
+            },
+            getUpstreamResources: (nodeId) =>
+                connectionsRef.current
+                    .filter((conn) => conn.toNodeId === nodeId)
+                    .map((conn) => nodesRef.current.find((node) => node.id === conn.fromNodeId))
+                    .filter((node): node is CanvasNodeData => Boolean(node))
+                    .flatMap((node) => {
+                        const resource = getNodeDefinition(node.type)?.resource?.(node);
+                        return resource ? [{ nodeId: node.id, title: node.title || resource.kind, resource }] : [];
+                    }),
             updateNode: (nodeId, patch) => setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, ...patch } : node))),
             updateMetadata: (nodeId, patch) => setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, ...patch } } : node))),
             applyOps: (ops) => applyAgentOps(ops),

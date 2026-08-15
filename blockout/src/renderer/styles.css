@@ -116,6 +116,100 @@ body {
 
 /* ------------------------------- panels -------------------------------- */
 
+.reference-dock {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 10px 12px;
+}
+
+.reference-dock-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.reference-count {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.reference-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.reference-card {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.reference-preview {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.reference-preview img,
+.reference-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.reference-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.reference-kind {
+  color: var(--accent);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.reference-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-copy p,
+.reference-empty {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.reference-empty {
+  margin-top: 7px;
+}
+
 .panel {
   background: var(--bg-panel);
   border-right: 1px solid var(--border);

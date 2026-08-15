@@ -1,6 +1,7 @@
 import { createWebBlockoutAdapter } from './web-adapter'
 import { DIRECTOR_PROTOCOL } from './embed-bridge'
 import { currentProjectJson, useStore } from '../renderer/store'
+import { setDirectorResources } from './director-bridge-state'
 
 window.blockout = createWebBlockoutAdapter()
 
@@ -49,5 +50,6 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
   if (message.protocol !== DIRECTOR_PROTOCOL || message.type !== 'INIT') return
 
   const payload = message.payload && typeof message.payload === 'object' ? (message.payload as Record<string, unknown>) : {}
+  setDirectorResources(payload.upstream)
   void initializeDirectorProject(payload)
 })

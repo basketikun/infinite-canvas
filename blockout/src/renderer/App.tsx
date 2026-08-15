@@ -10,6 +10,7 @@ import { Viewport } from './viewport/Viewport'
 import { Library } from './panels/Library'
 import { Inspector } from './panels/Inspector'
 import { ProjectRail } from './panels/ProjectRail'
+import { ReferenceDock } from './panels/ReferenceDock'
 import { Timeline } from './panels/Timeline'
 import { DeliverPanel } from './panels/DeliverPanel'
 import { Toasts } from './panels/Toasts'
@@ -303,6 +304,7 @@ export function App(): JSX.Element {
       ) : (
         <div className="main">
           <div className="panel">
+            <ReferenceDock />
             <ProjectRail />
             {mode === 'stage' && <Library />}
             <Credits compact />

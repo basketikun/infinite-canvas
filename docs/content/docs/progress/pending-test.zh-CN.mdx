@@ -79,3 +79,4 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Agent 消息区分：用户消息应在右侧使用透明无气泡排版，AI 回复应在左侧使用无头像的开放式 Markdown 排版；长文本、多张附件、错误消息及浅色/深色主题下均应清晰且不溢出。
 - Agent 命令记录：命令执行中应显示运行状态；完成后，同一轮相邻命令应合并为「已执行 N 条命令」折叠行且默认不显示原始命令，单条展开后直接显示完整详情，多条展开后可分别查看命令、输出和退出状态；对话结束或刷新后分组与记录不应消失。
 - Director 第四阶段：创建 Director 节点，在 Blockout 中添加人物和 Camera Mark，保存并关闭 Workspace 后刷新 Infinite Canvas，再打开同一个节点；场景应从插件存储恢复，Undo/Redo 仍可使用，自动保存过程中不应出现 Bridge 或存储错误。
+- Director 第五阶段：将图片、视频和文本节点连接到 Director，确认节点摘要中的上游参考数量更新；打开 Workspace 后，Reference Dock 应显示当前图片/视频预览和文本 Brief。修改画布连线、关闭并重新打开 Director 后，列表应重新计算，且不应把上游源数据复制到 Director metadata。

@@ -7,6 +7,7 @@ import type { CanvasResourceKind } from "@/lib/canvas/canvas-resource-references
 
 // Resource emitted when a plugin node is consumed as an upstream input.
 export type CanvasNodeResource = { kind: CanvasResourceKind; text?: string; url?: string };
+export type CanvasUpstreamResource = { nodeId: string; title: string; resource: CanvasNodeResource };
 
 // AI generation capabilities injected by the host, reusing its model and credential configuration.
 export type GenerateOptions = { signal?: AbortSignal; references?: string[]; model?: string };
@@ -53,6 +54,8 @@ export type CanvasNodeContext = {
     getConnections: () => CanvasConnection[];
     getUpstream: () => CanvasNodeData[];
     getDownstream: () => CanvasNodeData[];
+    getResource: (nodeId: string) => CanvasNodeResource | null;
+    getUpstreamResources: () => CanvasUpstreamResource[];
     // Canvas operations using the Agent instruction set for nodes, connections, selection, viewport, and generation.
     applyOps: (ops: CanvasAgentOp[]) => void;
     // Inter-node and inter-plugin communication.
@@ -83,6 +86,8 @@ export type CanvasPluginHost = {
     getConnections: () => CanvasConnection[];
     getUpstream: (nodeId: string) => CanvasNodeData[];
     getDownstream: (nodeId: string) => CanvasNodeData[];
+    getResource: (nodeId: string) => CanvasNodeResource | null;
+    getUpstreamResources: (nodeId: string) => CanvasUpstreamResource[];
     updateNode: (nodeId: string, patch: Partial<Pick<CanvasNodeData, "title" | "width" | "height">>) => void;
     updateMetadata: (nodeId: string, patch: CanvasNodeMetadata) => void;
     applyOps: (ops: CanvasAgentOp[]) => void;

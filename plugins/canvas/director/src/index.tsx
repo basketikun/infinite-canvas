@@ -1,5 +1,5 @@
 import { definePlugin, useEffect, useRef } from "@infinite-canvas/plugin-sdk";
-import type { CanvasNodeContentProps, CanvasNodeWorkspaceProps } from "@infinite-canvas/plugin-sdk";
+import type { CanvasNodeContentProps, CanvasNodeWorkspaceProps, CanvasUpstreamResource } from "@infinite-canvas/plugin-sdk";
 
 type DirectorContext = CanvasNodeContentProps["ctx"];
 
@@ -30,6 +30,7 @@ function DirectorContent({ ctx }: CanvasNodeContentProps) {
     const fps = metadataNumber(ctx, "fps", 24);
     const focalLength = metadataNumber(ctx, "focalLength", 35);
     const thumbnail = metadataText(ctx, "thumbnail", "");
+    const upstreamCount = ctx.getUpstreamResources().length;
 
     return (
         <div data-canvas-no-zoom style={{ display: "flex", height: "100%", width: "100%", gap: 12, padding: 12, boxSizing: "border-box", color: ctx.theme.node.text }}>
@@ -44,7 +45,7 @@ function DirectorContent({ ctx }: CanvasNodeContentProps) {
                     <span>{duration}s · {fps}fps</span>
                     <span>{focalLength}mm</span>
                 </div>
-                <div style={{ marginTop: "auto", fontSize: 11, opacity: 0.6 }}>上游参考：0</div>
+                <div style={{ marginTop: "auto", fontSize: 11, opacity: 0.6 }}>上游参考：{upstreamCount}</div>
                 <button type="button" style={buttonStyle(ctx)} onMouseDown={(event) => event.stopPropagation()} onClick={() => ctx.openWorkspace()}>
                     打开导演台
                 </button>
@@ -99,7 +100,8 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
     const legacyProjectId = metadataText(ctx, "projectId", "");
     const projectId = storedProjectId || legacyProjectId || (generatedProjectId.current ??= createBlockoutProjectId());
     const projectName = metadataText(ctx, "projectName", "Untitled Director");
-    const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html?director=phase4", window.location.origin).toString();
+    const upstream = ctx.getUpstreamResources() as CanvasUpstreamResource[];
+    const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html?director=phase5", window.location.origin).toString();
 
     useEffect(() => {
         if (!storedProjectId) ctx.updateMetadata({ blockoutProjectId: projectId });
@@ -170,7 +172,7 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
                     {
                         protocol: DIRECTOR_PROTOCOL,
                         type: "INIT",
-                        payload: { nodeId: ctx.node.id, projectId, projectName },
+                        payload: { nodeId: ctx.node.id, projectId, projectName, upstream },
                     },
                     event.origin,
                 );
