@@ -282,6 +282,7 @@ export function App(): JSX.Element {
     <div className={`app ${PLATFORM_CLASS}${IS_EMBEDDED ? ' embedded' : ''}`}>
       <div className="titlebar titlebar-workspace">
         <div className="titlebar-project" title={doc.name}>
+          <EmbeddedBackButton />
           <span className="titlebar-project-mark" aria-hidden="true" />
           <span className="titlebar-project-copy">
             <span className="titlebar-project-kicker">DIRECTOR</span>
@@ -316,7 +317,6 @@ export function App(): JSX.Element {
             <span className="titlebar-action-icon" aria-hidden="true">?</span>
             {t('app.help')}
           </button>
-          <EmbeddedBackButton />
         </div>
       </div>
 

@@ -27,16 +27,6 @@ const DIRECTOR_AGENT_ACTIONS: PluginAgentAction[] = [
     ["screenshot", "导出当前镜头当前时间的 PNG 截图。"],
 ].map(([name, description]) => ({ name, description }));
 
-const buttonStyle = (ctx: DirectorContext) => ({
-    border: `1px solid ${ctx.theme.toolbar.border}`,
-    borderRadius: 8,
-    background: ctx.theme.toolbar.panel,
-    color: ctx.theme.node.text,
-    cursor: "pointer",
-    padding: "7px 12px",
-    fontSize: 12,
-});
-
 function metadataText(ctx: DirectorContext, key: string, fallback: string) {
     const value = ctx.node.metadata?.[key];
     return typeof value === "string" && value.trim() ? value : fallback;
@@ -47,34 +37,237 @@ function metadataNumber(ctx: DirectorContext, key: string, fallback: number) {
     return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+const directorNodeCss = `
+.director-node-shell {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid transparent;
+    transition: border-color 160ms ease, background 160ms ease;
+}
+.director-node-shell:hover {
+    border-color: color-mix(in srgb, currentColor 18%, transparent);
+}
+.director-node-header {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 8px;
+    min-height: 20px;
+}
+.director-node-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+}
+.director-node-badge {
+    flex: 0 0 auto;
+    padding: 3px 6px 2px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    opacity: 0.65;
+}
+.director-node-preview {
+    position: relative;
+    display: block;
+    min-height: 0;
+    width: 100%;
+    flex: 1;
+    overflow: hidden;
+    border: 0;
+    border-radius: 8px;
+    padding: 0;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.director-node-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.director-node-preview:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+}
+.director-node-overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(12, 12, 12, 0.42);
+    color: #fff;
+    opacity: 0;
+    transition: opacity 160ms ease;
+}
+.director-node-preview:hover .director-node-overlay,
+.director-node-preview:focus-visible .director-node-overlay {
+    opacity: 1;
+}
+.director-node-overlay-label {
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    border-radius: 999px;
+    background: rgba(18, 18, 18, 0.52);
+    padding: 7px 11px;
+    font-size: 11px;
+    font-weight: 650;
+    backdrop-filter: blur(10px);
+}
+.director-node-placeholder {
+    position: relative;
+    display: grid;
+    width: 100%;
+    height: 100%;
+    min-height: 90px;
+    place-items: center;
+    overflow: hidden;
+}
+.director-node-placeholder::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(165deg, transparent 48%, currentColor 49%, transparent 50%), linear-gradient(15deg, transparent 48%, currentColor 49%, transparent 50%);
+    opacity: 0.08;
+}
+.director-node-placeholder-horizon {
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    bottom: 24%;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.24;
+}
+.director-node-placeholder-cube {
+    position: relative;
+    width: 34px;
+    height: 28px;
+    border: 1px solid currentColor;
+    transform: perspective(90px) rotateX(20deg) rotateZ(45deg);
+    opacity: 0.42;
+}
+.director-node-placeholder-camera {
+    position: absolute;
+    right: 18%;
+    bottom: 20%;
+    width: 18px;
+    height: 10px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    opacity: 0.52;
+}
+.director-node-placeholder-camera::before {
+    content: "";
+    position: absolute;
+    left: -7px;
+    top: 2px;
+    width: 7px;
+    height: 5px;
+    border: 1px solid currentColor;
+    border-right: 0;
+}
+.director-node-placeholder-label {
+    position: absolute;
+    bottom: 10px;
+    left: 12px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    opacity: 0.42;
+}
+.director-node-footer {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    gap: 8px;
+    color: currentColor;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.66;
+}
+.director-node-stat {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.director-node-stat:nth-child(2) { text-align: center; }
+.director-node-stat:nth-child(3) { text-align: right; }
+.director-node-reference {
+    position: absolute;
+    right: 10px;
+    bottom: 39px;
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    font-size: 9px;
+    opacity: 0.68;
+}
+`;
+
 function DirectorContent({ ctx }: CanvasNodeContentProps) {
-    const scene = metadataText(ctx, "scene", "Scene 01");
-    const shot = metadataText(ctx, "shot", "Shot 01");
+    const shot = metadataText(ctx, "shot", metadataText(ctx, "projectName", "镜头 01"));
     const duration = metadataNumber(ctx, "duration", 5);
-    const fps = metadataNumber(ctx, "fps", 24);
     const focalLength = metadataNumber(ctx, "focalLength", 35);
     const entityCount = metadataNumber(ctx, "entityCount", 0);
     const thumbnail = metadataText(ctx, "thumbnail", "");
     const upstreamCount = ctx.getUpstreamResources().length;
 
     return (
-        <div data-canvas-no-zoom style={{ display: "flex", height: "100%", width: "100%", gap: 12, padding: 12, boxSizing: "border-box", color: ctx.theme.node.text }}>
-            <div style={{ display: "grid", width: 108, flexShrink: 0, placeItems: "center", borderRadius: 10, background: ctx.theme.node.panel, color: ctx.theme.node.muted, overflow: "hidden" }}>
-                {thumbnail ? <img src={thumbnail} alt="Director thumbnail" style={{ height: "100%", width: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 30 }}>🎬</span>}
+        <div
+            className="director-node-shell"
+            data-canvas-no-zoom
+            style={{ display: "flex", height: "100%", width: "100%", flexDirection: "column", gap: 8, padding: 10, boxSizing: "border-box", color: ctx.theme.node.text, background: ctx.theme.node.panel }}
+        >
+            <div className="director-node-header">
+                <span className="director-node-title" title={shot}>{shot}</span>
+                <span className="director-node-badge">3D</span>
             </div>
-            <div style={{ display: "flex", minWidth: 0, flex: 1, flexDirection: "column", gap: 7 }}>
-                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 15, fontWeight: 650 }}>{metadataText(ctx, "projectName", "Untitled Director")}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 10px", fontSize: 11, opacity: 0.72 }}>
-                    <span>{scene}</span>
-                    <span>{shot}</span>
-                    <span>{duration}s · {fps}fps</span>
-                    <span>{focalLength}mm</span>
-                </div>
-                <div style={{ marginTop: "auto", fontSize: 11, opacity: 0.6 }}>上游参考：{upstreamCount} · 实体：{entityCount}</div>
-                <button type="button" style={buttonStyle(ctx)} onMouseDown={(event) => event.stopPropagation()} onClick={() => ctx.openWorkspace()}>
-                    打开导演台
-                </button>
+            <div
+                className="director-node-preview"
+                style={{ background: ctx.theme.node.fill, color: ctx.theme.node.muted }}
+            >
+                {thumbnail ? (
+                    <img src={thumbnail} alt={`${shot} 3D 场景预览`} />
+                ) : (
+                    <div className="director-node-placeholder">
+                        <span className="director-node-placeholder-horizon" />
+                        <span className="director-node-placeholder-cube" />
+                        <span className="director-node-placeholder-camera" />
+                        <span className="director-node-placeholder-label">3D SCENE</span>
+                    </div>
+                )}
+                <span
+                    className="director-node-overlay"
+                    role="button"
+                    tabIndex={0}
+                    aria-label="进入 3D 导演台"
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={() => ctx.openWorkspace()}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") ctx.openWorkspace();
+                    }}
+                >
+                    <span className="director-node-overlay-label">进入 3D 导演台</span>
+                </span>
             </div>
+            <div className="director-node-footer">
+                <span className="director-node-stat">{duration}s</span>
+                <span className="director-node-stat">{focalLength}mm</span>
+                <span className="director-node-stat">{entityCount} 对象</span>
+            </div>
+            {upstreamCount > 0 ? <span className="director-node-reference" title={`${upstreamCount} 个参考素材`}>⌕{upstreamCount}</span> : null}
         </div>
     );
 }
@@ -118,6 +311,28 @@ function storedJson(value: unknown): string | null {
 
 function projectStorageKey(projectId: string, fileName: string): string {
     return `projects/${projectId}/${fileName}`;
+}
+
+function arrayBufferValue(value: unknown): ArrayBuffer | null {
+    if (value instanceof ArrayBuffer) return value;
+    if (!ArrayBuffer.isView(value)) return null;
+    const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    return bytes.slice().buffer;
+}
+
+function safeFileName(value: string, fallback: string): string {
+    const normalized = value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ");
+    return normalized || fallback;
+}
+
+function fileStem(value: string): string {
+    return value.replace(/\.[^.]+$/, "") || value;
+}
+
+function importedFileLocation(kind: string, fileName: string): { relativePath: string; directory: string } {
+    const directory = kind === "scan" ? "scans" : kind === "reference" ? "refs" : "assets";
+    const uniqueName = `${Date.now().toString(36)}-${safeFileName(fileName, "imported-file")}`;
+    return { directory, relativePath: `${directory}/${uniqueName}` };
 }
 
 function createBlockoutProjectId(): string {
@@ -310,6 +525,65 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
                     return;
                 }
 
+                if (message.type === "FILE_IMPORT") {
+                    const kind = typeof payload.kind === "string" ? payload.kind : "asset";
+                    if (kind !== "asset" && kind !== "scan" && kind !== "reference") throw new Error("Unsupported imported file kind.");
+                    const fileName = safeFileName(typeof payload.fileName === "string" ? payload.fileName : "imported-file", "imported-file");
+                    const data = arrayBufferValue(payload.data);
+                    if (!data) throw new Error("The selected file could not be read in the browser.");
+                    const location = importedFileLocation(kind, fileName);
+                    await ctx.storage.set(projectStorageKey(projectId, `files/${location.relativePath}`), data);
+                    respond(message.requestId, message.type, origin, { relativePath: location.relativePath, name: fileStem(fileName) });
+                    return;
+                }
+
+                if (message.type === "FILE_READ") {
+                    const relativePath = typeof payload.relativePath === "string" ? payload.relativePath.replace(/\\/g, "/").replace(/^\/+/, "") : "";
+                    if (!relativePath || relativePath.split("/").some((part) => part === "..")) throw new Error("Invalid project file path.");
+                    const stored = await ctx.storage.get(projectStorageKey(projectId, `files/${relativePath}`));
+                    const data = arrayBufferValue(stored);
+                    if (!data) throw new Error(`Project file not found: ${relativePath}`);
+                    respond(message.requestId, message.type, origin, data);
+                    return;
+                }
+
+                if (message.type === "EXPORT_STILL_TO_CANVAS") {
+                    const data = arrayBufferValue(payload.png);
+                    if (!data) throw new Error("Exported frame is empty.");
+                    const dataUrl = await arrayBufferDataUrl(data);
+                    const sourceNode = ctxRef.current.getNode(ctx.node.id);
+                    const sourceWidth = Math.max(320, Math.min(560, sourceNode?.width ?? 360));
+                    const sourceHeight = Math.max(220, sourceNode?.height ?? 240);
+                    const frameWidth = Number(payload.width) > 0 ? Number(payload.width) : 16;
+                    const frameHeight = Number(payload.height) > 0 ? Number(payload.height) : 9;
+                    const frameHeightOnCanvas = Math.max(220, Math.round(sourceWidth * frameHeight / frameWidth));
+                    const baseX = (sourceNode?.position.x ?? 0) + (sourceNode?.width ?? 360) + 80;
+                    const baseY = sourceNode?.position.y ?? 0;
+                    const title = typeof payload.title === "string" && payload.title.trim() ? payload.title : "导演台当前帧";
+                    const id = `${ctx.node.id}-frame-${Date.now().toString(36)}`;
+                    ctxRef.current.applyOps([
+                        {
+                            type: "add_node",
+                            id,
+                            nodeType: "image",
+                            title,
+                            position: { x: baseX, y: baseY + sourceHeight + 40 },
+                            width: sourceWidth,
+                            height: frameHeightOnCanvas,
+                            metadata: {
+                                content: dataUrl,
+                                status: "success",
+                                mimeType: "image/png",
+                                source: "director:current-frame",
+                                directorShotTime: Number(payload.time) || 0,
+                            },
+                        },
+                        { type: "connect_nodes", fromNodeId: ctx.node.id, toNodeId: id },
+                    ]);
+                    respond(message.requestId, message.type, origin, true);
+                    return;
+                }
+
                 if (message.type === "PRESETS_LIST") {
                     respond(message.requestId, message.type, origin, []);
                     return;
@@ -470,6 +744,7 @@ export default definePlugin({
     name: "Director 导演台",
     version: "0.1.0",
     description: "Infinite Canvas Director 节点壳，加载 Blockout Web 并通过 Embed Bridge 初始化。",
+    css: directorNodeCss,
     nodes: [
         {
             type: "director:blockout",

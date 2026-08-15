@@ -983,3 +983,245 @@ input[type='color'] {
 @media (max-width: 620px) {
   .help-kbd-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------------------- Infinite Canvas Director skin ------------------ */
+
+/* The standalone Blockout palette stays intact. Embedded workspaces use a
+   quieter Canvas-first chrome so the 3D viewport remains the visual anchor. */
+.app.embedded {
+  --accent: #d49a3a;
+  --accent-text: #20170b;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  grid-template-rows: 48px 1fr;
+}
+
+.app.embedded .titlebar {
+  min-height: 48px;
+  padding: 0 14px;
+  gap: 12px;
+  background: color-mix(in srgb, var(--bg) 86%, var(--bg-panel));
+  border-bottom-color: color-mix(in srgb, var(--border) 78%, transparent);
+  box-shadow: none;
+}
+
+.app.embedded .titlebar-project {
+  gap: 8px;
+  padding-right: 12px;
+  border-right: 0;
+}
+
+.app.embedded .titlebar-project-mark {
+  width: 2px;
+  height: 18px;
+  border-radius: 0;
+  background: var(--accent);
+  box-shadow: none;
+  opacity: 0.8;
+}
+
+.app.embedded .titlebar-project-kicker { display: none; }
+.app.embedded .titlebar-project-name { font-size: 13px; font-weight: 620; }
+.app.embedded .titlebar-dirty { font-size: 10px; }
+
+.app.embedded .titlebar-project .embedded-back {
+  margin: 0 2px 0 0;
+  border-color: transparent;
+  padding: 4px 5px;
+  color: var(--text-dim);
+  font-weight: 550;
+}
+
+.app.embedded .titlebar-project .embedded-back:hover {
+  border-color: transparent;
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.app.embedded .mode-switch {
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app.embedded .mode-switch button {
+  position: relative;
+  padding: 8px 2px 9px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 560;
+  letter-spacing: 0.02em;
+}
+
+.app.embedded .mode-switch button:hover {
+  background: transparent;
+  color: var(--text);
+}
+
+.app.embedded .mode-switch button.active {
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+}
+
+.app.embedded .mode-switch button.active::after {
+  content: '';
+  position: absolute;
+  right: 1px;
+  bottom: 2px;
+  left: 1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.app.embedded .mode-switch-icon { display: none; }
+
+.app.embedded .titlebar-actions { gap: 1px; }
+.app.embedded .titlebar-action {
+  min-height: 30px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 550;
+}
+.app.embedded .titlebar-action:hover {
+  border-color: transparent;
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.app.embedded .titlebar-save,
+.app.embedded .titlebar-save:hover {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+.app.embedded .titlebar-action-icon { color: var(--accent); }
+
+.app.embedded .main {
+  grid-template-columns: minmax(184px, 208px) 1fr minmax(248px, 280px);
+  background: var(--bg);
+}
+
+.app.embedded .panel {
+  background: color-mix(in srgb, var(--bg-panel) 74%, var(--bg));
+  border-color: color-mix(in srgb, var(--border) 74%, transparent);
+}
+
+.app.embedded .panel-section,
+.app.embedded .reference-dock {
+  border-color: color-mix(in srgb, var(--border) 68%, transparent);
+}
+
+.app.embedded .panel-title,
+.app.embedded .reference-dock-heading {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.app.embedded .reference-dock { padding: 11px 12px 13px; }
+.app.embedded .reference-list { gap: 5px; margin-top: 9px; }
+.app.embedded .reference-card {
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  padding: 4px;
+}
+.app.embedded .reference-card:hover { background: var(--bg-hover); }
+.app.embedded .reference-preview {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  background: color-mix(in srgb, var(--bg-raised) 70%, transparent);
+}
+
+.app.embedded .rail-scene-header,
+.app.embedded .rail-shot { border-radius: 5px; }
+.app.embedded .rail-scene-header.active,
+.app.embedded .rail-shot.active {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+}
+.app.embedded .rail-shot.active { border-left: 2px solid var(--accent); padding-left: 18px; }
+
+.app.embedded button.btn {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 550;
+  box-shadow: none;
+}
+.app.embedded button.btn:hover {
+  border-color: transparent;
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.app.embedded button.btn.primary {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.app.embedded button.btn.primary:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+.app.embedded .field { gap: 5px; margin-bottom: 12px; }
+.app.embedded .field label { color: var(--text-faint); font-size: 10px; font-weight: 560; }
+.app.embedded input[type='text'],
+.app.embedded input[type='number'],
+.app.embedded select,
+.app.embedded textarea,
+.app.embedded .custom-select-trigger {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--bg) 58%, var(--bg-panel));
+  color: var(--text);
+}
+.app.embedded input[type='text']:hover,
+.app.embedded input[type='number']:hover,
+.app.embedded select:hover,
+.app.embedded textarea:hover,
+.app.embedded .custom-select-trigger:hover,
+.app.embedded .custom-select-trigger.open {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.app.embedded .viewport-wrap { background: var(--bg); }
+.app.embedded .viewport-tools .btn,
+.app.embedded .viewport-toolbar .btn {
+  border-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  box-shadow: none;
+}
+.app.embedded .viewport-tools .btn:hover,
+.app.embedded .viewport-toolbar .btn:hover { background: var(--bg-hover); }
+.app.embedded .viewport-hint {
+  border-color: transparent;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  padding: 7px 10px;
+  font-size: 11px;
+}
+
+.app.embedded .timeline {
+  height: 204px;
+  background: color-mix(in srgb, var(--bg-panel) 80%, var(--bg));
+  border-top-color: color-mix(in srgb, var(--border) 78%, transparent);
+}
+.app.embedded .timeline-toolbar { padding: 7px 12px; }
+.app.embedded .timeline-track { height: 32px; border-bottom-color: color-mix(in srgb, var(--border) 62%, transparent); }
+.app.embedded .timeline-track-label { border-right-color: color-mix(in srgb, var(--border) 62%, transparent); color: var(--text-faint); }
+.app.embedded .timeline-ruler { border-bottom-color: color-mix(in srgb, var(--border) 62%, transparent); }
+.app.embedded .mark-pill { background: var(--bg-raised); border-color: var(--border); }
+.app.embedded .mark-pill.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
+
+@media (max-width: 820px) {
+  .app.embedded .titlebar-workspace { grid-template-columns: minmax(0, 1fr) auto; }
+  .app.embedded .titlebar-workspace .mode-switch { display: none; }
+  .app.embedded .main { grid-template-columns: 168px 1fr 224px; }
+}

@@ -7,6 +7,12 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
+- Director 第一轮 UI 改造：确认 Canvas 外部 Director 节点以 3D 预览为主，标题、3D 标签、时长/焦距/对象数状态和悬停进入导演台交互在浅色与深色主题下均可读；确认节点可复用普通画布节点逻辑进行选中、拖动和双击进入，且无缩略图时的 3D 示意占位不显示大型 Emoji 或常驻按钮。
+- Director 第一轮 UI 改造：确认 Embedded Blockout 工作台的返回、项目标题、布景/拍摄/交付模式切换、保存和帮助操作保持原有行为，并在浅色/深色主题及窄宽度下正确对齐；确认面板、属性输入、视口工具条和时间轴使用低对比边框、透明按钮和黄色语义强调。
+- Director Embedded 文件导入：确认「导入 3D 模型」可通过浏览器文件选择器导入 GLB/glTF/OBJ 并在视口加载；确认「导入 3D 扫描」可导入 PLY/SPLAT/KSPLAT/SPZ 并在视口加载；确认参考视频导入和刷新后读取仍正常，取消选择或读取失败时有明确提示。
+- Director 当前帧回写：在 Embedded Blockout 的「交付」面板点击「导出当前帧」，确认 PNG 被创建为无限画布上的图片节点、保持当前画幅比例并自动连接到 Director 节点；确认该操作不要求启动 `director-export-service`，完整镜头导出仍按 Phase 6 依赖导出服务。
+- Blockout 素材库：确认人物、动物、车辆、家具、道具、环境和基础几何分类默认折叠，点击分类标题可独立展开或收起，搜索和分类筛选行为不受影响。
+
 - 退出按钮：本地启动模式下，确认右上角退出按钮经过确认后能停止当前 Infinite Canvas 服务并退出页面；静态部署或接口不可用时应提示手动关闭标签页，不能影响其他服务。
 - Eagle 视频播放：打开 Eagle 视频资产后，播放、暂停、拖动进度条跳转、重新加载和下载均正常。
 - 视频资产详情：视频详情顶部不应显示“暂无封面”或重复缩略图，应直接展示标题和视频预览；内容区标题应显示“视频预览”，播放、进度控制和下载操作正常。

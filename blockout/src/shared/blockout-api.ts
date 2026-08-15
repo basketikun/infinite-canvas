@@ -34,6 +34,7 @@ export interface BlockoutAPI {
   exportEnd(jobId: string): Promise<boolean>
   exportCancel(jobId: string): Promise<boolean>
   exportWriteFile(path: string, data: ArrayBuffer | string): Promise<boolean>
+  exportStillToCanvas?(png: ArrayBuffer, metadata: { title: string; width: number; height: number; time: number }): Promise<boolean>
   exportConcat(outPath: string, inputPaths: string[]): Promise<{ ok: boolean; error?: string }>
   onExportClosed(cb: (jobId: string, code: number, log: string) => void): () => void
   notifyProjectSummary(summary: Record<string, unknown>): void

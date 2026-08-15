@@ -651,7 +651,9 @@ export function Library(): JSX.Element {
   const { t } = useBlockoutI18n()
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<EntityCategory | 'all'>('all')
-  const [collapsed, setCollapsed] = useState<Partial<Record<EntityCategory, boolean>>>({})
+  const [collapsed, setCollapsed] = useState<Partial<Record<EntityCategory, boolean>>>(() =>
+    Object.fromEntries(CATEGORY_ORDER.map(({ key }) => [key, true])) as Partial<Record<EntityCategory, boolean>>
+  )
   const placingAssetId = useStore((s) => s.placingAssetId)
   const setPlacingAsset = useStore((s) => s.setPlacingAsset)
   const addEntity = useStore((s) => s.addEntity)

@@ -405,6 +405,17 @@ export async function exportStillAtPlayhead(
   try {
     manager.renderFrameAt(renderer, t, width, height, 'clean', { showLabels })
     const png = await canvasPng(canvas)
+    if (window.blockout.exportStillToCanvas) {
+      const placed = await window.blockout.exportStillToCanvas(png, {
+        title: `导演台当前帧 · ${shot.name} · ${t.toFixed(2)}s`,
+        width,
+        height,
+        time: t
+      })
+      if (!placed) throw new Error('无法将当前帧添加到画布')
+      s.setExportProgress({ lastPackagePath: undefined })
+      return { ok: true }
+    }
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
     const out = `${folder}/exports/${sanitize(scene.name)}/Shot-${sanitize(shot.name)}/frames/${sanitize(shot.name)}_${t.toFixed(2)}s_${stamp}.png`
     await window.blockout.exportWriteFile(out, png)

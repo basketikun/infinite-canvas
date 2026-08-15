@@ -3,6 +3,43 @@ import { EmbedBridge } from './embed-bridge'
 
 type ExportOptions = { fps: number; width: number; height: number; framesExpected: number }
 
+type BrowserFile = { name: string; type: string; data: ArrayBuffer }
+const browserFiles = new Map<string, BrowserFile>()
+
+function browserFileToken(): string {
+  const suffix = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Math.random().toString(36).slice(2)
+  return `browser-file://${suffix}`
+}
+
+function pickBrowserFile(filters: { extensions: string[] }[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = filters.flatMap((filter) => filter.extensions.map((extension) => `.${extension}`)).join(',')
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (!file) {
+        resolve(null)
+        return
+      }
+      const token = browserFileToken()
+      void file.arrayBuffer().then((data) => {
+        browserFiles.set(token, { name: file.name, type: file.type, data })
+        resolve(token)
+      }).catch(() => resolve(null))
+    }
+    input.click()
+  })
+}
+
+function browserFilePayload(sourcePath: string): { fileName: string; mimeType: string; data: ArrayBuffer } | null {
+  if (!sourcePath.startsWith('browser-file://')) return null
+  const file = browserFiles.get(sourcePath)
+  if (!file) throw new Error('The selected browser file is no longer available. Please choose it again.')
+  browserFiles.delete(sourcePath)
+  return { fileName: file.name, mimeType: file.type, data: file.data }
+}
+
 function asBoolean(value: unknown, fallback = true): boolean {
   if (typeof value === 'boolean') return value
   if (value && typeof value === 'object' && 'ok' in value && typeof value.ok === 'boolean') return value.ok
@@ -33,7 +70,7 @@ export function createWebBlockoutAdapter(): BlockoutAPI {
     platform: browserPlatform(),
     newProjectDialog: async () => null,
     openProjectDialog: async () => null,
-    pickFile: async () => null,
+    pickFile: (filters) => pickBrowserFile(filters),
     saveProject: async (folder, json) => asBoolean(await request('PROJECT_SAVE', { folder, json })),
     saveBackup: async (folder, json) => asBoolean(await request('PROJECT_SAVE_BACKUP', { folder, json })),
     loadProject: async (folder) => {
@@ -45,9 +82,9 @@ export function createWebBlockoutAdapter(): BlockoutAPI {
         folder: typeof result.folder === 'string' ? result.folder : folder
       }
     },
-    importAsset: (folder, sourcePath) => request('FILE_IMPORT', { kind: 'asset', folder, sourcePath }),
-    importScan: (folder, sourcePath) => request('FILE_IMPORT', { kind: 'scan', folder, sourcePath }),
-    importReference: (folder, sourcePath) => request('FILE_IMPORT', { kind: 'reference', folder, sourcePath }),
+    importAsset: (folder, sourcePath) => request('FILE_IMPORT', { kind: 'asset', folder, sourcePath, ...browserFilePayload(sourcePath) }),
+    importScan: (folder, sourcePath) => request('FILE_IMPORT', { kind: 'scan', folder, sourcePath, ...browserFilePayload(sourcePath) }),
+    importReference: (folder, sourcePath) => request('FILE_IMPORT', { kind: 'reference', folder, sourcePath, ...browserFilePayload(sourcePath) }),
     readProjectFile: (folder, relativePath) => request('FILE_READ', { folder, relativePath }),
     showFolder: async (path) => {
       bridge.notify('SHOW_FOLDER', { path })
@@ -61,6 +98,7 @@ export function createWebBlockoutAdapter(): BlockoutAPI {
     exportEnd: async (jobId) => asBoolean(await request('EXPORT_END', { jobId })),
     exportCancel: async (jobId) => asBoolean(await request('EXPORT_CANCEL', { jobId })),
     exportWriteFile: async (path, data) => asBoolean(await request('EXPORT_WRITE_FILE', { path, data })),
+    exportStillToCanvas: async (png, metadata) => asBoolean(await request('EXPORT_STILL_TO_CANVAS', { png, ...metadata })),
     exportConcat: async (outPath, inputPaths) => {
       const result = asRecord(await request('EXPORT_CONCAT', { outPath, inputPaths }))
       return { ok: result.ok === true, error: typeof result.error === 'string' ? result.error : undefined }

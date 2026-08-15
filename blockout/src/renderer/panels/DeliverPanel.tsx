@@ -195,9 +195,9 @@ export function DeliverPanel(): JSX.Element {
         disabled={progress.running}
         onClick={() =>
           void exportStillAtPlayhead(profileId, resolution, labels !== 'off').then((r) => {
-            if (r.ok && r.packagePath) {
+            if (r.ok) {
               toast(t('toast.frameExported'), 'success')
-              void window.blockout.showFolder(r.packagePath)
+              if (r.packagePath) void window.blockout.showFolder(r.packagePath)
             } else if (r.error) toast(t('toast.frameExportFailed', 'Frame export failed: {{error}}', { error: r.error }), 'error')
           })
         }
