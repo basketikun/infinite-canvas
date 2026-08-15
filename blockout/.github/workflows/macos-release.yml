@@ -1,0 +1,88 @@
+name: macOS release artifact
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*-macos.*']
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-14
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Confirm native architecture
+        shell: bash
+        run: test "$(node -p process.arch)" = "${{ matrix.arch }}"
+      - run: npm ci
+      - run: npm run verify:assets
+      - run: npm run verify:builder-config
+      - name: Install source-build prerequisites
+        run: brew install pkg-config nasm yasm cmake meson ninja
+      - run: npm run prepare:ffmpeg:mac
+        env:
+          # Older FFmpeg build dependencies declare cmake_minimum_required < 3.5,
+          # which CMake 4 rejects without this compatibility floor.
+          CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+      - run: npm run verify:release-assets
+      - name: Configure nested portability root and audited media tools
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/OneDrive - Studio/Director's Cut/José"
+          mkdir -p "$root"
+          echo "BLOCKOUT_E2E_ROOT=$root" >> "$GITHUB_ENV"
+          echo "BLOCKOUT_FFMPEG=$GITHUB_WORKSPACE/vendor/ffmpeg/macos-${{ matrix.arch }}/ffmpeg" >> "$GITHUB_ENV"
+          echo "BLOCKOUT_FFPROBE=$GITHUB_WORKSPACE/vendor/ffmpeg/macos-${{ matrix.arch }}/ffprobe" >> "$GITHUB_ENV"
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright test tests/e2e/smoke.spec.ts tests/e2e/cancel-export.spec.ts tests/e2e/set-reference.spec.ts
+      - run: npm run package:mac
+      - name: Archive audited FFmpeg pair
+        shell: bash
+        run: tar -czf release/blockout-ffmpeg-macos-${{ matrix.arch }}.tar.gz -C vendor/ffmpeg macos-${{ matrix.arch }}
+      - run: npm run sbom
+      - run: npm run fetch:ffmpeg-source
+      - name: Write SHA256SUMS
+        shell: bash
+        run: |
+          cd release
+          find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS
+      - name: Attest macOS package provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release/*.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blockout-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/blockout-ffmpeg-macos-*.tar.gz
+            release/SHA256SUMS
+            release/*.spdx.json
+            release/*.cyclonedx.json
+            release/ffmpeg-corresponding-source/*
+            LICENSE
+            NOTICE
+            MODIFICATIONS.md
+            THIRD_PARTY_NOTICES.md
+            ASSET_MANIFEST.json
+            third_party/ffmpeg/macos-gpl.patch

@@ -1,0 +1,82 @@
+# Modified for cross-platform Windows support in 2026; see MODIFICATIONS.md.
+appId: com.wassermanproductions.blockout
+productName: Blockout
+# Package scripts run redistribution audits before electron-builder. Windows
+# uses the pinned BtbN GPL pair; macOS builds the pinned GPL pair from source.
+directories:
+  output: release
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+files:
+  - out/**
+  - package.json
+  - LICENSE
+  - NOTICE
+  - MODIFICATIONS.md
+  - THIRD_PARTY_NOTICES.md
+  - ASSET_MANIFEST.json
+extraResources:
+  - from: mcp
+    to: mcp
+    filter:
+      - blockout-mcp.mjs
+      - README.md
+  - from: LICENSE
+    to: licenses/Blockout-Apache-2.0.txt
+  - from: NOTICE
+    to: NOTICE
+  - from: MODIFICATIONS.md
+    to: MODIFICATIONS.md
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  - from: ASSET_MANIFEST.json
+    to: ASSET_MANIFEST.json
+  - from: scripts/fetch-ffmpeg-source.mjs
+    to: ffmpeg-source/fetch-ffmpeg-source.mjs
+mac:
+  category: public.app-category.video
+  icon: build/icon.icns
+  extraResources:
+    - from: vendor/ffmpeg/macos-${arch}/ffmpeg
+      to: ffmpeg/ffmpeg
+    - from: vendor/ffmpeg/macos-${arch}/ffprobe
+      to: ffmpeg/ffprobe
+    - from: vendor/ffmpeg/macos-${arch}/LICENSE.txt
+      to: licenses/FFmpeg-GPL-3.0.txt
+    - from: vendor/ffmpeg/macos-${arch}/BUILD-MANIFEST.json
+      to: ffmpeg/BUILD-MANIFEST.json
+    - from: third_party/ffmpeg/PROVENANCE.md
+      to: ffmpeg/PROVENANCE.md
+  target:
+    - target: dmg
+  # Unsigned by default. For distribution beyond your own machines, set
+  # identity + notarize (Apple Developer ID) — see README "Sharing builds".
+  identity: null
+win:
+  icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
+  extraResources:
+    - from: vendor/ffmpeg/win-x64/ffmpeg.exe
+      to: ffmpeg/ffmpeg.exe
+    - from: vendor/ffmpeg/win-x64/ffprobe.exe
+      to: ffmpeg/ffprobe.exe
+    - from: vendor/ffmpeg/win-x64/LICENSE.txt
+      to: licenses/FFmpeg-GPL-3.0.txt
+    - from: third_party/ffmpeg/PROVENANCE.md
+      to: ffmpeg/PROVENANCE.md
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Blockout
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+linux:
+  target: AppImage
+  category: Video
+npmRebuild: false
