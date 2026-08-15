@@ -4,6 +4,9 @@
 
 + [新增] 插件系统支持通用全屏 Workspace，可通过节点双击打开并使用 ESC 返回画布。
 + [新增] 增加 Director 导演台插件壳，支持独立节点摘要和全屏 iframe Workspace 测试页。
++ [新增] Blockout 增加浏览器 Web 入口、共享 BlockoutAPI 和 Director Embed Bridge，Director Workspace 可加载真实 Blockout Web。
++ [修复] Blockout Web 入口补加载编辑器样式，并在收到 Director `INIT` 后进入空项目编辑器而不是停留在 Welcome 页。
++ [调整] Director Workspace 去除重复的宿主顶栏，让 Blockout 深色顶栏直接融入全屏工作区并支持从 iframe 返回画布。
 + [调整] 将生图、视频、画布节点和生成配置中的 AI 助手入口统一移入对应输入区域，并适配各自的编辑器主题。
 + [新增] 将提示词助理抽取为通用能力，接入视频创作台以及画布节点提示词和生成配置编辑器，共用文本模型配置并支持确认后回填。
 + [新增] 生图工作台提示词输入框支持 AI 对话式整理，确认后可将最终提示词回填到输入框。

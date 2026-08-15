@@ -1,4 +1,4 @@
-import { definePlugin } from "@infinite-canvas/plugin-sdk";
+import { definePlugin, useEffect, useRef } from "@infinite-canvas/plugin-sdk";
 import type { CanvasNodeContentProps, CanvasNodeWorkspaceProps } from "@infinite-canvas/plugin-sdk";
 
 type DirectorContext = CanvasNodeContentProps["ctx"];
@@ -53,56 +53,43 @@ function DirectorContent({ ctx }: CanvasNodeContentProps) {
     );
 }
 
-function escapeHtml(value: string) {
-    return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] || character);
-}
+const DIRECTOR_PROTOCOL = "infinite-canvas-director-v1";
 
-function buildDirectorTestDocument(ctx: DirectorContext) {
-    const projectId = metadataText(ctx, "projectId", `director-project-${ctx.node.id}`);
-    const projectName = metadataText(ctx, "projectName", "Untitled Director");
-    return `<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Director Workspace Test</title>
-    <style>
-      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-      body { margin: 0; min-height: 100vh; background: #fafaf9; color: #292524; }
-      main { box-sizing: border-box; min-height: 100vh; padding: 32px; }
-      .eyebrow { color: #78716c; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
-      h1 { margin: 10px 0 8px; font-size: 30px; }
-      p { color: #57534e; line-height: 1.6; }
-      .card { max-width: 720px; margin-top: 28px; padding: 20px; border: 1px solid #d6d3d1; border-radius: 16px; background: white; box-shadow: 0 12px 30px rgba(28,25,23,.08); }
-      code { padding: 2px 6px; border-radius: 5px; background: #f5f5f4; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <div class="eyebrow">Director iframe test surface</div>
-      <h1>${escapeHtml(projectName)}</h1>
-      <p>这是 Phase 2 的 iframe 测试页面。下一阶段会将这里替换为 Blockout Web。</p>
-      <div class="card">
-        <div>当前 nodeId：<code>${escapeHtml(ctx.node.id)}</code></div>
-        <div>当前 projectId：<code>${escapeHtml(projectId)}</code></div>
-        <p>当前 iframe 只验证 Workspace 能区分不同 Director 节点，尚未接入 postMessage Bridge。</p>
-      </div>
-    </main>
-  </body>
-</html>`;
+function isDirectorMessage(value: unknown): value is { protocol: string; type: string } {
+    if (!value || typeof value !== "object") return false;
+    const message = value as { protocol?: unknown; type?: unknown };
+    return message.protocol === DIRECTOR_PROTOCOL && typeof message.type === "string";
 }
 
 function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const projectId = metadataText(ctx, "projectId", `director-project-${ctx.node.id}`);
+    const projectName = metadataText(ctx, "projectName", "Untitled Director");
+    const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html", window.location.origin).toString();
+
+    useEffect(() => {
+        const onMessage = (event: MessageEvent<unknown>) => {
+            if (event.source !== iframeRef.current?.contentWindow || !isDirectorMessage(event.data)) return;
+            if (event.data.type === "READY") {
+                iframeRef.current?.contentWindow?.postMessage(
+                    {
+                        protocol: DIRECTOR_PROTOCOL,
+                        type: "INIT",
+                        payload: { nodeId: ctx.node.id, projectId, projectName },
+                    },
+                    event.origin,
+                );
+            } else if (event.data.type === "CLOSE") {
+                onClose();
+            }
+        };
+        window.addEventListener("message", onMessage);
+        return () => window.removeEventListener("message", onMessage);
+    }, [ctx.node.id, onClose, projectId, projectName]);
+
     return (
-        <div style={{ display: "flex", minHeight: 0, flex: 1, flexDirection: "column", color: ctx.theme.node.text }}>
-            <header style={{ display: "flex", flexShrink: 0, alignItems: "center", justifyContent: "space-between", gap: 16, padding: "14px 18px", borderBottom: `1px solid ${ctx.theme.node.stroke}`, background: ctx.theme.node.panel }}>
-                <div>
-                    <div style={{ fontSize: 16, fontWeight: 700 }}>Director Workspace</div>
-                    <div style={{ marginTop: 3, fontSize: 11, opacity: 0.62 }}>Phase 2 · iframe 测试壳</div>
-                </div>
-                <button type="button" style={buttonStyle(ctx)} onClick={onClose}>← 返回画布</button>
-            </header>
-            <iframe title="Director iframe test surface" srcDoc={buildDirectorTestDocument(ctx)} style={{ minHeight: 0, width: "100%", flex: 1, border: 0, background: "#fafaf9" }} />
+        <div style={{ display: "flex", minHeight: 0, flex: 1, flexDirection: "column", background: "#111113", color: ctx.theme.node.text }}>
+            <iframe ref={iframeRef} title="Blockout Web" src={blockoutWebUrl} style={{ minHeight: 0, width: "100%", flex: 1, border: 0, background: "#111113" }} />
         </div>
     );
 }
@@ -111,7 +98,7 @@ export default definePlugin({
     id: "director",
     name: "Director 导演台",
     version: "0.1.0",
-    description: "Infinite Canvas Director 节点壳，当前加载 iframe 测试页面。",
+    description: "Infinite Canvas Director 节点壳，加载 Blockout Web 并通过 Embed Bridge 初始化。",
     nodes: [
         {
             type: "director:blockout",
