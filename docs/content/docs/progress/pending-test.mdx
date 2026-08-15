@@ -37,5 +37,6 @@ The current release needs manual verification in these areas:
 - Settings import/export, Volcengine Ark protocol handling, and WebDAV-related configuration.
 - Local storage settings: the Settings page should provide a Local storage tab that reads only the `infinite-canvas` database and shows IndexedDB usage, total site usage, browser quota, quota percentage, and per-object-store record counts and content size; refreshing after local data changes should update the figures without blocking the rest of the page.
 - Plugin Workspace: register a test plugin with `Workspace`, verify double-click opens a fixed full-screen workspace, ESC and the workspace close action return to the canvas, and the existing canvas nodes, selection, viewport, and loaded state remain unchanged.
+- Director Phase 2: enable the local Director plugin, add multiple Director nodes, confirm each node opens its own full-screen iframe test workspace with the correct `nodeId`/`projectId`, and confirm returning to the canvas preserves the existing nodes.
 
 The Chinese version contains the complete item-by-item acceptance checklist.
