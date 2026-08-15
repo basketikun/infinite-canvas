@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowUp, LoaderCircle, Maximize2, Square } from "lucide-react";
 import { Button, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
+import { BorderBeam } from "border-beam";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -34,7 +35,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const { t } = useTranslation();
     const globalConfig = useEffectiveConfig();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const themeName = useThemeStore((state) => state.theme);
+    const theme = canvasThemes[themeName];
     const mode = modeOverride ?? defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode);
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
@@ -66,14 +68,22 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     };
 
     return (
-        <div
-            data-canvas-no-zoom
-            className="rounded-2xl border p-3 shadow-2xl backdrop-blur"
-            style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
+        <BorderBeam
+            size="md"
+            colorVariant="colorful"
+            theme={themeName}
+            strength={0.67}
+            borderRadius={16}
+            className="w-full"
+            data-canvas-no-zoom=""
         >
+            <div
+                className="rounded-2xl border p-3 shadow-2xl backdrop-blur"
+                style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+                onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+            >
             <CanvasPromptChipInput
                 value={prompt}
                 references={mentionReferences}
@@ -152,7 +162,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     />
                 </div>
             </Modal>
-        </div>
+            </div>
+        </BorderBeam>
     );
 }
 

@@ -3,6 +3,7 @@ import axios from "axios";
 import i18n from "@/i18n";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
+import { isWangsuConfig, requestWangsuEdit, requestWangsuGeneration } from "./wangsu";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -183,6 +184,26 @@ function validateImageSize(width: number, height: number) {
     if (Math.max(width, height) / Math.min(width, height) > IMAGE_MAX_RATIO) throw new Error(apiText("imageRatioLimit"));
     const pixels = width * height;
     if (pixels < IMAGE_MIN_PIXELS || pixels > IMAGE_MAX_PIXELS) throw new Error(apiText("imagePixelLimit"));
+}
+
+/**
+ * 由「比例 + 分辨率长边」算出显式像素尺寸,例如 "16:9" + 2048 → "2048x1152"。
+ * 超出 API 限制(边长 / 比例 / 像素)时返回 null,用于 UI 判断该组合是否可选。
+ */
+export function resolveAspectImageSize(ratio: string, longEdge: number): string | null {
+    try {
+        const parsedRatio = parseImageRatio(ratio);
+        const isLandscape = parsedRatio.width >= parsedRatio.height;
+        const longRatio = isLandscape ? parsedRatio.width / parsedRatio.height : parsedRatio.height / parsedRatio.width;
+        const longSide = Math.round(longEdge / IMAGE_SIZE_STEP) * IMAGE_SIZE_STEP;
+        const shortSide = Math.round(longSide / longRatio / IMAGE_SIZE_STEP) * IMAGE_SIZE_STEP;
+        const width = isLandscape ? longSide : shortSide;
+        const height = isLandscape ? shortSide : longSide;
+        validateImageSize(width, height);
+        return `${width}x${height}`;
+    } catch {
+        return null;
+    }
 }
 
 function resolveRequestSize(quality: string | undefined, size: string) {
@@ -743,6 +764,9 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
+    if (isWangsuConfig(requestConfig)) {
+        return requestWangsuGeneration(requestConfig, prompt, n, options);
+    }
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
@@ -803,6 +827,12 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
+    }
+
+    if (isWangsuConfig(requestConfig)) {
+        // 网宿图生图直接上传参考图，prompt 不预加「参考图N」标注（对齐参考实现）
+        if (mask) throw new Error(apiText("maskModelUnsupported"));
+        return requestWangsuEdit(requestConfig, prompt, references, n, options);
     }
 
     if (requestConfig.apiFormat === "ark") {
@@ -870,6 +900,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
     const script = resolveModelScript(config, config.model || config.textModel);
+    if (isWangsuConfig(requestConfig)) {
+        // 网宿仅接入图片生成协议，聊天/看图模型走这里会给出明确提示而不是误用 OpenAI 路径
+        throw new Error(apiText("wangsuImageOnly"));
+    }
     if (script) {
         try {
             const answer = await runModelPlugin<string>({

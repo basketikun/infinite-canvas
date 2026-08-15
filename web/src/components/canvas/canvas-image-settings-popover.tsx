@@ -89,7 +89,7 @@ function ImageSettingsPortal({
     config: AiConfig;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
 }) {
-    const width = 356;
+    const width = 320;
     const gap = 8;
     const margin = 12;
     const alignRight = placement?.endsWith("Right");
@@ -105,7 +105,7 @@ function ImageSettingsPortal({
         background: theme.toolbar.panel,
         borderRadius: 18,
         boxShadow: "0 18px 54px rgba(28, 25, 23, 0.16)",
-        padding: 18,
+        padding: 14,
         overflowY: "auto",
         color: theme.node.text,
     } as const;
@@ -113,7 +113,7 @@ function ImageSettingsPortal({
     return createPortal(
         <div
             ref={panelRef}
-            className="canvas-image-settings-popover"
+            className="canvas-image-settings-popover thin-scrollbar"
             style={style}
             onPointerDown={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}

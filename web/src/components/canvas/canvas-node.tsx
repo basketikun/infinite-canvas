@@ -65,6 +65,7 @@ type NodeContentRendererProps = {
     isBatchRoot: boolean;
     batchCount: number;
     batchExpanded: boolean;
+    isSelected: boolean;
     renderNodeContent?: (node: CanvasNodeData) => ReactNode;
     pluginContext?: CanvasNodeContext | null;
     onContentChange: (nodeId: string, content: string) => void;
@@ -401,6 +402,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         isBatchRoot={isBatchRoot}
                         batchCount={batchCount}
                         batchExpanded={batchExpanded}
+                        isSelected={isSelected}
                         renderNodeContent={renderNodeContent}
                         pluginContext={pluginContext}
                         mentionReferences={mentionReferences}
@@ -428,8 +430,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                 <ResizeHandle corner="bottom-right" onMouseDown={handleResizeMouseDown} />
             </div>
 
-            {!isGroup ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}
-            {!isGroup ? <ConnectionHandleDot side="right" visible={(definition?.hasSourceHandle ?? true) && data.type !== CanvasNodeType.Config && (hovered || isSelected || isConnecting)} onMouseDown={(event) => onConnectStart(event, data.id, "source")} /> : null}
+            {!isGroup ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} scale={scale} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}
+            {!isGroup ? <ConnectionHandleDot side="right" visible={(definition?.hasSourceHandle ?? true) && data.type !== CanvasNodeType.Config && (hovered || isSelected || isConnecting)} scale={scale} onMouseDown={(event) => onConnectStart(event, data.id, "source")} /> : null}
 
             {showPanel && !isGroup && renderPanel ? <div className="absolute left-1/2 top-full z-[70] w-[600px] -translate-x-1/2 pt-4">{renderPanel(data)}</div> : null}
         </div>
@@ -584,6 +586,7 @@ function ImageNodeContent(props: NodeContentRendererProps) {
         <ImageContent
             node={props.node}
             batchExpanded={props.batchExpanded}
+            isSelected={props.isSelected}
             onToggleBatch={props.onToggleBatch}
             onSetBatchPrimary={props.onSetBatchPrimary}
             onDuplicateBatchImage={props.onDuplicateBatchImage}
@@ -641,6 +644,7 @@ function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
 function ImageContent({
     node,
     batchExpanded,
+    isSelected,
     onToggleBatch,
     onSetBatchPrimary,
     onDuplicateBatchImage,
@@ -650,6 +654,7 @@ function ImageContent({
 }: {
     node: CanvasNodeData;
     batchExpanded: boolean;
+    isSelected: boolean;
     onToggleBatch?: () => void;
     onSetBatchPrimary?: (imageId: string) => void;
     onDuplicateBatchImage?: (imageId: string) => void;
@@ -687,13 +692,13 @@ function ImageContent({
                 )}
             </div>
             {primaryImage?.status === "error" ? <BatchImageFailureActions placement="left" onRetry={() => onRetryBatchImage?.(primaryImage.id)} onDelete={() => onDeleteBatchImage?.(primaryImage.id)} /> : null}
-            {primaryImage?.content ? (
+            {isBatchRoot && batchExpanded && primaryImage?.content ? (
                 <button type="button" className="absolute left-2.5 top-2.5 z-30 flex h-8 items-center gap-1 rounded-lg border px-2 text-[10px] font-medium shadow-[0_6px_18px_rgba(15,23,42,.16)] backdrop-blur-md transition hover:scale-[1.02]" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.activeText }} title={t("common.download")} onClick={(event) => (event.stopPropagation(), onDownloadBatchImage?.(primaryImage.id))}>
                     <Download className="size-3" />
                     {t("common.download")}
                 </button>
             ) : null}
-            {isBatchRoot ? (
+            {isBatchRoot && isSelected ? (
                 <button
                     type="button"
                     className="absolute right-2.5 top-2.5 z-30 flex h-8 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-semibold shadow-[0_6px_18px_rgba(28,25,23,.16)] backdrop-blur-md transition hover:scale-[1.02]"
@@ -832,7 +837,7 @@ function BatchFrame({ batchCount, batchExpanded, onToggleBatch, children }: { ba
                     {Array.from({ length: Math.min(batchCount - 1, 3) }).map((_, index) => (
                         <div
                             key={index}
-                            className="absolute rounded-[inherit] border shadow-[0_10px_24px_rgba(68,64,60,.12)] transition-all duration-300 group-hover/batch:translate-x-1"
+                            className="absolute rounded-3xl border shadow-[0_10px_24px_rgba(68,64,60,.12)] transition-all duration-300 group-hover/batch:translate-x-1"
                             style={{
                                 inset: 0,
                                 background: `linear-gradient(135deg, ${theme.node.panel}, ${theme.node.fill})`,
@@ -860,17 +865,18 @@ function ResizeHandle({ corner, onMouseDown }: { corner: ResizeCorner; onMouseDo
     return <div className={`absolute z-50 size-7 ${positionClass}`} onMouseDown={(event) => onMouseDown(event, corner)} />;
 }
 
-function ConnectionHandleDot({ side, visible, onMouseDown }: { side: "left" | "right"; visible: boolean; onMouseDown: (event: React.MouseEvent) => void }) {
+function ConnectionHandleDot({ side, visible, scale, onMouseDown }: { side: "left" | "right"; visible: boolean; scale: number; onMouseDown: (event: React.MouseEvent) => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     return (
         <div
-            className={`absolute top-1/2 z-30 flex size-12 -translate-y-1/2 cursor-crosshair items-center justify-center transition-opacity duration-150 ${
+            className={`absolute top-1/2 z-30 flex size-12 -mt-6 cursor-crosshair items-center justify-center transition-opacity duration-150 ${
                 side === "left" ? "-left-6" : "-right-6"
             } ${visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
+            style={{ transform: `scale(${1 / scale})`, transformOrigin: "center" }}
             onMouseDown={onMouseDown}
         >
-            <div className="size-3 rounded-full border-2 transition-all hover:scale-125" style={{ background: theme.node.panel, borderColor: theme.node.muted }} />
+            <div className="size-2.5 rounded-full border-2 transition-all hover:scale-125" style={{ background: theme.node.panel, borderColor: theme.node.muted }} />
         </div>
     );
 }

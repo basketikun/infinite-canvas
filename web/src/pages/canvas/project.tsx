@@ -2746,6 +2746,8 @@ function InfiniteCanvasPage() {
         [configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, runningNodeId],
     );
 
+    const dialogNode = dialogNodeId ? nodeById.get(dialogNodeId) || null : null;
+
     if (!projectLoaded) return <CanvasRefreshShell />;
 
     return (
@@ -2835,7 +2837,7 @@ function InfiniteCanvasPage() {
                             isConnectionTarget={connectionTargetNodeId === node.id}
                             isConnecting={Boolean(connectingParams)}
                             editRequestNonce={editingNodeId === node.id ? editRequestNonce : 0}
-                            showPanel={dialogNodeId === node.id && !selectionBox && !getNodeDefinition(node.type)?.hidePanel}
+                            showPanel={false}
                             groupChildCount={groupChildCountById.get(node.id) || 0}
                             isGroupDropTarget={dropTargetGroupId === node.id}
                             batchExpanded={expandedImageNodeId === node.id}
@@ -2843,7 +2845,6 @@ function InfiniteCanvasPage() {
                             mentionReferences={mentionReferencesByNodeId.get(node.id) || EMPTY_REFERENCES}
                             pluginHost={pluginHost}
                             registryVersion={nodeRegistryVersion}
-                            renderPanel={renderNodePanel}
                             renderNodeContent={renderNodeContentPanel}
                             onMouseDown={handleNodeMouseDown}
                             onSelectCapture={handleNodeSelectCapture}
@@ -2881,18 +2882,32 @@ function InfiniteCanvasPage() {
                             <rect width="100%" height="100%" fill={theme.canvas.selectionFill} stroke={theme.canvas.selectionStroke} strokeOpacity={0.55} strokeWidth={1 / viewport.k} strokeDasharray={`${6 / viewport.k} ${4 / viewport.k}`} />
                         </svg>
                     ) : null}
-                    {pendingConnectionCreate ? <ConnectionCreateMenu pending={pendingConnectionCreate} onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)} onClose={cancelPendingConnectionCreate} /> : null}
-                    {nodeCreatePosition ? (
-                        <NodeCreateMenu
-                            position={nodeCreatePosition}
-                            onCreate={(type) => {
-                                createNode(type, nodeCreatePosition);
-                                setNodeCreatePosition(null);
-                            }}
-                            onClose={() => setNodeCreatePosition(null)}
-                        />
-                    ) : null}
                 </InfiniteCanvas>
+
+                {/* 新增节点 / 连线菜单:渲染在 viewport 层,固定大小不随画布缩放(参考节点悬浮工具条) */}
+                {pendingConnectionCreate ? (
+                    <ConnectionCreateMenu
+                        pending={{ ...pendingConnectionCreate, position: { x: viewport.x + pendingConnectionCreate.position.x * viewport.k, y: viewport.y + pendingConnectionCreate.position.y * viewport.k } }}
+                        onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)}
+                        onClose={cancelPendingConnectionCreate}
+                    />
+                ) : null}
+                {nodeCreatePosition ? (
+                    <NodeCreateMenu
+                        position={{ x: viewport.x + nodeCreatePosition.x * viewport.k, y: viewport.y + nodeCreatePosition.y * viewport.k }}
+                        onCreate={(type) => {
+                            createNode(type, nodeCreatePosition);
+                            setNodeCreatePosition(null);
+                        }}
+                        onClose={() => setNodeCreatePosition(null)}
+                    />
+                ) : null}
+                {/* 提示词面板:渲染在 viewport 层,固定大小不随画布缩放 */}
+                {dialogNode && !selectionBox && !getNodeDefinition(dialogNode.type)?.hidePanel && dialogNode.type !== CanvasNodeType.Group ? (
+                    <div className="absolute z-[70] w-[600px] pt-4" style={{ left: viewport.x + (dialogNode.position.x + dialogNode.width / 2) * viewport.k, top: viewport.y + (dialogNode.position.y + dialogNode.height) * viewport.k, transform: "translateX(-50%)" }}>
+                        {renderNodePanel(dialogNode)}
+                    </div>
+                ) : null}
 
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || isNodeResizing || nodeImageSettingsOpen || expandedImageNodeId ? null : toolbarNode}

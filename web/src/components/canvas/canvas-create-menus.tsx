@@ -39,7 +39,7 @@ export function ConnectionCreateMenu({
                     ×
                 </button>
             </div>
-            <div className="grid gap-1">
+            <div className="grid gap-0.5">
                 <ConnectionCreateOption theme={theme} icon={<List className="size-5" />} title={t("canvas.createMenu.text")} description={t("canvas.createMenu.textDescription")} onClick={() => onCreate(CanvasNodeType.Text)} />
                 <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-5" />} title={t("canvas.createMenu.image")} onClick={() => onCreate(CanvasNodeType.Image)} />
                 <ConnectionCreateOption theme={theme} icon={<Video className="size-5" />} title={t("canvas.createMenu.video")} onClick={() => onCreate(CanvasNodeType.Video)} />
@@ -54,19 +54,19 @@ export function ConnectionCreateOption({ theme, icon, title, description, onClic
     return (
         <button
             type="button"
-            className="flex h-16 w-full cursor-pointer items-center gap-3 rounded-2xl px-3 text-left transition"
+            className="flex h-14 w-full cursor-pointer items-center gap-3 rounded-2xl px-3 text-left transition"
             style={{ color: theme.node.text }}
             onClick={onClick}
             onMouseEnter={(event) => (event.currentTarget.style.background = theme.node.fill)}
             onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
         >
-            <span className="grid size-11 shrink-0 place-items-center rounded-xl" style={{ background: theme.node.fill, color: theme.node.muted }}>
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl" style={{ background: theme.node.fill, color: theme.node.muted }}>
                 {icon}
             </span>
             <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 text-base font-semibold leading-5">{title}</span>
+                <span className="flex items-center gap-2 text-sm font-semibold leading-5">{title}</span>
                 {description ? (
-                    <span className="mt-1 block truncate text-sm" style={{ color: theme.node.muted }}>
+                    <span className="mt-1 block truncate text-xs" style={{ color: theme.node.muted }}>
                         {description}
                     </span>
                 ) : null}
@@ -105,7 +105,7 @@ export function NodeCreateMenu({ position, onCreate, onClose }: { position: Posi
                     <X className="size-4" />
                 </button>
             </div>
-            <div className="grid gap-1">
+            <div className="grid gap-0.5">
                 {definitions.map((def) => (
                     <ConnectionCreateOption key={def.type} theme={theme} icon={def.icon} title={def.title} description={def.description} onClick={() => onCreate(def.type)} />
                 ))}

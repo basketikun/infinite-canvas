@@ -3,7 +3,7 @@ import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, WANGSU_PRESET_MODELS, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
 
@@ -18,6 +18,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
         { label: "OpenAI", value: "openai" },
         { label: "Gemini", value: "gemini" },
         { label: t("config.protocols.ark"), value: "ark" },
+        { label: t("config.protocols.wangsu"), value: "wangsu" },
     ];
     const capabilityOptions: Array<{ label: string; value: ModelCapability }> = ["image", "video", "text", "audio"].map((value) => ({ label: t(`config.channelEditor.capabilities.${value}`), value: value as ModelCapability }));
 
@@ -32,7 +33,9 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
 
     const changeApiFormat = (apiFormat: ApiCallFormat) => {
         const baseUrl = !draft.baseUrl.trim() || draft.baseUrl.trim() === defaultBaseUrlForApiFormat(draft.apiFormat) ? defaultBaseUrlForApiFormat(apiFormat) : draft.baseUrl;
-        patch({ apiFormat, baseUrl });
+        // 切到网宿协议时自动填入其支持的预置模型（能力标记为生图），免去手动逐个添加
+        const models = apiFormat === "wangsu" ? WANGSU_PRESET_MODELS.map((model) => ({ ...model })) : draft.models;
+        patch({ apiFormat, baseUrl, models });
     };
 
     const applySelection = (names: string[]) => {

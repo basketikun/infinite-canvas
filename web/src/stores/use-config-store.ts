@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 
-export type ApiCallFormat = "openai" | "gemini" | "ark";
+export type ApiCallFormat = "openai" | "gemini" | "ark" | "wangsu";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
@@ -22,6 +22,8 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
+    /** Provider-specific extra credentials, e.g. wangsu's doubao / edit API keys. Optional; falls back to apiKey. */
+    extraSecrets?: Record<string, string>;
 };
 
 export type AiConfig = {
@@ -67,6 +69,13 @@ const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+const WANGSU_BASE_URL = "https://aigateway.edgecloudapp.com";
+
+export const WANGSU_PRESET_MODELS: ChannelModel[] = [
+    { name: "gemini-3.1-flash-image-preview", capability: "image" },
+    { name: "gemini-3-pro-image-preview", capability: "image" },
+    { name: "gpt-image-2", capability: "image" },
+];
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -283,6 +292,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         models: normalizeChannelModels(channel?.models),
+        extraSecrets: channel?.extraSecrets && Object.keys(channel.extraSecrets).length ? { ...channel.extraSecrets } : undefined,
     };
 }
 
@@ -342,6 +352,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
+        extraSecrets: channel.extraSecrets,
     };
 }
 
@@ -373,11 +384,12 @@ function normalizeChannels(config: AiConfig) {
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
     if (apiFormat === "gemini") return GEMINI_BASE_URL;
     if (apiFormat === "ark") return ARK_BASE_URL;
+    if (apiFormat === "wangsu") return WANGSU_BASE_URL;
     return OPENAI_BASE_URL;
 }
 
 function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
-    return apiFormat === "gemini" || apiFormat === "ark" ? apiFormat : "openai";
+    return apiFormat === "gemini" || apiFormat === "ark" || apiFormat === "wangsu" ? apiFormat : "openai";
 }
 
 function uniqueModelOptions(models: string[]) {
