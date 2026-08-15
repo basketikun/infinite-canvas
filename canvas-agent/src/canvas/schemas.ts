@@ -7,7 +7,7 @@ const viewportSchema = z.object({
   y: z.number(),
   k: z.number(),
 });
-const nodeTypeSchema = z.enum(["image", "text", "config", "video", "audio"]);
+const nodeTypeSchema = z.string().min(1);
 const generationModeSchema = z.enum(["text", "image", "video", "audio"]);
 
 /** Canvas Agent 对外提供的工具名称。 */
@@ -17,6 +17,8 @@ export const toolNames = [
   "canvas_get_state",
   "canvas_get_selection",
   "canvas_export_snapshot",
+  "canvas_plugin_get_actions",
+  "canvas_plugin_call",
   "canvas_apply_ops",
   "canvas_create_node",
   "canvas_create_attachment_nodes",
@@ -153,6 +155,8 @@ export const toolInputSchemas = {
   canvas_get_state: z.object({}).passthrough(),
   canvas_get_selection: z.object({}).passthrough(),
   canvas_export_snapshot: z.object({}).passthrough(),
+  canvas_plugin_get_actions: z.object({ nodeId: z.string() }),
+  canvas_plugin_call: z.object({ nodeId: z.string(), action: z.string(), params: recordSchema.optional() }),
   canvas_apply_ops: z.object({ ops: z.array(canvasOpSchema) }),
   canvas_create_node: z.object({
     nodeType: nodeTypeSchema,
@@ -317,6 +321,8 @@ export const toolDescriptions: Record<ToolName, string> = {
   canvas_get_state: "读取当前网页画布的节点、连线、选区和视口。",
   canvas_get_selection: "读取当前网页画布选中的节点。",
   canvas_export_snapshot: "导出当前画布快照，用于理解布局。",
+  canvas_plugin_get_actions: "读取指定插件节点当前可用的 Agent Actions。",
+  canvas_plugin_call: "调用指定插件节点的 Agent Action；插件会在自身 Workspace 或运行时内执行该动作。",
   canvas_apply_ops:
     "批量操作当前网页画布。ops 支持 add_node、update_node、delete_node、delete_connections、connect_nodes、set_viewport、select_nodes、run_generation。",
   canvas_create_node:

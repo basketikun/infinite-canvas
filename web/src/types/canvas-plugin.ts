@@ -8,6 +8,11 @@ import type { CanvasResourceKind } from "@/lib/canvas/canvas-resource-references
 // Resource emitted when a plugin node is consumed as an upstream input.
 export type CanvasNodeResource = { kind: CanvasResourceKind; text?: string; url?: string };
 export type CanvasUpstreamResource = { nodeId: string; title: string; resource: CanvasNodeResource };
+export type PluginAgentAction = { name: string; description: string; inputSchema?: unknown };
+export type CanvasNodeAgent = {
+    listActions?: (ctx: CanvasNodeContext) => PluginAgentAction[] | Promise<PluginAgentAction[]>;
+    call?: (ctx: CanvasNodeContext, action: string, params: Record<string, unknown>) => Promise<unknown>;
+};
 
 // AI generation capabilities injected by the host, reusing its model and credential configuration.
 export type GenerateOptions = { signal?: AbortSignal; references?: string[]; model?: string };
@@ -129,6 +134,7 @@ export type CanvasNodeDefinition = {
     forceInteractive?: (node: CanvasNodeData) => boolean;
     keepAspectRatio?: (node: CanvasNodeData) => boolean;
     resource?: (node: CanvasNodeData) => CanvasNodeResource | null;
+    agent?: CanvasNodeAgent;
     // Built-ins use canvas-node's internal renderer and may omit Content.
     Content?: ComponentType<{ ctx: CanvasNodeContext }>;
     Panel?: ComponentType<{ ctx: CanvasNodeContext; onClose: () => void }>;

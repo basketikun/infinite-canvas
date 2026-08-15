@@ -644,6 +644,20 @@ function InfiniteCanvasPage() {
         nodes.forEach((node) => map.set(node.id, buildNodeMentionReferences(node, nodes, connections)));
         return map;
     }, [connections, nodes]);
+    const applyAgentOpsRef = useRef<((ops?: import("@/lib/canvas/canvas-agent-ops").CanvasAgentOp[]) => unknown) | null>(null);
+    const pluginApplyAgentOps = useCallback((ops?: import("@/lib/canvas/canvas-agent-ops").CanvasAgentOp[]) => applyAgentOpsRef.current?.(ops), []);
+    const { pluginHost, renderPluginPanel, renderPluginWorkspace, buildNodeToolbarItems, listPluginActions, callPluginAction } = usePluginHost({
+        effectiveConfig,
+        isAiConfigReady,
+        openConfigDialog,
+        theme,
+        nodesRef,
+        connectionsRef,
+        viewportRef,
+        setNodes,
+        setDialogNodeId,
+        applyAgentOps: pluginApplyAgentOps,
+    });
     const { applyAgentOps } = useAgentBridge({
         projectId,
         title: currentProject?.title,
@@ -662,20 +676,10 @@ function InfiniteCanvasPage() {
         setSelectedConnectionId,
         setViewport,
         setContextMenu,
+        listPluginActions,
+        callPluginAction,
     });
-
-    const { pluginHost, renderPluginPanel, renderPluginWorkspace, buildNodeToolbarItems } = usePluginHost({
-        effectiveConfig,
-        isAiConfigReady,
-        openConfigDialog,
-        theme,
-        nodesRef,
-        connectionsRef,
-        viewportRef,
-        setNodes,
-        setDialogNodeId,
-        applyAgentOps,
-    });
+    applyAgentOpsRef.current = applyAgentOps;
     const createNode = useCallback(
         (type: CanvasNodeTypeId, position?: Position) => {
             const targetPosition = position || getCanvasCenter();

@@ -40,6 +40,8 @@ const api: BlockoutAPI = {
     ipcRenderer.on('export:closed', listener)
     return () => ipcRenderer.removeListener('export:closed', listener)
   },
+  notifyProjectSummary: () => undefined,
+  notifyThumbnail: () => undefined,
   presetsList: () => ipcRenderer.invoke('presets:list'),
   presetSave: (name, json) => ipcRenderer.invoke('presets:save', name, json),
   presetLoad: (id) => ipcRenderer.invoke('presets:load', id),

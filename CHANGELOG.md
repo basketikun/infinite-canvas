@@ -11,6 +11,7 @@
 + [新增] Director 支持读取上游画布资源，并在 Blockout Web 中显示图片、视频、音频和文本 Reference Dock。
 + [新增] Director Web 接入本地 FFmpeg 导出服务，支持原始 RGBA 帧转码、导出文件写入、拼接、取消和导出完成事件。
 + [新增] Director 导出完成后可将 Reference MP4、Main Still 和 Prompt 自动回写为画布节点，并建立 Director 到输出节点的连接。
++ [新增] Director 节点接入 Canvas Agent Plugin Actions，可读取状态并调用 Blockout 的实体、标记、镜头、编舞、时间线和截图控制；Workspace 关闭前同步项目摘要与当前帧缩略图。
 + [调整] 将生图、视频、画布节点和生成配置中的 AI 助手入口统一移入对应输入区域，并适配各自的编辑器主题。
 + [新增] 将提示词助理抽取为通用能力，接入视频创作台以及画布节点提示词和生成配置编辑器，共用文本模型配置并支持确认后回填。
 + [新增] 生图工作台提示词输入框支持 AI 对话式整理，确认后可将最终提示词回填到输入框。

@@ -1,7 +1,31 @@
 import { definePlugin, useEffect, useRef } from "@infinite-canvas/plugin-sdk";
-import type { CanvasNodeContentProps, CanvasNodeWorkspaceProps, CanvasUpstreamResource } from "@infinite-canvas/plugin-sdk";
+import type { CanvasNodeContentProps, CanvasNodeWorkspaceProps, CanvasUpstreamResource, PluginAgentAction } from "@infinite-canvas/plugin-sdk";
 
 type DirectorContext = CanvasNodeContentProps["ctx"];
+type DirectorAgentCall = (action: string, params: Record<string, unknown>) => Promise<unknown>;
+
+const directorAgentCalls = new Map<string, DirectorAgentCall>();
+const DIRECTOR_AGENT_ACTIONS: PluginAgentAction[] = [
+    ["get_state", "读取当前场景、镜头、实体、演员标记和 Camera Mark。"],
+    ["list_assets", "列出 Blockout 可用资产。"],
+    ["add_entity", "向当前场景添加一个实体。"],
+    ["move_entity", "移动或旋转一个实体。"],
+    ["delete_entity", "删除一个实体。"],
+    ["add_actor_mark", "为实体添加演员运动标记。"],
+    ["add_camera_mark", "为当前镜头添加 Camera Mark。"],
+    ["clear_camera_marks", "清除当前镜头的 Camera Marks。"],
+    ["set_shot", "修改当前镜头名称、时长、FPS 或画幅。"],
+    ["new_shot", "在当前场景新建镜头。"],
+    ["apply_framing", "应用 2S、OTS、REV、TOP、LOW 或 DUTCH 构图。"],
+    ["list_choreography_options", "列出编舞类型、风格、队形和结尾选项。"],
+    ["spawn_choreography", "在当前场景生成舞蹈、打斗或追逐编舞。"],
+    ["choreograph_entities", "为已有演员实体生成编舞标记。"],
+    ["list_motion_presets", "列出可用运动预设。"],
+    ["set_time", "设置当前播放时间。"],
+    ["play", "从头播放当前镜头。"],
+    ["stop", "停止播放。"],
+    ["screenshot", "导出当前镜头当前时间的 PNG 截图。"],
+].map(([name, description]) => ({ name, description }));
 
 const buttonStyle = (ctx: DirectorContext) => ({
     border: `1px solid ${ctx.theme.toolbar.border}`,
@@ -29,6 +53,7 @@ function DirectorContent({ ctx }: CanvasNodeContentProps) {
     const duration = metadataNumber(ctx, "duration", 5);
     const fps = metadataNumber(ctx, "fps", 24);
     const focalLength = metadataNumber(ctx, "focalLength", 35);
+    const entityCount = metadataNumber(ctx, "entityCount", 0);
     const thumbnail = metadataText(ctx, "thumbnail", "");
     const upstreamCount = ctx.getUpstreamResources().length;
 
@@ -45,7 +70,7 @@ function DirectorContent({ ctx }: CanvasNodeContentProps) {
                     <span>{duration}s · {fps}fps</span>
                     <span>{focalLength}mm</span>
                 </div>
-                <div style={{ marginTop: "auto", fontSize: 11, opacity: 0.6 }}>上游参考：{upstreamCount}</div>
+                <div style={{ marginTop: "auto", fontSize: 11, opacity: 0.6 }}>上游参考：{upstreamCount} · 实体：{entityCount}</div>
                 <button type="button" style={buttonStyle(ctx)} onMouseDown={(event) => event.stopPropagation()} onClick={() => ctx.openWorkspace()}>
                     打开导演台
                 </button>
@@ -91,6 +116,23 @@ function projectStorageKey(projectId: string, fileName: string): string {
 function createBlockoutProjectId(): string {
     const suffix = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2);
     return `director-project-${suffix}`;
+}
+
+function arrayBufferDataUrl(value: unknown): Promise<string> {
+    const bytes = value instanceof ArrayBuffer
+        ? new Uint8Array(value)
+        : ArrayBuffer.isView(value)
+            ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+            : new Uint8Array();
+    if (!bytes.length) return Promise.reject(new Error("Thumbnail payload is empty."));
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+        reader.onerror = () => reject(reader.error || new Error("Thumbnail conversion failed."));
+        const copy = new Uint8Array(bytes.byteLength);
+        copy.set(bytes);
+        reader.readAsDataURL(new Blob([copy.buffer], { type: "image/png" }));
+    });
 }
 
 const EXPORT_SERVICE_URL = "http://127.0.0.1:8787";
@@ -145,11 +187,12 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
     const projectId = storedProjectId || legacyProjectId || (generatedProjectId.current ??= createBlockoutProjectId());
     const projectName = metadataText(ctx, "projectName", "Untitled Director");
     const upstream = ctx.getUpstreamResources() as CanvasUpstreamResource[];
-    const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html?director=phase5", window.location.origin).toString();
+    const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html?director=phase8", window.location.origin).toString();
     const activeExportJobId = useRef<string | null>(null);
     const exportWritebackTimer = useRef<number | null>(null);
     const ctxRef = useRef(ctx);
     ctxRef.current = ctx;
+    const pendingAgentCalls = useRef(new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: number }>());
 
     useEffect(() => {
         if (!storedProjectId) ctx.updateMetadata({ blockoutProjectId: projectId });
@@ -334,6 +377,18 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
 
         const onMessage = (event: MessageEvent<unknown>) => {
             if (event.source !== iframeRef.current?.contentWindow || !isDirectorMessage(event.data)) return;
+            if (event.data.type === "AGENT_RESULT") {
+                const value = asRecord(event.data.payload);
+                const id = typeof value.id === "string" ? value.id : "";
+                const pending = pendingAgentCalls.current.get(id);
+                if (!pending) return;
+                window.clearTimeout(pending.timer);
+                pendingAgentCalls.current.delete(id);
+                const result = asRecord(value.result);
+                if (result.ok === true) pending.resolve(result.data);
+                else pending.reject(new Error(typeof result.error === "string" ? result.error : "Director Agent Action failed."));
+                return;
+            }
             if (event.data.type === "READY") {
                 iframeRef.current?.contentWindow?.postMessage(
                     {
@@ -343,16 +398,45 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
                     },
                     event.origin,
                 );
+            } else if (event.data.type === "PROJECT_SUMMARY_UPDATE") {
+                const summary = asRecord(event.data.payload);
+                const patch = {
+                    ...(typeof summary.sceneName === "string" ? { scene: summary.sceneName } : {}),
+                    ...(typeof summary.shotName === "string" ? { shot: summary.shotName } : {}),
+                    ...(typeof summary.duration === "number" ? { duration: summary.duration } : {}),
+                    ...(typeof summary.fps === "number" ? { fps: summary.fps } : {}),
+                    ...(typeof summary.focalLength === "number" ? { focalLength: summary.focalLength } : {}),
+                    ...(typeof summary.entityCount === "number" ? { entityCount: summary.entityCount } : {}),
+                };
+                if (Object.keys(patch).length) ctx.updateMetadata(patch);
+            } else if (event.data.type === "THUMBNAIL_UPDATE") {
+                void arrayBufferDataUrl(asRecord(event.data.payload).png).then((thumbnail) => ctx.updateMetadata({ thumbnail })).catch((error) => console.warn("[director] thumbnail update failed", error));
             } else if (event.data.type === "CLOSE") {
                 onClose();
             } else if (event.data.requestId) {
                 void handleRequest(event.data, event.origin);
             }
         };
+        const invokeAgentAction: DirectorAgentCall = (action, params) => new Promise((resolve, reject) => {
+            const id = `director-agent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+            const timer = window.setTimeout(() => {
+                pendingAgentCalls.current.delete(id);
+                reject(new Error(`Director Agent Action timed out: ${action}`));
+            }, 30_000);
+            pendingAgentCalls.current.set(id, { resolve, reject, timer });
+            iframeRef.current?.contentWindow?.postMessage({ protocol: DIRECTOR_PROTOCOL, type: "AGENT_CALL", payload: { id, action, params } }, window.location.origin);
+        });
+        directorAgentCalls.set(ctx.node.id, invokeAgentAction);
         window.addEventListener("message", onMessage);
         return () => {
             window.removeEventListener("message", onMessage);
             if (exportWritebackTimer.current !== null) window.clearTimeout(exportWritebackTimer.current);
+            directorAgentCalls.delete(ctx.node.id);
+            pendingAgentCalls.current.forEach((pending) => {
+                window.clearTimeout(pending.timer);
+                pending.reject(new Error("Director Workspace closed."));
+            });
+            pendingAgentCalls.current.clear();
         };
     }, [ctx.node.id, ctx.storage, onClose, projectId, projectName]);
 
@@ -383,11 +467,20 @@ export default definePlugin({
                 duration: 5,
                 fps: 24,
                 focalLength: 35,
+                entityCount: 0,
             },
             minimapColor: "#f97316",
             hidePanel: true,
             Content: DirectorContent,
             Workspace: DirectorWorkspace,
+            agent: {
+                listActions: async () => DIRECTOR_AGENT_ACTIONS,
+                call: async (ctx, action, params) => {
+                    const invoke = directorAgentCalls.get(ctx.node.id);
+                    if (!invoke) throw new Error("请先打开 Director Workspace，再调用 Blockout Agent Action。");
+                    return await invoke(action, params);
+                },
+            },
         },
     ],
 });

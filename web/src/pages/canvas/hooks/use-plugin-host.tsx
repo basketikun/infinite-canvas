@@ -10,7 +10,7 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { ensurePluginsLoaded } from "@/lib/canvas/plugin-loader";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { CanvasPluginWorkspace } from "@/components/canvas/canvas-plugin-workspace";
-import type { CanvasNodeToolbarItem, CanvasPluginAi, CanvasPluginHost } from "@/types/canvas-plugin";
+import type { CanvasNodeToolbarItem, CanvasPluginAi, CanvasPluginHost, PluginAgentAction } from "@/types/canvas-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
@@ -132,6 +132,20 @@ export function usePluginHost(params: PluginHostParams) {
         [applyAgentOps, closeWorkspace, openWorkspace, pluginAi, setDialogNodeId],
     );
 
+    const listPluginActions = useCallback(async (nodeId: string): Promise<PluginAgentAction[]> => {
+        const node = pluginHost.getNode(nodeId);
+        const listActions = node ? getNodeDefinition(node.type)?.agent?.listActions : undefined;
+        if (!node || !listActions) return [];
+        return await listActions(buildNodeContext(pluginHost, node, theme, viewportRef.current.k));
+    }, [pluginHost, theme, viewportRef]);
+
+    const callPluginAction = useCallback(async (nodeId: string, action: string, params: Record<string, unknown>) => {
+        const node = pluginHost.getNode(nodeId);
+        const call = node ? getNodeDefinition(node.type)?.agent?.call : undefined;
+        if (!node || !call) throw new Error("该节点没有可调用的 Plugin Agent Actions。");
+        return await call(buildNodeContext(pluginHost, node, theme, viewportRef.current.k), action, params);
+    }, [pluginHost, theme, viewportRef]);
+
     const renderPluginPanel = useCallback(
         (panelNode: CanvasNodeData) => {
             const Panel = getNodeDefinition(panelNode.type)?.Panel;
@@ -178,5 +192,5 @@ export function usePluginHost(params: PluginHostParams) {
         void ensurePluginsLoaded();
     }, []);
 
-    return { pluginHost, renderPluginPanel, renderPluginWorkspace, buildNodeToolbarItems };
+    return { pluginHost, renderPluginPanel, renderPluginWorkspace, buildNodeToolbarItems, listPluginActions, callPluginAction };
 }

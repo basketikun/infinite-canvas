@@ -17,6 +17,7 @@ import { Toasts } from './panels/Toasts'
 import { HelpOverlay, BlockingCoach } from './panels/Help'
 import logoUrl from './assets/logo.png'
 import { DISTRIBUTION } from '../shared/distribution'
+import { renderStillPngForTest } from './export/exporter'
 
 const PLATFORM_CLASS = `platform-${window.blockout.platform.platform}`
 const EMBED_PROTOCOL = 'infinite-canvas-director-v1'
@@ -30,14 +31,21 @@ function parentOrigin(): string {
   }
 }
 
-function closeEmbeddedWorkspace(): void {
-  if (IS_EMBEDDED) window.parent.postMessage({ protocol: EMBED_PROTOCOL, type: 'CLOSE' }, parentOrigin())
+async function closeEmbeddedWorkspace(): Promise<void> {
+  if (!IS_EMBEDDED) return
+  try {
+    const png = await renderStillPngForTest(useStore.getState().time, 320, 180)
+    window.blockout.notifyThumbnail(png)
+  } catch (error) {
+    console.warn('[blockout-web] thumbnail capture before close failed', error)
+  }
+  window.parent.postMessage({ protocol: EMBED_PROTOCOL, type: 'CLOSE' }, parentOrigin())
 }
 
 function EmbeddedBackButton(): JSX.Element | null {
   if (!IS_EMBEDDED) return null
   return (
-    <button className="btn small embedded-back" onClick={closeEmbeddedWorkspace}>
+    <button className="btn small embedded-back" onClick={() => void closeEmbeddedWorkspace()}>
       ← 画布
     </button>
   )

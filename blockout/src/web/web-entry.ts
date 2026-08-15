@@ -6,6 +6,32 @@ import { setDirectorResources } from './director-bridge-state'
 window.blockout = createWebBlockoutAdapter()
 
 let initializing = false
+let summaryTimer: number | null = null
+
+function publishProjectSummary(): void {
+  const state = useStore.getState()
+  const scene = state.scene()
+  const shot = state.shot()
+  const focalLength = shot?.camera.marks.length ? shot.camera.marks[shot.camera.marks.length - 1]?.focalLength : 35
+  window.blockout.notifyProjectSummary({
+    sceneName: scene?.name ?? '',
+    shotName: shot?.name ?? '',
+    duration: shot?.duration ?? 0,
+    fps: shot?.fps ?? 0,
+    focalLength: Number.isFinite(focalLength) ? focalLength : 35,
+    entityCount: scene?.entities.length ?? 0
+  })
+}
+
+function scheduleProjectSummary(): void {
+  if (summaryTimer !== null) window.clearTimeout(summaryTimer)
+  summaryTimer = window.setTimeout(() => {
+    summaryTimer = null
+    publishProjectSummary()
+  }, 500)
+}
+
+useStore.subscribe(scheduleProjectSummary)
 
 async function initializeDirectorProject(payload: Record<string, unknown>): Promise<void> {
   if (initializing) return
@@ -41,6 +67,7 @@ async function initializeDirectorProject(payload: Record<string, unknown>): Prom
     if (!useStore.getState().doc) useStore.getState().newProject(folder, projectName)
   } finally {
     initializing = false
+    scheduleProjectSummary()
   }
 }
 

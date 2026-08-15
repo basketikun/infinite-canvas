@@ -70,6 +70,8 @@ export function createWebBlockoutAdapter(): BlockoutAPI {
         const value = asRecord(payload)
         callback(String(value.jobId ?? ''), Number(value.code ?? -1), String(value.log ?? ''))
       }),
+    notifyProjectSummary: (summary) => bridge.notify('PROJECT_SUMMARY_UPDATE', summary),
+    notifyThumbnail: (png) => bridge.notify('THUMBNAIL_UPDATE', { png }),
     versions: async () => ({
       app: '5.1.1-web',
       electron: '',
