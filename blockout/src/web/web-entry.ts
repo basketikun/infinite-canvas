@@ -1,8 +1,47 @@
 import { createWebBlockoutAdapter } from './web-adapter'
 import { DIRECTOR_PROTOCOL } from './embed-bridge'
-import { useStore } from '../renderer/store'
+import { currentProjectJson, useStore } from '../renderer/store'
 
 window.blockout = createWebBlockoutAdapter()
+
+let initializing = false
+
+async function initializeDirectorProject(payload: Record<string, unknown>): Promise<void> {
+  if (initializing) return
+
+  const projectId = typeof payload.projectId === 'string' && payload.projectId ? payload.projectId : 'web-project'
+  const projectName = typeof payload.projectName === 'string' && payload.projectName ? payload.projectName : 'Untitled Director'
+  const folder = `director://${projectId}`
+  const existing = useStore.getState()
+  if (existing.doc && existing.projectFolder === folder) return
+
+  initializing = true
+  try {
+    const { json, backupJson, backupNewer } = await window.blockout.loadProject(folder)
+    const loadFromJson = useStore.getState().loadFromJson
+
+    if (backupNewer && backupJson && loadFromJson(folder, backupJson)) {
+      useStore.getState().toast('Restored unsaved work from the autosave backup — Save to keep it.', 'success')
+      return
+    }
+    if (json && loadFromJson(folder, json)) return
+    if (backupJson && loadFromJson(folder, backupJson)) {
+      useStore.getState().toast('Recovered from autosave backup.', 'success')
+      return
+    }
+
+    useStore.getState().newProject(folder, projectName)
+    const createdJson = currentProjectJson()
+    if (createdJson && (await window.blockout.saveProject(folder, createdJson))) {
+      useStore.getState().markSaved()
+    }
+  } catch (error) {
+    console.error('[blockout-web] failed to initialize Director project', error)
+    if (!useStore.getState().doc) useStore.getState().newProject(folder, projectName)
+  } finally {
+    initializing = false
+  }
+}
 
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
   if (event.source !== window.parent || !event.data || typeof event.data !== 'object') return
@@ -10,8 +49,5 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
   if (message.protocol !== DIRECTOR_PROTOCOL || message.type !== 'INIT') return
 
   const payload = message.payload && typeof message.payload === 'object' ? (message.payload as Record<string, unknown>) : {}
-  const projectId = typeof payload.projectId === 'string' && payload.projectId ? payload.projectId : 'web-project'
-  const projectName = typeof payload.projectName === 'string' && payload.projectName ? payload.projectName : 'Untitled Director'
-  const state = useStore.getState()
-  if (!state.doc) state.newProject(`director://${projectId}`, projectName)
+  void initializeDirectorProject(payload)
 })

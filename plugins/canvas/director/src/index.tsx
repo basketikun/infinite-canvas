@@ -55,19 +55,114 @@ function DirectorContent({ ctx }: CanvasNodeContentProps) {
 
 const DIRECTOR_PROTOCOL = "infinite-canvas-director-v1";
 
-function isDirectorMessage(value: unknown): value is { protocol: string; type: string } {
+type DirectorMessage = {
+    protocol: typeof DIRECTOR_PROTOCOL;
+    requestId?: string;
+    type: string;
+    payload?: unknown;
+};
+
+type StorageMeta = {
+    projectSavedAt?: number;
+    backupSavedAt?: number;
+};
+
+function isDirectorMessage(value: unknown): value is DirectorMessage {
     if (!value || typeof value !== "object") return false;
-    const message = value as { protocol?: unknown; type?: unknown };
-    return message.protocol === DIRECTOR_PROTOCOL && typeof message.type === "string";
+    const message = value as { protocol?: unknown; requestId?: unknown; type?: unknown };
+    return message.protocol === DIRECTOR_PROTOCOL && typeof message.type === "string" && (message.requestId === undefined || typeof message.requestId === "string");
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function storedJson(value: unknown): string | null {
+    if (typeof value === "string") return value;
+    const record = asRecord(value);
+    return typeof record.json === "string" ? record.json : null;
+}
+
+function projectStorageKey(projectId: string, fileName: string): string {
+    return `projects/${projectId}/${fileName}`;
+}
+
+function createBlockoutProjectId(): string {
+    const suffix = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+    return `director-project-${suffix}`;
 }
 
 function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const projectId = metadataText(ctx, "projectId", `director-project-${ctx.node.id}`);
+    const generatedProjectId = useRef<string | null>(null);
+    const storedProjectId = metadataText(ctx, "blockoutProjectId", "");
+    const legacyProjectId = metadataText(ctx, "projectId", "");
+    const projectId = storedProjectId || legacyProjectId || (generatedProjectId.current ??= createBlockoutProjectId());
     const projectName = metadataText(ctx, "projectName", "Untitled Director");
-    const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html", window.location.origin).toString();
+    const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html?director=phase4", window.location.origin).toString();
 
     useEffect(() => {
+        if (!storedProjectId) ctx.updateMetadata({ blockoutProjectId: projectId });
+    }, [ctx.node.id, ctx.updateMetadata, projectId, storedProjectId]);
+
+    useEffect(() => {
+        const respond = (requestId: string, type: string, origin: string, payload?: unknown, error?: unknown) => {
+            iframeRef.current?.contentWindow?.postMessage(
+                { protocol: DIRECTOR_PROTOCOL, requestId, type: `${type}:RESULT`, payload, error: error ? String(error) : undefined },
+                origin || window.location.origin,
+            );
+        };
+
+        const handleRequest = async (message: DirectorMessage, origin: string) => {
+            if (!message.requestId) return;
+            const payload = asRecord(message.payload);
+
+            try {
+                if (message.type === "PROJECT_LOAD") {
+                    const [projectValue, backupValue, metaValue] = await Promise.all([
+                        ctx.storage.get(projectStorageKey(projectId, "project.json")),
+                        ctx.storage.get(projectStorageKey(projectId, "project.autosave.json")),
+                        ctx.storage.get<StorageMeta>(projectStorageKey(projectId, "meta")),
+                    ]);
+                    const meta = asRecord(metaValue);
+                    const projectSavedAt = typeof meta.projectSavedAt === "number" ? meta.projectSavedAt : 0;
+                    const backupSavedAt = typeof meta.backupSavedAt === "number" ? meta.backupSavedAt : 0;
+                    respond(message.requestId, message.type, origin, {
+                        json: storedJson(projectValue),
+                        backupJson: storedJson(backupValue),
+                        backupNewer: backupSavedAt > projectSavedAt,
+                        folder: `director://${projectId}`,
+                    });
+                    return;
+                }
+
+                if (message.type === "PROJECT_SAVE" || message.type === "PROJECT_SAVE_BACKUP") {
+                    if (typeof payload.json !== "string") throw new Error("Project JSON is missing.");
+                    const metaKey = projectStorageKey(projectId, "meta");
+                    const currentMeta = asRecord(await ctx.storage.get<StorageMeta>(metaKey));
+                    const now = Date.now();
+                    if (message.type === "PROJECT_SAVE") {
+                        await ctx.storage.set(projectStorageKey(projectId, "project.json"), payload.json);
+                        await ctx.storage.set(metaKey, { ...currentMeta, projectSavedAt: now });
+                    } else {
+                        await ctx.storage.set(projectStorageKey(projectId, "project.autosave.json"), { json: payload.json, savedAt: now });
+                        await ctx.storage.set(metaKey, { ...currentMeta, backupSavedAt: now });
+                    }
+                    respond(message.requestId, message.type, origin, true);
+                    return;
+                }
+
+                if (message.type === "PRESETS_LIST") {
+                    respond(message.requestId, message.type, origin, []);
+                    return;
+                }
+
+                respond(message.requestId, message.type, origin, { ok: false, error: `${message.type} is not available in Director Workspace.` });
+            } catch (error) {
+                respond(message.requestId, message.type, origin, undefined, error);
+            }
+        };
+
         const onMessage = (event: MessageEvent<unknown>) => {
             if (event.source !== iframeRef.current?.contentWindow || !isDirectorMessage(event.data)) return;
             if (event.data.type === "READY") {
@@ -81,11 +176,13 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
                 );
             } else if (event.data.type === "CLOSE") {
                 onClose();
+            } else if (event.data.requestId) {
+                void handleRequest(event.data, event.origin);
             }
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [ctx.node.id, onClose, projectId, projectName]);
+    }, [ctx.node.id, ctx.storage, onClose, projectId, projectName]);
 
     return (
         <div style={{ display: "flex", minHeight: 0, flex: 1, flexDirection: "column", background: "#111113", color: ctx.theme.node.text }}>
@@ -107,7 +204,7 @@ export default definePlugin({
             description: "打开全屏 Director Workspace",
             defaultSize: { width: 360, height: 240 },
             defaultMetadata: {
-                projectId: "",
+                blockoutProjectId: "",
                 projectName: "Untitled Director",
                 scene: "Scene 01",
                 shot: "Shot 01",
