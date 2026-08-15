@@ -63,6 +63,9 @@ export type CanvasNodeContext = {
     // Opens or closes the custom panel below this node; the definition must provide a Panel.
     openPanel: () => void;
     closePanel: () => void;
+    // Opens or closes the full-screen workspace; the definition must provide a Workspace.
+    openWorkspace: () => void;
+    closeWorkspace: () => void;
     // Plugin-private persistence isolated by namespace.
     storage: PluginStorage;
 };
@@ -88,6 +91,9 @@ export type CanvasPluginHost = {
     // Opens or closes the custom panel below a specified node.
     openPanel: (nodeId: string) => void;
     closePanel: () => void;
+    // Opens or closes the full-screen workspace for a specified node.
+    openWorkspace: (nodeId: string) => void;
+    closeWorkspace: () => void;
 };
 
 // Configuration for reusing the host's built-in generation panel; see SDK CanvasBuiltinPanelConfig.
@@ -121,6 +127,7 @@ export type CanvasNodeDefinition = {
     // Built-ins use canvas-node's internal renderer and may omit Content.
     Content?: ComponentType<{ ctx: CanvasNodeContext }>;
     Panel?: ComponentType<{ ctx: CanvasNodeContext; onClose: () => void }>;
+    Workspace?: ComponentType<{ ctx: CanvasNodeContext; onClose: () => void }>;
     toolbar?: (ctx: CanvasNodeContext) => CanvasNodeToolbarItem[];
     onDoubleClick?: (ctx: CanvasNodeContext) => boolean; // Return true when handled.
 };

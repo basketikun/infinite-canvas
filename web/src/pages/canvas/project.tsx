@@ -664,7 +664,7 @@ function InfiniteCanvasPage() {
         setContextMenu,
     });
 
-    const { pluginHost, renderPluginPanel, buildNodeToolbarItems } = usePluginHost({
+    const { pluginHost, renderPluginPanel, renderPluginWorkspace, buildNodeToolbarItems } = usePluginHost({
         effectiveConfig,
         isAiConfigReady,
         openConfigDialog,
@@ -3109,6 +3109,7 @@ function InfiniteCanvasPage() {
 
                 <AssetPickerModal open={assetPickerOpen} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} />
             </section>
+            {renderPluginWorkspace()}
         </main>
     );
 }

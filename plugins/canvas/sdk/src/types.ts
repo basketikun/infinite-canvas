@@ -233,6 +233,9 @@ export type CanvasNodeContext = {
     // 打开/关闭本节点下方的自定义 Panel(需在节点定义里提供 Panel)
     openPanel: () => void;
     closePanel: () => void;
+    // 打开/关闭全屏 Workspace(需在节点定义里提供 Workspace)
+    openWorkspace: () => void;
+    closeWorkspace: () => void;
     // 插件私有持久化,按插件 id 命名空间隔离
     storage: PluginStorage;
 };
@@ -253,6 +256,7 @@ export type CanvasNodeToolbarItem = {
 
 export type CanvasNodeContentProps = { ctx: CanvasNodeContext };
 export type CanvasNodePanelProps = { ctx: CanvasNodeContext; onClose: () => void };
+export type CanvasNodeWorkspaceProps = { ctx: CanvasNodeContext; onClose: () => void };
 
 // 复用宿主内置生成面板(与图片/视频/文本节点同一个组件:模型选择、参数设置、
 // 提示词库、运行/停止状态全部一致)。声明它即可获得完整生成体验,无需自写面板。
@@ -292,6 +296,7 @@ export type CanvasNodeDefinition = {
     // 渲染
     Content?: ComponentType<CanvasNodeContentProps>;
     Panel?: ComponentType<CanvasNodePanelProps>; // 节点下方面板(自定义)
+    Workspace?: ComponentType<CanvasNodeWorkspaceProps>; // 全屏工作区
     toolbar?: (ctx: CanvasNodeContext) => CanvasNodeToolbarItem[];
     onDoubleClick?: (ctx: CanvasNodeContext) => boolean; // 返回 true 表示已处理
 };

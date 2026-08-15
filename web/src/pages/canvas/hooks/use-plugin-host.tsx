@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
@@ -9,6 +9,7 @@ import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { ensurePluginsLoaded } from "@/lib/canvas/plugin-loader";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { CanvasPluginWorkspace } from "@/components/canvas/canvas-plugin-workspace";
 import type { CanvasNodeToolbarItem, CanvasPluginAi, CanvasPluginHost } from "@/types/canvas-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
@@ -36,6 +37,7 @@ type PluginHostParams = {
 export function usePluginHost(params: PluginHostParams) {
     const { t } = useTranslation();
     const { effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
+    const [workspaceNodeId, setWorkspaceNodeId] = useState<string | null>(null);
 
     // Host capabilities available to plugin nodes; methods receive nodeId and are not bound to a specific node.
     const pluginAi = useMemo<CanvasPluginAi>(() => {
@@ -80,6 +82,16 @@ export function usePluginHost(params: PluginHostParams) {
         };
     }, [effectiveConfig, isAiConfigReady, openConfigDialog, t]);
 
+    const openWorkspace = useCallback(
+        (nodeId: string) => {
+            const node = nodesRef.current.find((item) => item.id === nodeId);
+            if (!node || !getNodeDefinition(node.type)?.Workspace) return;
+            setWorkspaceNodeId(nodeId);
+        },
+        [nodesRef],
+    );
+    const closeWorkspace = useCallback(() => setWorkspaceNodeId(null), []);
+
     const pluginHost = useMemo<CanvasPluginHost>(
         () => ({
             getNode: (id) => nodesRef.current.find((node) => node.id === id) || null,
@@ -101,8 +113,10 @@ export function usePluginHost(params: PluginHostParams) {
             ai: pluginAi,
             openPanel: (nodeId) => setDialogNodeId(nodeId),
             closePanel: () => setDialogNodeId(null),
+            openWorkspace,
+            closeWorkspace,
         }),
-        [applyAgentOps, pluginAi],
+        [applyAgentOps, closeWorkspace, openWorkspace, pluginAi, setDialogNodeId],
     );
 
     const renderPluginPanel = useCallback(
@@ -114,6 +128,15 @@ export function usePluginHost(params: PluginHostParams) {
         },
         [pluginHost, theme],
     );
+
+    const renderPluginWorkspace = useCallback(() => {
+        if (!workspaceNodeId) return null;
+        const workspaceNode = pluginHost.getNode(workspaceNodeId);
+        const definition = workspaceNode ? getNodeDefinition(workspaceNode.type) : undefined;
+        if (!workspaceNode || !definition?.Workspace) return null;
+        const ctx = buildNodeContext(pluginHost, workspaceNode, theme, viewportRef.current.k, true);
+        return <CanvasPluginWorkspace key={workspaceNode.id} definition={definition} ctx={ctx} onClose={closeWorkspace} />;
+    }, [closeWorkspace, pluginHost, theme, viewportRef, workspaceNodeId]);
 
     // Build the node toolbar from plugin items and a host-provided interaction/move toggle when enabled.
     const buildNodeToolbarItems = useCallback(
@@ -142,5 +165,5 @@ export function usePluginHost(params: PluginHostParams) {
         void ensurePluginsLoaded();
     }, []);
 
-    return { pluginHost, renderPluginPanel, buildNodeToolbarItems };
+    return { pluginHost, renderPluginPanel, renderPluginWorkspace, buildNodeToolbarItems };
 }
