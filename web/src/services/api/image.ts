@@ -185,6 +185,26 @@ function validateImageSize(width: number, height: number) {
     if (pixels < IMAGE_MIN_PIXELS || pixels > IMAGE_MAX_PIXELS) throw new Error(apiText("imagePixelLimit"));
 }
 
+/**
+ * 由「比例 + 分辨率长边」算出显式像素尺寸,例如 "16:9" + 2048 → "2048x1152"。
+ * 超出 API 限制(边长 / 比例 / 像素)时返回 null,用于 UI 判断该组合是否可选。
+ */
+export function resolveAspectImageSize(ratio: string, longEdge: number): string | null {
+    try {
+        const parsedRatio = parseImageRatio(ratio);
+        const isLandscape = parsedRatio.width >= parsedRatio.height;
+        const longRatio = isLandscape ? parsedRatio.width / parsedRatio.height : parsedRatio.height / parsedRatio.width;
+        const longSide = Math.round(longEdge / IMAGE_SIZE_STEP) * IMAGE_SIZE_STEP;
+        const shortSide = Math.round(longSide / longRatio / IMAGE_SIZE_STEP) * IMAGE_SIZE_STEP;
+        const width = isLandscape ? longSide : shortSide;
+        const height = isLandscape ? shortSide : longSide;
+        validateImageSize(width, height);
+        return `${width}x${height}`;
+    } catch {
+        return null;
+    }
+}
+
 function resolveRequestSize(quality: string | undefined, size: string) {
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;

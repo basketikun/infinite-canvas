@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import { resolveAspectImageSize } from "@/services/api/image";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const qualityOptions = [
@@ -22,16 +23,51 @@ const aspectOptions = [
     { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait" },
     { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape" },
     { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait" },
-    { value: "1:1-2k", label: "1:1(2k)", size: "2048x2048", width: 2048, height: 2048, icon: "square" },
-    { value: "16:9-2k", label: "16:9(2k)", size: "2048x1152", width: 2048, height: 1152, icon: "landscape" },
-    { value: "9:16-2k", label: "9:16(2k)", size: "1152x2048", width: 1152, height: 2048, icon: "portrait" },
-    { value: "16:9-4k", label: "16:9(4k)", size: "3840x2160", width: 3840, height: 2160, icon: "landscape" },
-    { value: "9:16-4k", label: "9:16(4k)", size: "2160x3840", width: 2160, height: 3840, icon: "portrait" },
     { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
 ];
 
+// 分辨率:长边像素。与比例自由组合,算出显式像素尺寸(质量保持独立)。
+const resolutionOptions = [
+    { value: "auto", label: "auto" },
+    { value: "1k", label: "1K", longEdge: 1024 },
+    { value: "2k", label: "2K", longEdge: 2048 },
+    { value: "4k", label: "4K", longEdge: 3840 },
+];
+const RESOLUTION_ORDER = ["4k", "2k", "1k"];
+
+function matchAspect(activeSize: string, options: typeof aspectOptions) {
+    if (!activeSize) return null;
+    if (activeSize === "auto") return options.find((item) => item.value === "auto") || null;
+    const exact = options.find((item) => item.value === activeSize);
+    if (exact) return exact;
+    const dims = activeSize.match(/^(\d+)x(\d+)$/);
+    if (!dims) return null;
+    const target = Number(dims[1]) / Number(dims[2]);
+    let best: (typeof options)[number] | null = null;
+    let bestDiff = Infinity;
+    for (const item of options) {
+        if (item.width <= 0 || item.height <= 0) continue;
+        const diff = Math.abs(item.width / item.height - target);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            best = item;
+        }
+    }
+    return best;
+}
+
+function matchResolution(activeSize: string): string {
+    if (!activeSize || activeSize === "auto") return "auto";
+    const dims = activeSize.match(/^(\d+)x(\d+)$/);
+    if (!dims) return "auto";
+    const longEdge = Math.max(Number(dims[1]), Number(dims[2]));
+    if (longEdge <= 1536) return "1k";
+    if (longEdge <= 2944) return "2k";
+    return "4k";
+}
+
 export const imageQualityOptions = qualityOptions.map((item) => ({ value: item.value, get label() { return i18n.t(`settingsPanels.common.${item.labelKey}`); } }));
-export const imageAspectOptions = aspectOptions.map((item) => ({ value: item.size || item.value, label: item.label }));
+export const imageAspectOptions = aspectOptions.map((item) => ({ value: item.value, label: item.label }));
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
@@ -50,11 +86,49 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const transparentBackground = config.background === "transparent";
-    const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
+    const selectedAspect = matchAspect(activeSize, aspectOptions);
+    const selectedResolution = matchResolution(activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
     const selectAspect = (value: string) => {
-        const option = aspectOptions.find((item) => item.value === value);
-        onConfigChange("size", option?.size || option?.value || "auto");
+        if (value === "auto") {
+            onConfigChange("size", "auto");
+            return;
+        }
+        const currentRes = resolutionOptions.find((item) => item.value === selectedResolution);
+        if (currentRes?.longEdge) {
+            // 保持当前分辨率优先;当前分辨率下该比例不可行时,依次降级到 2k / 1k
+            const startIndex = RESOLUTION_ORDER.indexOf(currentRes.value);
+            for (let i = startIndex; i < RESOLUTION_ORDER.length; i++) {
+                const target = resolutionOptions.find((item) => item.value === RESOLUTION_ORDER[i]);
+                if (!target?.longEdge) continue;
+                const size = resolveAspectImageSize(value, target.longEdge);
+                if (size) {
+                    onConfigChange("size", size);
+                    return;
+                }
+            }
+            onConfigChange("size", value);
+            return;
+        }
+        onConfigChange("size", value);
+    };
+    const selectResolution = (value: string) => {
+        if (value === "auto") {
+            onConfigChange("size", selectedAspect && selectedAspect.value !== "auto" ? selectedAspect.value : "auto");
+            return;
+        }
+        const res = resolutionOptions.find((item) => item.value === value);
+        if (!res?.longEdge) return;
+        const aspect = selectedAspect && selectedAspect.value !== "auto" ? selectedAspect.value : "1:1";
+        const size = resolveAspectImageSize(aspect, res.longEdge);
+        if (size) onConfigChange("size", size);
+    };
+    const resolutionDisabled = (value: string) => {
+        const res = resolutionOptions.find((item) => item.value === value);
+        if (!res?.longEdge) return false;
+        const aspect = selectedAspect && selectedAspect.value !== "auto" ? selectedAspect.value : null;
+        if (!aspect) return true;
+        return resolveAspectImageSize(aspect, res.longEdge) === null;
     };
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 1024));
@@ -105,12 +179,12 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 </div>
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.aspectRatio")}</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
+                    <div className="grid grid-cols-5 gap-2">
                         {aspectOptions.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
-                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                className="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
                                 style={{ borderColor: selectedAspect?.value === item.value ? theme.node.text : theme.node.stroke, background: "transparent", color: theme.node.text }}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onClick={() => selectAspect(item.value)}
@@ -118,6 +192,22 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                 <AspectIcon type={item.icon} width={item.width} height={item.height} color={theme.node.text} />
                                 <span>{item.label}</span>
                             </button>
+                        ))}
+                    </div>
+                </div>
+                <div className="space-y-2.5">
+                    <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.resolution")}</SettingTitle>
+                    <div className="grid grid-cols-4 gap-2.5">
+                        {resolutionOptions.map((item) => (
+                            <OptionPill
+                                key={item.value}
+                                selected={selectedResolution === item.value}
+                                disabled={resolutionDisabled(item.value)}
+                                theme={theme}
+                                onClick={() => selectResolution(item.value)}
+                            >
+                                {item.value === "auto" ? t("settingsPanels.common.auto") : item.label}
+                            </OptionPill>
                         ))}
                     </div>
                 </div>
@@ -166,14 +256,20 @@ export function imageQualityLabel(value: string) {
 }
 
 export function imageSizeLabel(size: string) {
-    return aspectOptions.find((item) => (item.size || item.value) === size || item.value === size)?.label || size;
+    if (/^\d+x\d+$/.test(size)) {
+        const aspect = matchAspect(size, aspectOptions);
+        const resLabel = resolutionOptions.find((item) => item.value === matchResolution(size))?.label;
+        return aspect && aspect.value !== "auto" && resLabel ? `${aspect.label} ${resLabel}` : size;
+    }
+    return aspectOptions.find((item) => item.value === size)?.label || size;
 }
 
-function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
+function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
     return (
         <button
             type="button"
-            className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80"
+            disabled={disabled}
+            className={`h-9 rounded-full border px-2 text-sm transition ${disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:opacity-80"}`}
             style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={onClick}
@@ -232,11 +328,11 @@ function CountInput({ value, max, theme, onChange }: { value: number; max: numbe
 function AspectIcon({ type, width, height, color }: { type: string; width: number; height: number; color: string }) {
     if (type === "auto") return null;
     const ratio = width / Math.max(1, height);
-    const boxWidth = ratio >= 1 ? 24 : Math.max(10, 24 * ratio);
-    const boxHeight = ratio >= 1 ? Math.max(10, 24 / ratio) : 24;
+    const boxWidth = ratio >= 1 ? 20 : Math.max(8, 20 * ratio);
+    const boxHeight = ratio >= 1 ? Math.max(8, 20 / ratio) : 20;
     return (
-        <span className="grid h-7 w-9 place-items-center">
-            <span className="border-2" style={{ width: boxWidth, height: boxHeight, borderColor: color }} />
+        <span className="grid h-6 w-8 place-items-center">
+            <span className="rounded-[3px] border-2" style={{ width: boxWidth, height: boxHeight, borderColor: color }} />
         </span>
     );
 }
