@@ -81,3 +81,4 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Director 第四阶段：创建 Director 节点，在 Blockout 中添加人物和 Camera Mark，保存并关闭 Workspace 后刷新 Infinite Canvas，再打开同一个节点；场景应从插件存储恢复，Undo/Redo 仍可使用，自动保存过程中不应出现 Bridge 或存储错误。
 - Director 第五阶段：将图片、视频和文本节点连接到 Director，确认节点摘要中的上游参考数量更新；打开 Workspace 后，Reference Dock 应显示当前图片/视频预览和文本 Brief。修改画布连线、关闭并重新打开 Director 后，列表应重新计算，且不应把上游源数据复制到 Director metadata。
 - Director 第六阶段：启动 `director-export-service`（默认 `127.0.0.1:8787`），在嵌入式 Blockout Deliver 面板导出一个短镜头；确认 Clean/Depth/Normal MP4 按镜头原始 FPS 和尺寸接收 RGBA 帧，并验证 Stills、Prompt、Metadata、ComfyUI workflow、GLB/glTF 文件、取消、拼接、产物列表和 ZIP 打包。停止服务后，Workspace 应显示明确的导出服务错误，不应一直等待。
+- Director 第七阶段：成功导出镜头后，确认画布自动创建或更新 `Director Reference MP4`、`Director Main Still`、`Director Prompt` 三个节点，并写入可用的视频/图片/文本内容，同时自动建立 `Director → Output` 连线；重复导出时应更新原节点而不是重复创建。GLB、Metadata、ComfyUI JSON 和完整 ZIP 仍应保留在 Director 导出包中，不默认创建额外节点。

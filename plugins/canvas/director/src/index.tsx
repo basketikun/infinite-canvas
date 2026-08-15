@@ -131,6 +131,12 @@ function absoluteExportArtifacts(value: unknown) {
     }));
 }
 
+type ExportArtifact = { name: string; url?: string; mimeType?: string; size?: number };
+
+function findExportArtifact(artifacts: ExportArtifact[], predicate: (name: string) => boolean) {
+    return artifacts.find((artifact) => typeof artifact.name === "string" && predicate(artifact.name.toLowerCase()));
+}
+
 function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const generatedProjectId = useRef<string | null>(null);
@@ -141,6 +147,9 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
     const upstream = ctx.getUpstreamResources() as CanvasUpstreamResource[];
     const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html?director=phase5", window.location.origin).toString();
     const activeExportJobId = useRef<string | null>(null);
+    const exportWritebackTimer = useRef<number | null>(null);
+    const ctxRef = useRef(ctx);
+    ctxRef.current = ctx;
 
     useEffect(() => {
         if (!storedProjectId) ctx.updateMetadata({ blockoutProjectId: projectId });
@@ -152,6 +161,53 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
                 { protocol: DIRECTOR_PROTOCOL, requestId, type: `${type}:RESULT`, payload, error: error ? String(error) : undefined },
                 origin || window.location.origin,
             );
+        };
+
+        const syncExportToCanvas = async (jobId: string) => {
+            if (activeExportJobId.current !== jobId) return;
+            const response = await exportServiceRequest<{ artifacts?: ExportArtifact[] }>(`/exports/${encodeURIComponent(jobId)}/artifacts`);
+            if (activeExportJobId.current !== jobId) return;
+            const artifacts = Array.isArray(response.artifacts) ? response.artifacts : [];
+            const reference = findExportArtifact(artifacts, (name) => name.endsWith("_reference.mp4"));
+            const still = findExportArtifact(artifacts, (name) => name.includes("/stills/") && (name.endsWith("_first.png") || name.endsWith("_mark-1.png")));
+            const prompt = findExportArtifact(artifacts, (name) => name.endsWith("/prompt.txt") || name === "prompt.txt");
+            const node = ctxRef.current.getNode(ctx.node.id);
+            const baseX = (node?.position.x ?? 0) + (node?.width ?? 360) + 80;
+            const baseY = node?.position.y ?? 0;
+            const outputSpecs: Array<{ key: string; type: "video" | "image" | "text"; title: string; url?: string; content?: string; mimeType?: string }> = [];
+            if (reference?.url) outputSpecs.push({ key: "referenceVideo", type: "video", title: "Director Reference MP4", url: reference.url, mimeType: reference.mimeType || "video/mp4" });
+            if (still?.url) outputSpecs.push({ key: "mainStill", type: "image", title: "Director Main Still", url: still.url, mimeType: still.mimeType || "image/png" });
+            if (prompt?.url) {
+                const promptResponse = await fetch(prompt.url);
+                const content = promptResponse.ok ? await promptResponse.text() : "";
+                if (content.trim()) outputSpecs.push({ key: "prompt", type: "text", title: "Director Prompt", content, mimeType: "text/plain" });
+            }
+            const ops = outputSpecs.flatMap((spec, index) => {
+                const id = `${ctx.node.id}-output-${spec.key}`;
+                const current = ctxRef.current.getNode(id);
+                const metadata = {
+                    content: spec.content || spec.url || "",
+                    status: "success" as const,
+                    mimeType: spec.mimeType,
+                    source: "director:blockout",
+                    exportJobId: jobId,
+                    exportArtifact: spec.key,
+                };
+                const nodeOp = current
+                    ? { type: "update_node" as const, id, patch: { title: spec.title }, metadata }
+                    : { type: "add_node" as const, id, nodeType: spec.type, title: spec.title, position: { x: baseX + index * 380, y: baseY + index * 260 }, width: spec.type === "text" ? 340 : 360, height: spec.type === "text" ? 220 : 240, metadata };
+                const connection = { type: "connect_nodes" as const, fromNodeId: ctx.node.id, toNodeId: id };
+                return [nodeOp, connection];
+            });
+            if (ops.length) ctxRef.current.applyOps(ops);
+        };
+
+        const scheduleExportWriteback = (jobId: string) => {
+            if (exportWritebackTimer.current !== null) window.clearTimeout(exportWritebackTimer.current);
+            exportWritebackTimer.current = window.setTimeout(() => {
+                exportWritebackTimer.current = null;
+                void syncExportToCanvas(jobId).catch((error) => console.warn("[director] export writeback failed", error));
+            }, 750);
         };
 
         const handleRequest = async (message: DirectorMessage, origin: string) => {
@@ -200,6 +256,7 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
 
                 if (message.type === "EXPORT_BEGIN") {
                     if (typeof payload.jobId !== "string" || typeof payload.outPath !== "string") throw new Error("Export job is missing jobId or outPath.");
+                    if (exportWritebackTimer.current !== null) window.clearTimeout(exportWritebackTimer.current);
                     await exportServiceRequest("/exports", { method: "POST", body: JSON.stringify({ jobId: payload.jobId, outPath: payload.outPath, opts: payload.opts }) });
                     activeExportJobId.current = payload.jobId;
                     respond(message.requestId, message.type, origin, true);
@@ -233,6 +290,7 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
                             packageUrl: exportServiceUrl(`/exports/${encodeURIComponent(payload.jobId)}/package.zip`),
                         },
                     }, origin || window.location.origin);
+                    if (result.ok === true) scheduleExportWriteback(payload.jobId);
                     respond(message.requestId, message.type, origin, result.ok === true);
                     return;
                 }
@@ -292,7 +350,10 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
             }
         };
         window.addEventListener("message", onMessage);
-        return () => window.removeEventListener("message", onMessage);
+        return () => {
+            window.removeEventListener("message", onMessage);
+            if (exportWritebackTimer.current !== null) window.clearTimeout(exportWritebackTimer.current);
+        };
     }, [ctx.node.id, ctx.storage, onClose, projectId, projectName]);
 
     return (
