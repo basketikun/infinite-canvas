@@ -19,6 +19,7 @@ import {
 import { useStore } from '../store'
 import { populateFromReference } from '../ai/populate'
 import { uiText, useBlockoutI18n } from '../i18n'
+import { CustomSelect } from '../components/CustomSelect'
 
 interface PresetInfo {
   id: string
@@ -157,13 +158,11 @@ function Sequences(): JSX.Element {
       <div className="panel-title">{t('library.sequences')}</div>
       <div className="field">
         <label>{t('library.type')}</label>
-        <select value={type} onChange={(e) => setType(e.target.value as SequenceType)}>
-          {TYPE_LABELS.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+        <CustomSelect
+          value={type}
+          onChange={(value) => setType(value as SequenceType)}
+          options={TYPE_LABELS.map((item) => ({ value: item.id, label: item.label }))}
+        />
       </div>
       <div className="field-row">
         <div className="field" style={{ flex: 1 }}>
@@ -181,13 +180,11 @@ function Sequences(): JSX.Element {
         </div>
         <div className="field" style={{ flex: 2 }}>
           <label>{t('library.style')}</label>
-          <select value={activeStyle} onChange={(e) => setStyle(e.target.value)}>
-            {styles.map((s) => (
-              <option key={s.id} value={s.id}>
-                {uiText(s.name)}
-              </option>
-            ))}
-          </select>
+          <CustomSelect
+            value={activeStyle}
+            onChange={setStyle}
+            options={styles.map((s) => ({ value: s.id, label: uiText(s.name) }))}
+          />
         </div>
       </div>
       <button
@@ -274,24 +271,20 @@ function Choreographer(): JSX.Element {
       <div className="panel-title">{t('library.choreographer')}</div>
       <div className="field">
         <label>编舞类型</label>
-        <select value={kind} onChange={(e) => setKind(e.target.value as ChoreoKind)}>
-          {KIND_LABELS.map((k) => (
-            <option key={k.id} value={k.id}>
-              {k.label}
-            </option>
-          ))}
-        </select>
+        <CustomSelect
+          value={kind}
+          onChange={(value) => setKind(value as ChoreoKind)}
+          options={KIND_LABELS.map((item) => ({ value: item.id, label: item.label }))}
+        />
       </div>
       <div className="field-row">
         <div className="field" style={{ flex: 2 }}>
           <label>风格</label>
-          <select value={activeStyle} onChange={(e) => setStyle(e.target.value)}>
-            {styles.map((s) => (
-              <option key={s.id} value={s.id}>
-                {uiText(s.name)}
-              </option>
-            ))}
-          </select>
+          <CustomSelect
+            value={activeStyle}
+            onChange={setStyle}
+            options={styles.map((s) => ({ value: s.id, label: uiText(s.name) }))}
+          />
         </div>
         <div className="field" style={{ flex: 1 }}>
           <label>表演者</label>
@@ -339,13 +332,11 @@ function Choreographer(): JSX.Element {
         {(kind === 'fight' || kind === 'chase') && (
           <div className="field" style={{ flex: 2 }}>
             <label>结尾方式</label>
-            <select value={activeEnding} onChange={(e) => setEnding(e.target.value)}>
-              {endings.map((en) => (
-                <option key={en.id} value={en.id}>
-                  {uiText(en.name)}
-                </option>
-              ))}
-            </select>
+            <CustomSelect
+              value={activeEnding}
+              onChange={setEnding}
+              options={endings.map((en) => ({ value: en.id, label: uiText(en.name) }))}
+            />
           </div>
         )}
       </div>
@@ -353,13 +344,11 @@ function Choreographer(): JSX.Element {
         <>
           <div className="field">
             <label>队形</label>
-            <select value={formation} onChange={(e) => setFormation(e.target.value as FormationId)}>
-              {choreoFormations().map((f) => (
-                <option key={f.id} value={f.id}>
-                  {uiText(f.name)}
-                </option>
-              ))}
-            </select>
+            <CustomSelect
+              value={formation}
+              onChange={(value) => setFormation(value as FormationId)}
+              options={choreoFormations().map((f) => ({ value: f.id, label: uiText(f.name) }))}
+            />
           </div>
           <div className="field-row" style={{ gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
@@ -757,34 +746,28 @@ export function Library(): JSX.Element {
       {/* Browse controls: filter to one category, or place from a list. */}
       <div className="panel-section" style={{ paddingBottom: 4 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <select
+          <CustomSelect
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value as EntityCategory | 'all')}
+            onChange={(value) => setCategoryFilter(value as EntityCategory | 'all')}
+            options={[
+              { value: 'all', label: t('library.allCategories') },
+              ...CATEGORY_ORDER.map((c) => ({ value: c.key, label: categoryLabels[c.key] }))
+            ]}
             title="Show one category at a time"
-          >
-            <option value="all">{t('library.allCategories')}</option>
-            {CATEGORY_ORDER.map((c) => (
-              <option key={c.key} value={c.key}>
-                {categoryLabels[c.key]}
-              </option>
-            ))}
-          </select>
-          <select
+          />
+          <CustomSelect
             value={placingAssetId && ASSET_CATALOG.some((a) => a.id === placingAssetId) ? placingAssetId : ''}
-            onChange={(e) => setPlacingAsset(e.target.value || null)}
+            onChange={(value) => setPlacingAsset(value || null)}
+            options={[{ value: '', label: t('library.placeFromList') }]}
+            groups={CATEGORY_ORDER.map((c) => ({
+              label: categoryLabels[c.key],
+              options: ASSET_CATALOG.filter((a) => a.category === c.key).map((a) => ({
+                value: a.id,
+                label: `${thumbFor(a.id)} ${uiText(a.name)}`
+              }))
+            }))}
             title="Pick from the full list — then click the floor to place it"
-          >
-            <option value="">{t('library.placeFromList')}</option>
-            {CATEGORY_ORDER.map((c) => (
-              <optgroup key={c.key} label={categoryLabels[c.key]}>
-                {ASSET_CATALOG.filter((a) => a.category === c.key).map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {thumbFor(a.id)} {uiText(a.name)}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          />
         </div>
       </div>
 

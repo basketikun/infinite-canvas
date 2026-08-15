@@ -13,6 +13,7 @@ import { ShotEvaluator } from '@engine/evaluate'
 import { uiText, useBlockoutI18n } from '../i18n'
 import { GAITS } from '@engine/gaits'
 import type { ActorMark, CameraMark, MarkBase, Scene, Shot } from '@engine/types'
+import { CustomSelect } from '../components/CustomSelect'
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), hi)
 
@@ -151,8 +152,8 @@ export function Timeline(): JSX.Element {
     if (time > next) setTime(next)
   }
 
-  const onFps = (e: React.ChangeEvent<HTMLSelectElement>): void => {
-    const fps = Number(e.target.value)
+  const onFps = (value: string): void => {
+    const fps = Number(value)
     if (Number.isNaN(fps)) return
     mutate('shot fps', (doc) => {
       const sh = doc.scenes.flatMap((s) => s.shots).find((s) => s.id === shot.id)
@@ -281,11 +282,12 @@ export function Timeline(): JSX.Element {
         </label>
         <label className="timeline-field">
           <span>fps</span>
-          <select value={shot.fps} onChange={onFps} style={{ width: 58 }}>
-            <option value={24}>24</option>
-            <option value={25}>25</option>
-            <option value={30}>30</option>
-          </select>
+          <CustomSelect
+            value={String(shot.fps)}
+            onChange={onFps}
+            options={[24, 25, 30].map((fps) => ({ value: String(fps), label: String(fps) }))}
+            style={{ width: 58 }}
+          />
         </label>
         <button
           className="btn small"

@@ -47,7 +47,11 @@ function EmbeddedBackButton(): JSX.Element | null {
   const { t } = useBlockoutI18n()
   if (!IS_EMBEDDED) return null
   return (
-    <button className="btn small embedded-back" onClick={() => void closeEmbeddedWorkspace()}>
+    <button
+      className="btn small embedded-back titlebar-action"
+      onClick={() => void closeEmbeddedWorkspace()}
+      aria-label={t('app.back')}
+    >
       ← {t('app.back')}
     </button>
   )
@@ -276,34 +280,44 @@ export function App(): JSX.Element {
 
   return (
     <div className={`app ${PLATFORM_CLASS}${IS_EMBEDDED ? ' embedded' : ''}`}>
-      <div className="titlebar">
-        <span className="app-name">BLOCKOUT</span>
-        <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>
-          {doc.name}
-          {dirty ? ' •' : ''}
-        </span>
-        <div className="mode-switch">
+      <div className="titlebar titlebar-workspace">
+        <div className="titlebar-project" title={doc.name}>
+          <span className="titlebar-project-mark" aria-hidden="true" />
+          <span className="titlebar-project-copy">
+            <span className="titlebar-project-kicker">DIRECTOR</span>
+            <span className="titlebar-project-name">{doc.name}</span>
+          </span>
+          {dirty ? <span className="titlebar-dirty">未保存</span> : null}
+        </div>
+        <nav className="mode-switch" aria-label="工作模式">
           <button className={mode === 'stage' ? 'active' : ''} onClick={() => setMode('stage')}>
+            <span className="mode-switch-icon" aria-hidden="true">✦</span>
             {t('mode.stage')}
           </button>
           <button className={mode === 'shoot' ? 'active' : ''} onClick={() => setMode('shoot')}>
+            <span className="mode-switch-icon" aria-hidden="true">◉</span>
             {t('mode.shoot')}
           </button>
           <button className={mode === 'deliver' ? 'active' : ''} onClick={() => setMode('deliver')}>
+            <span className="mode-switch-icon" aria-hidden="true">↗</span>
             {t('mode.deliver')}
           </button>
+        </nav>
+        <div className="titlebar-actions">
+          <button className="btn small titlebar-action titlebar-save" onClick={onSave}>
+            <span className="titlebar-action-icon" aria-hidden="true">✓</span>
+            {t('app.save')}
+          </button>
+          <button
+            className="btn small titlebar-action"
+            title={t('app.helpTitle')}
+            onClick={() => useStore.getState().setHelpOpen(true)}
+          >
+            <span className="titlebar-action-icon" aria-hidden="true">?</span>
+            {t('app.help')}
+          </button>
+          <EmbeddedBackButton />
         </div>
-        <button className="btn small" onClick={onSave}>
-          {t('app.save')}
-        </button>
-        <button
-          className="btn small"
-          title={t('app.helpTitle')}
-          onClick={() => useStore.getState().setHelpOpen(true)}
-        >
-          ? {t('app.help')}
-        </button>
-        <EmbeddedBackButton />
       </div>
 
       {mode === 'deliver' ? (

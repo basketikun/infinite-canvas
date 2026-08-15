@@ -18,6 +18,7 @@ import {
 } from '../export/exporter'
 import { exportGlb } from '../export/gltf'
 import { uiText, useBlockoutI18n } from '../i18n'
+import { CustomSelect } from '../components/CustomSelect'
 
 export function DeliverPanel(): JSX.Element {
   const { t } = useBlockoutI18n()
@@ -73,21 +74,19 @@ export function DeliverPanel(): JSX.Element {
 
       <div className="field">
         <label>{t('deliver.targetGenerator')}</label>
-        <select
+        <CustomSelect
           value={profileId}
-          onChange={(e) => {
-            setProfileId(e.target.value)
+          onChange={(value) => {
+            setProfileId(value)
             mutate('default profile', (doc) => {
-              doc.settings.defaultProfileId = e.target.value
+              doc.settings.defaultProfileId = value
             })
           }}
-        >
-          {BUILTIN_PROFILES.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}（{p.vendor}）
-            </option>
-          ))}
-        </select>
+          options={BUILTIN_PROFILES.map((p) => ({
+            value: p.id,
+            label: `${p.name}（${p.vendor}）`
+          }))}
+        />
       </div>
 
       <p style={{ color: 'var(--text-dim)', fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>

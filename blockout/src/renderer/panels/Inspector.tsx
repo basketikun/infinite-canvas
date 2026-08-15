@@ -19,6 +19,7 @@ import { ShotEvaluator } from '@engine/evaluate'
 import { newId } from '@engine/ids'
 import { getSceneManager } from '../export/scene-access'
 import { uiText, useBlockoutI18n } from '../i18n'
+import { CustomSelect } from '../components/CustomSelect'
 import type {
   ActorMark,
   CameraMark,
@@ -215,17 +216,17 @@ function GroupAnimateSection({ entityIds }: { entityIds: string[] }): JSX.Elemen
         <div className="panel-section">
         <div className="panel-title">{uiText('Everyone performs')}（{people.length} 人）</div>
           <div className="field">
-            <select value={motionId} onChange={(e) => setMotionId(e.target.value)}>
-              {motionCats.map((cat) => (
-                <optgroup key={cat} label={uiText(cat).toUpperCase()}>
-                  {MOTION_PRESETS.filter((p) => p.category === cat).map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {uiText(p.name)}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <CustomSelect
+              value={motionId}
+              onChange={setMotionId}
+              groups={motionCats.map((cat) => ({
+                label: uiText(cat).toUpperCase(),
+                options: MOTION_PRESETS.filter((p) => p.category === cat).map((p) => ({
+                  value: p.id,
+                  label: uiText(p.name)
+                }))
+              }))}
+            />
           </div>
           <button
             className="btn primary"
@@ -239,17 +240,17 @@ function GroupAnimateSection({ entityIds }: { entityIds: string[] }): JSX.Elemen
       <div className="panel-section">
         <div className="panel-title">{uiText('Everyone travels')}（{entityIds.length}）</div>
         <div className="field">
-          <select value={actionId} onChange={(e) => setActionId(e.target.value)}>
-            {actionCats.map((cat) => (
-              <optgroup key={cat} label={uiText(cat).toUpperCase()}>
-                {ACTION_PRESETS.filter((p) => p.category === cat).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {uiText(p.name)}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <CustomSelect
+            value={actionId}
+            onChange={setActionId}
+            groups={actionCats.map((cat) => ({
+              label: uiText(cat).toUpperCase(),
+              options: ACTION_PRESETS.filter((p) => p.category === cat).map((p) => ({
+                value: p.id,
+                label: uiText(p.name)
+              }))
+            }))}
+          />
         </div>
         <button
           className="btn"
@@ -1045,17 +1046,17 @@ function ActionPresetsSection({
       <div className="panel-title">{uiText('Action presets')}</div>
       <div className="field">
         <label>{uiText('Flight, drive & stunt paths — starts at the playhead')}</label>
-        <select value={presetId} onChange={(e) => setPresetId(e.target.value)}>
-          {categories.map((cat) => (
-            <optgroup key={cat} label={cat.toUpperCase()}>
-              {ACTION_PRESETS.filter((p) => p.category === cat).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {uiText(p.name)}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        <CustomSelect
+          value={presetId}
+          onChange={setPresetId}
+          groups={categories.map((cat) => ({
+            label: cat.toUpperCase(),
+            options: ACTION_PRESETS.filter((p) => p.category === cat).map((p) => ({
+              value: p.id,
+              label: uiText(p.name)
+            }))
+          }))}
+        />
       </div>
       {preset && (
         <p style={{ color: 'var(--text-faint)', fontSize: 11, lineHeight: 1.4, marginBottom: 8 }}>
@@ -1102,22 +1103,18 @@ function MarriageSection({ scene, entity }: { scene: Scene; entity: Entity }): J
       ) : (
         <div className="field">
           <label>绑定到……</label>
-          <select
+          <CustomSelect
             value=""
-            onChange={(e) => {
-              const id = e.target.value
+            onChange={(id) => {
               if (id) marryEntities([entity.id], id)
             }}
-          >
-            <option value="">— 选择锚点 —</option>
-            {scene.entities
-              .filter((e) => e.id !== entity.id)
-              .map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.label?.text || e.name}
-                </option>
-              ))}
-          </select>
+            options={[
+              { value: '', label: '— 选择锚点 —' },
+              ...scene.entities
+                .filter((e) => e.id !== entity.id)
+                .map((e) => ({ value: e.id, label: e.label?.text || e.name }))
+            ]}
+          />
         </div>
       )}
     </div>
@@ -1440,17 +1437,17 @@ function CameraMovesSection({ scene }: { scene: Scene }): JSX.Element {
           {CAMERA_MOVE_PRESETS.length} 个经典运动——围绕{' '}
           {subjectHint ? subjectHint.label?.text || subjectHint.name : '当前主体'}
         </label>
-        <select value={presetId} onChange={(e) => setPresetId(e.target.value)}>
-          {categories.map((cat) => (
-            <optgroup key={cat} label={cat.toUpperCase()}>
-              {CAMERA_MOVE_PRESETS.filter((p) => p.category === cat).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {uiText(p.name)}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        <CustomSelect
+          value={presetId}
+          onChange={setPresetId}
+          groups={categories.map((cat) => ({
+            label: cat.toUpperCase(),
+            options: CAMERA_MOVE_PRESETS.filter((p) => p.category === cat).map((p) => ({
+              value: p.id,
+              label: uiText(p.name)
+            }))
+          }))}
+        />
       </div>
       {preset && (
         <p style={{ color: 'var(--text-faint)', fontSize: 11, lineHeight: 1.4, marginBottom: 8 }}>
@@ -1519,19 +1516,14 @@ function CameraInspector({ scene, shot }: { scene: Scene; shot: Shot }): JSX.Ele
         <div className="panel-title">相机</div>
         <div className="field">
           <label>{uiText('Sensor')}</label>
-          <select
+          <CustomSelect
             value={cam.sensorId}
-            onChange={(e) => {
-              const id = e.target.value as SensorId
+            onChange={(value) => {
+              const id = value as SensorId
               editCam('sensor', (c) => (c.sensorId = id))
             }}
-          >
-            {Object.values(SENSORS).map((s) => (
-              <option key={s.id} value={s.id}>
-                {uiText(s.name)}
-              </option>
-            ))}
-          </select>
+            options={Object.values(SENSORS).map((s) => ({ value: s.id, label: uiText(s.name) }))}
+          />
         </div>
         <div className="field">
           <label>{uiText('Lens')}</label>
@@ -1565,23 +1557,20 @@ function CameraInspector({ scene, shot }: { scene: Scene; shot: Shot }): JSX.Ele
         <div className="panel-title">跟踪主体</div>
         <div className="field">
           <label>{uiText('Keep the camera aimed at…')}</label>
-          <select
+          <CustomSelect
             value={cam.trackEntityId ?? ''}
-            onChange={(e) =>
+            onChange={(value) =>
               editCam('track subject', (c) => {
-                if (e.target.value) c.trackEntityId = e.target.value
+                if (value) c.trackEntityId = value
                 else delete c.trackEntityId
               })
             }
+            options={[
+              { value: '', label: '— 通过标记瞄准（关闭）—' },
+              ...scene.entities.map((e) => ({ value: e.id, label: e.label?.text || e.name }))
+            ]}
             title="瞄准锁定：无论相机通过标记、录制飞行或运动预设如何移动，都会始终指向此主体。"
-          >
-            <option value="">— 通过标记瞄准（关闭）—</option>
-            {scene.entities.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.label?.text || e.name}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         {cam.trackEntityId && (
           <p style={{ color: 'var(--text-faint)', fontSize: 11, lineHeight: 1.4 }}>
@@ -1628,20 +1617,17 @@ function CameraInspector({ scene, shot }: { scene: Scene; shot: Shot }): JSX.Ele
         {cam.rig === 'carMount' && (
           <div className="field">
             <label>挂载到</label>
-            <select
+            <CustomSelect
               value={cam.mountEntityId ?? ''}
-              onChange={(e) => {
-                const id = e.target.value || undefined
+              onChange={(value) => {
+                const id = value || undefined
                 editCam('mount entity', (c) => (c.mountEntityId = id))
               }}
-            >
-              <option value="">— 无 —</option>
-              {scene.entities.map((en) => (
-                <option key={en.id} value={en.id}>
-                  {en.label?.text || en.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: '— 无 —' },
+                ...scene.entities.map((en) => ({ value: en.id, label: en.label?.text || en.name }))
+              ]}
+            />
           </div>
         )}
       </div>
@@ -1825,24 +1811,21 @@ function MarkInspector({
           <div className="panel-title">{t('inspector.boardArrival')}</div>
           <div className="field">
             <label>{t('inspector.afterReach')}</label>
-            <select
+            <CustomSelect
               value={actorMark.attachTo ?? ''}
-              onChange={(e) =>
+              onChange={(value) =>
                 editMark('board target', (m) => {
-                  (m as ActorMark).attachTo = e.target.value || undefined
+                  (m as ActorMark).attachTo = value || undefined
                 })
               }
+              options={[
+                { value: '', label: t('inspector.stayOnFoot') },
+                ...scene.entities
+                  .filter((e) => e.id !== entityId)
+                  .map((e) => ({ value: e.id, label: e.name }))
+              ]}
               title="登乘：先走到此标记，再绑定到车辆或道具并随之移动，例如登上公交车离开"
-            >
-              <option value="">{t('inspector.stayOnFoot')}</option>
-              {scene.entities
-                .filter((e) => e.id !== entityId)
-                .map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
-            </select>
+            />
           </div>
         </div>
       )}
