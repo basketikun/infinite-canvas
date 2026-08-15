@@ -503,12 +503,6 @@ export default {
                 text: "文本",
                 audio: "音频",
             },
-            wangsuDoubaoKey: "豆包文生图 Key",
-            wangsuDoubaoKeyPlaceholder: "sk-...（选填，不填则用上方 API Key）",
-            wangsuDoubaoKeyHint: "用于豆包 Seedream / GPT-Image-2 文生图接口。",
-            wangsuEditKey: "豆包图生图 Key",
-            wangsuEditKeyPlaceholder: "sk-...（选填，不填则回退豆包文生图 Key）",
-            wangsuEditKeyHint: "用于带参考图的图生图/编辑接口。",
         },
         modelSelect: {
             missingConfig: "请先填写接口地址和 API Key",

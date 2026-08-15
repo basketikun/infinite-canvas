@@ -503,12 +503,6 @@ export default {
                 text: "Text",
                 audio: "Audio",
             },
-            wangsuDoubaoKey: "Doubao text-to-image Key",
-            wangsuDoubaoKeyPlaceholder: "sk-... (optional, falls back to the API Key above)",
-            wangsuDoubaoKeyHint: "Used by the Doubao Seedream / GPT-Image-2 text-to-image endpoint.",
-            wangsuEditKey: "Doubao image-to-image Key",
-            wangsuEditKeyPlaceholder: "sk-... (optional, falls back to the Doubao text-to-image Key)",
-            wangsuEditKeyHint: "Used by the image-to-image / edit endpoint with reference images.",
         },
         modelSelect: {
             missingConfig: "Enter an API endpoint and API key first",

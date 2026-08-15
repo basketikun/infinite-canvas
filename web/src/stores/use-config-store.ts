@@ -74,8 +74,6 @@ const WANGSU_BASE_URL = "https://aigateway.edgecloudapp.com";
 export const WANGSU_PRESET_MODELS: ChannelModel[] = [
     { name: "gemini-3.1-flash-image-preview", capability: "image" },
     { name: "gemini-3-pro-image-preview", capability: "image" },
-    { name: "doubao-seedream-4-5-251128", capability: "image" },
-    { name: "doubao-seedream", capability: "image" },
     { name: "gpt-image-2", capability: "image" },
 ];
 
