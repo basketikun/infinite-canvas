@@ -1,0 +1,8 @@
+{
+  "name": "director-export-service",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs"
+  }
+}

@@ -93,6 +93,44 @@ function createBlockoutProjectId(): string {
     return `director-project-${suffix}`;
 }
 
+const EXPORT_SERVICE_URL = "http://127.0.0.1:8787";
+
+function exportServiceUrl(path: string) {
+    return `${EXPORT_SERVICE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+async function exportServiceRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await fetch(exportServiceUrl(path), { ...init, headers: { "content-type": "application/json", ...(init.headers || {}) } });
+    const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string } & T;
+    if (!response.ok || payload.ok === false) throw new Error(payload.error || `Export service request failed: ${response.status}`);
+    return payload;
+}
+
+function exportBody(value: unknown): BodyInit {
+    if (value instanceof ArrayBuffer) return new Uint8Array(value) as unknown as BodyInit;
+    if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength) as unknown as BodyInit;
+    if (typeof value === "string") return value;
+    return JSON.stringify(value ?? "");
+}
+
+function artifactMime(path: string) {
+    const lower = path.toLowerCase();
+    if (lower.endsWith(".png")) return "image/png";
+    if (lower.endsWith(".mp4")) return "video/mp4";
+    if (lower.endsWith(".json")) return "application/json";
+    if (lower.endsWith(".txt")) return "text/plain; charset=utf-8";
+    if (lower.endsWith(".glb")) return "model/gltf-binary";
+    return "application/octet-stream";
+}
+
+function absoluteExportArtifacts(value: unknown) {
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")).map((item) => ({
+        ...item,
+        url: typeof item.url === "string" ? exportServiceUrl(item.url) : item.url,
+    }));
+}
+
 function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const generatedProjectId = useRef<string | null>(null);
@@ -102,6 +140,7 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
     const projectName = metadataText(ctx, "projectName", "Untitled Director");
     const upstream = ctx.getUpstreamResources() as CanvasUpstreamResource[];
     const blockoutWebUrl = new URL("/plugins/blockout/workbench/index.html?director=phase5", window.location.origin).toString();
+    const activeExportJobId = useRef<string | null>(null);
 
     useEffect(() => {
         if (!storedProjectId) ctx.updateMetadata({ blockoutProjectId: projectId });
@@ -156,6 +195,76 @@ function DirectorWorkspace({ ctx, onClose }: CanvasNodeWorkspaceProps) {
 
                 if (message.type === "PRESETS_LIST") {
                     respond(message.requestId, message.type, origin, []);
+                    return;
+                }
+
+                if (message.type === "EXPORT_BEGIN") {
+                    if (typeof payload.jobId !== "string" || typeof payload.outPath !== "string") throw new Error("Export job is missing jobId or outPath.");
+                    await exportServiceRequest("/exports", { method: "POST", body: JSON.stringify({ jobId: payload.jobId, outPath: payload.outPath, opts: payload.opts }) });
+                    activeExportJobId.current = payload.jobId;
+                    respond(message.requestId, message.type, origin, true);
+                    return;
+                }
+
+                if (message.type === "EXPORT_FRAME") {
+                    if (typeof payload.jobId !== "string") throw new Error("Export frame is missing jobId.");
+                    const frame = payload.png;
+                    if (!(frame instanceof ArrayBuffer) && !ArrayBuffer.isView(frame)) throw new Error("Export frame is not an ArrayBuffer.");
+                    await exportServiceRequest(`/exports/${encodeURIComponent(payload.jobId)}/frames`, {
+                        method: "POST",
+                        headers: { "content-type": "application/octet-stream" },
+                        body: exportBody(frame),
+                    });
+                    respond(message.requestId, message.type, origin, true);
+                    return;
+                }
+
+                if (message.type === "EXPORT_END") {
+                    if (typeof payload.jobId !== "string") throw new Error("Export end is missing jobId.");
+                    const result = await exportServiceRequest<{ ok?: boolean; code?: number; log?: string; artifacts?: unknown[] }>(`/exports/${encodeURIComponent(payload.jobId)}/end`, { method: "POST", body: "{}" });
+                    iframeRef.current?.contentWindow?.postMessage({
+                        protocol: DIRECTOR_PROTOCOL,
+                        type: "EXPORT_CLOSED",
+                        payload: {
+                            jobId: payload.jobId,
+                            code: Number(result.code ?? -1),
+                            log: String(result.log ?? ""),
+                            artifacts: absoluteExportArtifacts(result.artifacts),
+                            packageUrl: exportServiceUrl(`/exports/${encodeURIComponent(payload.jobId)}/package.zip`),
+                        },
+                    }, origin || window.location.origin);
+                    respond(message.requestId, message.type, origin, result.ok === true);
+                    return;
+                }
+
+                if (message.type === "EXPORT_CANCEL") {
+                    if (typeof payload.jobId !== "string") throw new Error("Export cancel is missing jobId.");
+                    await exportServiceRequest(`/exports/${encodeURIComponent(payload.jobId)}/cancel`, { method: "POST", body: "{}" });
+                    respond(message.requestId, message.type, origin, true);
+                    return;
+                }
+
+                if (message.type === "EXPORT_WRITE_FILE") {
+                    if (typeof payload.path !== "string") throw new Error("Export file is missing path.");
+                    await exportServiceRequest("/files", {
+                        method: "PUT",
+                        headers: {
+                            "content-type": artifactMime(payload.path),
+                            "x-job-id": activeExportJobId.current || "",
+                            "x-artifact-path": payload.path,
+                        },
+                        body: exportBody(payload.data),
+                    });
+                    respond(message.requestId, message.type, origin, true);
+                    return;
+                }
+
+                if (message.type === "EXPORT_CONCAT") {
+                    const result = await exportServiceRequest<{ ok?: boolean; error?: string }>("/concat", {
+                        method: "POST",
+                        body: JSON.stringify({ jobId: activeExportJobId.current, outPath: payload.outPath, inputPaths: payload.inputPaths }),
+                    });
+                    respond(message.requestId, message.type, origin, { ok: result.ok === true, error: result.error });
                     return;
                 }
 
