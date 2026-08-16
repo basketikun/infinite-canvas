@@ -6,6 +6,7 @@ import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } fro
 
 import { parseChangelog } from "./src/lib/release";
 import { eagleBridge } from "./eagle-bridge";
+import { sharedStorage } from "./shared-storage-server";
 
 const webDir = dirname(fileURLToPath(import.meta.url));
 const localVersion = readFileSync(resolve(webDir, "../VERSION"), "utf8").trim() || "dev";
@@ -72,7 +73,7 @@ function localExit(): Plugin {
 
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
-    plugins: [react(), localPluginsManifest(), eagleBridge(), localExit()],
+    plugins: [react(), localPluginsManifest(), eagleBridge(), sharedStorage(resolve(webDir, "../data/infinite-canvas")), localExit()],
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),

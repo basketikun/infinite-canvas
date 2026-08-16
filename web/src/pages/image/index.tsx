@@ -1,7 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, Check, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
-import localforage from "localforage";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -18,6 +17,7 @@ import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } f
 import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
+import { getSharedStore } from "@/lib/shared-storage";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -70,7 +70,7 @@ type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
 const LOG_STORE_KEY = "infinite-canvas:image_generation_logs";
-const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
+const logStore = getSharedStore("image_generation_logs");
 
 export default function ImagePage() {
     const { message } = App.useApp();

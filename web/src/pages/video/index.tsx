@@ -1,7 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
-import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
@@ -15,6 +14,7 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
+import { getSharedStore } from "@/lib/shared-storage";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS, SEEDANCE_VIDEO_MIME_TYPES } from "@/lib/seedance-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
@@ -73,7 +73,7 @@ type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vqu
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
 const LOG_STORE_KEY = "infinite-canvas:video_generation_logs";
-const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
+const logStore = getSharedStore("video_generation_logs");
 
 export default function VideoPage() {
     const { message } = App.useApp();
