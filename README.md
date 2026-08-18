@@ -71,7 +71,7 @@
 
 完整功能说明见 [功能介绍](docs/content/docs/overview/features.mdx)。
 
-如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
+如果你正在为没有合适的生图 API 而发愁，可以查看这个免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
 
 ## 快速开始
 
