@@ -64,7 +64,7 @@ export function usePluginHost(params: PluginHostParams) {
                     ...(options?.seconds ? { videoSeconds: options.seconds } : {}),
                 };
                 ensureReady(config);
-                const file = await storeGeneratedVideo(await requestVideoGeneration(config, prompt, toReferences(options?.references), [], [], { signal: options?.signal }));
+                const file = await storeGeneratedVideo(await requestVideoGeneration(config, prompt, toReferences(options?.references), { signal: options?.signal }));
                 return { url: file.url, mimeType: file.mimeType, width: file.width, height: file.height, durationMs: file.durationMs };
             },
             generateText: async (prompt, options) => {

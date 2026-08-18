@@ -304,6 +304,7 @@ function readApiErrorMessage(value: unknown): string {
 function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return apiText("requestCanceled");
     if (axios.isAxiosError(error)) {
+        if (!error.response && error.code === "ERR_NETWORK") return apiText("corsRequired");
         const responseData = error.response?.data;
         // Prefer the API error from the response body.
         const apiMsg = readApiErrorMessage(responseData);
@@ -800,37 +801,6 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         if (mask) throw new Error(apiText("geminiMaskUnsupported"));
         try {
             return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
-        } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
-        }
-    }
-
-    if (requestConfig.apiFormat === "ark") {
-        if (mask) throw new Error(apiText("maskModelUnsupported"));
-        const quality = normalizeQuality(config.quality);
-        const requestSize = resolveRequestSize(quality, config.size);
-        const background = normalizeBackground(config.background);
-        const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
-        try {
-            const response = await axios.post<ImageApiResponse>(
-                aiApiUrl(requestConfig, "/images/generations"),
-                {
-                    model: requestConfig.model,
-                    prompt: withSystemPrompt(requestConfig, requestPrompt),
-                    n,
-                    response_format: "b64_json",
-                    output_format: IMAGE_OUTPUT_FORMAT,
-                    image: refs,
-                    ...(quality ? { quality } : {}),
-                    ...(requestSize ? { size: requestSize } : {}),
-                    ...(background ? { background } : {}),
-                },
-                {
-                    headers: aiHeaders(requestConfig, "application/json"),
-                    signal: options?.signal,
-                },
-            );
-            return parseImagePayload(response.data);
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
