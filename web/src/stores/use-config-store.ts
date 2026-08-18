@@ -336,12 +336,13 @@ export function resolveModelChannel(config: AiConfig, value: string) {
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
     const channel = resolveModelChannel(config, value);
+    const apiFormat = channel.apiFormat === "ark" || isArkBaseUrl(channel.baseUrl) ? "ark" : channel.apiFormat;
     return {
         ...config,
         model: modelOptionName(value || config.model),
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
-        apiFormat: channel.apiFormat,
+        apiFormat,
     };
 }
 
@@ -389,11 +390,19 @@ export function buildApiUrl(baseUrl: string, path: string, apiFormat?: ApiCallFo
     normalizedBaseUrl = normalizeArkPlanBaseUrl(normalizedBaseUrl);
     const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
     const apiBaseUrl = lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/api/v3") || lowerBaseUrl.endsWith("/api/plan/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
-    if (apiFormat === "ark" && import.meta.env.DEV) {
+    if ((apiFormat === "ark" || isArkBaseUrl(normalizedBaseUrl)) && import.meta.env.DEV) {
         const params = new URLSearchParams({ target: apiBaseUrl, path });
         return `/__ark_proxy?${params.toString()}`;
     }
     return `${apiBaseUrl}${path}`;
+}
+
+function isArkBaseUrl(baseUrl: string) {
+    try {
+        return new URL(baseUrl).hostname.toLowerCase().endsWith(".volces.com");
+    } catch {
+        return false;
+    }
 }
 
 function normalizeArkPlanBaseUrl(baseUrl: string) {
