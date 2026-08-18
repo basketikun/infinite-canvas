@@ -61,7 +61,9 @@ function arkDevProxy(): Plugin {
                         body: body.length ? body : undefined,
                     });
                     res.statusCode = upstream.status;
-                    upstream.headers.forEach((value, key) => res.setHeader(key, value));
+                    upstream.headers.forEach((value, key) => {
+                        if (!["content-encoding", "content-length", "transfer-encoding"].includes(key.toLowerCase())) res.setHeader(key, value);
+                    });
                     if (upstream.body) Readable.fromWeb(upstream.body as never).pipe(res);
                     else res.end();
                 } catch (error) {
@@ -82,7 +84,7 @@ function readRequestBody(req: import("node:http").IncomingMessage) {
 }
 
 function forwardedHeaders(headers: import("node:http").IncomingHttpHeaders) {
-    return Object.fromEntries(Object.entries(headers).filter(([key]) => !["host", "origin", "referer", "content-length"].includes(key.toLowerCase())) as Array<[string, string]>);
+    return Object.fromEntries(Object.entries(headers).filter(([key]) => !["host", "origin", "referer", "content-length", "accept-encoding"].includes(key.toLowerCase())) as Array<[string, string]>);
 }
 
 export default defineConfig({

@@ -233,7 +233,8 @@ function assertSeedanceAudioReferences(audioReferences: ReferenceAudio[]) {
 }
 
 function seedanceApiUrl(config: AiConfig, taskId?: string) {
-    return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`, config.apiFormat);
+    const baseUrl = config.apiFormat === "ark" ? config.baseUrl.replace(/\/api\/v3\/?$/i, "/api/plan/v3") : config.baseUrl;
+    return buildApiUrl(baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`, config.apiFormat);
 }
 
 async function buildSeedanceContent(config: AiConfig, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
