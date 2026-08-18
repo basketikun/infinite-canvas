@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- [新增] 恢复火山方舟渠道与 Seedance 视频生成支持。
+
 ## v0.16.0 - 2026-08-18
 
 + [新增] 提示词来源新增 Freestylefly GPT Image 2 内置来源。

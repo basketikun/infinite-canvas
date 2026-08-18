@@ -26,7 +26,7 @@ The current release needs manual verification in these areas:
 - Agent message metadata: image attachments, Skills, canvas references, and local previews should survive page refreshes and Agent restarts through exact `clientMessageId`, `threadId`, and `turnId` ownership; protocol upgrades must not reset the independent storage format, unknown or damaged storage must refuse writes without overwriting files, no records may be silently pruned by count or size, and deleting a thread should remove its metadata and preview assets without relying on browser IndexedDB or text matching.
 - Prompt Center layout, source synchronization, search, asset insertion, prompt detail dialogs, and compact split-layout prompt pickers in the image and video workbenches.
 - Workbench history image cleanup: after generating content in the image or video workbench, deleting an asset, canvas image node, canvas content, or canvas project must not remove thumbnails, results, or references from generation history; deleting a generation record should still remove its dedicated local files.
-- Settings import/export and WebDAV-related configuration.
+- Settings import/export, Volcengine Ark protocol handling, and WebDAV-related configuration.
 - Local storage settings: the Settings page should provide a Local storage tab that reads only the `infinite-canvas` database and shows IndexedDB usage, total site usage, browser quota, quota percentage, and per-object-store record counts and content size; refreshing after local data changes should update the figures without blocking the rest of the page.
 
 The Chinese version contains the complete item-by-item acceptance checklist.
