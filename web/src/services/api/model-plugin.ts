@@ -39,7 +39,7 @@ function pluginHeaders(extra?: Record<string, string>, hasJsonBody = false): Rec
 
 function pluginUrl(config: AiConfig, path: string) {
     if (/^https?:/i.test(path)) return path;
-    return buildApiUrl(config.baseUrl, path.startsWith("/") ? path : `/${path}`);
+    return buildApiUrl(config.baseUrl, path.startsWith("/") ? path : `/${path}`, config.apiFormat);
 }
 
 function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHttp {
