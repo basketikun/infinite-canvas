@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "assets": {
+    "applicationLogo": {
+      "path": "src/renderer/assets/logo.png",
+      "sha256": "5bb10c2aeb4e87e2dee1aa080c174eb854d9e115cb71b915f95fff302672c82d"
+    },
+    "windowsIcon": {
+      "path": "build/icon.ico",
+      "sha256": "b7603b593b4c512ee36bded410ab9b70707839eb88e151a67ae406234dbca346",
+      "sizes": [
+        16,
+        24,
+        32,
+        48,
+        64,
+        128,
+        256
+      ]
+    },
+    "macosFfmpeg": {
+      "provider": "mifi/ffmpeg-build-script with audited Blockout patch",
+      "buildRepositoryCommit": "967cfb0c7d8ab000c466d00e4b6186f150ef4481",
+      "ffmpegCommit": "7d0e8420048cffd0ca3883b877ead2390496d0b2",
+      "license": "GPL-3.0-or-later",
+      "supportedArchitectures": [
+        "arm64",
+        "x64"
+      ],
+      "buildPatch": {
+        "path": "third_party/ffmpeg/macos-gpl.patch",
+        "sha256": "29897af37c6fcee4cc51681df1a4ba2dfe9228549fabd6e7a16d8a537371c332"
+      },
+      "licenseSha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+      "requiredConfigureFlags": [
+        "--enable-gpl",
+        "--enable-version3",
+        "--enable-libx264"
+      ],
+      "forbiddenConfigureFlags": [
+        "--enable-nonfree",
+        "--enable-openssl"
+      ],
+      "sourceArchives": [
+        {
+          "name": "ffmpeg-build-script-967cfb0c7d8ab000c466d00e4b6186f150ef4481.tar.gz",
+          "url": "https://github.com/mifi/ffmpeg-build-script/archive/967cfb0c7d8ab000c466d00e4b6186f150ef4481.tar.gz",
+          "sha256": "8fbfb070b6102dee71ac42b93b2e150a5ef841a10e2466edcb845dec3689903d"
+        },
+        {
+          "name": "zlib-1.3.1.tar.gz",
+          "url": "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz",
+          "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+        },
+        {
+          "name": "x264-be4f0200.tar.gz",
+          "url": "https://code.videolan.org/videolan/x264/-/archive/be4f0200/x264-be4f0200.tar.gz",
+          "sha256": "355270b5ca046609e4c5bd4eff7917a76e5926bd7fe426f8bcc3c67d8db6287b"
+        },
+        {
+          "name": "libvpx-1.15.0.tar.gz",
+          "url": "https://github.com/webmproject/libvpx/archive/refs/tags/v1.15.0.tar.gz",
+          "sha256": "e935eded7d81631a538bfae703fd1e293aad1c7fd3407ba00440c95105d2011e"
+        },
+        {
+          "name": "libwebp-1.4.0.tar.gz",
+          "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.4.0.tar.gz",
+          "sha256": "61f873ec69e3be1b99535634340d5bde750b2e4447caa1db9f61be3fd49ab1e5"
+        },
+        {
+          "name": "dav1d-1.5.0.tar.gz",
+          "url": "https://code.videolan.org/videolan/dav1d/-/archive/1.5.0/dav1d-1.5.0.tar.gz",
+          "sha256": "78b15d9954b513ea92d27f39362535ded2243e1b0924fde39f37a31ebed5f76b"
+        },
+        {
+          "name": "svtav1-2.3.0.tar.gz",
+          "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v2.3.0/SVT-AV1-v2.3.0.tar.gz",
+          "sha256": "ebb0b484ef4a0dc281e94342a9f73ad458496f5d3457eca7465bec943910c6c3"
+        },
+        {
+          "name": "FFmpeg-release-7.1.5-portable-gpl.1.tar.gz",
+          "url": "https://github.com/FFmpeg/FFmpeg/archive/7d0e8420048cffd0ca3883b877ead2390496d0b2.tar.gz",
+          "sha256": "2caafb2bbfb69c0518470651640e71ac7f5fb3117d188bf6ea2d909307a02b1d"
+        }
+      ],
+      "prebuilt": {
+        "arm64": {
+          "name": "blockout-ffmpeg-macos-arm64.tar.gz",
+          "url": "https://github.com/wassermanproductions/blockout/releases/download/v5.0.0-desktop.1/blockout-ffmpeg-macos-arm64.tar.gz",
+          "sha256": "7931a1cfa8a01f2da647eb17589c7eaac6ab6ec907f4718286a91b6a8295f995"
+        }
+      }
+    },
+    "windowsFfmpeg": {
+      "provider": "BtbN/FFmpeg-Builds",
+      "releaseTag": "autobuild-2026-06-30-13-34",
+      "buildRepositoryCommit": "7a83528ea3431e9eca982a712bc3a7cd0789d5d0",
+      "ffmpegCommit": "7d0e8420048cffd0ca3883b877ead2390496d0b2",
+      "license": "GPL-3.0-or-later",
+      "archive": {
+        "name": "ffmpeg-n7.1.5-1-g7d0e842004-win64-gpl-7.1.zip",
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-30-13-34/ffmpeg-n7.1.5-1-g7d0e842004-win64-gpl-7.1.zip",
+        "sha256": "405b190f746db40539eb453967f72c0e69d8bf260b10ceff36e0c2149a9ad22f"
+      },
+      "files": {
+        "ffmpeg.exe": "9b2f8ddda3958ce61433b07efc657ab078e71a36d6a0a3240da7eece70a75bc2",
+        "ffprobe.exe": "4919faa7f0586eb05802908276f78096d3003335eaa38c378b6b1c44f1e19814",
+        "LICENSE.txt": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+      },
+      "requiredConfigureFlags": [
+        "--enable-gpl",
+        "--enable-version3",
+        "--enable-libx264",
+        "--disable-libfdk-aac"
+      ],
+      "forbiddenConfigureFlags": [
+        "--enable-nonfree"
+      ],
+      "sourceArchives": [
+        {
+          "name": "FFmpeg-7d0e8420048cffd0ca3883b877ead2390496d0b2.tar.gz",
+          "url": "https://github.com/FFmpeg/FFmpeg/archive/7d0e8420048cffd0ca3883b877ead2390496d0b2.tar.gz",
+          "sha256": "2caafb2bbfb69c0518470651640e71ac7f5fb3117d188bf6ea2d909307a02b1d"
+        },
+        {
+          "name": "FFmpeg-Builds-7a83528ea3431e9eca982a712bc3a7cd0789d5d0.tar.gz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/archive/7a83528ea3431e9eca982a712bc3a7cd0789d5d0.tar.gz",
+          "sha256": "0f0f15e02b4fd1b1bc37d2e3a6f57cd7a2078c31a51c8546110d3ccb40029d30"
+        }
+      ]
+    }
+  }
+}

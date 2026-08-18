@@ -1,0 +1,56 @@
+diff --git a/build-ffmpeg b/build-ffmpeg
+index aad006b..6e8d881 100755
+--- a/build-ffmpeg
++++ b/build-ffmpeg
+@@ -8,7 +8,7 @@
+ MACOS_MIN=11.0
+ 
+ PROGNAME=$(basename "$0")
+-FFMPEG_VERSION=7.1
++FFMPEG_VERSION=7.1.5-portable-gpl.1
+ CWD=$(pwd)
+ PACKAGES="$CWD/packages"
+ WORKSPACE="$CWD/workspace"
+@@ -21,7 +21,7 @@ MACOS_SILICON=false
+ CONFIGURE_OPTIONS=()
+ LATEST=false
+ 
+-FFMPEG_URL="https://github.com/FFmpeg/FFmpeg/archive/refs/heads/release/$FFMPEG_VERSION.tar.gz"
++FFMPEG_URL="https://github.com/FFmpeg/FFmpeg/archive/7d0e8420048cffd0ca3883b877ead2390496d0b2.tar.gz"
+ 
+ 
+ command_exists() {
+@@ -328,7 +328,7 @@ if build "x264" "be4f0200"; then
+   if [[ "$OSTYPE" == "linux-gnu" ]]; then
+     execute ./configure --prefix="${WORKSPACE}" --enable-static --enable-pic CXXFLAGS="-fPIC ${CXXFLAGS}"
+   else
+-    execute ./configure --prefix="${WORKSPACE}" --enable-static --enable-pic
++    execute ./configure --prefix="${WORKSPACE}" --enable-static --enable-pic --disable-cli
+   fi
+ 
+   execute make -j $MJOBS
+@@ -439,7 +439,7 @@ fi
+ CONFIGURE_OPTIONS+=("--enable-libsvtav1")
+ 
+ # Needed for downloading URLs
+-if build "openssl" "1.1.1w"; then
++if false && build "openssl" "1.1.1w"; then
+   download "https://www.openssl.org/source/openssl-$CURRENT_PACKAGE_VERSION.tar.gz"
+   if $MACOS_SILICON; then
+     sed -n 's/\(##### GNU Hurd\)/"darwin64-arm64-cc" => { \n    inherit_from     => [ "darwin-common", asm("aarch64_asm") ],\n    CFLAGS           => add("-Wall"),\n    cflags           => add("-arch arm64 "),\n    lib_cppflags     => add("-DL_ENDIAN"),\n    bn_ops           => "SIXTY_FOUR_BIT_LONG", \n    perlasm_scheme   => "macosx",\n}, \n\1/g' Configurations/10-main.conf
+@@ -451,7 +451,6 @@ if build "openssl" "1.1.1w"; then
+   execute make install_sw
+   build_done "openssl" $CURRENT_PACKAGE_VERSION
+ fi
+-CONFIGURE_OPTIONS+=("--enable-openssl")
+ 
+ ##
+ ## FFmpeg
+@@ -489,7 +488,6 @@ download "${FFMPEG_URL}" "FFmpeg-release-$FFMPEG_VERSION.tar.gz"
+ 	--enable-avfilter \
+ 	--enable-filters \
+ 	\
+-  --enable-nonfree \
+   --enable-gpl \
+   \
+   --disable-xlib \

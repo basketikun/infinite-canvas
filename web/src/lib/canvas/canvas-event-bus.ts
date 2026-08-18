@@ -1,6 +1,5 @@
-import localforage from "localforage";
-
 import type { PluginStorage } from "@/types/canvas-plugin";
+import { getSharedStore, type SharedStore } from "@/lib/shared-storage";
 
 // Lightweight canvas event bus for communication between nodes and plugins.
 type Handler = (payload: unknown) => void;
@@ -27,12 +26,12 @@ export function onCanvasEvent(event: string, handler: Handler) {
 }
 
 // Private plugin storage isolated by pluginId namespace.
-const stores = new Map<string, LocalForage>();
+const stores = new Map<string, SharedStore>();
 
 export function createPluginStorage(pluginId: string): PluginStorage {
     let store = stores.get(pluginId);
     if (!store) {
-        store = localforage.createInstance({ name: "infinite-canvas-plugins", storeName: pluginId });
+        store = getSharedStore(pluginId, "infinite-canvas-plugins");
         stores.set(pluginId, store);
     }
     return {

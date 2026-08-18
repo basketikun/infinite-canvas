@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use Blockout in your work, please cite it and credit Sam Wasserman (wassermanproductions.com), per the project's NOTICE and Section 4(d) of the Apache License 2.0."
+title: "Blockout"
+abstract: "A desktop previs tool for AI-native filmmaking: stage grey-box scenes, choreograph camera and cast blocking with marks on a timeline, and export deterministic motion-reference packages for AI video generators (Seedance, Veo, Kling, LTX, Wan)."
+type: software
+authors:
+  - family-names: "Wasserman"
+    given-names: "Sam"
+    website: "https://wassermanproductions.com"
+version: "5.0.0"
+date-released: "2026-07-07"
+license: "Apache-2.0"
+url: "https://github.com/wassermanproductions/blockout"
+repository-code: "https://github.com/wassermanproductions/blockout"
+keywords:
+  - previs
+  - previsualization
+  - filmmaking
+  - ai-video
+  - motion-reference
+  - virtual-production

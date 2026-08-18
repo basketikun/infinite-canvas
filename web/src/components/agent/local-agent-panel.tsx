@@ -822,6 +822,20 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 const path = input.path || "/";
                 navigate(path);
                 result = { ok: true, path };
+            } else if (payload.name === "canvas_plugin_get_actions") {
+                const context = canvasContextRef.current;
+                if (!context?.listPluginActions) throw new Error(rt("openCanvasFirst"));
+                const nodeId = String(payload.input?.nodeId || "");
+                if (!nodeId) throw new Error("nodeId is required");
+                result = { nodeId, actions: await context.listPluginActions(nodeId) };
+            } else if (payload.name === "canvas_plugin_call") {
+                const context = canvasContextRef.current;
+                if (!context?.callPluginAction) throw new Error(rt("openCanvasFirst"));
+                const nodeId = String(payload.input?.nodeId || "");
+                const action = String(payload.input?.action || "");
+                if (!nodeId || !action) throw new Error("nodeId and action are required");
+                const params = payload.input?.params && typeof payload.input.params === "object" ? payload.input.params as Record<string, unknown> : {};
+                result = await context.callPluginAction(nodeId, action, params);
             } else if (payload.name === "canvas_apply_ops") {
                 const context = canvasContextRef.current;
                 if (!context) throw new Error(rt("openCanvasFirst"));

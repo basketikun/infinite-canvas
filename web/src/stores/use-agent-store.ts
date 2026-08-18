@@ -2,6 +2,7 @@ import { create } from "zustand";
 import i18n from "@/i18n";
 
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import type { PluginAgentAction } from "@/types/canvas-plugin";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 
 export type AgentChatRole = "user" | "assistant" | "system" | "tool" | "error";
@@ -24,7 +25,14 @@ export type AgentModel = {
 };
 export type AgentApprovalDecision = "accept" | "acceptForSession" | "decline";
 export type AgentPendingApproval = { requestId: string; method: string; threadId?: string; turnId?: string; itemId?: string; reason?: string; command?: unknown; cwd?: string; grantRoot?: string; networkApprovalContext?: unknown; permissions?: unknown; deciding?: AgentApprovalDecision };
-export type AgentCanvasContext = { snapshot: CanvasAgentSnapshot; applyOps: (ops?: CanvasAgentOp[]) => CanvasAgentSnapshot; undoOps: () => CanvasAgentSnapshot | null; canUndo: boolean };
+export type AgentCanvasContext = {
+    snapshot: CanvasAgentSnapshot;
+    applyOps: (ops?: CanvasAgentOp[]) => CanvasAgentSnapshot;
+    undoOps: () => CanvasAgentSnapshot | null;
+    canUndo: boolean;
+    listPluginActions?: (nodeId: string) => Promise<PluginAgentAction[]>;
+    callPluginAction?: (nodeId: string, action: string, params: Record<string, unknown>) => Promise<unknown>;
+};
 export type AgentThreadSummary = { id: string; preview: string; name?: string | null; cwd?: string; status?: string; source?: unknown; createdAt?: number; updatedAt?: number };
 export type AgentTokenUsage = { input: number; cached: number; output: number };
 export type AgentBootstrapStatus = { key: string; text: string; detail: string; status: "running" | "ready" | "error" };

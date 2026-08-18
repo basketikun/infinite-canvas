@@ -360,7 +360,14 @@ export const CanvasNode = React.memo(function CanvasNode({
                 onMouseDown={(event) => onMouseDown(event, data.id)}
                 onDoubleClick={(event) => {
                     if (definition?.onDoubleClick && pluginContext) {
-                        if (definition.onDoubleClick(pluginContext)) event.stopPropagation();
+                        if (definition.onDoubleClick(pluginContext)) {
+                            event.stopPropagation();
+                            return;
+                        }
+                    }
+                    if (definition?.Workspace && pluginContext) {
+                        event.stopPropagation();
+                        pluginContext.openWorkspace();
                         return;
                     }
                     if (data.type === CanvasNodeType.Image && hasImageContent) {

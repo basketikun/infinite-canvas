@@ -1,0 +1,17 @@
+{
+    "name": "canvas-plugin-director",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "Infinite Canvas Director 节点壳",
+    "scripts": {
+        "build": "node build.mjs",
+        "dev": "node build.mjs --watch",
+        "typecheck": "tsc --noEmit"
+    },
+    "devDependencies": {
+        "@infinite-canvas/plugin-sdk": "file:../sdk",
+        "@types/react": "19.1.12",
+        "typescript": "^5"
+    }
+}

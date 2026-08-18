@@ -109,6 +109,7 @@ SDK 导出的 hooks(`useState/useEffect/useMemo/useRef/...`)运行时转发宿�
     resource?: (node) => { kind: "text"|"image"|"video"|"audio", text?, url? } | null; // 作为上游输入被消费时输出什么
     Content: ({ ctx }) => ReactNode;         // 节点主体渲染
     Panel?: ({ ctx, onClose }) => ReactNode; // 可选:节点下方面板
+    Workspace?: ({ ctx, onClose }) => ReactNode; // 可选:全屏工作区
     toolbar?: (ctx) => Array<{ id, title, label, icon, onClick, danger? }>; // 追加到 hover 工具栏
     onDoubleClick?: (ctx) => boolean;        // 返回 true 表示已处理双击
 }
@@ -116,7 +117,7 @@ SDK 导出的 hooks(`useState/useEffect/useMemo/useRef/...`)运行时转发宿�
 
 ### ctx:节点与画布交互接口
 
-`Content` / `Panel` / `toolbar` 都会拿到 `ctx`(类型 `CanvasNodeContext`):
+`Content` / `Panel` / `Workspace` / `toolbar` 都会拿到 `ctx`(类型 `CanvasNodeContext`):
 
 | 能力 | 说明 |
 | --- | --- |
@@ -128,6 +129,7 @@ SDK 导出的 hooks(`useState/useEffect/useMemo/useRef/...`)运行时转发宿�
 | `ctx.getUpstream()` / `ctx.getDownstream()` | 取上/下游相连节点 |
 | `ctx.applyOps(ops)` | 用画布指令集增删节点/连线、选择、触发生成(见下) |
 | `ctx.emit(event, payload)` / `ctx.on(event, handler)` | 节点/插件间事件通信 |
+| `ctx.openWorkspace()` / `ctx.closeWorkspace()` | 打开/关闭本节点的全屏 Workspace |
 | `ctx.storage` | 插件私有持久化(按插件 id 命名空间) |
 
 > `metadata` 的**内置字段**(content、status、model…)是强类型;插件写入的**自定义字段**读出为 `unknown`,按需 `as` 断言(参考 `sticky-note` 的 `pluginColor`)。

@@ -5,11 +5,12 @@ import type { CanvasNodeData } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasPluginHost } from "@/types/canvas-plugin";
 
 // Assemble host capabilities, node data, theme, and scale into the context injected into plugin nodes.
-export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, theme: CanvasTheme, scale: number, isSelected = false): CanvasNodeContext {
+export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, theme: CanvasTheme, scale: number, isSelected = false, locale: "zh-CN" | "en-US" = "zh-CN"): CanvasNodeContext {
     const storage = createPluginStorage(getNodePluginId(node.type));
     return {
         node,
         theme,
+        locale,
         scale,
         isSelected,
         updateMetadata: (patch) => host.updateMetadata(node.id, patch),
@@ -19,12 +20,16 @@ export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, t
         getConnections: () => host.getConnections(),
         getUpstream: () => host.getUpstream(node.id),
         getDownstream: () => host.getDownstream(node.id),
+        getResource: (nodeId) => host.getResource(nodeId),
+        getUpstreamResources: () => host.getUpstreamResources(node.id),
         applyOps: (ops) => host.applyOps(ops),
         emit: (event, payload) => emitCanvasEvent(event, payload),
         on: (event, handler) => onCanvasEvent(event, handler),
         ai: host.ai,
         openPanel: () => host.openPanel(node.id),
         closePanel: () => host.closePanel(),
+        openWorkspace: () => host.openWorkspace(node.id),
+        closeWorkspace: () => host.closeWorkspace(),
         storage,
     };
 }

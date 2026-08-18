@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
@@ -9,7 +9,8 @@ import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { ensurePluginsLoaded } from "@/lib/canvas/plugin-loader";
 import { canvasThemes } from "@/lib/canvas-theme";
-import type { CanvasNodeToolbarItem, CanvasPluginAi, CanvasPluginHost } from "@/types/canvas-plugin";
+import { CanvasPluginWorkspace } from "@/components/canvas/canvas-plugin-workspace";
+import type { CanvasNodeToolbarItem, CanvasPluginAi, CanvasPluginHost, PluginAgentAction } from "@/types/canvas-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
@@ -34,8 +35,10 @@ type PluginHostParams = {
  * through plugin-callable host/ai objects. Loads installed remote plugins on mount and returns renderers for plugin panels and toolbars.
  */
 export function usePluginHost(params: PluginHostParams) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+    const locale = i18n.resolvedLanguage === "en-US" ? "en-US" : "zh-CN";
     const { effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
+    const [workspaceNodeId, setWorkspaceNodeId] = useState<string | null>(null);
 
     // Host capabilities available to plugin nodes; methods receive nodeId and are not bound to a specific node.
     const pluginAi = useMemo<CanvasPluginAi>(() => {
@@ -80,6 +83,16 @@ export function usePluginHost(params: PluginHostParams) {
         };
     }, [effectiveConfig, isAiConfigReady, openConfigDialog, t]);
 
+    const openWorkspace = useCallback(
+        (nodeId: string) => {
+            const node = nodesRef.current.find((item) => item.id === nodeId);
+            if (!node || !getNodeDefinition(node.type)?.Workspace) return;
+            setWorkspaceNodeId(nodeId);
+        },
+        [nodesRef],
+    );
+    const closeWorkspace = useCallback(() => setWorkspaceNodeId(null), []);
+
     const pluginHost = useMemo<CanvasPluginHost>(
         () => ({
             getNode: (id) => nodesRef.current.find((node) => node.id === id) || null,
@@ -95,31 +108,69 @@ export function usePluginHost(params: PluginHostParams) {
                     .filter((conn) => conn.fromNodeId === nodeId)
                     .map((conn) => nodesRef.current.find((node) => node.id === conn.toNodeId))
                     .filter((node): node is CanvasNodeData => Boolean(node)),
+            getResource: (nodeId) => {
+                const node = nodesRef.current.find((item) => item.id === nodeId);
+                return node ? getNodeDefinition(node.type)?.resource?.(node) || null : null;
+            },
+            getUpstreamResources: (nodeId) =>
+                connectionsRef.current
+                    .filter((conn) => conn.toNodeId === nodeId)
+                    .map((conn) => nodesRef.current.find((node) => node.id === conn.fromNodeId))
+                    .filter((node): node is CanvasNodeData => Boolean(node))
+                    .flatMap((node) => {
+                        const resource = getNodeDefinition(node.type)?.resource?.(node);
+                        return resource ? [{ nodeId: node.id, title: node.title || resource.kind, resource }] : [];
+                    }),
             updateNode: (nodeId, patch) => setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, ...patch } : node))),
             updateMetadata: (nodeId, patch) => setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, ...patch } } : node))),
             applyOps: (ops) => applyAgentOps(ops),
             ai: pluginAi,
             openPanel: (nodeId) => setDialogNodeId(nodeId),
             closePanel: () => setDialogNodeId(null),
+            openWorkspace,
+            closeWorkspace,
         }),
-        [applyAgentOps, pluginAi],
+        [applyAgentOps, closeWorkspace, openWorkspace, pluginAi, setDialogNodeId],
     );
+
+    const listPluginActions = useCallback(async (nodeId: string): Promise<PluginAgentAction[]> => {
+        const node = pluginHost.getNode(nodeId);
+        const listActions = node ? getNodeDefinition(node.type)?.agent?.listActions : undefined;
+        if (!node || !listActions) return [];
+        return await listActions(buildNodeContext(pluginHost, node, theme, viewportRef.current.k, false, locale));
+    }, [locale, pluginHost, theme, viewportRef]);
+
+    const callPluginAction = useCallback(async (nodeId: string, action: string, params: Record<string, unknown>) => {
+        const node = pluginHost.getNode(nodeId);
+        const call = node ? getNodeDefinition(node.type)?.agent?.call : undefined;
+        if (!node || !call) throw new Error("该节点没有可调用的 Plugin Agent Actions。");
+        return await call(buildNodeContext(pluginHost, node, theme, viewportRef.current.k, false, locale), action, params);
+    }, [locale, pluginHost, theme, viewportRef]);
 
     const renderPluginPanel = useCallback(
         (panelNode: CanvasNodeData) => {
             const Panel = getNodeDefinition(panelNode.type)?.Panel;
             if (!Panel) return null;
-            const ctx = buildNodeContext(pluginHost, panelNode, theme, viewportRef.current.k);
+            const ctx = buildNodeContext(pluginHost, panelNode, theme, viewportRef.current.k, false, locale);
             return <Panel ctx={ctx} onClose={() => setDialogNodeId(null)} />;
         },
-        [pluginHost, theme],
+        [locale, pluginHost, theme],
     );
+
+    const renderPluginWorkspace = useCallback(() => {
+        if (!workspaceNodeId) return null;
+        const workspaceNode = pluginHost.getNode(workspaceNodeId);
+        const definition = workspaceNode ? getNodeDefinition(workspaceNode.type) : undefined;
+        if (!workspaceNode || !definition?.Workspace) return null;
+        const ctx = buildNodeContext(pluginHost, workspaceNode, theme, viewportRef.current.k, true, locale);
+        return <CanvasPluginWorkspace key={workspaceNode.id} definition={definition} ctx={ctx} onClose={closeWorkspace} />;
+    }, [closeWorkspace, locale, pluginHost, theme, viewportRef, workspaceNodeId]);
 
     // Build the node toolbar from plugin items and a host-provided interaction/move toggle when enabled.
     const buildNodeToolbarItems = useCallback(
         (node: CanvasNodeData): CanvasNodeToolbarItem[] => {
             const definition = getNodeDefinition(node.type);
-            const ctx = buildNodeContext(pluginHost, node, theme, viewportRef.current.k);
+            const ctx = buildNodeContext(pluginHost, node, theme, viewportRef.current.k, false, locale);
             const custom = definition?.toolbar?.(ctx) || [];
             // Show the interaction/move toggle only for nodes with content that are not forced into an interactive state.
             if (!definition?.interactionToggle || !node.metadata?.content || definition.forceInteractive?.(node)) return custom;
@@ -134,7 +185,7 @@ export function usePluginHost(params: PluginHostParams) {
             };
             return [toggle, ...custom];
         },
-        [pluginHost, t, theme],
+        [locale, pluginHost, t, theme],
     );
 
     // Load installed remote plugins on startup.
@@ -142,5 +193,5 @@ export function usePluginHost(params: PluginHostParams) {
         void ensurePluginsLoaded();
     }, []);
 
-    return { pluginHost, renderPluginPanel, buildNodeToolbarItems };
+    return { pluginHost, renderPluginPanel, renderPluginWorkspace, buildNodeToolbarItems, listPluginActions, callPluginAction };
 }

@@ -1,0 +1,90 @@
+name: Windows release artifact
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*-windows.*']
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:assets
+      - run: npm run verify:builder-config
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run prepare:ffmpeg:win
+      - name: Configure nested portability root and audited media tools
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "OneDrive - Studio\Director's Cut\José"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          "BLOCKOUT_E2E_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BLOCKOUT_FFMPEG=$env:GITHUB_WORKSPACE\vendor\ffmpeg\win-x64\ffmpeg.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BLOCKOUT_FFPROBE=$env:GITHUB_WORKSPACE\vendor\ffmpeg\win-x64\ffprobe.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - run: npm run build
+      - run: npx playwright test tests/e2e/smoke.spec.ts tests/e2e/cancel-export.spec.ts tests/e2e/set-reference.spec.ts
+      - run: npm run package:win
+      - name: Validate unpacked app and silent NSIS lifecycle
+        shell: pwsh
+        run: ./scripts/verify-windows-package.ps1
+      - run: npm run sbom
+      - run: npm run fetch:ffmpeg-source
+      - name: Stage release compliance files
+        shell: pwsh
+        run: |
+          $compliance = New-Item -ItemType Directory -Force release/compliance
+          Copy-Item LICENSE (Join-Path $compliance 'Blockout-Apache-2.0.txt')
+          Copy-Item NOTICE (Join-Path $compliance 'NOTICE')
+          Copy-Item MODIFICATIONS.md (Join-Path $compliance 'MODIFICATIONS.md')
+          Copy-Item THIRD_PARTY_NOTICES.md (Join-Path $compliance 'THIRD_PARTY_NOTICES.md')
+          Copy-Item ASSET_MANIFEST.json (Join-Path $compliance 'ASSET_MANIFEST.json')
+          Copy-Item vendor/ffmpeg/win-x64/LICENSE.txt (Join-Path $compliance 'FFmpeg-GPL-3.0.txt')
+          Copy-Item third_party/ffmpeg/PROVENANCE.md (Join-Path $compliance 'FFmpeg-PROVENANCE.md')
+      - name: Write SHA256SUMS
+        shell: pwsh
+        run: |
+          $distributed = @(
+            Get-ChildItem release -Filter '*.exe' -File
+            Get-ChildItem release -Filter '*.spdx.json' -File
+            Get-ChildItem release -Filter '*.cyclonedx.json' -File
+            Get-ChildItem release/ffmpeg-corresponding-source -File -Recurse
+            Get-ChildItem release/compliance -File -Recurse
+          )
+          $lines = $distributed | Sort-Object FullName | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            $relative = [System.IO.Path]::GetRelativePath((Resolve-Path release), $_.FullName).Replace('\', '/')
+            "$hash *$relative"
+          }
+          [IO.File]::WriteAllText(
+            (Join-Path (Resolve-Path release) 'SHA256SUMS'),
+            (($lines -join "`n") + "`n"),
+            [Text.Encoding]::ASCII
+          )
+      - name: Attest Windows installer provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release/*.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blockout-windows-x64
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/SHA256SUMS
+            release/*.spdx.json
+            release/*.cyclonedx.json
+            release/ffmpeg-corresponding-source/*
+            release/compliance/*

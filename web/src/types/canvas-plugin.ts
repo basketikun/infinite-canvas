@@ -7,6 +7,12 @@ import type { CanvasResourceKind } from "@/lib/canvas/canvas-resource-references
 
 // Resource emitted when a plugin node is consumed as an upstream input.
 export type CanvasNodeResource = { kind: CanvasResourceKind; text?: string; url?: string };
+export type CanvasUpstreamResource = { nodeId: string; title: string; resource: CanvasNodeResource };
+export type PluginAgentAction = { name: string; description: string; inputSchema?: unknown };
+export type CanvasNodeAgent = {
+    listActions?: (ctx: CanvasNodeContext) => PluginAgentAction[] | Promise<PluginAgentAction[]>;
+    call?: (ctx: CanvasNodeContext, action: string, params: Record<string, unknown>) => Promise<unknown>;
+};
 
 // AI generation capabilities injected by the host, reusing its model and credential configuration.
 export type GenerateOptions = { signal?: AbortSignal; references?: string[]; model?: string };
@@ -42,6 +48,7 @@ export type CanvasNodeToolbarItem = {
 export type CanvasNodeContext = {
     node: CanvasNodeData;
     theme: CanvasTheme;
+    locale: "zh-CN" | "en-US";
     scale: number;
     isSelected: boolean; // Whether this node is selected, used to enable iframe interaction on demand.
     // Node data.
@@ -53,6 +60,8 @@ export type CanvasNodeContext = {
     getConnections: () => CanvasConnection[];
     getUpstream: () => CanvasNodeData[];
     getDownstream: () => CanvasNodeData[];
+    getResource: (nodeId: string) => CanvasNodeResource | null;
+    getUpstreamResources: () => CanvasUpstreamResource[];
     // Canvas operations using the Agent instruction set for nodes, connections, selection, viewport, and generation.
     applyOps: (ops: CanvasAgentOp[]) => void;
     // Inter-node and inter-plugin communication.
@@ -63,6 +72,9 @@ export type CanvasNodeContext = {
     // Opens or closes the custom panel below this node; the definition must provide a Panel.
     openPanel: () => void;
     closePanel: () => void;
+    // Opens or closes the full-screen workspace; the definition must provide a Workspace.
+    openWorkspace: () => void;
+    closeWorkspace: () => void;
     // Plugin-private persistence isolated by namespace.
     storage: PluginStorage;
 };
@@ -80,6 +92,8 @@ export type CanvasPluginHost = {
     getConnections: () => CanvasConnection[];
     getUpstream: (nodeId: string) => CanvasNodeData[];
     getDownstream: (nodeId: string) => CanvasNodeData[];
+    getResource: (nodeId: string) => CanvasNodeResource | null;
+    getUpstreamResources: (nodeId: string) => CanvasUpstreamResource[];
     updateNode: (nodeId: string, patch: Partial<Pick<CanvasNodeData, "title" | "width" | "height">>) => void;
     updateMetadata: (nodeId: string, patch: CanvasNodeMetadata) => void;
     applyOps: (ops: CanvasAgentOp[]) => void;
@@ -88,6 +102,9 @@ export type CanvasPluginHost = {
     // Opens or closes the custom panel below a specified node.
     openPanel: (nodeId: string) => void;
     closePanel: () => void;
+    // Opens or closes the full-screen workspace for a specified node.
+    openWorkspace: (nodeId: string) => void;
+    closeWorkspace: () => void;
 };
 
 // Configuration for reusing the host's built-in generation panel; see SDK CanvasBuiltinPanelConfig.
@@ -118,9 +135,11 @@ export type CanvasNodeDefinition = {
     forceInteractive?: (node: CanvasNodeData) => boolean;
     keepAspectRatio?: (node: CanvasNodeData) => boolean;
     resource?: (node: CanvasNodeData) => CanvasNodeResource | null;
+    agent?: CanvasNodeAgent;
     // Built-ins use canvas-node's internal renderer and may omit Content.
     Content?: ComponentType<{ ctx: CanvasNodeContext }>;
     Panel?: ComponentType<{ ctx: CanvasNodeContext; onClose: () => void }>;
+    Workspace?: ComponentType<{ ctx: CanvasNodeContext; onClose: () => void }>;
     toolbar?: (ctx: CanvasNodeContext) => CanvasNodeToolbarItem[];
     onDoubleClick?: (ctx: CanvasNodeContext) => boolean; // Return true when handled.
 };

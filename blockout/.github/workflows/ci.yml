@@ -1,0 +1,69 @@
+# Modified for cross-platform Windows support in 2026; see MODIFICATIONS.md.
+name: CI
+
+on:
+  push:
+    branches: [main, feature/windows-port]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:assets
+      - run: npm run verify:builder-config
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  native-smoke:
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:assets
+      - run: npm run build
+      - name: Create nested portability test root (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/OneDrive - Studio/Director's Cut/José"
+          mkdir -p "$root"
+          echo "BLOCKOUT_E2E_ROOT=$root" >> "$GITHUB_ENV"
+      - name: Install test FFmpeg pair (macOS only; never packaged)
+        if: runner.os == 'macOS'
+        run: brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+      - name: Prepare audited FFmpeg pair and nested test root (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          npm run prepare:ffmpeg:win
+          $root = Join-Path $env:RUNNER_TEMP "OneDrive - Studio\Director's Cut\José"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          "BLOCKOUT_E2E_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BLOCKOUT_FFMPEG=$env:GITHUB_WORKSPACE\vendor\ffmpeg\win-x64\ffmpeg.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BLOCKOUT_FFPROBE=$env:GITHUB_WORKSPACE\vendor\ffmpeg\win-x64\ffprobe.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - run: npx playwright test tests/e2e/smoke.spec.ts tests/e2e/cancel-export.spec.ts tests/e2e/set-reference.spec.ts
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-${{ matrix.os }}
+          path: test-results/
