@@ -82,19 +82,6 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                     <span className="mb-1 block text-sm font-medium">API Key</span>
                     <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
                 </label>
-                {draft.apiFormat === "ark" ? (
-                    <>
-                        <label className="block">
-                            <span className="mb-1 block text-sm font-medium">AK</span>
-                            <Input.Password value={draft.accessKey || ""} onChange={(event) => patch({ accessKey: event.target.value })} placeholder="Access Key" />
-                        </label>
-                        <label className="block">
-                            <span className="mb-1 block text-sm font-medium">SK</span>
-                            <Input.Password value={draft.secretKey || ""} onChange={(event) => patch({ secretKey: event.target.value })} placeholder="Secret Key" />
-                        </label>
-                        <div className="text-xs text-stone-500 md:col-span-2">AK/SK 会随渠道配置保存在浏览器本地的 `infinite-canvas:ai_config_store` 中，仅用于方舟素材资产接口签名；请勿将导出的配置文件分享给他人。</div>
-                    </>
-                ) : null}
             </div>
 
             <div className="mt-6 mb-3 flex flex-wrap items-center justify-between gap-2">

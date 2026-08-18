@@ -20,8 +20,6 @@ export type ModelChannel = {
     name: string;
     baseUrl: string;
     apiKey: string;
-    accessKey?: string;
-    secretKey?: string;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
 };
@@ -283,8 +281,6 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         name: channel?.name?.trim() || i18n.t("config.channels.newName"),
         baseUrl: channel?.baseUrl?.trim() || defaultBaseUrlForApiFormat(apiFormat),
         apiKey: channel?.apiKey || "",
-        accessKey: channel?.accessKey || "",
-        secretKey: channel?.secretKey || "",
         apiFormat,
         models: normalizeChannelModels(channel?.models),
     };
