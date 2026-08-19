@@ -1,4 +1,5 @@
 import i18n from "@/i18n";
+import { proxyApiUrl } from "@/lib/api-proxy";
 import type { WebdavSyncConfig } from "@/stores/use-config-store";
 
 export const WEBDAV_MANIFEST_FILE_NAME = "manifest.json";
@@ -79,7 +80,7 @@ async function webdavFetch(config: WebdavSyncConfig, path: string, init: Request
     const timer = window.setTimeout(() => controller.abort(), WEBDAV_REQUEST_TIMEOUT_MS);
     try {
         const url = buildWebdavUrl(config, path);
-        return await fetch(url, { ...init, headers, signal: controller.signal });
+        return await fetch(proxyApiUrl(url), { ...init, headers, signal: controller.signal });
     } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw new Error(webdavText("requestTimeout"));
         if (error instanceof TypeError) throw new Error(webdavText("connectionFailed"));

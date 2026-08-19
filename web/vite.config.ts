@@ -89,11 +89,19 @@ function parseProxyTarget(url: string): URL | null {
     return target;
 }
 
-function forwardProxyRequest(req: IncomingMessage, res: ServerResponse, target: URL, redirects: number) {
+function forwardProxyRequest(req: IncomingMessage, res: ServerResponse, target: URL, redirects: number, credentialHost = "") {
     const headers = { ...req.headers };
     for (const name of HOP_BY_HOP_HEADERS) delete headers[name];
     delete headers.host;
+    // When a redirect crosses hosts (e.g. a WebDAV server redirecting a file
+    // download to a signed CDN URL), drop credentials instead of leaking the
+    // Basic auth / cookies to an unrelated host — matching curl's default.
+    if (credentialHost && credentialHost !== target.host) {
+        delete headers.authorization;
+        delete headers.cookie;
+    }
 
+    console.log(`[ai-proxy] ${req.method} ${target.href}`);
     let upstreamRequest;
     try {
         upstreamRequest = (target.protocol === "https:" ? httpsRequest : httpRequest)(
@@ -105,10 +113,11 @@ function forwardProxyRequest(req: IncomingMessage, res: ServerResponse, target: 
                 // Follow redirects server-side for GET/HEAD (media downloads and presigned URLs);
                 // other methods would require replaying the request body, so pass 3xx through.
                 if (location && status >= 300 && status < 400 && redirects < MAX_PROXY_REDIRECTS && (req.method === "GET" || req.method === "HEAD")) {
+                    console.log(`[ai-proxy] ${req.method} ${target.href} -> ${status} ${location}`);
                     upstreamRes.resume();
                     const nextTarget = parseProxyTarget(`?target=${encodeURIComponent(new URL(location, target).href)}`);
                     if (nextTarget) {
-                        forwardProxyRequest(req, res, nextTarget, redirects + 1);
+                        forwardProxyRequest(req, res, nextTarget, redirects + 1, credentialHost || target.host);
                         return;
                     }
                 }
@@ -127,6 +136,7 @@ function forwardProxyRequest(req: IncomingMessage, res: ServerResponse, target: 
 
     upstreamRequest.setTimeout(PROXY_IDLE_TIMEOUT_MS, () => upstreamRequest.destroy(new Error("upstream idle timeout")));
     upstreamRequest.on("error", (error) => {
+        console.error(`[ai-proxy] ${req.method} ${target.href} error:`, error.message);
         if (!res.headersSent) writeProxyError(res, error.message);
         else res.destroy();
     });
