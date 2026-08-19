@@ -6,20 +6,29 @@ import { dataUrlToFile, readFileAsDataUrl } from "@/lib/image-utils";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, buildArkApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null };
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
+type ArkVideoTask = {
+    id: string;
+    status?: "queued" | "running" | "succeeded" | "completed" | "failed" | "cancelled" | "expired";
+    error?: { message?: string } | null;
+    url?: string;
+    result_url?: string;
+    video_url?: string;
+    content?: { video_url?: string; url?: string } | null;
+};
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type RequestOptions = { signal?: AbortSignal };
 type VideoMediaOptions = RequestOptions & { videos?: ReferenceVideo[]; audios?: ReferenceAudio[] };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "plugin"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "ark" | "plugin"; model: string };
 type GeminiInlineData = { bytesBase64Encoded: string; mimeType: string };
 type GeminiVideoOperation = {
     name?: string;
@@ -48,13 +57,14 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 }
 
 export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationResult> {
+    const intervalMs = task.provider === "ark" ? 5000 : 2500;
     for (let attempt = 0; attempt < 120; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
         if (state.status === "failed") throw videoTaskFailed(state.error);
-        if (attempt === 119) throw new Error(apiText("videoTimeout", { provider: "" }));
-        await delay(2500, options?.signal);
+        if (attempt === 119) throw new Error(apiText("videoTimeout", { provider: task.provider === "ark" ? "Seedance " : "" }));
+        await delay(intervalMs, options?.signal);
     }
     throw new Error(apiText("videoTimeout", { provider: "" }));
 }
@@ -76,6 +86,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (requestConfig.apiFormat === "gemini") return createGeminiVideoTask(requestConfig, selectedModel, prompt, references, options);
+    if (requestConfig.apiFormat === "ark") return createArkVideoTask(requestConfig, selectedModel, prompt, references, options);
     return createOpenAIVideoTask(requestConfig, selectedModel, prompt, references, options);
 }
 
@@ -87,6 +98,7 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (task.provider === "gemini") return pollGeminiVideoTask(requestConfig, task, options);
+    if (task.provider === "ark") return pollArkVideoTask(requestConfig, task, options);
     return pollOpenAIVideoTask(requestConfig, task, options);
 }
 
@@ -191,6 +203,44 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
         return { status: "pending" };
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("videoTaskQueryFailed")));
+    }
+}
+
+async function createArkVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const content: Array<Record<string, unknown>> = [];
+    if (prompt.trim()) content.push({ type: "text", text: prompt.trim() });
+    for (const image of references.slice(0, 9)) {
+        content.push({ type: "image_url", image_url: { url: await arkReferenceImageUrl(image) }, role: "reference_image" });
+    }
+    if (!content.length) throw new Error(apiText("videoPromptRequired"));
+
+    try {
+        const created = unwrapArkVideoTask((await axios.post<ApiEnvelope<ArkVideoTask>>(arkVideoApiUrl(config), {
+            model: modelOptionName(model),
+            content,
+            ratio: arkVideoRatio(config.size),
+            resolution: arkVideoResolution(config.vquality),
+            duration: arkVideoDuration(config.videoSeconds),
+            generate_audio: boolConfig(config.videoGenerateAudio, true),
+            watermark: boolConfig(config.videoWatermark, false),
+        }, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
+        if (!created.id) throw new Error(apiText("seedanceNoTaskId"));
+        return { id: created.id, provider: "ark", model };
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("seedanceTaskCreateFailed")));
+    }
+}
+
+async function pollArkVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+    try {
+        const state = unwrapArkVideoTask((await axios.get<ApiEnvelope<ArkVideoTask>>(arkVideoApiUrl(config, task.id), { headers: aiHeaders(config), signal: options?.signal })).data);
+        const url = videoResultUrl(state);
+        if (url) return { status: "completed", result: await videoResultFromUrl(url, options) };
+        if (state.status === "succeeded" || state.status === "completed") return { status: "failed", error: apiText("seedanceNoVideoUrl") };
+        if (state.status === "failed" || state.status === "cancelled" || state.status === "expired") return { status: "failed", error: readApiErrorMessage(state.error?.message) || apiText(state.status === "expired" ? "seedanceVideoTimeout" : "seedanceVideoFailed") };
+        return { status: "pending" };
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("seedanceTaskQueryFailed")));
     }
 }
 
@@ -329,8 +379,46 @@ function normalizeVideoResolution(value: string) {
     return `${resolution}p`;
 }
 
+function arkVideoApiUrl(config: AiConfig, taskId?: string) {
+    return buildArkApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
+}
+
+function arkVideoDuration(value: string) {
+    const seconds = Math.floor(Number(value) || 5);
+    return Math.max(4, Math.min(15, seconds));
+}
+
+function arkVideoResolution(value: string) {
+    if (value === "low") return "480p";
+    if (value === "auto" || value === "high" || value === "medium") return "720p";
+    const resolution = value.replace(/p$/i, "") || "720";
+    return ["480", "720", "1080"].includes(resolution) ? `${resolution}p` : "720p";
+}
+
+function arkVideoRatio(value: string) {
+    if (!value || value === "auto" || value === "adaptive") return "adaptive";
+    if (["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"].includes(value)) return value;
+    const match = value.match(/^(\d+):(\d+)$/);
+    if (!match) return "adaptive";
+    const ratio = Number(match[1]) / Number(match[2]);
+    const ratios = [["16:9", 16 / 9], ["4:3", 4 / 3], ["1:1", 1], ["3:4", 3 / 4], ["9:16", 9 / 16], ["21:9", 21 / 9]] as const;
+    return ratios.reduce((best, candidate) => Math.abs(candidate[1] - ratio) < Math.abs(best[1] - ratio) ? candidate : best)[0];
+}
+
+async function arkReferenceImageUrl(image: ReferenceImage) {
+    const directUrl = image.url || image.dataUrl || "";
+    if (/^(https?:|asset:|data:)/i.test(directUrl)) return directUrl;
+    const dataUrl = await imageToDataUrl(image);
+    if (!dataUrl) throw new Error(apiText("referenceImageReadFailed"));
+    return dataUrl;
+}
+
 function unwrapVideoResponse(payload: ApiVideoResponse) {
     return unwrapEnvelope(payload, apiText("noVideoTask"));
+}
+
+function unwrapArkVideoTask(payload: ApiEnvelope<ArkVideoTask>) {
+    return unwrapEnvelope(payload, apiText("seedanceNoTask"));
 }
 
 function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
@@ -343,7 +431,7 @@ function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
     return payload as T;
 }
 
-function videoResultUrl(payload: VideoResponse) {
+function videoResultUrl(payload: VideoResponse | ArkVideoTask) {
     return [payload.video_url, payload.result_url, payload.url, payload.content?.video_url, payload.content?.url].find((url) => typeof url === "string" && (isPublicMediaUrl(url) || /\.mp4(\?|#|$)/i.test(url)));
 }
 

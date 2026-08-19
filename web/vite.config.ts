@@ -41,6 +41,15 @@ function localPluginsManifest(): Plugin {
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
     plugins: [react(), localPluginsManifest()],
+    server: {
+        proxy: {
+            "/api/ark": {
+                target: "https://ark.cn-beijing.volces.com",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/ark/, "/api/v3"),
+            },
+        },
+    },
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),
