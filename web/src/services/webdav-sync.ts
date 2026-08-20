@@ -4,6 +4,8 @@ import type { WebdavSyncConfig } from "@/stores/use-config-store";
 
 export const WEBDAV_MANIFEST_FILE_NAME = "manifest.json";
 const WEBDAV_REQUEST_TIMEOUT_MS = 120000;
+// 123 云盘等 WebDAV 服务在写入/目录操作时可能瞬时锁定资源(423 Locked),等待后重试。
+const WEBDAV_LOCK_RETRY_DELAYS_MS = [300, 1000, 3000];
 const ensuredDirectories = new Set<string>();
 const webdavText = (key: string, options?: Record<string, unknown>) => i18n.t(`config.webdav.errors.${key}`, options);
 
@@ -80,14 +82,37 @@ async function webdavFetch(config: WebdavSyncConfig, path: string, init: Request
     const timer = window.setTimeout(() => controller.abort(), WEBDAV_REQUEST_TIMEOUT_MS);
     try {
         const url = buildWebdavUrl(config, path);
-        return await fetch(proxyApiUrl(url), { ...init, headers, signal: controller.signal });
-    } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") throw new Error(webdavText("requestTimeout"));
-        if (error instanceof TypeError) throw new Error(webdavText("connectionFailed"));
-        throw error;
+        const proxyUrl = proxyApiUrl(url);
+        for (let attempt = 0; ; attempt += 1) {
+            let response: Response;
+            try {
+                response = await fetch(proxyUrl, { ...init, headers, signal: controller.signal });
+            } catch (error) {
+                if (error instanceof Error && error.name === "AbortError") throw new Error(webdavText("requestTimeout"));
+                if (error instanceof TypeError) throw new Error(webdavText("connectionFailed"));
+                throw error;
+            }
+            if (response.status !== 423 || attempt >= WEBDAV_LOCK_RETRY_DELAYS_MS.length) return response;
+            response.body?.cancel();
+            await sleepWithAbort(WEBDAV_LOCK_RETRY_DELAYS_MS[attempt], controller.signal);
+        }
     } finally {
         window.clearTimeout(timer);
     }
+}
+
+function sleepWithAbort(ms: number, signal: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(resolve, ms);
+        signal.addEventListener(
+            "abort",
+            () => {
+                window.clearTimeout(timer);
+                reject(new Error(webdavText("requestTimeout")));
+            },
+            { once: true },
+        );
+    });
 }
 
 function buildWebdavUrl(config: WebdavSyncConfig, path: string) {
@@ -109,6 +134,7 @@ async function throwWebdavError(response: Response, fallback: string): Promise<n
     const detail = await response.text().catch(() => "");
     if (response.status === 401 || response.status === 403) throw new Error(webdavText("authenticationFailed"));
     if (response.status === 404) throw new Error(webdavText("pathMissing"));
+    if (response.status === 423) throw new Error(webdavText("resourceLocked"));
     throw new Error(webdavText("responseFailed", { fallback, status: response.status, detail: detail ? ` ${detail.slice(0, 120)}` : "" }));
 }
 

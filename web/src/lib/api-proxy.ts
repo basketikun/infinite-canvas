@@ -4,20 +4,28 @@
  * "ai-api-proxy" plugin in vite.config.ts). This avoids browser CORS blocks
  * when a user-configurable channel baseUrl points at a third-party service.
  *
- * The proxy is only active while serving locally (localhost / 127.0.0.1),
+ * The proxy is only active while serving locally (localhost / 127.0.0.1) or on
+ * hosts listed in VITE_API_PROXY_HOSTS (e.g. a LAN IP served to co-workers),
  * where the Vite middleware exists. Deployed environments keep calling the
  * third-party APIs directly. Set VITE_API_PROXY=true|false to force the
  * behavior when self-hosting.
  */
 
 const AI_PROXY_PATH = "/ai-proxy/";
+const LOCAL_PROXY_HOSTS = ["localhost", "127.0.0.1", "::1", "0.0.0.0"];
 
 export function isApiProxyEnabled(): boolean {
     const override = import.meta.env.VITE_API_PROXY;
     if (override === "true") return true;
     if (override === "false") return false;
     const host = window.location.hostname;
-    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "0.0.0.0";
+    if (LOCAL_PROXY_HOSTS.includes(host)) return true;
+    // Extra hosts (LAN IPs, custom domains) configured via VITE_API_PROXY_HOSTS="ip1,ip2".
+    const extraHosts = (import.meta.env.VITE_API_PROXY_HOSTS || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    return extraHosts.includes(host);
 }
 
 /**
