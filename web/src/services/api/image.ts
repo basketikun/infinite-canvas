@@ -6,6 +6,7 @@ import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
+import { proxyApiUrl } from "@/lib/api-proxy";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
 
@@ -600,7 +601,7 @@ function toGeminiToolOptions(tools: ResponseFunctionTool[], toolChoice: ToolChoi
 }
 
 async function requestGeminiStreamingResponse(config: AiConfig, body: Record<string, unknown>, onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
-    const response = await fetch(`${geminiApiUrl(config, "streamGenerateContent")}?alt=sse`, {
+    const response = await fetch(proxyApiUrl(`${geminiApiUrl(config, "streamGenerateContent")}?alt=sse`), {
         method: "POST",
         headers: geminiHeaders(config),
         body: JSON.stringify(body),
@@ -688,7 +689,7 @@ async function requestGeminiImagesOnce(config: AiConfig, prompt: string, referen
         parts.push(toGeminiImagePart(await imageToDataUrl(image)));
     }
     const response = await axios.post<GeminiPayload>(
-        geminiApiUrl(config, "generateContent"),
+        proxyApiUrl(geminiApiUrl(config, "generateContent")),
         {
             ...toGeminiBody(config, [{ role: "user", content: prompt }], { generationConfig: { responseModalities: ["TEXT", "IMAGE"], ...resolveGeminiImageConfig(config) } }),
             contents: [{ role: "user", parts }],
@@ -878,7 +879,7 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
 export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">) {
     try {
         if (config.apiFormat === "gemini") {
-            const response = await axios.get<GeminiPayload>(geminiApiUrl({ ...defaultGeminiConfig, ...config }), { headers: geminiHeaders({ ...defaultGeminiConfig, ...config }) });
+            const response = await axios.get<GeminiPayload>(proxyApiUrl(geminiApiUrl({ ...defaultGeminiConfig, ...config })), { headers: geminiHeaders({ ...defaultGeminiConfig, ...config }) });
             validateGeminiPayload(response.data);
             return (response.data.models || [])
                 .map((model) => model.name?.replace(/^models\//, ""))
