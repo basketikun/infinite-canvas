@@ -1,10 +1,6 @@
 {
-  "title": "商务合作",
+  "title": "Business",
   "root": true,
   "defaultOpen": true,
-  "pages": [
-    "license",
-    "cla",
-    "business"
-  ]
+  "pages": ["license", "business"]
 }

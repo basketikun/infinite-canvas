@@ -1,27 +1,34 @@
 {
   "name": "@basketikun/canvas-agent",
-  "version": "0.2.0",
+  "version": "0.6.0",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "canvas-agent": "./dist/index.js"
+    "canvas-agent": "dist/index.js"
   },
   "files": [
     "dist",
+    "agent-instructions.md",
     "README.md"
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
-    "test": "tsx --test src/canvas-session.test.ts",
+    "debug": "tsx src/index.ts --debug",
+    "test": "tsx --test src/canvas/session.test.ts src/agent/codex-client.test.ts src/agent/codex-history.test.ts src/agent/message-metadata.test.ts src/skills/store.test.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@openai/codex": "^0.139.0",
+    "@openai/codex": "0.146.0",
     "express": "^5.1.0",
+    "gray-matter": "^4.0.3",
+    "strip-ansi": "7.2.0",
+    "winston": "^3.19.0",
+    "yaml": "^2.9.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {

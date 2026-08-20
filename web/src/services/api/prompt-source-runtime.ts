@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import type { PromptSource } from "./prompt-source-presets";
 
 export type RawPrompt = {
@@ -23,27 +24,27 @@ type RunOptions = { signal?: AbortSignal };
 
 async function fetchSource(source: PromptSource, options?: RunOptions) {
     const response = await fetch(source.url, { cache: "no-store", signal: options?.signal });
-    if (!response.ok) throw new Error(`请求失败（${response.status}）`);
+    if (!response.ok) throw new Error(i18n.t("config.promptSources.runtime.requestFailed", { status: response.status }));
     return response.json();
 }
 
 export async function runPromptSource(source: PromptSource, options?: RunOptions): Promise<RawPrompt[]> {
-    if (!source.url.trim()) throw new Error("JSON URL 不能为空");
+    if (!source.url.trim()) throw new Error(i18n.t("config.promptSources.runtime.urlRequired"));
     let data: unknown;
     try {
         data = await fetchSource(source, options);
     } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") throw error;
-        throw new Error(`「${source.name}」拉取失败：${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(i18n.t("config.promptSources.runtime.fetchFailed", { name: source.name, error: error instanceof Error ? error.message : String(error) }));
     }
 
     const items = parseJsonSource(data, source);
-    if (source.builtIn && !items.length) throw new Error(`「${source.name}」未解析到有效提示词`);
+    if (source.builtIn && !items.length) throw new Error(i18n.t("config.promptSources.runtime.noPrompts", { name: source.name }));
     return items;
 }
 
 function parseJsonSource(data: unknown, source: PromptSource) {
-    if (!Array.isArray(data)) throw new Error(`「${source.name}」格式错误：根节点必须是数组`);
+    if (!Array.isArray(data)) throw new Error(i18n.t("config.promptSources.runtime.invalidRoot", { name: source.name }));
     return normalizeItems(data, source);
 }
 

@@ -1,12 +1,5 @@
 {
-  "title": "文档",
+  "title": "Documentation",
   "root": true,
-  "pages": [
-    "overview",
-    "canvas",
-    "development",
-    "progress",
-    "business",
-    "support"
-  ]
+  "pages": ["overview", "canvas", "development", "progress", "business", "support"]
 }

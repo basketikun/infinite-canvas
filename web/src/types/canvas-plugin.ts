@@ -5,10 +5,10 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import type { CanvasConnection, CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 import type { CanvasResourceKind } from "@/lib/canvas/canvas-resource-references";
 
-// 插件节点作为上游输入被消费时输出的资源
+// Resource emitted when a plugin node is consumed as an upstream input.
 export type CanvasNodeResource = { kind: CanvasResourceKind; text?: string; url?: string };
 
-// --- AI 生成能力(生图/生视频/生文本),由宿主注入,复用宿主模型/密钥配置 ---
+// AI generation capabilities injected by the host, reusing its model and credential configuration.
 export type GenerateOptions = { signal?: AbortSignal; references?: string[]; model?: string };
 export type GenerateImageOptions = GenerateOptions & { count?: number; size?: string };
 export type GenerateImageResult = { images: string[] };
@@ -27,7 +27,7 @@ export type CanvasPluginAi = {
     defaultModel: (capability: PluginModelCapability) => string;
 };
 
-// 节点自带的工具栏按钮(追加到 hover 工具栏尾部)
+// Node-specific buttons appended to the hover toolbar.
 export type CanvasNodeToolbarItem = {
     id: string;
     title: string;
@@ -38,32 +38,32 @@ export type CanvasNodeToolbarItem = {
     danger?: boolean;
 };
 
-// 每个节点渲染时注入的上下文,是插件与画布交互的核心接口
+// Context injected while rendering each node; the primary interface between plugins and the canvas.
 export type CanvasNodeContext = {
     node: CanvasNodeData;
     theme: CanvasTheme;
     scale: number;
-    isSelected: boolean; // 该节点当前是否被选中(用于按需启用 iframe 交互等)
-    // 自身数据
+    isSelected: boolean; // Whether this node is selected, used to enable iframe interaction on demand.
+    // Node data.
     updateMetadata: (patch: CanvasNodeMetadata) => void;
     updateNode: (patch: Partial<Pick<CanvasNodeData, "title" | "width" | "height">>) => void;
-    // 图访问
+    // Graph access.
     getNode: (id: string) => CanvasNodeData | null;
     getNodes: () => CanvasNodeData[];
     getConnections: () => CanvasConnection[];
     getUpstream: () => CanvasNodeData[];
     getDownstream: () => CanvasNodeData[];
-    // 画布操作,复用 Agent 指令集(增删节点/连线/选择/视口/触发生成)
+    // Canvas operations using the Agent instruction set for nodes, connections, selection, viewport, and generation.
     applyOps: (ops: CanvasAgentOp[]) => void;
-    // 节点间/插件间通信
+    // Inter-node and inter-plugin communication.
     emit: (event: string, payload?: unknown) => void;
     on: (event: string, handler: (payload: unknown) => void) => () => void;
-    // AI 生成能力(生图/生视频/生文本),复用宿主模型配置
+    // AI image, video, and text generation using the host model configuration.
     ai: CanvasPluginAi;
-    // 打开/关闭本节点下方的自定义 Panel(需在节点定义里提供 Panel)
+    // Opens or closes the custom panel below this node; the definition must provide a Panel.
     openPanel: () => void;
     closePanel: () => void;
-    // 插件私有持久化,命名空间隔离
+    // Plugin-private persistence isolated by namespace.
     storage: PluginStorage;
 };
 
@@ -73,7 +73,7 @@ export type PluginStorage = {
     remove: (key: string) => Promise<void>;
 };
 
-// 画布宿主提供的、与具体节点无关的能力集合(由画布页面构建、注入渲染链路)
+// Node-independent host capabilities constructed by the canvas page and injected into the render chain.
 export type CanvasPluginHost = {
     getNode: (id: string) => CanvasNodeData | null;
     getNodes: () => CanvasNodeData[];
@@ -83,65 +83,65 @@ export type CanvasPluginHost = {
     updateNode: (nodeId: string, patch: Partial<Pick<CanvasNodeData, "title" | "width" | "height">>) => void;
     updateMetadata: (nodeId: string, patch: CanvasNodeMetadata) => void;
     applyOps: (ops: CanvasAgentOp[]) => void;
-    // AI 生成能力,复用画布页面当前的模型/密钥配置
+    // AI generation using the current canvas model and credential configuration.
     ai: CanvasPluginAi;
-    // 打开/关闭指定节点下方的自定义 Panel
+    // Opens or closes the custom panel below a specified node.
     openPanel: (nodeId: string) => void;
     closePanel: () => void;
 };
 
-// 复用宿主内置生成面板的配置(见 SDK CanvasBuiltinPanelConfig)
+// Configuration for reusing the host's built-in generation panel; see SDK CanvasBuiltinPanelConfig.
 export type CanvasBuiltinPanelConfig = {
     mode: "image" | "video" | "text" | "audio";
     promptPrefix?: string;
     writeBackToSelf?: boolean;
 };
 
-// 节点类型定义:内置节点与插件节点统一走这套结构
+// Shared node definition used by both built-in and plugin nodes.
 export type CanvasNodeDefinition = {
-    type: string; // 内置如 "image";插件建议 "<pluginId>:<name>"
+    type: string; // Built-ins use values such as "image"; plugins should use "<pluginId>:<name>".
     title: string;
     icon: ReactNode;
     description?: string;
     defaultSize: { width: number; height: number };
     defaultMetadata?: CanvasNodeMetadata;
     minimapColor?: string;
-    showInCreateMenu?: boolean; // 默认 true
-    hasSourceHandle?: boolean; // 右侧输出连接点,默认 true
-    hidePanel?: boolean; // 为 true 时:点击/新建不弹出下方面板(含内置生图面板),纯展示型节点用
-    transparentBackground?: boolean; // 为 true 时:节点卡片背景与边框透明,内容直接融入画布(如 SVG/矢量图)
-    autoOpenPanel?: boolean; // 为 true 时:单击节点自动打开自定义 Panel(默认仅内置节点单击自动打开)
-    useBuiltinPanel?: CanvasBuiltinPanelConfig; // 复用宿主内置生成面板(与自定义 Panel 二选一)
-    // 为 true 时:宿主自动提供「交互 ⇄ 移动」工具条开关,并按 metadata.interactive 控制内容层指针事件
+    showInCreateMenu?: boolean; // Defaults to true.
+    hasSourceHandle?: boolean; // Right-side output handle; defaults to true.
+    hidePanel?: boolean; // Prevents click/create from opening a lower panel; intended for display-only nodes.
+    transparentBackground?: boolean; // Makes the node card transparent so SVG or vector content blends into the canvas.
+    autoOpenPanel?: boolean; // Opens a custom Panel on click; automatic opening otherwise applies only to built-ins.
+    useBuiltinPanel?: CanvasBuiltinPanelConfig; // Reuses the built-in generation panel instead of a custom Panel.
+    // Lets the host provide an Interaction/Move toolbar toggle and control pointer events through metadata.interactive.
     interactionToggle?: boolean;
-    // 配合 interactionToggle:返回 true 表示内容强制可交互(如编辑态),忽略 interactive 并隐藏开关
+    // With interactionToggle, true forces interactive content, ignores metadata.interactive, and hides the toggle.
     forceInteractive?: (node: CanvasNodeData) => boolean;
     keepAspectRatio?: (node: CanvasNodeData) => boolean;
     resource?: (node: CanvasNodeData) => CanvasNodeResource | null;
-    // 渲染:内置节点由 canvas-node 内部渲染器负责,可不提供 Content
+    // Built-ins use canvas-node's internal renderer and may omit Content.
     Content?: ComponentType<{ ctx: CanvasNodeContext }>;
     Panel?: ComponentType<{ ctx: CanvasNodeContext; onClose: () => void }>;
     toolbar?: (ctx: CanvasNodeContext) => CanvasNodeToolbarItem[];
-    onDoubleClick?: (ctx: CanvasNodeContext) => boolean; // 返回 true 表示已处理
+    onDoubleClick?: (ctx: CanvasNodeContext) => boolean; // Return true when handled.
 };
 
-// 插件启动时可访问的应用能力
+// Application capabilities available while a plugin starts.
 export type CanvasPluginApp = {
     version: string;
     emit: (event: string, payload?: unknown) => void;
     on: (event: string, handler: (payload: unknown) => void) => () => void;
-    // 注入插件样式,返回移除函数;传 key 时同 key 覆盖旧样式
+    // Injects plugin styles and returns a cleanup function; the same key replaces previous styles.
     injectCSS: (css: string, key?: string) => () => void;
 };
 
-// 插件包默认导出
+// Default plugin package export.
 export type CanvasPlugin = {
     id: string;
     name: string;
     version: string;
     description?: string;
     minAppVersion?: string;
-    css?: string; // 插件样式,启用时自动注入、卸载/禁用时自动清理
+    css?: string; // Injected when enabled and removed when uninstalled or disabled.
     nodes: CanvasNodeDefinition[];
     setup?: (app: CanvasPluginApp) => void | (() => void);
 };

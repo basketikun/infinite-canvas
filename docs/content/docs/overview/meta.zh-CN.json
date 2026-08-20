@@ -1,0 +1,14 @@
+{
+  "title": "项目介绍",
+  "root": true,
+  "defaultOpen": true,
+  "pages": [
+    "quick-start",
+    "codex-app-plugin",
+    "features",
+    "render",
+    "docker",
+    "third-party-prompt-repositories",
+    "[在线体验](https://canvas.best/)"
+  ]
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { createPortal } from "react-dom";
 import { Button, Input, Modal, Slider, Tooltip } from "antd";
 import { Brush, Eraser, Redo2, RotateCcw, Undo2, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { readImageMeta } from "@/lib/image-utils";
 import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
@@ -20,6 +21,7 @@ const defaultBrushSize = 100;
 const maskFillColor = "rgba(37, 99, 235, .38)";
 
 export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (payload: CanvasImageMaskEditPayload) => void }) {
+    const { t } = useTranslation();
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
     const previewCanvasRef = useRef<HTMLCanvasElement>(null);
     const drawingRef = useRef<{ active: boolean; stroke: MaskStroke | null }>({ active: false, stroke: null });
@@ -201,9 +203,9 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
     const submit = () => {
         const nextPrompt = prompt.trim();
         const canvas = maskCanvasRef.current;
-        if (!nextPrompt) return setError("请输入修改要求");
+        if (!nextPrompt) return setError(t("canvas.editors.maskPromptRequired"));
         if (!canvas) return;
-        if (!canvasHasPaint(canvas)) return setError("请先涂抹局部区域");
+        if (!canvasHasPaint(canvas)) return setError(t("canvas.editors.maskRequired"));
         onConfirm({ prompt: nextPrompt, maskDataUrl: buildEditMask(canvas) });
     };
 
@@ -257,55 +259,55 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
 
                 <div className="flex min-h-[360px] flex-col gap-5">
                     <div>
-                        <h2 className="text-xl font-semibold">局部遮罩编辑</h2>
-                        <div className="mt-2 text-sm opacity-60">{image ? `${image.width} x ${image.height}px` : "读取中"}</div>
-                        <div className="mt-2 text-xs leading-5 opacity-55">滚轮缩放 · 中键或空格+左键拖动画面 · Alt+左/右键横拖调笔刷 · Ctrl/Cmd+Z 撤回 · Ctrl/Cmd+Shift+Z 重做</div>
+                        <h2 className="text-xl font-semibold">{t("canvas.editors.maskTitle")}</h2>
+                        <div className="mt-2 text-sm opacity-60">{image ? `${image.width} x ${image.height}px` : t("canvas.editors.loading")}</div>
+                        <div className="mt-2 text-xs leading-5 opacity-55">{t("canvas.editors.maskHint")}</div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                         <Button type={mode === "paint" ? "primary" : "default"} icon={<Brush className="size-4" />} onClick={() => setMode("paint")}>
-                            画笔
+                            {t("canvas.editors.brush")}
                         </Button>
                         <Button type={mode === "erase" ? "primary" : "default"} icon={<Eraser className="size-4" />} onClick={() => setMode("erase")}>
-                            擦除
+                            {t("canvas.editors.erase")}
                         </Button>
                     </div>
 
                     <div className="flex items-center justify-between rounded-lg border border-black/10 px-2 py-1 dark:border-white/10">
-                        <Tooltip title="撤回局部涂抹 (Ctrl/Cmd+Z)">
-                            <Button type="text" icon={<Undo2 className="size-4" />} disabled={!historySize} aria-label="撤回局部涂抹" onClick={undoMask} />
+                        <Tooltip title={t("canvas.editors.undoMaskTitle")}>
+                            <Button type="text" icon={<Undo2 className="size-4" />} disabled={!historySize} aria-label={t("canvas.editors.undoMask")} onClick={undoMask} />
                         </Tooltip>
-                        <Tooltip title="重做局部涂抹 (Ctrl/Cmd+Shift+Z)">
-                            <Button type="text" icon={<Redo2 className="size-4" />} disabled={!redoSize} aria-label="重做局部涂抹" onClick={redoMask} />
+                        <Tooltip title={t("canvas.editors.redoMaskTitle")}>
+                            <Button type="text" icon={<Redo2 className="size-4" />} disabled={!redoSize} aria-label={t("canvas.editors.redoMask")} onClick={redoMask} />
                         </Tooltip>
                         <div className="flex items-center gap-1">
-                            <Tooltip title="缩小">
-                                <Button type="text" icon={<ZoomOut className="size-4" />} disabled={!viewport.canZoomOut} aria-label="缩小" onClick={viewport.zoomOut} />
+                            <Tooltip title={t("canvas.editors.zoomOut")}>
+                                <Button type="text" icon={<ZoomOut className="size-4" />} disabled={!viewport.canZoomOut} aria-label={t("canvas.editors.zoomOut")} onClick={viewport.zoomOut} />
                             </Tooltip>
                             <button type="button" className="min-w-14 text-center text-xs font-semibold tabular-nums opacity-70" onClick={viewport.resetZoom}>
                                 {Math.round(viewport.zoom * 100)}%
                             </button>
-                            <Tooltip title="放大">
-                                <Button type="text" icon={<ZoomIn className="size-4" />} disabled={!viewport.canZoomIn} aria-label="放大" onClick={viewport.zoomIn} />
+                            <Tooltip title={t("canvas.editors.zoomIn")}>
+                                <Button type="text" icon={<ZoomIn className="size-4" />} disabled={!viewport.canZoomIn} aria-label={t("canvas.editors.zoomIn")} onClick={viewport.zoomIn} />
                             </Tooltip>
                         </div>
                     </div>
 
                     <div className="space-y-2">
                         <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium opacity-75">笔刷大小</span>
+                            <span className="font-medium opacity-75">{t("canvas.editors.brushSize")}</span>
                             <span className="font-semibold">{brushSize}px</span>
                         </div>
                         <Slider min={8} max={160} step={2} value={brushSize} onChange={setBrushSize} />
                     </div>
 
                     <div className="space-y-2">
-                        <div className="text-sm font-medium opacity-75">修改要求</div>
+                        <div className="text-sm font-medium opacity-75">{t("canvas.editors.editInstructions")}</div>
                         <Input.TextArea
                             rows={6}
                             value={prompt}
                             status={error && !prompt.trim() ? "error" : undefined}
-                            placeholder="例如：把选中区域改成金属材质，保持原图光影"
+                            placeholder={t("canvas.editors.maskPlaceholder")}
                             onChange={(event) => {
                                 setPrompt(event.target.value);
                                 setError("");
@@ -316,14 +318,14 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
 
                     <div className="mt-auto flex items-center justify-between gap-2">
                         <Button icon={<RotateCcw className="size-4" />} onClick={resetMask}>
-                            重置
+                            {t("canvas.editors.reset")}
                         </Button>
                         <div className="flex items-center gap-2">
                             <Button icon={<X className="size-4" />} onClick={onClose}>
-                                取消
+                                {t("canvas.editors.cancel")}
                             </Button>
                             <Button type="primary" icon={<WandSparkles className="size-4" />} onClick={submit}>
-                                AI 修改
+                                {t("canvas.editors.aiEdit")}
                             </Button>
                         </div>
                     </div>

@@ -20,7 +20,7 @@ type AssetExportItem = {
     bytes: number;
 };
 
-export async function exportAssets(assets: Asset[]) {
+export async function exportAssets(assets: Asset[], filename: string) {
     const files: AssetExportItem[] = [];
     const zipFiles: { name: string; data: BlobPart }[] = [];
 
@@ -39,7 +39,7 @@ export async function exportAssets(assets: Asset[]) {
 
     const data: AssetExportFile = { app: "infinite-canvas", version: 1, exportedAt: new Date().toISOString(), assets, files };
     const zip = await createZip([{ name: "assets.json", data: JSON.stringify(data, null, 2) }, ...zipFiles]);
-    saveAs(zip, "我的资产.zip");
+    saveAs(zip, filename);
 }
 
 export async function readAssetPackage(file: File) {

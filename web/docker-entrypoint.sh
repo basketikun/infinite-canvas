@@ -1,12 +1,12 @@
 #!/bin/sh
 set -e
 
-# 由 nginx 官方镜像的入口在启动前自动执行（/docker-entrypoint.d/*.sh），随后 nginx 正常拉起。
-# 从环境变量生成运行期配置 config.js；每家统计一个独立变量，未设置的留空，
-# 前端据此判定该家「关闭」，不加载对应脚本、不发外部请求。可同时启用多家。
+# Executed automatically by the official nginx image entrypoint through /docker-entrypoint.d/*.sh before nginx starts.
+# Generate runtime config.js from environment variables. Each analytics provider has an independent variable;
+# unset providers remain disabled, load no scripts, and send no external requests. Multiple providers may be enabled together.
 
-# GA4 / 百度 ID 只含字母、数字和连字符；过滤掉其它字符，
-# 避免值里的引号等破坏 config.js 的 JS 字符串（纵深防御）。
+# GA4 and Baidu IDs contain only letters, numbers, and hyphens. Remove other characters
+# so quotes and similar values cannot break the JavaScript strings in config.js as a defense-in-depth measure.
 sanitize_id() {
     printf '%s' "$1" | tr -cd 'A-Za-z0-9-'
 }

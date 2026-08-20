@@ -1,5 +1,5 @@
 {
-  "title": "项目介绍",
+  "title": "Overview",
   "root": true,
   "defaultOpen": true,
   "pages": [
@@ -9,6 +9,6 @@
     "render",
     "docker",
     "third-party-prompt-repositories",
-    "[在线体验](https://canvas.best/)"
+    "[Live Demo](https://canvas.best/)"
   ]
 }

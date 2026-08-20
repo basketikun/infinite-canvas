@@ -4,7 +4,7 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import type { CanvasNodeData } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasPluginHost } from "@/types/canvas-plugin";
 
-// 把宿主能力 + 节点 + 主题/缩放,组装成注入给插件节点的上下文
+// Assemble host capabilities, node data, theme, and scale into the context injected into plugin nodes.
 export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, theme: CanvasTheme, scale: number, isSelected = false): CanvasNodeContext {
     const storage = createPluginStorage(getNodePluginId(node.type));
     return {
