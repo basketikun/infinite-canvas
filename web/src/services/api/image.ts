@@ -757,7 +757,8 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
                 ...(background ? { background } : {}),
-                response_format: "b64_json",
+                // gpt-image models reject response_format; they always return b64.
+                ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
                 output_format: IMAGE_OUTPUT_FORMAT,
             },
             {
@@ -813,7 +814,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     formData.set("model", requestConfig.model);
     formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));
     formData.set("n", String(n));
-    formData.set("response_format", "b64_json");
+    // gpt-image models reject response_format; they always return b64.
+    if (!/gpt-image/.test(requestConfig.model)) {
+        formData.set("response_format", "b64_json");
+    }
     formData.set("output_format", IMAGE_OUTPUT_FORMAT);
     if (quality) {
         formData.set("quality", quality);
