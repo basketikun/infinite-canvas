@@ -3,11 +3,12 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { dataUrlToFile } from "@/lib/image-utils";
-import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, comfyH3TemplateKind, modelOptionName, modelSupportsFirstLastFrame, resolveModelRequestConfig, resolveModelScript, resolveModelWorkflow, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
+import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null };
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
@@ -15,7 +16,8 @@ type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: strin
 type RequestOptions = { signal?: AbortSignal };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
-export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
+export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string; seed?: string };
+export type StoredVideo = UploadedFile & { seed?: string };
 export type VideoGenerationTask = { id: string; provider: "openai" | "plugin"; model: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
@@ -33,8 +35,8 @@ function aiHeaders(config: AiConfig, contentType?: string) {
     };
 }
 
-export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
-    const task = await createVideoGenerationTask(config, prompt, references, options);
+export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
+    const task = await createVideoGenerationTask(config, prompt, references, videoReferences, audioReferences, options);
     for (let attempt = 0; attempt < 120; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
@@ -46,11 +48,11 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     throw new Error(apiText("videoTimeout", { provider: "" }));
 }
 
-export async function createVideoGenerationTask(config: AiConfig, prompt: string, references: ReferenceImage[] = [], options?: RequestOptions): Promise<VideoGenerationTask> {
+export async function createVideoGenerationTask(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationTask> {
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     const script = resolveModelScript(config, selectedModel);
-    if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
+    if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, videoReferences, audioReferences, options);
     assertVideoConfig(requestConfig, requestConfig.model);
     return createOpenAIVideoTask(requestConfig, selectedModel, prompt, references, options);
 }
@@ -58,6 +60,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     if (task.provider === "plugin") {
         const result = pluginVideoResults.get(task.id);
+        if (result) pluginVideoResults.delete(task.id);
         return result ? { status: "completed", result } : { status: "failed", error: apiText("pluginVideoExpired") };
     }
     const requestConfig = resolveModelRequestConfig(config, task.model);
@@ -65,17 +68,47 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
     return pollOpenAIVideoTask(requestConfig, task, options);
 }
 
-async function createPluginVideoTask(config: AiConfig, model: string, script: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+async function createPluginVideoTask(
+    config: AiConfig,
+    model: string,
+    script: string,
+    prompt: string,
+    references: ReferenceImage[],
+    videoReferences: ReferenceVideo[],
+    audioReferences: ReferenceAudio[],
+    options?: RequestOptions,
+): Promise<VideoGenerationTask> {
+    const isComfyH3Template = Boolean(comfyH3TemplateKind(config, model));
     if (!config.baseUrl.trim()) throw new Error(apiText("baseUrlRequired"));
-    if (!config.apiKey.trim()) throw new Error(apiText("apiKeyRequired"));
+    if (!isComfyH3Template && !config.apiKey.trim()) throw new Error(apiText("apiKeyRequired"));
+    // 首帧/尾帧按角色拆分，单独传给脚本，避免「只连尾帧却被当成首帧」的位置歧义。
+    // 通用 images 保留画布连接顺序，避免改变 Ref2VA 提示词中的 <Picture N> 编号。
     const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
+    const firstFrameRefs = references.filter((image) => image.slot === "first");
+    const lastFrameRefs = references.filter((image) => image.slot === "last");
+    if (modelSupportsFirstLastFrame(config, model)) {
+        for (const image of references.filter((item) => !item.slot)) {
+            if (!firstFrameRefs.length) firstFrameRefs.push(image);
+            else if (!lastFrameRefs.length) lastFrameRefs.push(image);
+            else throw new Error("FL2VA 最多接受首帧和尾帧各 1 张图片");
+        }
+    }
+    const firstFrame = await Promise.all(firstFrameRefs.map((image) => imageToDataUrl(image)));
+    const lastFrame = await Promise.all(lastFrameRefs.map((image) => imageToDataUrl(image)));
+    const videoRefs = await Promise.all(videoReferences.map((video) => resolveReferenceVideoUrl(video)));
+    const audioRefs = await Promise.all(audioReferences.map((audio) => resolveReferenceAudioUrl(audio)));
     const result = videoPluginResult(
         await runModelPlugin({
             capability: "video",
             script,
+            workflow: resolveModelWorkflow(config, model),
             config,
             prompt,
             images: refs,
+            videoRefs,
+            audioRefs,
+            firstFrame,
+            lastFrame,
             params: {
                 seconds: normalizeVideoSeconds(config.videoSeconds),
                 size: normalizeVideoSize(config.size),
@@ -83,10 +116,17 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
                 ratio: config.size,
                 generateAudio: boolConfig(config.videoGenerateAudio, true),
                 watermark: boolConfig(config.videoWatermark, false),
+                ...(isComfyH3Template
+                    ? {
+                          randomSeed: boolConfig(config.videoRandomSeed, true),
+                          seed: config.videoSeed || "",
+                      }
+                    : {}),
             },
             signal: options?.signal,
         }),
     );
+    if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const id = nanoid();
     pluginVideoResults.set(id, result);
     return { id, provider: "plugin", model };
@@ -97,20 +137,22 @@ function videoPluginResult(result: unknown): VideoGenerationResult {
     if (typeof result === "string") return { url: result, mimeType: "video/mp4" };
     if (result && typeof result === "object") {
         const record = result as Record<string, unknown>;
-        if (record.blob instanceof Blob) return { blob: record.blob };
+        const seed = typeof record.seed === "string" || typeof record.seed === "number" ? String(record.seed) : undefined;
+        const mimeType = typeof record.mimeType === "string" ? record.mimeType : "video/mp4";
+        if (record.blob instanceof Blob) return { blob: record.blob, mimeType, seed };
         const url = [record.url, record.video_url, record.result_url].find((value) => typeof value === "string" && value) as string | undefined;
-        if (url) return { url, mimeType: "video/mp4" };
+        if (url) return { url, mimeType, seed };
     }
     throw new Error(apiText("scriptNoVideo"));
 }
 
-export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
-    if (result.blob) return uploadMediaFile(result.blob, "video");
+export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<StoredVideo> {
+    if (result.blob) return { ...(await uploadMediaFile(result.blob, "video")), seed: result.seed };
     if (result.url) {
         try {
-            return await uploadMediaFile(result.url, "video");
+            return { ...(await uploadMediaFile(result.url, "video")), seed: result.seed };
         } catch {
-            return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
+            return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4", seed: result.seed };
         }
     }
     throw new Error(apiText("noPlayableVideo"));
@@ -223,17 +265,8 @@ function readApiErrorMessage(value: unknown): string {
     if (typeof value !== "object") return "";
     const payload = value as { msg?: unknown; message?: unknown; error?: unknown; detail?: unknown };
     // error may be a string or an object containing a message.
-    const errorMsg =
-        typeof payload.error === "string"
-            ? payload.error
-            : (payload.error as { message?: unknown })?.message;
-    return (
-        readApiErrorMessage(payload.msg) ||
-        readApiErrorMessage(payload.message) ||
-        readApiErrorMessage(errorMsg) ||
-        readApiErrorMessage(payload.detail) ||
-        ""
-    );
+    const errorMsg = typeof payload.error === "string" ? payload.error : (payload.error as { message?: unknown })?.message;
+    return readApiErrorMessage(payload.msg) || readApiErrorMessage(payload.message) || readApiErrorMessage(errorMsg) || readApiErrorMessage(payload.detail) || "";
 }
 
 function readAxiosError(error: unknown, fallback: string) {
@@ -285,4 +318,33 @@ function delay(ms: number, signal?: AbortSignal) {
             { once: true },
         );
     });
+}
+
+function blobToDataUrl(blob: Blob) {
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error(apiText("localAssetReadFailed")));
+        reader.readAsDataURL(blob);
+    });
+}
+
+/** Resolve a canvas reference video into a data URL or public/asset URL that model scripts can consume. */
+async function resolveReferenceVideoUrl(video: ReferenceVideo) {
+    if (isPublicMediaUrl(video.url) || video.url.startsWith("data:")) return video.url;
+    let blob: Blob | null = null;
+    if (video.storageKey) blob = await getMediaBlob(video.storageKey);
+    if (!blob && video.url?.startsWith("blob:")) blob = await (await fetch(video.url)).blob();
+    if (!blob) throw new Error(apiText("invalidReferenceVideo"));
+    return blobToDataUrl(blob);
+}
+
+/** Resolve a canvas reference audio into a data URL or public/asset URL that model scripts can consume. */
+async function resolveReferenceAudioUrl(audio: ReferenceAudio) {
+    if (isPublicMediaUrl(audio.url) || audio.url.startsWith("data:")) return audio.url;
+    let blob: Blob | null = null;
+    if (audio.storageKey) blob = await getMediaBlob(audio.storageKey);
+    if (!blob && audio.url?.startsWith("blob:")) blob = await (await fetch(audio.url)).blob();
+    if (!blob) throw new Error(apiText("invalidReferenceAudio"));
+    return blobToDataUrl(blob);
 }

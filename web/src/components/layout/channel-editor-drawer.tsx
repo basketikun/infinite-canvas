@@ -7,7 +7,7 @@ import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, ty
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
 
-type ScriptTarget = { name: string; capability: ModelCapability; value: string };
+type ScriptTarget = { name: string; capability: ModelCapability; value: string; workflow?: string };
 
 export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: boolean; channel: ModelChannel | null; onSave: (channel: ModelChannel) => void; onClose: () => void }) {
     const { t } = useTranslation();
@@ -40,7 +40,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     };
 
     const setCapability = (name: string, capability: ModelCapability) => setModels(draft.models.map((model) => (model.name === name ? { ...model, capability } : model)));
-    const setScript = (name: string, script: string) => setModels(draft.models.map((model) => (model.name === name ? { ...model, script: script || undefined } : model)));
+    const setScript = (name: string, script: string, workflow?: string) => setModels(draft.models.map((model) => (model.name === name ? { ...model, script: script || undefined, workflow: workflow || undefined } : model)));
     const removeModel = (name: string) => setModels(draft.models.filter((model) => model.name !== name));
 
     const save = () => {
@@ -102,7 +102,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                             </span>
                             <div className="flex shrink-0 items-center gap-2">
                                 <Segmented size="small" value={model.capability} options={capabilityOptions} onChange={(value) => setCapability(model.name, value as ModelCapability)} />
-                                <Button size="small" type={model.script ? "primary" : "default"} ghost={Boolean(model.script)} onClick={() => setScriptTarget({ name: model.name, capability: model.capability, value: model.script || "" })}>
+                                <Button size="small" type={model.script ? "primary" : "default"} ghost={Boolean(model.script)} onClick={() => setScriptTarget({ name: model.name, capability: model.capability, value: model.script || "", workflow: model.workflow || "" })}>
                                     {t(model.script ? "config.channelEditor.scriptReady" : "config.channelEditor.script")}
                                 </Button>
                                 <Button size="small" danger type="text" icon={<Trash2 className="size-3.5" />} onClick={() => removeModel(model.name)} />
@@ -121,7 +121,8 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                 capability={scriptTarget?.capability || "text"}
                 modelName={scriptTarget?.name || ""}
                 value={scriptTarget?.value || ""}
-                onSave={(script) => scriptTarget && setScript(scriptTarget.name, script)}
+                workflow={scriptTarget?.workflow}
+                onSave={(script, workflow) => scriptTarget && setScript(scriptTarget.name, script, workflow)}
                 onClose={() => setScriptTarget(null)}
             />
         </Drawer>

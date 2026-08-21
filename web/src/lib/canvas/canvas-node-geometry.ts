@@ -1,4 +1,5 @@
 import { CanvasNodeType, type CanvasNodeData, type ConnectionHandle } from "@/types/canvas";
+import { modelSupportsFirstLastFrame, resolveModelForCapability, type AiConfig } from "@/stores/use-config-store";
 
 export function nodeBounds(nodes: CanvasNodeData[]) {
     return nodes.reduce(
@@ -61,6 +62,29 @@ export function getConnectionTargetAnchor(node: CanvasNodeData, current: Connect
         x: current.handleType === "source" ? node.position.x : node.position.x + node.width,
         y: node.position.y + node.height / 2,
     };
+}
+
+/**
+ * Candidate target-handle anchor points for a node, used while dragging a connection onto it.
+ * 生成配置 + 视频模式 + 模型脚本支持首尾帧（FL2VA）时，暴露两个角色化输入口 ——
+ * "first"（首帧）与 "last"（尾帧）；其余情况（含视频模式但模型不支持首尾帧）统一用
+ * 单一中间输入口（普通参考图）。
+ */
+export function shouldShowFirstLastFrame(node: CanvasNodeData, config: AiConfig): boolean {
+    if (node.type !== CanvasNodeType.Config) return false;
+    if (node.metadata?.generationMode !== "video") return false;
+    const model = resolveModelForCapability(config, node.metadata?.model, "video");
+    return modelSupportsFirstLastFrame(config, model);
+}
+
+export function getTargetHandlePoints(node: CanvasNodeData, config?: AiConfig): { handleId?: string; x: number; y: number }[] {
+    if (config && shouldShowFirstLastFrame(node, config)) {
+        return [
+            { handleId: "first", x: node.position.x, y: node.position.y + node.height * 0.3 },
+            { handleId: "last", x: node.position.x, y: node.position.y + node.height * 0.7 },
+        ];
+    }
+    return [{ handleId: undefined, x: node.position.x, y: node.position.y + node.height / 2 }];
 }
 
 export function normalizeConnection(firstNodeId: string, secondNodeId: string, nodes: CanvasNodeData[], firstHandleType: "source" | "target") {

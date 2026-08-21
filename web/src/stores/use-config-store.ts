@@ -13,6 +13,8 @@ export type ChannelModel = {
     name: string;
     capability: ModelCapability;
     script?: string;
+    /** Optional workflow JSON text (e.g. a ComfyUI API-format workflow) uploaded per model; injected into model scripts as the `workflow` variable. */
+    workflow?: string;
 };
 
 export type ModelChannel = {
@@ -43,6 +45,8 @@ export type AiConfig = {
     vquality: string;
     videoGenerateAudio: string;
     videoWatermark: string;
+    videoRandomSeed: string;
+    videoSeed: string;
     systemPrompt: string;
     reasoningEffort: ReasoningEffort;
     models: string[];
@@ -100,6 +104,8 @@ export const defaultConfig: AiConfig = {
     vquality: "720",
     videoGenerateAudio: "true",
     videoWatermark: "false",
+    videoRandomSeed: "true",
+    videoSeed: "",
     systemPrompt: "",
     reasoningEffort: "auto",
     models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
@@ -184,9 +190,41 @@ export function resolveModelScript(config: AiConfig, value: string) {
     return findChannelModel(config, value)?.model.script?.trim() || "";
 }
 
+export type ComfyH3TemplateKind = "ref2va" | "fl2va";
+
+/** Only the two built-in ComfyUI H3 templates opt into their dedicated video controls. */
+export function comfyH3TemplateKind(config: AiConfig, value: string): ComfyH3TemplateKind | undefined {
+    const script = resolveModelScript(config, value);
+    if (/^\s*\/\/\s*@template comfyui-h3-ref2va-v2\s*$/m.test(script)) return "ref2va";
+    if (/^\s*\/\/\s*@template comfyui-h3-fl2va-v2\s*$/m.test(script)) return "fl2va";
+    return undefined;
+}
+
+/**
+ * 该模型脚本是否消费首帧/尾帧（画布据此决定 Config 节点是否显示「首帧/尾帧」专用输入口）。
+ * 空脚本 = 走系统默认调用，不支持首尾帧。只认稳定标记，避免脚本注释或普通字段名误触发专用端口。
+ */
+export function modelSupportsFirstLastFrame(config: AiConfig, value: string): boolean {
+    const script = resolveModelScript(config, value);
+    if (!script) return false;
+    return /^\s*\/\/\s*@supports first-last-frame\s*$/m.test(script);
+}
+
+/** The workflow JSON (if any) uploaded for a model, parsed; malformed saved data is reported instead of silently ignored. */
+export function resolveModelWorkflow(config: AiConfig, value: string): unknown {
+    const text = findChannelModel(config, value)?.model.workflow?.trim() || "";
+    if (!text) return undefined;
+    try {
+        return JSON.parse(text);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`模型 ${modelOptionName(value)} 保存的 workflow JSON 无效：${message}`);
+    }
+}
+
 function isAiConfigReady(config: AiConfig, model: string) {
     const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
+    return Boolean(model.trim() && channel.baseUrl.trim() && (channel.apiKey.trim() || comfyH3TemplateKind(config, model)));
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -249,6 +287,8 @@ export const useConfigStore = create<ConfigStore>()(
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
+                        videoRandomSeed: config.videoRandomSeed || "true",
+                        videoSeed: config.videoSeed || "",
                         canvasImageCount: config.canvasImageCount || "3",
                     },
                 };
@@ -272,7 +312,8 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         seen.add(name);
         const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
-        result.push({ name, capability, script });
+        const workflow = typeof item === "string" ? undefined : item.workflow?.trim() || undefined;
+        result.push({ name, capability, script, workflow });
     }
     return result;
 }
@@ -334,7 +375,18 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.some((item) => item.name === model));
-    return matched || config.channels[0] || createModelChannel({ id: "default", name: i18n.t("config.channels.defaultName"), baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })) });
+    return (
+        matched ||
+        config.channels[0] ||
+        createModelChannel({
+            id: "default",
+            name: i18n.t("config.channels.defaultName"),
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            apiFormat: config.apiFormat,
+            models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })),
+        })
+    );
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {

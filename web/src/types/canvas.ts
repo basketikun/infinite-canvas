@@ -57,6 +57,8 @@ export type CanvasNodeMetadata = {
     vquality?: string;
     generateAudio?: string;
     watermark?: string;
+    randomSeed?: string;
+    seed?: string;
     audioVoice?: string;
     audioFormat?: string;
     audioSpeed?: string;
@@ -89,6 +91,8 @@ export type CanvasConnection = {
     id: string;
     fromNodeId: string;
     toNodeId: string;
+    /** Target handle id, e.g. "first" / "last" on video generation nodes that expose role-specific inputs. */
+    toHandleId?: string;
 };
 
 export type CanvasAssistantReference = {
@@ -128,6 +132,8 @@ export type CanvasAssistantSession = {
 export type ConnectionHandle = {
     nodeId: string;
     handleType: "source" | "target";
+    /** Handle id on the dragged-from dot, when the node exposes multiple handles (e.g. first/last frame). */
+    handleId?: string;
 };
 
 export type SelectionBox = {
