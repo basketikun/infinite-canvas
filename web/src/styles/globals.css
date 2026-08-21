@@ -2,9 +2,9 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-[data-canvas-background-mode="pixels"] img,
-[data-canvas-background-mode="pixels"] video,
-[data-canvas-background-mode="pixels"] canvas {
+[data-canvas-pixelated="true"] img,
+[data-canvas-pixelated="true"] video,
+[data-canvas-pixelated="true"] canvas {
     image-rendering: pixelated;
 }
 @source "../../../node_modules/streamdown/dist/*.js";

@@ -20,8 +20,13 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
-    const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return fallback;
+    let blob: Blob | null = null;
+    try {
+        blob = await store.getItem<Blob>(storageKey);
+    } catch {
+        return fallback;
+    }
+    if (!(blob instanceof Blob)) return fallback;
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     return url;

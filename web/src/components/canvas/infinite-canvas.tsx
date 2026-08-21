@@ -214,6 +214,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
             ref={containerRef}
             className="relative h-full w-full select-none overflow-hidden"
             data-canvas-background-mode={backgroundMode}
+            data-canvas-pixelated={backgroundMode === "pixels" || viewport.k >= 2 ? "true" : undefined}
             style={{ background: theme.canvas.background, cursor }}
             onPointerDown={handlePointerDown}
             onDoubleClick={handleDoubleClick}
