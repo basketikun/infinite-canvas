@@ -1,7 +1,7 @@
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
 import { Button, Modal } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getPluginReturn, getPluginTemplates, getPluginVariables } from "@/services/api/model-plugin";
@@ -11,15 +11,51 @@ function isDarkMode() {
     return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
 }
 
-export function ModelScriptEditor({ open, capability, modelName, value, onSave, onClose }: { open: boolean; capability: ModelCapability; modelName: string; value: string; onSave: (script: string) => void; onClose: () => void }) {
+function isApiWorkflowNode(node: unknown) {
+    if (!node || typeof node !== "object") return false;
+    const candidate = node as { class_type?: unknown; inputs?: unknown };
+    return typeof candidate.class_type === "string" && Boolean(candidate.inputs) && typeof candidate.inputs === "object" && !Array.isArray(candidate.inputs);
+}
+
+function workflowSummary(text: string) {
+    try {
+        const parsed = JSON.parse(text);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+        const nodes = Object.values(parsed);
+        if (!nodes.length || !nodes.every(isApiWorkflowNode)) return null;
+        return nodes.length;
+    } catch {
+        return null;
+    }
+}
+
+export function ModelScriptEditor({ open, capability, modelName, value, workflow, onSave, onClose }: { open: boolean; capability: ModelCapability; modelName: string; value: string; workflow?: string; onSave: (script: string, workflow?: string) => void; onClose: () => void }) {
     const { t } = useTranslation();
     const [draft, setDraft] = useState(value);
+    const [workflowDraft, setWorkflowDraft] = useState(workflow || "");
+    const [workflowError, setWorkflowError] = useState("");
+    const fileRef = useRef<HTMLInputElement>(null);
     useEffect(() => {
-        if (open) setDraft(value);
-    }, [open, value]);
+        if (open) {
+            setDraft(value);
+            setWorkflowDraft(workflow || "");
+            setWorkflowError("");
+        }
+    }, [open, value, workflow]);
 
     const variables = getPluginVariables().filter((variable) => !variable.capabilities || variable.capabilities.includes(capability));
     const templates = getPluginTemplates()[capability];
+    const workflowNodeCount = workflowDraft.trim() ? workflowSummary(workflowDraft) : null;
+
+    const readWorkflowFile = async (file: File) => {
+        const text = await file.text();
+        if (text.trim() && workflowSummary(text) === null) {
+            setWorkflowError(t("config.scriptEditor.workflowInvalid"));
+            return;
+        }
+        setWorkflowError("");
+        setWorkflowDraft(text);
+    };
 
     return (
         <Modal
@@ -49,12 +85,35 @@ export function ModelScriptEditor({ open, capability, modelName, value, onSave, 
                             {t("config.scriptEditor.restoreDefault")}
                         </Button>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <input
+                            ref={fileRef}
+                            type="file"
+                            accept=".json,application/json"
+                            className="hidden"
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (file) void readWorkflowFile(file);
+                                event.target.value = "";
+                            }}
+                        />
+                        <Button size="small" onClick={() => fileRef.current?.click()}>
+                            {workflowDraft.trim() ? t("config.scriptEditor.workflowReplace") : t("config.scriptEditor.workflowUpload")}
+                        </Button>
+                        {workflowDraft.trim() ? (
+                            <Button size="small" danger type="text" onClick={() => setWorkflowDraft("")}>
+                                {t("config.scriptEditor.workflowClear")}
+                            </Button>
+                        ) : null}
+                        {workflowNodeCount !== null ? (
+                            <span className="text-xs text-green-600 dark:text-green-400">{t("config.scriptEditor.workflowReady", { count: workflowNodeCount })}</span>
+                        ) : null}
+                        {workflowError ? <span className="text-xs text-red-500">{workflowError}</span> : null}
                         <Button onClick={onClose}>{t("common.cancel")}</Button>
                         <Button
                             type="primary"
                             onClick={() => {
-                                onSave(draft.trim());
+                                onSave(draft.trim(), workflowDraft.trim() || undefined);
                                 onClose();
                             }}
                         >

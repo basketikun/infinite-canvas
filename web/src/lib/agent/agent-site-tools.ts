@@ -197,6 +197,8 @@ function getVideoConfig() {
             resolution: config.vquality || "720",
             generateAudio: config.videoGenerateAudio !== "false",
             watermark: config.videoWatermark === "true",
+            randomSeed: config.videoRandomSeed !== "false",
+            seed: config.videoSeed || "",
         },
         models: selectableModelsByCapability(config, "video").map((value) => ({ value, label: modelOptionLabel(config, value) })),
         sizeOptions: videoSizeOptions,
@@ -232,6 +234,14 @@ function runVideoWorkbench(input: SiteToolInput, navigate: NavigateFunction) {
     if (typeof input.watermark === "boolean") {
         configStore.updateConfig("videoWatermark", String(input.watermark));
         applied.watermark = input.watermark;
+    }
+    if (typeof input.randomSeed === "boolean") {
+        configStore.updateConfig("videoRandomSeed", String(input.randomSeed));
+        applied.randomSeed = input.randomSeed;
+    }
+    if (typeof input.seed === "string" && input.seed.trim()) {
+        configStore.updateConfig("videoSeed", input.seed);
+        applied.seed = input.seed;
     }
     const prompt = typeof input.prompt === "string" ? input.prompt : undefined;
     const run = input.run !== false;

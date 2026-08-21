@@ -25,6 +25,8 @@ export type NodeGenerationInput = {
     image?: ReferenceImage;
     video?: ReferenceVideo;
     audio?: ReferenceAudio;
+    /** Frame slot when connected to a role-specific input on a video generation node. */
+    slot?: "first" | "last";
 };
 
 export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], prompt: string): NodeGenerationContext {
@@ -38,7 +40,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
         .map((input) => input.text)
         .filter(Boolean)
         .join("\n\n");
-    const referenceImages = inputs.map((input) => input.image).filter((image): image is ReferenceImage => Boolean(image));
+    const referenceImages = inputs.filter((input) => input.image).map((input) => ({ ...input.image!, slot: input.slot }));
     const referenceVideos = inputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
     const referenceAudios = inputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
@@ -84,7 +86,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
 
     nextPrompt += prompt.slice(lastIndex);
     if (textBlocks.length) nextPrompt = `${nextPrompt.trim()}\n\n${textBlocks.join("\n\n")}`;
-    const referenceImages = selectedInputs.map((input) => input.image).filter((image): image is ReferenceImage => Boolean(image));
+    const referenceImages = selectedInputs.filter((input) => input.image).map((input) => ({ ...input.image!, slot: input.slot }));
     const referenceVideos = selectedInputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
     const referenceAudios = selectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
@@ -114,13 +116,16 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
 }
 
 export function buildNodeGenerationInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): NodeGenerationInput[] {
+    const slotByFromNode = new Map(connections.filter((connection) => connection.toNodeId === nodeId).map((connection) => [connection.fromNodeId, connection.toHandleId]));
     return getGenerationResourceNodes(nodeId, nodes, connections).flatMap((node): NodeGenerationInput[] => {
+        const slot = slotByFromNode.get(node.id);
+        const resolvedSlot = slot === "first" || slot === "last" ? slot : undefined;
         const image = readReferenceImage(node);
-        if (image) return [{ nodeId: node.id, type: "image" as const, title: node.title, image }];
+        if (image) return [{ nodeId: node.id, type: "image" as const, title: node.title, image, slot: resolvedSlot }];
         const video = readReferenceVideo(node);
-        if (video) return [{ nodeId: node.id, type: "video" as const, title: node.title, video }];
+        if (video) return [{ nodeId: node.id, type: "video" as const, title: node.title, video, slot: resolvedSlot }];
         const audio = readReferenceAudio(node);
-        if (audio) return [{ nodeId: node.id, type: "audio" as const, title: node.title, audio }];
+        if (audio) return [{ nodeId: node.id, type: "audio" as const, title: node.title, audio, slot: resolvedSlot }];
         const text = readNodeTextInput(node);
         if (text) return [{ nodeId: node.id, type: "text" as const, title: node.title, text }];
         return [];
