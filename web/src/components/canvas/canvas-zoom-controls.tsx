@@ -5,6 +5,7 @@ import { Button, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { scaleToSliderValue, sliderValueToScale } from "@/lib/canvas/canvas-viewport";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 type CanvasZoomControlsProps = {
@@ -42,13 +43,13 @@ export function CanvasZoomControls({ scale, onScaleChange, onReset, isMiniMapOpe
                 <Tooltip title={t("canvas.zoom")}>
                     <input
                         type="range"
-                        min="5"
-                        max="500"
+                        min="0"
+                        max="1000"
                         step="1"
-                        value={Math.round(scale * 100)}
+                        value={scaleToSliderValue(scale)}
                         className="w-24"
                         style={{ accentColor: theme.node.activeStroke }}
-                        onChange={(event) => onScaleChange(Number(event.target.value) / 100)}
+                        onChange={(event) => onScaleChange(sliderValueToScale(Number(event.target.value)))}
                         aria-label={t("canvas.zoom")}
                     />
                 </Tooltip>

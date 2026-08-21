@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Crosshair } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
+import { clampCanvasScale } from "@/lib/canvas/canvas-viewport";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ViewportTransform } from "@/types/canvas";
 
@@ -90,7 +92,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 
         const delta = -event.deltaY;
         const factor = Math.pow(1.1, delta / 100);
-        const newScale = Math.min(Math.max(viewport.k * factor, 0.05), 5);
+        const newScale = clampCanvasScale(viewport.k * factor);
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return;
 
@@ -224,10 +226,12 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
                 className="absolute origin-top-left"
                 style={{
                     transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`,
+                    imageRendering: backgroundMode === "pixels" ? "pixelated" : undefined,
                 }}
             >
                 {children}
             </div>
+            {backgroundMode === "pixels" ? <PixelCoordinates containerRef={containerRef} viewport={viewport} /> : null}
         </div>
     );
 }
@@ -235,6 +239,8 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 function CanvasGrid({ viewport, mode }: { viewport: ViewportTransform; mode: CanvasBackgroundMode }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     if (mode === "blank") return null;
+
+    if (mode === "pixels") return <PixelGrid viewport={viewport} />;
 
     const gridSize = 48 * viewport.k;
     const x = viewport.x % gridSize;
@@ -252,5 +258,60 @@ function CanvasGrid({ viewport, mode }: { viewport: ViewportTransform; mode: Can
                 backgroundPosition: `${x}px ${y}px`,
             }}
         />
+    );
+}
+
+function PixelGrid({ viewport }: { viewport: ViewportTransform }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const worldStep = Math.max(1, 2 ** Math.ceil(Math.log2(12 / viewport.k)));
+    const minorSize = worldStep * viewport.k;
+    const majorSize = minorSize * 8;
+    const minorPosition = `${viewport.x % minorSize}px ${viewport.y % minorSize}px`;
+    const majorPosition = `${viewport.x % majorSize}px ${viewport.y % majorSize}px`;
+
+    return (
+        <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+                backgroundImage: [
+                    `linear-gradient(${theme.canvas.pixelMajor} 1px, transparent 1px)`,
+                    `linear-gradient(90deg, ${theme.canvas.pixelMajor} 1px, transparent 1px)`,
+                    `linear-gradient(${theme.canvas.pixelMinor} 1px, transparent 1px)`,
+                    `linear-gradient(90deg, ${theme.canvas.pixelMinor} 1px, transparent 1px)`,
+                ].join(","),
+                backgroundSize: `${majorSize}px ${majorSize}px, ${majorSize}px ${majorSize}px, ${minorSize}px ${minorSize}px, ${minorSize}px ${minorSize}px`,
+                backgroundPosition: `${majorPosition}, ${majorPosition}, ${minorPosition}, ${minorPosition}`,
+            }}
+        />
+    );
+}
+
+function PixelCoordinates({ containerRef, viewport }: { containerRef: React.RefObject<HTMLDivElement | null>; viewport: ViewportTransform }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const [point, setPoint] = useState({ x: 0, y: 0 });
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        const handlePointerMove = (event: PointerEvent) => {
+            const rect = container.getBoundingClientRect();
+            setPoint({
+                x: Math.floor((event.clientX - rect.left - viewport.x) / viewport.k),
+                y: Math.floor((event.clientY - rect.top - viewport.y) / viewport.k),
+            });
+        };
+        container.addEventListener("pointermove", handlePointerMove);
+        return () => container.removeEventListener("pointermove", handlePointerMove);
+    }, [containerRef, viewport]);
+
+    return (
+        <div
+            className="pointer-events-none absolute bottom-20 right-5 z-40 flex h-8 min-w-40 items-center gap-2 rounded-md border px-2.5 font-mono text-[11px] tabular-nums backdrop-blur"
+            style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item }}
+        >
+            <Crosshair className="size-3.5 shrink-0" />
+            <span className="min-w-14">X {point.x} px</span>
+            <span className="min-w-14">Y {point.y} px</span>
+        </div>
     );
 }

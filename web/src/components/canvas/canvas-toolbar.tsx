@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, Grid2x2, Group, Hand, Image as ImageIcon, Info, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Eraser, Grid2x2, Group, Hand, Image as ImageIcon, Info, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, ScanLine, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
@@ -241,6 +241,14 @@ export function CanvasToolbar({
                                 label: (
                                     <span className="inline-flex items-center gap-1.5">
                                         <Grid2x2 className="size-4" />{t("canvas.toolbar.lines")}
+                                    </span>
+                                ),
+                            },
+                            {
+                                value: "pixels",
+                                label: (
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <ScanLine className="size-4" />{t("canvas.toolbar.pixels")}
                                     </span>
                                 ),
                             },

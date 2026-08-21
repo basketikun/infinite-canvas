@@ -1,5 +1,5 @@
 export type CanvasColorTheme = "light" | "dark";
-export type CanvasBackgroundMode = "dots" | "lines" | "blank";
+export type CanvasBackgroundMode = "dots" | "lines" | "pixels" | "blank";
 
 export const canvasThemes = {
     light: {
@@ -7,6 +7,8 @@ export const canvasThemes = {
             background: "#f4f2ed",
             dot: "rgba(68,64,60,.28)",
             line: "rgba(68,64,60,.12)",
+            pixelMinor: "rgba(68,64,60,.14)",
+            pixelMajor: "rgba(68,64,60,.28)",
             selectionStroke: "#1c1917",
             selectionFill: "rgba(28,25,23,.06)",
         },
@@ -35,6 +37,8 @@ export const canvasThemes = {
             background: "#181715",
             dot: "rgba(245,245,244,.24)",
             line: "rgba(245,245,244,.10)",
+            pixelMinor: "rgba(245,245,244,.12)",
+            pixelMajor: "rgba(245,245,244,.26)",
             selectionStroke: "#fafaf9",
             selectionFill: "rgba(250,250,249,.10)",
         },

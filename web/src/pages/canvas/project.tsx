@@ -39,6 +39,7 @@ import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
+import { clampCanvasScale } from "@/lib/canvas/canvas-viewport";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
@@ -895,7 +896,7 @@ function InfiniteCanvasPage() {
 
     const setZoomScale = useCallback(
         (scale: number) => {
-            const nextScale = Math.min(Math.max(scale, 0.05), 5);
+            const nextScale = clampCanvasScale(scale);
             setViewport((prev) => ({
                 x: size.width / 2 - ((size.width / 2 - prev.x) / prev.k) * nextScale,
                 y: size.height / 2 - ((size.height / 2 - prev.y) / prev.k) * nextScale,

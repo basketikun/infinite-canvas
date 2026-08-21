@@ -243,7 +243,7 @@ export default {
         nodeTypes: { image: "Image", text: "Text", config: "Generation config", video: "Video", audio: "Audio", group: "Group" },
         toolbar: {
             select: "Select", pan: "Move", text: "Text", image: "Image", video: "Video", audio: "Audio", config: "Generation config", group: "Group", extensions: "Extension nodes", upload: "Upload assets", appearance: "Canvas appearance", clear: "Clear canvas",
-            themeMode: "Theme", light: "Light", dark: "Dark", gridStyle: "Grid style", dots: "Dots", lines: "Lines", blank: "Blank", imageInfo: "Image info",
+            themeMode: "Theme", light: "Light", dark: "Dark", gridStyle: "Grid style", dots: "Dots", lines: "Lines", pixels: "Pixels", blank: "Blank", imageInfo: "Image info",
         },
         project: {
             untitled: "Untitled canvas", imported: "Imported canvas",
