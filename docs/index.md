@@ -1,11 +1,10 @@
-# Infinite Canvas Documentation Index
+# DSH FreeCanvas Documentation Index
 
 ## Overview
 
 - [Quick Start](/docs/overview/quick-start)
+- [DSH Plugin](/docs/overview/dsh-plugin)
 - [Features](/docs/overview/features)
-- [Deploy on Render](/docs/overview/render)
-- [Docker Deployment](/docs/overview/docker)
 - [Third-party GitHub Prompt Repositories](/docs/overview/third-party-prompt-repositories)
 
 ## Canvas Guide
@@ -19,15 +18,14 @@
 - [Canvas Data Structure](/docs/development/canvas-data-structure)
 - [How the Local Codex Connection Works](/docs/development/local-codex-canvas)
 
-## Business
+## Project Use
 
-- [Open-source License](/docs/business/license)
-- [Business Cooperation](/docs/business/business)
+- [Licensing](/docs/business/license)
+- [Project Use](/docs/business/business)
 
-## Support and Security
+## Security
 
 - [Report a Vulnerability](/docs/support/security)
-- [Sponsor the Project](/docs/support/sponsor)
 
 ## Project Progress
 

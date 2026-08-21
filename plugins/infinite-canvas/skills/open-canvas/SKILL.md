@@ -1,31 +1,13 @@
 ---
 name: open-canvas
-description: 打开 Infinite Canvas 在线或本地画布，并自动连接本地 Canvas Agent。用户要求打开、启动、进入或使用 Infinite Canvas 画布时使用。
+description: 打开本地 DSH FreeCanvas，并自动连接 Canvas Agent。用户要求打开、启动、进入或使用 DSH FreeCanvas 时使用。
 ---
 
-# Open Infinite Canvas
+# Open DSH FreeCanvas
 
-默认打开在线版。只有用户明确要求使用本地项目时，才启动本地前端。
+默认使用当前 DSH FreeCanvas 项目的本地前端。
 
-## 在线版
-
-1. 启动本地 Canvas Agent 并保持运行：
-
-```bash
-npx -y @basketikun/canvas-agent
-```
-
-2. 从启动输出取得 `Local URL` 和 `Connect token`。
-
-3. 在 Codex 右侧浏览器打开：
-
-```text
-https://canvas.best/canvas?mode=new&agentUrl=<Local URL>&agentToken=<Connect token>
-```
-
-## 本地版
-
-1. 在 Infinite Canvas 项目中启动前端，并使用 Vite 输出的 `Local` 地址：
+1. 在 DSH FreeCanvas 项目中启动前端，并使用 Vite 输出的 `Local` 地址：
 
 ```bash
 cd web
@@ -33,7 +15,7 @@ bun install
 bun run dev
 ```
 
-2. 启动本地 Canvas Agent：
+2. 启动 Canvas Agent：
 
 ```bash
 npx -y @basketikun/canvas-agent

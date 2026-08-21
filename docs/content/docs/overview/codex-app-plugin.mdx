@@ -1,19 +1,19 @@
 ---
 title: Codex App Plugin
-description: Install and use the Infinite Canvas plugin in Codex App
+description: Install and use the DSH FreeCanvas plugin in Codex App
 ---
 
 # Codex App Plugin
 
-The plugin connects Codex to a local Canvas Agent, allowing Codex to open Infinite Canvas, read and create nodes, connect nodes, and start generation workflows. Its source is in `plugins/infinite-canvas/`.
+The plugin connects Codex to a local Canvas Agent, allowing Codex to open DSH FreeCanvas, read and create nodes, connect nodes, and start generation workflows. Its source is in `plugins/infinite-canvas/`.
 
 ## Ask Codex to install it
 
 Send this request to Codex:
 
 ```text
-Install the Infinite Canvas Codex plugin from https://github.com/basketikun/infinite-canvas.git.
-Clone it to ~/plugins/infinite-canvas, verify plugins/infinite-canvas/.codex-plugin/plugin.json,
+Install the DSH FreeCanvas Codex plugin from https://github.com/JustinQiuck/dsh-freecanvas.git.
+Clone it to ~/plugins/dsh-freecanvas, verify plugins/infinite-canvas/.codex-plugin/plugin.json,
 add the repository to my personal marketplace with `codex plugin marketplace add ~`,
 then install `infinite-canvas@personal`. Validate the installation and tell me whether a new
 conversation is required to load the Skill and MCP tools.
@@ -23,24 +23,24 @@ conversation is required to load the Skill and MCP tools.
 
 ```bash
 mkdir -p ~/plugins
-git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-canvas
+git clone https://github.com/JustinQiuck/dsh-freecanvas.git ~/plugins/dsh-freecanvas
 codex plugin marketplace add ~
 codex plugin add infinite-canvas@personal
 ```
 
-The personal marketplace entry must point to `./plugins/infinite-canvas/plugins/infinite-canvas`. Start a new Codex conversation after installation so the Skill and MCP tools load completely.
+The personal marketplace entry must point to `./plugins/dsh-freecanvas/plugins/infinite-canvas`. Start a new Codex conversation after installation so the Skill and MCP tools load completely.
 
 For development from this repository:
 
 ```bash
-cd /path/to/infinite-canvas
+cd /path/to/dsh-freecanvas
 codex plugin marketplace add "$(pwd)"
-codex plugin add infinite-canvas@infinite-canvas-local
+codex plugin add infinite-canvas@dsh-freecanvas-local
 ```
 
 ## Usage
 
-In a new Codex conversation, ask it to open Infinite Canvas, create a canvas, and connect Codex. The plugin starts Canvas Agent, reads its connection URL and token, opens `https://canvas.best/`, and creates and connects a canvas. It starts a local frontend only when explicitly requested.
+In a new Codex conversation, ask it to open DSH FreeCanvas, create a canvas, and connect Codex. The plugin starts Canvas Agent, reads its connection URL and token, and opens the local DSH FreeCanvas frontend.
 
 You can then ask Codex to summarize the current canvas, create prompts from selected nodes, or organize nodes into a generation workflow.
 

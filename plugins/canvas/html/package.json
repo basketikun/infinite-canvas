@@ -3,7 +3,7 @@
     "version": "1.2.0",
     "private": true,
     "type": "module",
-    "description": "Infinite Canvas HTML 节点插件",
+    "description": "DSH FreeCanvas HTML 节点插件",
     "scripts": {
         "build": "node build.mjs",
         "dev": "node build.mjs --watch",

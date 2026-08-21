@@ -1,7 +1,7 @@
 {
-  "name": "infinite-canvas-local",
+  "name": "dsh-freecanvas-local",
   "interface": {
-    "displayName": "Infinite Canvas"
+    "displayName": "DSH FreeCanvas"
   },
   "plugins": [
     {

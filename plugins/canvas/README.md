@@ -1,4 +1,4 @@
-# Infinite Canvas 画布节点插件
+# DSH FreeCanvas 画布节点插件
 
 给画布扩展自定义节点。每个插件是一个**独立目录**,用 **TypeScript** 编写,自带 `package.json` / `build.mjs` / `src/index.tsx` / `dist/`,互不耦合,可单独构建、发布、升级。
 

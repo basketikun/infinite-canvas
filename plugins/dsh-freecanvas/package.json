@@ -1,0 +1,68 @@
+{
+    "name": "dsh-plugin-freecanvas",
+    "version": "0.2.0",
+    "description": "Install DSH FreeCanvas as a bundled DeepSeek Harness app with split layouts and managed local Agent connectivity. · 将 DSH FreeCanvas 作为内置应用安装到 DSH，支持分屏布局与本地 Agent 自动连接。",
+    "license": "Elastic-2.0",
+    "type": "module",
+    "main": "./lib/index.js",
+    "scripts": {
+        "build:web": "node ./scripts/build-web.mjs",
+        "prepack": "npm run build:web"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/JustinQiuck/dsh-freecanvas.git",
+        "directory": "plugins/dsh-freecanvas"
+    },
+    "homepage": "https://github.com/JustinQiuck/dsh-freecanvas/tree/main/plugins/dsh-freecanvas#readme",
+    "bugs": {
+        "url": "https://github.com/JustinQiuck/dsh-freecanvas/issues"
+    },
+    "exports": {
+        ".": "./lib/index.js",
+        "./client": "./lib/client.js",
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "lib",
+        "scripts",
+        "web",
+        "cordis.patch.yml",
+        "README.md",
+        "LICENSE",
+        "LICENSING.md",
+        "THIRD_PARTY_NOTICES.md"
+    ],
+    "keywords": [
+        "dsh-plugin",
+        "deepseek-harness",
+        "dsh-freecanvas",
+        "canvas"
+    ],
+    "engines": {
+        "node": "^22.19.0 || >=24.0.0"
+    },
+    "dependencies": {
+        "@basketikun/canvas-agent": "0.6.0"
+    },
+    "peerDependencies": {
+        "@deepseek-ai/dsh-settings": "^0.1.0-rc.7",
+        "@deepseek-ai/schemastery": "^3.18.1"
+    },
+    "peerDependenciesMeta": {
+        "@deepseek-ai/dsh-settings": {
+            "optional": true
+        },
+        "@deepseek-ai/schemastery": {
+            "optional": true
+        }
+    },
+    "dsh": {
+        "bundle": {
+            "patch": "./cordis.patch.yml"
+        },
+        "client": {
+            "platform": "web"
+        }
+    }
+}

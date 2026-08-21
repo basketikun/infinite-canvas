@@ -1,0 +1,8 @@
+# dsh-plugin-freecanvas bundle patch: registers the bundled DSH FreeCanvas app
+# into a DSH profile roster. The node half (exports ".") runs in the host
+# process; the `dsh.client` declaration in package.json makes the browser half
+# (exports "./client") load in the web GUI, mounting a sidebar entry and a
+# full center iframe that opens the same-origin canvas route.
+- insert:
+    - id: ui-dsh-freecanvas
+      name: 'dsh-plugin-freecanvas'

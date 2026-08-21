@@ -7,6 +7,7 @@ import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { appAssetUrl } from "@/lib/app-base-url";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { useAgentStore } from "@/stores/use-agent-store";
@@ -25,6 +26,7 @@ export function AppTopNav() {
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
+    const logoUrl = appAssetUrl("logo.svg");
 
     useEffect(() => {
         if (autoConnectRef.current || agentEnabled || agentConnected || !agentToken.trim()) return;
@@ -42,8 +44,8 @@ export function AppTopNav() {
                                 <span
                                     className="size-5 shrink-0 bg-current"
                                     style={{
-                                        mask: "url(/logo.svg) center / contain no-repeat",
-                                        WebkitMask: "url(/logo.svg) center / contain no-repeat",
+                                        mask: `url(${logoUrl}) center / contain no-repeat`,
+                                        WebkitMask: `url(${logoUrl}) center / contain no-repeat`,
                                     }}
                                 />
                                 <span className="text-base font-medium">{t("meta.title")}</span>

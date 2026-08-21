@@ -1,6 +1,6 @@
 # 3D 全景节点插件
 
-Infinite Canvas 画布节点插件:查看 360° 等距柱状(equirectangular)全景图,可拖拽旋转。可从上游图片节点自动取图。three.js 运行时从 CDN 按需加载,不打进插件体积。
+DSH FreeCanvas 画布节点插件:查看 360° 等距柱状(equirectangular)全景图,可拖拽旋转。可从上游图片节点自动取图。three.js 运行时从 CDN 按需加载,不打进插件体积。
 
 ## 构建
 

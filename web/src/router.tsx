@@ -11,6 +11,7 @@ import ImagePage from "@/pages/image";
 import NotFound from "@/pages/not-found";
 import PromptsPage from "@/pages/prompts";
 import VideoPage from "@/pages/video";
+import { appBaseUrl } from "@/lib/app-base-url";
 
 export const router = createBrowserRouter([
     {
@@ -32,4 +33,4 @@ export const router = createBrowserRouter([
         ],
     },
     { path: "*", element: <NotFound /> },
-]);
+], { basename: appBaseUrl });

@@ -12,7 +12,7 @@ type RuntimeGlobal = { InfiniteCanvasRuntime?: PluginRuntime };
 export function getRuntime(): PluginRuntime {
     const runtime = (globalThis as unknown as RuntimeGlobal).InfiniteCanvasRuntime;
     if (!runtime) {
-        throw new Error("[plugin-sdk] Infinite Canvas 运行时未就绪:请在画布宿主中加载本插件");
+        throw new Error("[plugin-sdk] DSH FreeCanvas 运行时未就绪:请在画布宿主中加载本插件");
     }
     return runtime;
 }

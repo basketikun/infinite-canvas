@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "private": true,
     "type": "module",
-    "description": "Infinite Canvas 画布节点插件 SDK:类型、automatic JSX 运行时、构建助手",
+    "description": "DSH FreeCanvas 画布节点插件 SDK:类型、automatic JSX 运行时、构建助手",
     "exports": {
         ".": "./src/index.ts",
         "./jsx-runtime": "./src/jsx-runtime.ts",

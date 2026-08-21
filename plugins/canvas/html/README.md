@@ -1,6 +1,6 @@
 # HTML 节点插件
 
-Infinite Canvas 画布节点插件:用沙箱 iframe 渲染 HTML。源码里的 `{{input}}` 会被替换为上游文本节点内容。
+DSH FreeCanvas 画布节点插件:用沙箱 iframe 渲染 HTML。源码里的 `{{input}}` 会被替换为上游文本节点内容。
 
 ## 构建
 

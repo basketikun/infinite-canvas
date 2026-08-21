@@ -10,8 +10,8 @@ const tabs = [
   { title: { en: 'Canvas Guide', 'zh-CN': '操作手册' }, href: '/docs/canvas/canvas-node-manual', prefix: '/docs/canvas' },
   { title: { en: 'Development', 'zh-CN': '开发文档' }, href: '/docs/development/local-development', prefix: '/docs/development' },
   { title: { en: 'Progress', 'zh-CN': '项目进度' }, href: '/docs/progress/changelog', prefix: '/docs/progress' },
-  { title: { en: 'Business', 'zh-CN': '商务合作' }, href: '/docs/business/business', prefix: '/docs/business' },
-  { title: { en: 'Support', 'zh-CN': '赞助支持' }, href: '/docs/support/sponsor', prefix: '/docs/support' },
+  { title: { en: 'Project Use', 'zh-CN': '项目使用' }, href: '/docs/business/business', prefix: '/docs/business' },
+  { title: { en: 'Security', 'zh-CN': '安全' }, href: '/docs/support/security', prefix: '/docs/support' },
 ];
 
 export function DocsTopTabs() {

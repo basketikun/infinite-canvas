@@ -1,37 +1,17 @@
-# docs
+# DSH FreeCanvas 文档站
 
-This is a Next.js application generated with
-[Create Fumadocs](https://github.com/fuma-nama/fumadocs).
+这个目录只用于维护和预览项目文档，不是 DSH FreeCanvas 的用户运行入口。普通用户请直接在 DSH 插件市场安装 **DSH FreeCanvas**。
 
-It runs as a server-backed Next.js docs site and is configured for standalone
-output. Route handlers such as search and LLM text remain available at runtime.
+## 本地预览
 
-Run development server:
+参与文档开发时，在本目录安装依赖并启动预览：
 
 ```bash
+bun install
 bun run dev
 ```
 
-Build and run local production server:
-
-```bash
-bun run build
-bun run start
-```
-
-Run the published image with Docker Compose:
-
-```bash
-docker compose up -d
-```
-
-Or build locally with Docker Compose:
-
-```bash
-docker compose -f docker-compose.local.yml up -d --build
-```
-
-## Explore
+## 目录说明
 
 In the project, you can see:
 
@@ -44,9 +24,9 @@ In the project, you can see:
 | `app/docs`                | The documentation layout and pages.                    |
 | `app/api/search/route.ts` | The Route Handler for search.                          |
 
-### Fumadocs MDX
+## Fumadocs MDX
 
 A `source.config.ts` config file has been included, you can customise different
 options like frontmatter schema.
 
-Read the [Introduction](https://fumadocs.dev/docs/mdx) for further details.
+Read the [Fumadocs MDX introduction](https://fumadocs.dev/docs/mdx) for further details.

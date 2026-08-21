@@ -1,7 +1,7 @@
 export default {
     meta: {
-        title: "无限画布",
-        description: "一个无限画布创作工具",
+        title: "DSH FreeCanvas",
+        description: "集成到 DSH 的 AI 无限画布工作台",
     },
     theme: { toggle: "切换主题" },
     common: {
@@ -203,7 +203,7 @@ export default {
         empty: "还没有生成视频",
     },
     canvas: {
-        defaultTitle: "无限画布 {{count}}",
+        defaultTitle: "画布 {{count}}",
         library: "画布库",
         title: "无限画布",
         imported: "已导入 {{count}} 个画布",
@@ -249,7 +249,7 @@ export default {
             select: "选择 {{name}}", stats: "{{nodes}} 个节点 · {{connections}} 条连线", updated: "更新于 {{date}}", saveName: "保存名称", cancelRename: "取消重命名", export: "导出", rename: "重命名", delete: "删除",
             deleteTitle: "删除画布？", deleteDescription: "将删除 {{count}} 个画布，里面的节点和连线也会一起移除。",
         },
-        export: { defaultProjectName: "无限画布", defaultNodesName: "画布元素", item: "元素" },
+        export: { defaultProjectName: "DSH FreeCanvas", defaultNodesName: "画布元素", item: "元素" },
         createMenu: {
             fromNode: "引用该节点生成", close: "关闭", text: "文本生成", textDescription: "脚本、广告词、品牌文案", image: "图片生成", video: "视频生成", audio: "音频参考", config: "配置节点", configDescription: "模型、尺寸、数量和输入顺序", select: "选择节点",
         },
@@ -330,7 +330,7 @@ export default {
     },
     home: {
         promptError: "获取提示词失败",
-        description: "在 <canvas>无限画布</canvas> 中生成、连接和重组 <content>图片、文字与图形</content>，让创作从单次生成变成连续推演。",
+        description: "在 <canvas>DSH FreeCanvas</canvas> 中生成、连接和重组 <content>图片、文字与图形</content>，让创作从单次生成变成连续推演。",
         start: "开始使用",
         openCanvas: "打开画布",
         showcaseTitle: "沉淀每一次好结果",
@@ -366,7 +366,7 @@ export default {
         },
         localStorage: {
             title: "IndexedDB 存储使用情况",
-            description: "查看 Infinite Canvas 在浏览器中保存的数据量，并按对象仓库统计内容体积。",
+            description: "查看 DSH FreeCanvas 在浏览器中保存的数据量，并按对象仓库统计内容体积。",
             indexedDbUsage: "IndexedDB 占用",
             siteUsage: "站点总占用",
             quota: "可用配额",
@@ -374,7 +374,7 @@ export default {
             siteUsageHint: "包含 IndexedDB 等站点数据",
             quotaHint: "由浏览器动态分配",
             quotaProgress: "站点配额使用率",
-            mainDatabase: "Infinite Canvas 主数据",
+            mainDatabase: "DSH FreeCanvas 主数据",
             records: "{{count}} 条",
             refresh: "刷新统计",
             readFailed: "读取本地存储失败",
@@ -576,7 +576,7 @@ export default {
         status: { failed: "连接失败", connected: "已连接", connecting: "连接中", disconnected: "未连接" },
         state: { ready: "就绪", connectionRequired: "请填写 Local URL 和 Connect token", invalidUrl: "Local URL 格式不正确", offline: "离线", skillReadFailed: "读取 Skill 失败", skillParseFailed: "Skill 解析失败", requestFailed: "本地 Agent 请求失败" },
         siteTools: { canvasList: "画布列表", generationStatus: "生成任务状态", imageConfig: "生图配置", imageGenerate: "生图工作台生成", videoConfig: "视频配置", videoGenerate: "视频创作台生成", promptSearch: "搜索提示词", assetList: "资产列表", assetAdd: "添加资产", unknownTool: "未知工具：{{name}}", canvasLoading: "画布还在加载中，请稍后重试", canvasHint: "用 site_navigate 跳转 /canvas/{id} 打开对应画布", assetsLoading: "资产还在加载中，请稍后重试", assetTitleRequired: "请提供资产标题 title", textContentRequired: "kind=text 时需要提供 content 文本内容", imageUrlRequired: "kind=image 时需要提供 imageUrl（图片地址或 dataURL）", imageReadFailed: "无法读取该图片地址，请改用 dataURL 或可跨域访问的图片链接", assetKindUnsupported: "assets_add 仅支持 kind=text 或 kind=image", imageGenerationStarted: "已跳转生图工作台并触发生成，可用 generation_get_status 查询任务", imageConfigApplied: "已跳转生图工作台并填入参数，未触发生成", videoGenerationStarted: "已跳转视频创作台并触发生成，可用 generation_get_status 查询任务", videoConfigApplied: "已跳转视频创作台并填入参数，未触发生成" },
-        connect: { pluginTitle: "方式一：在 Codex 中使用插件", pluginText: "在 Codex app 安装 Infinite Canvas 插件后，通过插件启动画布，插件会自动启动本地 Agent 并带上连接信息。", directTitle: "方式二：直接运行 Agent", directText: "不使用 Codex 插件时，在终端运行下面命令，再回到网页里连接或手动填入 Local URL 和 Connect token。", commandCopied: "命令已复制", pluginReminder: "Codex 插件提醒", pluginReminderText: "只有安装 Codex 插件或手动添加 MCP 后，工具列表才会进入 Codex 上下文并增加 token 消耗；仅运行 npx -y @basketikun/canvas-agent 启动本地 Agent 不会安装 MCP。", removePlugin: "移除插件", removeMcp: "移除手动 MCP", copyCommand: "复制命令", title: "连接本地 Agent", description: "按使用场景选择一种连接方式。", webConnection: "网页连接", autoDiscover: "默认自动读取 Local URL 和 Connect token，失败时再手动填写。", disconnect: "断开", connect: "连接", localAddress: "本地地址", urlPlaceholder: "例如 http://127.0.0.1:17371", token: "连接 Token", tokenPlaceholder: "自动发现，或手动填入 Connect token" },
+        connect: { pluginTitle: "方式一：在 Codex 中使用插件", pluginText: "在 Codex app 安装 DSH FreeCanvas 插件后，通过插件启动画布，插件会自动启动本地 Agent 并带上连接信息。", directTitle: "方式二：直接运行 Agent", directText: "不使用 Codex 插件时，在终端运行下面命令，再回到网页里连接或手动填入 Local URL 和 Connect token。", commandCopied: "命令已复制", pluginReminder: "Codex 插件提醒", pluginReminderText: "只有安装 Codex 插件或手动添加 MCP 后，工具列表才会进入 Codex 上下文并增加 token 消耗；仅运行 npx -y @basketikun/canvas-agent 启动本地 Agent 不会安装 MCP。", removePlugin: "移除插件", removeMcp: "移除手动 MCP", copyCommand: "复制命令", title: "连接本地 Agent", description: "按使用场景选择一种连接方式。", webConnection: "网页连接", autoDiscover: "默认自动读取 Local URL 和 Connect token，失败时再手动填写。", disconnect: "断开", connect: "连接", localAddress: "本地地址", urlPlaceholder: "例如 http://127.0.0.1:17371", token: "连接 Token", tokenPlaceholder: "自动发现，或手动填入 Connect token" },
         history: { workspace: "工作空间", defaultWorkspace: "默认画布目录", selected: "已选 {{count}} 条", count: "{{count}} 条历史", empty: "暂无历史", deleteCount: "删除 {{count}} 条", refresh: "刷新", newThread: "新对话", selectThread: "选择{{name}}", untitled: "未命名对话", current: "当前", noWorkspaceThreads: "当前工作空间还没有对话记录", connectHint: "连接本地 Agent 后显示历史记录" },
         skills: { selectLocal: "选择本地 Skill", search: "搜索 Skill", loading: "正在读取 Skill…", noMatch: "没有匹配的已启用 Skill", none: "还没有可用的 Skill", select: "选择 Skill", connectHint: "连接 Agent 后使用 Skill" },
         skillManager: {
@@ -589,7 +589,7 @@ export default {
         chat: { latestMessages: "查看最新消息", latestCall: "最新调用", input: "输入", cached: "缓存", output: "输出" },
         logs: { copied: "日志已复制", selectedManual: "已选中日志，请手动复制", copyFailed: "复制失败，请切换到原始 JSON 后手动复制", title: "运行日志", diagnostics: "排查日志", rawJson: "原始 JSON", messages: "{{count}} 条消息", tool: "工具：{{tool}}", noPendingTool: "无待处理工具", all: "全部 {{count}}", errors: "错误 {{count}}", warnings: "警告 {{count}}", info: "信息 {{count}}", list: "排查日志列表", noFiltered: "当前筛选下没有日志", empty: "暂无事件日志", new: "{{count}} 条新日志", newLabel: "{{count}} 条新日志，查看最新日志", latest: "查看最新日志", fullData: "完整诊断数据 · {{count}} 条", copyAll: "复制全部日志", copyLastError: "复制最近错误", lastErrorCopied: "最近错误已复制", clear: "清空日志", repeated: "重复 {{count}} 次", details: "详细信息", skillLoading: "技能加载", plugin: "插件", terminal: "终端", conversationStorage: "会话存储" },
         message: { close: "关闭", copied: "已复制", copyCode: "复制代码", copyLink: "复制链接", externalWarning: "即将打开以下外部链接，请确认链接可信。", openExternal: "打开外部链接？", continueOpen: "继续打开", revealed: "已在文件管理器中定位", openLocalFailed: "无法打开本地文件", openLocal: "打开本地文件？", localDescription: "将在本机文件管理器中定位该路径，不会通过浏览器打开。", externalDescription: "即将打开以下外部链接，请确认链接可信。", pathCopied: "路径已复制", linkCopied: "链接已复制", copyPath: "复制路径", showInFolder: "在文件管理器中显示", toolCall: "工具调用", awaitingConfirmation: "等待确认", reject: "拒绝执行", approve: "批准执行", networkApproval: "请求网络访问", fileApproval: "请求编辑文件", permissionApproval: "请求扩展权限", commandApproval: "请求执行命令", decline: "拒绝", allowOnce: "允许一次", allowSession: "本会话允许", thinking: "正在思考", commandsRunning: "正在执行 {{count}} 条命令", commandRunning: "正在执行命令", commandsCompleted: "已执行 {{count}} 条命令{{failed}}", commandsFailed: " · {{count}} 条失败", failed: "执行失败", running: "进行中", completed: "已完成", command: "命令", slowResponse: "响应时间较长，但任务仍在运行。可以继续等待，或点击输入框右侧的停止按钮结束本轮。", waitingSeconds: "已等待 {{seconds}} 秒", waitingMinutes: "已等待 {{minutes}} 分 {{seconds}} 秒", files: "涉及文件", errorInfo: "错误信息", output: "运行输出", viewLarge: "点击查看大图", attachmentPreview: "图片附件预览", noEffect: "未生效", canceled: "已取消", recorded: "已记录", stopped: "已停止", finished: "已结束", pending: "待处理" },
-        events: { analyzing: "正在分析任务…", reasoning: "思考摘要", plan: "执行计划", commandFailed: "命令执行失败", commandCompleted: "命令已完成", executeCommand: "执行命令", editFiles: "修改文件", searchWeb: "搜索资料", viewImage: "查看图片", imageViewed: "已查看图片", viewingImage: "正在查看图片", imageGeneration: "内置生图", imageFailed: "图片生成失败", imageCompleted: "图片生成完成", generatingImage: "正在生成图片…", compactContext: "整理上下文", contextCompacted: "已整理当前对话，继续处理任务", compactingContext: "正在整理当前对话…", collaboration: "协作处理", collaborationFailed: "协作任务失败", collaborationCompleted: "已完成协作任务", collaborating: "正在协作处理任务…", progress: "任务进度", progressCount: "已完成 {{completed}}/{{total}} 项", planning: "正在整理执行步骤…", executingCommand: "正在执行命令…", workingDirectory: "工作目录", exitStatus: "退出状态", duration: "耗时", seconds: "{{value}} 秒", filesCompleted: "已完成文件修改", preparingFiles: "正在准备文件修改…", fileCompleted: "已{{action}} {{path}}", editingFile: "正在{{action}} {{path}}", filesEdited: "已修改 {{count}} 个文件：{{names}}{{more}}", editingFiles: "正在修改 {{count}} 个文件：{{names}}{{more}}", andMore: " 等", openPage: "打开网页：{{url}}", findInPage: "在网页中查找“{{pattern}}”", content: "内容", search: "搜索：{{query}}", relatedInfo: "相关资料", keyword: "关键词", webpage: "网页", add: "新增", delete: "删除", edit: "修改", diagnostics: "Infinite Canvas Agent 诊断", address: "地址：{{endpoint}}", connection: "连接：{{connection}} · 状态：{{status}}", online: "在线", connecting: "连接中", disabled: "未启用", messageTool: "消息：{{messages}} · 工具：{{tool}}", none: "无", noLogs: "暂无事件日志", threadCreated: "创建会话", turnStarted: "开始处理", progressUpdated: "更新任务进度", turnFailed: "处理失败", turnStopped: "处理已停止", turnCompleted: "处理完成", toolCalled: "调用工具", toolFailed: "工具失败", toolCompleted: "工具完成", replyReceived: "收到回复", completed: "完成", modelBusy: "模型暂时繁忙", modelBusyDescription: "当前选择的模型请求量过大，暂时无法处理。请稍后重试，或切换其他模型后再试。", taskFailed: "任务失败", taskFailedDescription: "Codex 未能完成本次任务，请稍后重试。" },
+        events: { analyzing: "正在分析任务…", reasoning: "思考摘要", plan: "执行计划", commandFailed: "命令执行失败", commandCompleted: "命令已完成", executeCommand: "执行命令", editFiles: "修改文件", searchWeb: "搜索资料", viewImage: "查看图片", imageViewed: "已查看图片", viewingImage: "正在查看图片", imageGeneration: "内置生图", imageFailed: "图片生成失败", imageCompleted: "图片生成完成", generatingImage: "正在生成图片…", compactContext: "整理上下文", contextCompacted: "已整理当前对话，继续处理任务", compactingContext: "正在整理当前对话…", collaboration: "协作处理", collaborationFailed: "协作任务失败", collaborationCompleted: "已完成协作任务", collaborating: "正在协作处理任务…", progress: "任务进度", progressCount: "已完成 {{completed}}/{{total}} 项", planning: "正在整理执行步骤…", executingCommand: "正在执行命令…", workingDirectory: "工作目录", exitStatus: "退出状态", duration: "耗时", seconds: "{{value}} 秒", filesCompleted: "已完成文件修改", preparingFiles: "正在准备文件修改…", fileCompleted: "已{{action}} {{path}}", editingFile: "正在{{action}} {{path}}", filesEdited: "已修改 {{count}} 个文件：{{names}}{{more}}", editingFiles: "正在修改 {{count}} 个文件：{{names}}{{more}}", andMore: " 等", openPage: "打开网页：{{url}}", findInPage: "在网页中查找“{{pattern}}”", content: "内容", search: "搜索：{{query}}", relatedInfo: "相关资料", keyword: "关键词", webpage: "网页", add: "新增", delete: "删除", edit: "修改", diagnostics: "DSH FreeCanvas Agent 诊断", address: "地址：{{endpoint}}", connection: "连接：{{connection}} · 状态：{{status}}", online: "在线", connecting: "连接中", disabled: "未启用", messageTool: "消息：{{messages}} · 工具：{{tool}}", none: "无", noLogs: "暂无事件日志", threadCreated: "创建会话", turnStarted: "开始处理", progressUpdated: "更新任务进度", turnFailed: "处理失败", turnStopped: "处理已停止", turnCompleted: "处理完成", toolCalled: "调用工具", toolFailed: "工具失败", toolCompleted: "工具完成", replyReceived: "收到回复", completed: "完成", modelBusy: "模型暂时繁忙", modelBusyDescription: "当前选择的模型请求量过大，暂时无法处理。请稍后重试，或切换其他模型后再试。", taskFailed: "任务失败", taskFailedDescription: "Codex 未能完成本次任务，请稍后重试。" },
         eventExtra: { toolNamed: "调用工具：{{name}}", toolOperation: "工具操作", targetPage: "目标页面", searchContent: "搜索内容", textContent: "文本内容", operationContent: "操作内容", imageCount: "图片数量", tools: { generateImage: "生成图片", viewImage: "查看图片", executeCommand: "执行命令", editFiles: "修改文件", searchWeb: "搜索资料", canvasOps: "画布操作", readCanvas: "读取画布", readSelection: "读取选区", exportSnapshot: "导出快照", createNode: "创建节点", addAttachments: "添加附件图片", createText: "创建文本", createTexts: "批量创建文本", createConfig: "创建生成配置", createImageFlow: "创建生图流程", createGenerationFlow: "创建生成流程", generateText: "生成文本", generateVideo: "生成视频", generateAudio: "生成音频", updateNode: "更新节点", updateText: "更新文本", moveNodes: "移动节点", resizeNode: "调整节点尺寸", deleteNodes: "删除节点", connectNodes: "连接节点", selectNodes: "选择节点", setViewport: "调整视口", runGeneration: "触发生成", openPage: "打开页面" } },
         eventMore: { toolRunning: "{{action}}中…", openedRoute: "已打开{{route}}", canvasCount: "共 {{count}} 个画布", promptCount: "找到 {{count}} 条提示词", assetCount: "共 {{count}} 个资产", assetAdded: "已加入我的素材", generationStatus: "共 {{total}} 个任务，排队 {{queued}}，运行中 {{running}}，成功 {{succeeded}}，失败 {{failed}}", workbenchExecuted: "已在工作台执行", workbenchConfigRead: "已读取工作台配置", canvasRead: "已读取当前画布内容", selectionRead: "已读取当前选中内容", textNodes: "{{count}} 个文本", imageNodes: "{{count}} 张图片", configNodes: "{{count}} 个配置", videoNodes: "{{count}} 个视频", audioNodes: "{{count}} 个音频", groupNodes: "{{count}} 个分组", otherNodes: "{{count}} 个其他节点", connections: "{{count}} 条连线", emptyCanvas: "当前画布为空", executeTool: "执行{{tool}}", thinking: "正在思考...", operationRunning: "{{operation}}正在进行...", organizingCanvas: "画布已读取，Codex 正在整理结果...", operationCompleted: "{{operation}}已完成，Codex 正在继续处理...", attachmentPrompt: "请处理上传的图片附件。", routes: { home: "首页", canvas: "画布页面", canvasProject: "指定画布", image: "生图工作台", video: "视频工作台", prompts: "提示词中心", assets: "我的素材", config: "配置页面" } },
         runtime: {

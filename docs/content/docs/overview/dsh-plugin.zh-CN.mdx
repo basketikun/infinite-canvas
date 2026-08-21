@@ -1,0 +1,31 @@
+---
+title: DSH 插件
+description: 在 DeepSeek Harness 中安装 DSH FreeCanvas
+---
+
+# DSH 插件
+
+DSH FreeCanvas 是直接运行在 DeepSeek Harness 内的自包含画布插件。插件随包携带画布前端，在 DSH 侧边栏提供会话、分屏和全画布三种布局，并托管本地 Canvas Agent HTTP 服务。
+
+## 在 DSH 中使用
+
+在 DSH 插件市场搜索并安装 **DSH FreeCanvas**，然后从侧边栏打开。普通用户不需要克隆仓库、启动本地端口或部署独立站点。
+
+## 源码开发
+
+调试插件时，从仓库源码目录生成插件内置画布并安装到开发 profile：
+
+```bash
+npm --prefix web install --legacy-peer-deps
+npm --prefix plugins/dsh-freecanvas install --no-package-lock --legacy-peer-deps
+npm --prefix plugins/dsh-freecanvas run build:web
+dsh plugin --profile desktop add ./plugins/dsh-freecanvas
+```
+
+插件已经声明 `dsh.bundle.patch`，DSH 会自动把它加入 profile bundle 列表，不要再手动插入第二条 `ui-dsh-freecanvas`。
+
+`canvasUrl` 默认留空并使用包内画布；只有调试外部画布时才填写地址。Agent 自动启动也可以在 DSH 插件配置中修改。MCP 接入示例和完整配置见[插件 README](https://github.com/JustinQiuck/dsh-freecanvas/tree/main/plugins/dsh-freecanvas)。
+
+## 许可证
+
+DSH bundle 从 `v0.2.0` 起将原创插件代码改为 Elastic License 2.0；上游画布与 Canvas Agent 组件继续保留 MIT 协议和版权声明。历史插件 `v0.1.0` 继续适用发布时已经授予的条款；未来 Pro 模块不包含在当前公开 bundle 中。详见[许可证](/zh-CN/docs/business/license)。

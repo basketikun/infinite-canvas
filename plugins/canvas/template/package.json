@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "private": true,
     "type": "module",
-    "description": "Infinite Canvas 插件起步模板(TypeScript + SDK)",
+    "description": "DSH FreeCanvas 插件起步模板(TypeScript + SDK)",
     "scripts": {
         "build": "node build.mjs",
         "dev": "node build.mjs --watch",

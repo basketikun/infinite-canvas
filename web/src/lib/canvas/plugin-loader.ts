@@ -3,6 +3,7 @@ import { getPluginRuntime } from "@/lib/canvas/plugin-runtime";
 import { usePluginStore, type InstalledPlugin } from "@/stores/canvas/use-plugin-store";
 import type { CanvasPlugin } from "@/types/canvas-plugin";
 import i18n from "@/i18n";
+import { appAssetUrl } from "@/lib/app-base-url";
 
 const cleanups = new Map<string, () => void>();
 
@@ -117,7 +118,7 @@ export async function ensurePluginsLoaded() {
 async function loadLocalPlugins() {
     let urls: unknown;
     try {
-        const response = await fetch("/plugins/index.json");
+        const response = await fetch(appAssetUrl("plugins/index.json"));
         if (!response.ok) return;
         urls = await response.json();
     } catch {

@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "private": true,
     "type": "module",
-    "description": "Infinite Canvas 官方插件的集中构建(CI 发布到 plugins-dist 分支)",
+    "description": "DSH FreeCanvas 官方插件的集中构建(CI 发布到 plugins-dist 分支)",
     "scripts": {
         "build": "node build.mjs"
     },

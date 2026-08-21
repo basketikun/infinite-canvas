@@ -1,4 +1,7 @@
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M32 8L58 54H46L32 29L18 54H6L32 8Z" fill="currentColor"/>
-  <path d="M32 40L40 54H24L32 40Z" fill="currentColor"/>
+  <path d="M16 14H48M16 14V50M16 31H41" stroke="#2563EB" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="16" cy="14" r="5" fill="#2563EB"/>
+  <circle cx="48" cy="14" r="5" fill="#2563EB"/>
+  <circle cx="41" cy="31" r="5" fill="#2563EB"/>
+  <circle cx="16" cy="50" r="5" fill="#2563EB"/>
 </svg>

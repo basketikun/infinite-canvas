@@ -1,38 +1,28 @@
 ---
 title: Quick Start
-description: Run Infinite Canvas in a few steps
+description: Install and use DSH FreeCanvas in DSH
 ---
 
 # Quick Start
 
-To try the project, deploy or start the `web/` frontend.
+DSH FreeCanvas is a self-contained DSH canvas plugin. It includes the canvas frontend and local Agent connection. Users do not need to clone the repository, open a local port, or deploy a separate site.
 
-## Deploy with Vercel
+## Install the plugin
 
-Import the repository into Vercel. The root `vercel.json` builds `web/`. AI requests are sent directly from the browser to your OpenAI-compatible endpoint, so no additional application server is required.
+1. Open the DSH plugin marketplace.
+2. Search for and install **DSH FreeCanvas**.
+3. Open FreeCanvas from the DSH sidebar.
 
-## Run locally
+The canvas supports conversation, split, and full-canvas layouts. DSH remembers the last selected layout.
 
-```bash
-git clone git@github.com:basketikun/infinite-canvas.git
-cd infinite-canvas/web
-bun install
-bun run dev
-```
+## First use
 
-Open `http://localhost:3000`.
+1. Open Settings in the canvas.
+2. Enter your `Base URL`, `API Key`, and models.
+3. Create a canvas, add nodes, and start generating.
 
-## Run with Docker
+Canvases, My Assets, generation history, and API keys are stored in the browser by default. The browser sends AI requests directly to the configured OpenAI-compatible endpoint.
 
-```bash
-docker build -t infinite-canvas .
-docker run --rm -p 3000:3000 infinite-canvas
-```
+## Source development
 
-## First-time setup
-
-- Open Settings and enter your `Base URL`, `API Key`, and model names.
-- Open `/prompts` to fetch prompt repositories directly from the browser and cache them in IndexedDB.
-- Configure WebDAV if you want to synchronize canvases, assets, and generation history across devices.
-
-Canvas projects and My Assets are primarily stored in the browser. The API key is also stored locally and used by the browser to call OpenAI-compatible endpoints directly.
+Users do not need the source development steps. To debug or contribute to the plugin, read the [plugin source guide](https://github.com/JustinQiuck/dsh-freecanvas/tree/main/plugins/dsh-freecanvas) and [local development guide](/docs/development/local-development).

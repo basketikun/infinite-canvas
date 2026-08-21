@@ -1,11 +1,9 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { appNames, gitConfig } from './shared';
-import { ArrowUpRight } from 'lucide-react';
 import { i18n } from './i18n';
 import { uiTranslations } from 'fumadocs-ui/i18n';
 
 const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
-const qqUrl = 'https://qm.qq.com/q/DFnKzZ807u';
 
 export const translations = i18n.translations().extend(uiTranslations()).add('ui', {
   en: {
@@ -63,17 +61,6 @@ export function baseOptions(locale: string): BaseLayoutProps {
         on: 'nav',
       },
       {
-        text: (
-          <span className="inline-flex items-center gap-1.5">
-            <span>{chinese ? '在线体验' : 'Live Demo'}</span>
-            <ArrowUpRight className="size-4" />
-          </span>
-        ),
-        url: 'https://canvas.best/',
-        external: true,
-        on: 'nav',
-      },
-      {
         type: 'icon',
         text: 'GitHub',
         label: 'GitHub',
@@ -81,15 +68,6 @@ export function baseOptions(locale: string): BaseLayoutProps {
         external: true,
         on: 'menu',
         icon: <img src="/github.svg" alt="" className="size-4" />,
-      },
-      {
-        type: 'icon',
-        text: 'QQ',
-        label: 'QQ',
-        url: qqUrl,
-        external: true,
-        on: 'menu',
-        icon: <img src="/qq.svg" alt="" className="size-4" />,
       },
     ],
   };

@@ -5,53 +5,50 @@ import { localizePath, type Locale } from '@/lib/i18n';
 import type { Metadata } from 'next';
 
 const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
-const demoUrl = 'https://canvas.best/';
 const starHistoryUrl = `https://www.star-history.com/?repos=${gitConfig.user}%2F${gitConfig.repo}&type=date`;
 const starHistoryChart = `https://api.star-history.com/chart?repos=${gitConfig.user}/${gitConfig.repo}&type=date&transparent=true`;
 const darkStarHistoryChart = `${starHistoryChart}&theme=dark`;
 
-const previewImages = [
+const capabilityCards = [
   {
-    src: 'https://i.ibb.co/TDFvGWDT/image.png',
     title: { en: 'Canvas composition', 'zh-CN': '画布编排' },
+    description: { en: 'Arrange images, text, media, generation settings, and reusable flows on one canvas.', 'zh-CN': '在同一画布中编排图片、文本、媒体、生成配置与可复用流程。' },
   },
   {
-    src: 'https://i.ibb.co/zVwJq3YS/image.png',
-    title: { en: 'Image generation', 'zh-CN': '图片生成' },
+    title: { en: 'DSH integration', 'zh-CN': 'DSH 集成' },
+    description: { en: 'Open DSH FreeCanvas from the DSH sidebar with session, split, and full-canvas layouts.', 'zh-CN': '从 DSH 侧边栏打开 DSH FreeCanvas，支持会话、分屏与全画布布局。' },
   },
   {
-    src: 'https://i.ibb.co/PvY3qhhK/image.png',
-    title: { en: 'Reference editing', 'zh-CN': '参考图编辑' },
+    title: { en: 'Local Agent', 'zh-CN': '本地 Agent' },
+    description: { en: 'Connect Codex or Claude Code through the local Canvas Agent and MCP toolchain.', 'zh-CN': '通过本地 Canvas Agent 与 MCP 工具链连接 Codex 或 Claude Code。' },
   },
   {
-    src: 'https://i.ibb.co/7D04LwN/image.png',
-    title: { en: 'Node workflow', 'zh-CN': '节点工作流' },
+    title: { en: 'Local-first data', 'zh-CN': '本地优先数据' },
+    description: { en: 'Keep canvases, assets, generation records, and API keys in browser-local storage by default.', 'zh-CN': '画布、素材、生成记录和 API Key 默认保存在浏览器本地。' },
   },
 ];
 
 const messages = {
   en: {
-    eyebrow: 'Open-source AI image creation workspace',
+    eyebrow: 'Self-contained AI canvas plugin for DSH',
     center: 'Documentation',
-    description: 'An infinite canvas for image creation that brings canvas composition, AI generation, reference editing, prompt libraries, and reusable assets into one workflow.',
+    description: 'Install DSH FreeCanvas in DSH and use canvas composition, AI generation, reference editing, prompt libraries, reusable assets, and local agents without a separate service.',
     quickStart: 'Quick Start',
-    demo: 'Live Demo',
-    gallery: 'Gallery',
+    gallery: 'Built for DSH workflows',
     features: 'Explore Features',
-    previewAlt: 'Infinite Canvas preview',
+    capabilityLabel: 'DSH canvas workspace',
     contributors: 'Contributors',
     contributorsDescription: 'Thank you to everyone who has contributed to this project',
     contributorsAlt: 'Contributor avatars',
   },
   'zh-CN': {
-    eyebrow: '开源 AI 图片创作工作台',
+    eyebrow: '直接运行在 DSH 内的 AI 无限画布插件',
     center: '文档中心',
-    description: '面向图片创作的无限画布，把画布编排、AI 生成、参考图编辑、提示词库和素材沉淀放在同一个工作流里。',
+    description: '在 DSH 中安装 DSH FreeCanvas，即可使用画布编排、AI 生成、参考图编辑、提示词库、素材管理和本地 Agent，无需单独启动服务。',
     quickStart: '快速开始',
-    demo: '在线体验',
-    gallery: '效果展示',
+    gallery: '面向 DSH 工作流',
     features: '功能介绍',
-    previewAlt: '无限画布效果图',
+    capabilityLabel: 'DSH 画布工作台',
     contributors: '开发贡献者',
     contributorsDescription: '感谢所有为本项目做出贡献的开发者',
     contributorsAlt: '开发贡献者头像',
@@ -96,24 +93,19 @@ export default async function HomePage({ params }: PageProps<'/[lang]'>) {
               <img src="/github.svg" alt="" className="size-4" />
               GitHub
             </a>
-            <a
-              href={demoUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium text-zinc-900 transition hover:border-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-100 dark:hover:border-zinc-500 dark:hover:bg-zinc-900"
-            >
-              {text.demo}
-              <ArrowUpRight className="size-4" />
-            </a>
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-2xl lg:w-[108%] lg:max-w-none">
-          <img
-            src={previewImages[3].src}
-            alt={text.previewAlt}
-            className="aspect-[16/10] w-full rounded-xl object-cover"
-          />
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-7 dark:border-zinc-800 dark:bg-zinc-950 lg:w-[108%] lg:max-w-none">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-400">{text.capabilityLabel}</div>
+          <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-zinc-200 bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-800">
+            {capabilityCards.map((item, index) => (
+              <div key={item.title[locale]} className="min-h-28 bg-white p-5 dark:bg-zinc-900">
+                <div className="text-xs text-zinc-400">0{index + 1}</div>
+                <div className="mt-5 text-sm font-semibold text-zinc-950 dark:text-zinc-50">{item.title[locale]}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -133,15 +125,11 @@ export default async function HomePage({ params }: PageProps<'/[lang]'>) {
           </Link>
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {previewImages.map((item) => (
-            <img
-              key={item.src}
-              src={item.src}
-              alt={item.title[locale]}
-              loading="lazy"
-              decoding="async"
-              className="aspect-[16/10] w-full rounded-2xl object-cover"
-            />
+          {capabilityCards.map((item) => (
+            <article key={item.title[locale]} className="rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
+              <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{item.title[locale]}</h3>
+              <p className="mt-3 text-sm leading-7 text-zinc-600 dark:text-zinc-400">{item.description[locale]}</p>
+            </article>
           ))}
         </div>
       </section>

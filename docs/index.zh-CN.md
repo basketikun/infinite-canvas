@@ -1,11 +1,10 @@
-# 无限画布文档索引
+# DSH FreeCanvas 文档索引
 
 ## 项目介绍
 
 - [快速开始](/zh-CN/docs/overview/quick-start)
+- [DSH 插件](/zh-CN/docs/overview/dsh-plugin)
 - [功能介绍](/zh-CN/docs/overview/features)
-- [Render 部署](/zh-CN/docs/overview/render)
-- [Docker 部署](/zh-CN/docs/overview/docker)
 - [第三方 GitHub 提示词仓库](/zh-CN/docs/overview/third-party-prompt-repositories)
 
 ## 操作手册
@@ -18,15 +17,14 @@
 - [本地开发](/zh-CN/docs/development/local-development)
 - [画布数据结构](/zh-CN/docs/development/canvas-data-structure)
 
-## 商务合作
+## 项目使用
 
-- [开源协议](/zh-CN/docs/business/license)
-- [商务合作](/zh-CN/docs/business/business)
+- [许可证](/zh-CN/docs/business/license)
+- [项目使用](/zh-CN/docs/business/business)
 
-## 支持与安全
+## 安全
 
 - [漏洞提交](/zh-CN/docs/support/security)
-- [赞助支持](/zh-CN/docs/support/sponsor)
 
 ## 项目进度
 

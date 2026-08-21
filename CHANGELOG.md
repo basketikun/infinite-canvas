@@ -2,6 +2,16 @@
 
 ## Unreleased
 
++ [调整] 用户入口统一为 DSH 插件安装与内置运行，移除 README 和文档站的独立启动、Vercel、Render 与 Docker 部署指引。
++ [调整] DSH bundle 从 `v0.2.0` 起改用 Elastic License 2.0，并将上游 MIT 声明、历史版本权利与未来 Pro 商业授权边界分开说明。
++ [新增] 提供可安装的 DSH FreeCanvas bundle，在 DeepSeek Harness 中嵌入画布并管理本地 Canvas Agent 连接。
++ [调整] 仓库与文档站统一为 DSH FreeCanvas 项目信息，移除源项目遗留的联系方式、推广与赞助入口。
++ [调整] 前端、Canvas Agent、Codex marketplace、版本检查、官方插件清单与容器发布统一使用 DSH FreeCanvas 品牌和本仓库入口，并替换旧 Logo 与外链演示图。
++ [调整] DSH bundle 改为随包携带并同源提供画布前端，默认安装后直接使用，仅在显式配置时代理外部画布服务。
++ [调整] DSH 画布显示模式从顶部悬浮按钮移至侧边栏入口菜单，避免遮挡画布导航并保留上次画布模式。
++ [修复] 侧边栏布局状态文案仅在变化时更新，避免触发 DOM 观察器循环导致 DSH 一直停留在加载插件。
++ [修复] DSH Desktop 在 Electron Node 模式下启动内置 Canvas Agent，避免主服务未监听导致画布 MCP 调用 `fetch failed`。
+
 ## v0.16.0 - 2026-08-18
 
 + [新增] 提示词来源新增 Freestylefly GPT Image 2 内置来源。

@@ -9,13 +9,13 @@ import { getMDXComponents } from '@/components/mdx';
 
 const messages = {
   en: {
-    title: 'Infinite Canvas Documentation',
-    description: 'Features, canvas guides, deployment, development, business, and support',
+    title: 'DSH FreeCanvas Documentation',
+    description: 'DSH plugin usage, features, canvas guides, development, project use, and support',
     index: 'index.md',
   },
   'zh-CN': {
-    title: '无限画布文档',
-    description: '功能说明、操作手册、部署方式、开发文档、商务合作与赞助支持',
+    title: 'DSH FreeCanvas 文档',
+    description: 'DSH 插件使用、功能说明、操作手册、开发文档、项目使用与支持',
     index: 'index.zh-CN.md',
   },
 };

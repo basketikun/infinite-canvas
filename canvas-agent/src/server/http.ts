@@ -432,7 +432,7 @@ export function startHttpServer() {
     });
 
     app.listen(port, "127.0.0.1", () => {
-        console.log("Infinite Canvas Agent");
+        console.log("DSH FreeCanvas Agent");
         checkVersions();
         console.log(`Local URL: ${config.url}`);
         console.log(`Connect token: ${config.token}`);

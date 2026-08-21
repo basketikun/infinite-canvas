@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-infinite-canvas is in active development. Security fixes are accepted for the
+DSH FreeCanvas is in active development. Security fixes are accepted for the
 `main` branch and the latest tagged release. Older versions may be handled on a
 best-effort basis.
 
@@ -11,14 +11,10 @@ best-effort basis.
 Please do not open a public issue with exploit details, credentials, private
 API keys, proof-of-concept code, or screenshots that reveal sensitive data.
 
-Preferred reporting channels:
-
-1. Use GitHub private vulnerability reporting or a GitHub Security Advisory for
-   this repository, if available.
-2. If a private GitHub report is not available, email `1844025705@qq.com` with
-   the subject `[infinite-canvas security]`.
-3. If neither private channel is available, open a public issue that asks for a
-   private contact channel and does not include technical exploit details.
+Use GitHub private vulnerability reporting or a GitHub Security Advisory for
+this repository. If neither option is available, open a public issue asking the
+maintainers to enable a private reporting channel. Do not include technical
+details or sensitive data in that issue.
 
 Please include:
 
@@ -77,4 +73,3 @@ this community project.
 
 Please allow time for investigation and remediation before publishing details.
 Credit will be given on request unless you prefer to remain anonymous.
-

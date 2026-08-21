@@ -10,7 +10,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/basketikun/infinite-canvas-docs
+  IMAGE_NAME: ghcr.io/justinqiuck/dsh-freecanvas-docs
 
 jobs:
   meta:

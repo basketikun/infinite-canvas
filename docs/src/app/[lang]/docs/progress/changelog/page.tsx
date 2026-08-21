@@ -11,7 +11,7 @@ const messages = {
   en: {
     title: 'Changelog',
     description: 'Project release history',
-    content: '# Changelog\n\nThe detailed changelog is currently maintained in Chinese. See the [source changelog](https://github.com/basketikun/infinite-canvas/blob/main/CHANGELOG.md) for all releases.',
+    content: '# Changelog\n\nThe detailed changelog is currently maintained in Chinese. See the [project changelog](https://github.com/JustinQiuck/dsh-freecanvas/blob/main/CHANGELOG.md) for all releases.',
   },
   'zh-CN': {
     title: '更新日志',

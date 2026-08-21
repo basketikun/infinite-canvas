@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: infinite-canvas
+    name: dsh-freecanvas
     runtime: docker
     plan: free
     autoDeployTrigger: off

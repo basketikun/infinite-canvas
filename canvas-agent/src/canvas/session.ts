@@ -152,7 +152,7 @@ export class CanvasSession {
         return this.updateConversation({
             threadId,
             status: hasPending ? "preparing" : requiredFailure ? "failed" : hasFailure ? "warning" : "ready",
-            error: requiredFailure ? `Infinite Canvas MCP 初始化失败${requiredFailureDetail ? `：${requiredFailureDetail}` : ""}` : undefined,
+            error: requiredFailure ? `DSH FreeCanvas MCP 初始化失败${requiredFailureDetail ? `：${requiredFailureDetail}` : ""}` : undefined,
         });
     }
 

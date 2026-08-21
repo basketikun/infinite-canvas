@@ -1,48 +1,28 @@
 ---
 title: 快速开始
-description: 用最少步骤把无限画布跑起来
+description: 在 DSH 中安装并使用 DSH FreeCanvas
 ---
 
 # 快速开始
 
-如果你只是想先把项目跑起来，优先部署或启动 `web/` 前端。
+DSH FreeCanvas 是 DSH 的自包含画布插件。插件已经包含画布前端和本地 Agent 连接，普通用户不需要克隆仓库、启动本地端口或部署独立站点。
 
-## Vercel 部署
+## 安装插件
 
-在 Vercel 中导入仓库即可，根目录 `vercel.json` 会构建 `web/`。当前版本的 AI 请求由浏览器前台直连用户自己的 OpenAI 兼容地址，不需要额外配置服务端。
+1. 打开 DSH 插件市场。
+2. 搜索并安装 **DSH FreeCanvas**。
+3. 从 DSH 侧边栏打开 FreeCanvas。
 
-## 本地启动
+画布支持会话、分屏和全画布布局。DSH 会保存上次使用的布局。
 
-```bash
-git clone git@github.com:basketikun/infinite-canvas.git
-cd infinite-canvas
-cd web
-bun install
-bun run dev
-```
+## 首次使用
 
-启动后访问：
+1. 打开画布右上角设置。
+2. 填写自己的 `Base URL`、`API Key` 和模型。
+3. 新建画布，添加节点并开始生成。
 
-```text
-http://localhost:3000
-```
+画布、我的素材、生成记录和 API Key 默认保存在浏览器本地。AI 请求由浏览器直接发送到用户配置的 OpenAI 兼容接口。
 
-## Docker 启动
+## 源码开发
 
-如果你需要基于当前源码构建镜像：
-
-```bash
-docker build -t infinite-canvas .
-docker run --rm -p 3000:3000 infinite-canvas
-```
-
-## 首次使用建议
-
-- 先打开右上角配置弹窗，填入自己的 `Base URL`、`API Key` 和模型名。
-- 如果需要提示词仓库内容，打开 `/prompts` 会由浏览器前端直连拉取并缓存到 IndexedDB。
-- 如果需要跨设备同步画布、素材和生成记录，可在配置弹窗中填写 WebDAV。
-
-## 说明
-
-- 当前画布项目和“我的素材”主要保存在浏览器本地，WebDAV 同步需要用户自行配置。
-- AI API Key 保存在浏览器本地，并由前端直接请求 OpenAI 兼容接口。
+普通用户无需执行源码开发步骤。调试插件或参与开发时，请阅读[插件源码说明](https://github.com/JustinQiuck/dsh-freecanvas/tree/main/plugins/dsh-freecanvas)和[本地开发文档](/zh-CN/docs/development/local-development)。

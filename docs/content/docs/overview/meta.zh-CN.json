@@ -4,11 +4,9 @@
   "defaultOpen": true,
   "pages": [
     "quick-start",
+    "dsh-plugin",
     "codex-app-plugin",
     "features",
-    "render",
-    "docker",
-    "third-party-prompt-repositories",
-    "[在线体验](https://canvas.best/)"
+    "third-party-prompt-repositories"
   ]
 }

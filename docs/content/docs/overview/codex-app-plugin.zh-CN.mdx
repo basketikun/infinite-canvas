@@ -1,11 +1,11 @@
 ---
 title: Codex App 插件
-description: 在 Codex App 中安装并使用 Infinite Canvas 插件
+description: 在 Codex App 中安装并使用 DSH FreeCanvas 插件
 ---
 
 # Codex App 插件
 
-Infinite Canvas 提供了一个 Codex App 插件，用来把 Codex 和本地 Canvas Agent 连接起来。安装后，你可以直接在 Codex 中说“打开 Infinite Canvas”，让 Codex 打开画布、读取节点、创建节点并触发生成流程。
+DSH FreeCanvas 提供了一个 Codex App 插件，用来把 Codex 和本地 Canvas Agent 连接起来。安装后，你可以直接在 Codex 中说“打开 DSH FreeCanvas”，让 Codex 打开画布、读取节点、创建节点并触发生成流程。
 
 插件源码位于仓库的 `plugins/infinite-canvas/` 目录。
 
@@ -16,8 +16,8 @@ Infinite Canvas 提供了一个 Codex App 插件，用来把 Codex 和本地 Can
 把下面这段发给 Codex：
 
 ```text
-请从 https://github.com/basketikun/infinite-canvas.git 安装 Infinite Canvas Codex 插件。
-请 clone 仓库到 ~/plugins/infinite-canvas，确认 plugins/infinite-canvas/.codex-plugin/plugin.json 存在，
+请从 https://github.com/JustinQiuck/dsh-freecanvas.git 安装 DSH FreeCanvas Codex 插件。
+请 clone 仓库到 ~/plugins/dsh-freecanvas，确认 plugins/infinite-canvas/.codex-plugin/plugin.json 存在，
 把 plugins/infinite-canvas 加入 personal marketplace，先运行 codex plugin marketplace add ~，
 再运行 codex plugin add infinite-canvas@personal。
 安装后请校验插件，并告诉我是否需要开启一个新对话来加载新技能和 MCP 工具。
@@ -31,10 +31,10 @@ Infinite Canvas 提供了一个 Codex App 插件，用来把 Codex 和本地 Can
 
 ```bash
 mkdir -p ~/plugins
-git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-canvas
+git clone https://github.com/JustinQiuck/dsh-freecanvas.git ~/plugins/dsh-freecanvas
 ```
 
-确保 `~/.agents/plugins/marketplace.json` 中有 Infinite Canvas 条目。这里的 `path` 要指向仓库里的插件子目录：
+确保 `~/.agents/plugins/marketplace.json` 中有 DSH FreeCanvas 条目。这里的 `path` 要指向仓库里的插件子目录：
 
 ```json
 {
@@ -47,7 +47,7 @@ git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-c
       "name": "infinite-canvas",
       "source": {
         "source": "local",
-        "path": "./plugins/infinite-canvas/plugins/infinite-canvas"
+        "path": "./plugins/dsh-freecanvas/plugins/infinite-canvas"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -70,12 +70,12 @@ codex plugin add infinite-canvas@personal
 
 ### 本仓库开发调试安装
 
-如果你正在 Infinite Canvas 仓库中开发插件，可以直接使用仓库自带的 marketplace：
+如果你正在 DSH FreeCanvas 仓库中开发插件，可以直接使用仓库自带的 marketplace：
 
 ```bash
-cd /path/to/infinite-canvas
+cd /path/to/dsh-freecanvas
 codex plugin marketplace add "$(pwd)"
-codex plugin add infinite-canvas@infinite-canvas-local
+codex plugin add infinite-canvas@dsh-freecanvas-local
 ```
 
 仓库内的 `.agents/plugins/marketplace.json` 已经指向 `./plugins/infinite-canvas`，适合开发者本地调试。
@@ -85,10 +85,10 @@ codex plugin add infinite-canvas@infinite-canvas-local
 新建 Codex 对话后，可以直接说：
 
 ```text
-打开 Infinite Canvas 新建画布 并连接好Codex
+打开 DSH FreeCanvas 新建画布并连接 Codex
 ```
 
-插件会启动本地 Canvas Agent，读取连接地址和 token，然后在右侧打开 `https://canvas.best/` 并自动新建、连接画布。只有明确要求使用本地项目时，插件才会启动本地前端。
+插件会启动本地 Canvas Agent，读取连接地址和 token，然后在右侧打开本地 DSH FreeCanvas 前端并自动新建、连接画布。
 
 画布打开后可以继续让 Codex 操作画布：
 

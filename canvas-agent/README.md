@@ -1,8 +1,10 @@
-# Infinite Canvas Agent
+# DSH FreeCanvas Agent
 
-本地 Canvas Agent 用来连接画布网页和用户电脑上的 Codex / Claude Code。本地开发时优先连接 `http://localhost:3000`，不需要先使用线上站点。
+Canvas Agent 连接 DSH 内置画布和用户电脑上的 Codex / Claude Code。DSH FreeCanvas 插件会自动启动并连接它，普通用户不需要手工执行本页命令。
 
-## 启动
+## 开发调试
+
+只有独立排查 Agent、Codex app-server 或 MCP 工具时才需要手工启动：
 
 ```bash
 npx -y @basketikun/canvas-agent
@@ -32,7 +34,7 @@ Local URL: http://127.0.0.1:17371
 Connect token: xxxxxx
 ```
 
-在画布右上角点击 `Agent`，填入地址和 token 后连接。
+调试外部画布时，在画布右上角点击 `Agent`，填入地址和 token 后连接。
 
 Codex app 插件会读取启动输出里的 Local URL 和 Connect token，并直接打开画布网页地址；Canvas Agent 不负责生成画布打开 URL。
 
@@ -40,9 +42,9 @@ Canvas Agent 默认只监听 `127.0.0.1`。网页第一次带正确 token 连接
 
 ## 发布
 
-`canvas-agent` 使用自己的 `package.json` 版本号，不跟仓库根目录 `VERSION` 绑定。推送到 `main` 后，GitHub Actions 会检查 npm 上是否已经存在当前包版本；不存在时才发布 `@basketikun/canvas-agent`。
+`canvas-agent` 使用自己的 `package.json` 版本号，不跟仓库根目录 `VERSION` 绑定。当前 Codex 与 DSH 安装链路仍使用上游发布的 `@basketikun/canvas-agent@0.6.0`；本仓库尚未发布自有 npm 包，不能只改命令里的包名。
 
-发布前需要在 GitHub 仓库 Secrets 中配置 `NPM_TOKEN`。
+后续发布自有包时，需要先确定可用的 npm scope、补齐发布工作流和 `NPM_TOKEN`，验证 DSH bundle 与 Codex MCP 安装后再统一切换依赖。
 
 ## Codex MCP
 
@@ -64,14 +66,14 @@ codex mcp remove infinite-canvas
 
 ### Codex app 插件
 
-仓库内提供了 Codex app 插件：`plugins/infinite-canvas`。在 Codex app 中添加本仓库的 marketplace 后，可以安装 `Infinite Canvas` 插件；插件会注册同一个 `infinite-canvas` MCP，并带上画布操作说明。
+仓库内提供了 Codex app 插件：`plugins/infinite-canvas`。在 Codex app 中添加本仓库的 marketplace 后，可以安装 `DSH FreeCanvas` 插件；插件会注册同一个 `infinite-canvas` MCP，并带上画布操作说明。
 
 添加本地 marketplace 时建议使用仓库绝对路径，避免 Codex 从其他工作目录解析失败：
 
 ```bash
-cd /path/to/infinite-canvas
+cd /path/to/dsh-freecanvas
 codex plugin marketplace add "$(pwd)"
-codex plugin add infinite-canvas@infinite-canvas-local
+codex plugin add infinite-canvas@dsh-freecanvas-local
 ```
 
 插件默认通过 npm 启动 MCP；这个命令只提供 MCP 工具，不会把 MCP 写入全局配置，也不会在退出时自动卸载：
@@ -80,7 +82,7 @@ codex plugin add infinite-canvas@infinite-canvas-local
 npx -y @basketikun/canvas-agent mcp
 ```
 
-使用时可以直接在 Codex 里说“打开 Infinite Canvas”，插件会启动本地 Agent，读取 Local URL 和 Connect token，然后在右侧打开 `https://canvas.best/` 并自动新建、连接画布；只有明确要求使用本地项目时才会启动本地前端。
+使用时可以直接在 Codex 里说“打开 DSH FreeCanvas”，插件会启动本地 Agent，读取 Local URL 和 Connect token，然后打开本地 DSH FreeCanvas 并自动新建、连接画布。
 
 Canvas Agent 启动后，给 Codex 添加 MCP：
 
@@ -91,7 +93,7 @@ codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp
 本仓库开发时可以改成，实际使用建议替换为本机绝对路径：
 
 ```bash
-codex mcp add infinite-canvas -- node /path/to/infinite-canvas/canvas-agent/dist/index.js mcp
+codex mcp add infinite-canvas -- node /path/to/dsh-freecanvas/canvas-agent/dist/index.js mcp
 ```
 
 Canvas Agent 源码使用 TypeScript 编写，MCP 协议层使用官方 `@modelcontextprotocol/sdk`，工具入参使用 `zod` 描述。
@@ -151,7 +153,7 @@ claude mcp add --scope user --transport stdio infinite-canvas -- npx -y @basketi
 本仓库开发时可以改成：
 
 ```bash
-claude mcp add --scope user --transport stdio infinite-canvas -- node /path/to/infinite-canvas/canvas-agent/dist/index.js mcp
+claude mcp add --scope user --transport stdio infinite-canvas -- node /path/to/dsh-freecanvas/canvas-agent/dist/index.js mcp
 ```
 
 Canvas Agent 调用 Claude Code 时会默认带上 `--allowedTools mcp__infinite-canvas__*`，画布写操作仍由网页侧边栏确认。

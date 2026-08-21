@@ -95,7 +95,7 @@ export class CodexAppClient {
             stop();
             emit("agent_log", { text: `Codex app-server exited: ${code ?? 0}` });
         });
-        await client.request("initialize", { clientInfo: { name: "canvas-agent", title: "Infinite Canvas Agent", version: VERSION }, capabilities: { experimentalApi: true, requestAttestation: false } });
+        await client.request("initialize", { clientInfo: { name: "canvas-agent", title: "DSH FreeCanvas Agent", version: VERSION }, capabilities: { experimentalApi: true, requestAttestation: false } });
         client.notify("initialized");
         return client;
     }

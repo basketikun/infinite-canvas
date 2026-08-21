@@ -1,6 +1,6 @@
 # SVG 节点插件
 
-Infinite Canvas 画布节点插件:编辑与渲染 SVG,无自身内容时自动取上游文本节点里的 SVG 源码。
+DSH FreeCanvas 画布节点插件:编辑与渲染 SVG,无自身内容时自动取上游文本节点里的 SVG 源码。
 
 ## 构建
 

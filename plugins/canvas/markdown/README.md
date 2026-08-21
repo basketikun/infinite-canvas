@@ -1,6 +1,6 @@
 # Markdown 节点插件
 
-Infinite Canvas 画布节点插件:在画布里编辑与渲染 Markdown。
+DSH FreeCanvas 画布节点插件:在画布里编辑与渲染 Markdown。
 
 ## 构建
 

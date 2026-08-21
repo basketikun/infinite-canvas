@@ -1,0 +1,31 @@
+---
+title: DSH Plugin
+description: Install DSH FreeCanvas in DeepSeek Harness
+---
+
+# DSH Plugin
+
+DSH FreeCanvas is a self-contained canvas plugin that runs directly inside DeepSeek Harness. It includes the built frontend, adds conversation, split, and full-canvas layouts to the DSH sidebar, and manages the local Canvas Agent HTTP service.
+
+## Use it in DSH
+
+Search for and install **DSH FreeCanvas** in the DSH plugin marketplace, then open it from the sidebar. Users do not need to clone the repository, open a local port, or deploy a separate site.
+
+## Source development
+
+To debug the plugin, build the bundled frontend and install it into a development profile:
+
+```bash
+npm --prefix web install --legacy-peer-deps
+npm --prefix plugins/dsh-freecanvas install --no-package-lock --legacy-peer-deps
+npm --prefix plugins/dsh-freecanvas run build:web
+dsh plugin --profile desktop add ./plugins/dsh-freecanvas
+```
+
+The package declares `dsh.bundle.patch`, so DSH automatically adds it to the profile bundle list. Do not manually insert another `ui-dsh-freecanvas` row.
+
+By default, `canvasUrl` is empty and the package serves its bundled canvas. Set it only while debugging an external canvas. Automatic Agent startup can also be changed from the DSH plugin settings. See the [plugin README](https://github.com/JustinQiuck/dsh-freecanvas/tree/main/plugins/dsh-freecanvas) for the MCP bridge example and full configuration.
+
+## License
+
+Starting with bundle version `0.2.0`, the original DSH plugin code uses Elastic License 2.0. Upstream canvas and Canvas Agent components retain their MIT terms and notices. Historical plugin version `0.1.0` remains under the terms granted when it was published; future Pro modules are not included in the current public bundle. See [Licensing](/docs/business/license).

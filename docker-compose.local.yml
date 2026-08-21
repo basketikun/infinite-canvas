@@ -1,6 +1,6 @@
 services:
   app:
-    image: infinite-canvas:local
+    image: dsh-freecanvas:local
     build:
       context: .
       dockerfile: Dockerfile
