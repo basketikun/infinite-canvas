@@ -6,6 +6,7 @@ import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, 
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
+import { normalizeLoopbackUrl } from "@/lib/agent/agent-url-guard";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { imageMetadata } from "@/lib/canvas/canvas-node-factory";
@@ -189,7 +190,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const threadOperationRef = useRef(0);
     const threadOperationSequenceRef = useRef(0);
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
-    const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
+    const [fragmentAutoConnect, setFragmentAutoConnect] = useState(false);
     useEffect(() => {
         let disposed = false;
         void acquireAgentClientId().then((clientId) => {
@@ -926,10 +927,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             }
             return;
         }
-        try {
-            const parsed = new URL(nextEndpoint);
-            if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("invalid protocol");
-        } catch {
+        if (!normalizeLoopbackUrl(nextEndpoint)) {
             const text = rt("invalidAddress");
             if (!silent) {
                 setAgentState({ connectError: text });
@@ -941,15 +939,58 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         setAgentState({ url: nextEndpoint, token: nextToken, enabled: true, connected: false, silentConnect: silent, activity: rt("connecting"), connectError: "", activeTab: "setup" });
     };
 
+    // Consume Agent bootstrap credentials from the URL fragment: strip them from
+    // the address bar immediately so they never persist in history or referrers,
+    // then connect silently. Query parameters (?agentUrl=&agentToken=) remain
+    // supported as a fallback for previously shared links.
     useEffect(() => {
-        if (urlAgentAutoConnect && confirmTools) setAgentState({ confirmTools: false });
-    }, [confirmTools, setAgentState, urlAgentAutoConnect]);
+        const consumeAgentFragment = () => {
+            const hash = window.location.hash;
+            if (!hash) return;
+            const fragParams = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+            const fragUrl = fragParams.get("agentUrl");
+            const fragToken = fragParams.get("agentToken")?.trim() || "";
+            if (!fragUrl && !fragToken) return;
+            fragParams.delete("agentUrl");
+            fragParams.delete("agentToken");
+            const remaining = fragParams.toString();
+            window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}${remaining ? `#${remaining}` : ""}`);
+            if (!fragUrl?.trim() || !fragToken) {
+                setFragmentAutoConnect(false);
+                setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: i18n.t("agent.state.connectionRequired") });
+                useAgentStore.getState().openPanel();
+                return;
+            }
+            const normalized = normalizeLoopbackUrl(fragUrl);
+            if (!normalized) {
+                setFragmentAutoConnect(false);
+                setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: i18n.t("agent.state.invalidUrl") });
+                useAgentStore.getState().openPanel();
+                return;
+            }
+            errorLoggedRef.current = false;
+            setFragmentAutoConnect(true);
+            setAgentState({ url: normalized, token: fragToken, enabled: true, connected: false, silentConnect: true, fragmentBootstrap: true, activity: rt("connecting"), connectError: "", activeTab: "setup" });
+        };
+
+        consumeAgentFragment();
+        const onHashChange = () => consumeAgentFragment();
+        window.addEventListener("hashchange", onHashChange);
+        return () => window.removeEventListener("hashchange", onHashChange);
+    }, [rt, setAgentState]);
 
     useEffect(() => {
-        if ((!autoConnect && !urlAgentAutoConnect) || autoConnectRef.current || enabled || connected) return;
+        if (fragmentAutoConnect && confirmTools) setAgentState({ confirmTools: false });
+    }, [confirmTools, setAgentState, fragmentAutoConnect]);
+    useEffect(() => {
+        if (fragmentAutoConnect && confirmTools) setAgentState({ confirmTools: false });
+    }, [confirmTools, setAgentState, fragmentAutoConnect]);
+
+    useEffect(() => {
+        if ((!autoConnect && !fragmentAutoConnect) || autoConnectRef.current || enabled || connected) return;
         autoConnectRef.current = true;
         void toggleAgentConnection({ silent: true });
-    }, [autoConnect, connected, enabled, urlAgentAutoConnect]);
+    }, [autoConnect, connected, enabled, fragmentAutoConnect]);
 
     function clearAgentSession(patch: Parameters<typeof setAgentState>[0] = {}) {
         loadThreadsSequenceRef.current += 1;
