@@ -77,6 +77,10 @@ type CodexRequestSpec = {
         params: ThreadOptions & { threadId: string; threadSource: "user" };
         result: { thread: CodexThread };
     };
+    "thread/rollback": {
+        params: { threadId: string; numTurns: number };
+        result: { thread: CodexThread };
+    };
     "thread/list": {
         params: {
             limit: number;

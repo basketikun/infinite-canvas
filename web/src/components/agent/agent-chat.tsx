@@ -20,11 +20,13 @@ export function AgentChatTimeline({
     pendingClarifications,
     sending,
     waiting,
+    editing,
     onRejectTool,
     onApproveTool,
     onApprovalDecision,
     onClarificationSubmit,
     onClarificationCancel,
+    onEditMessage,
 }: {
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     pendingTool: AgentPendingToolCall | null;
@@ -32,11 +34,13 @@ export function AgentChatTimeline({
     pendingClarifications: AgentPendingClarification[];
     sending: boolean;
     waiting: boolean;
+    editing: boolean;
     onRejectTool: () => void;
     onApproveTool: () => void;
     onApprovalDecision: (approval: AgentPendingApproval, decision: "accept" | "acceptForSession" | "decline") => void;
     onClarificationSubmit: (clarification: AgentPendingClarification, answers: AgentClarificationAnswers) => void;
     onClarificationCancel: (clarification: AgentPendingClarification) => void;
+    onEditMessage: (item: AgentChatItem) => void;
 }) {
     const { t } = useTranslation();
     const messages = useAgentStore((state) => state.messages);
@@ -48,6 +52,7 @@ export function AgentChatTimeline({
     const followMessagesRef = useRef(true);
     const [showScrollToBottom, setShowScrollToBottom] = useState(false);
     const streaming = messages.some((message) => message.streamId);
+    const editableMessageId = !editing && !sending && !waiting && !streaming ? [...messages].reverse().find((message) => message.role === "user" && Boolean(message.threadId && message.turnId))?.id : undefined;
     const showBootstrap = Boolean(bootstrapStatus && !messages.some((message) => message.role === "user" || message.role === "assistant"));
     const working = showBootstrap ? bootstrapStatus! : workingActivity(messages.at(-1));
     const updateScrollState = useCallback(() => {
@@ -86,7 +91,7 @@ export function AgentChatTimeline({
         <div className="relative min-h-0 flex-1">
             <div ref={listRef} className="thin-scrollbar h-full select-text overflow-y-auto" onScroll={updateScrollState}>
                 <div ref={contentRef} className="space-y-4 px-4 pt-4">
-                    {timeline.map((entry) => (entry.type === "commands" ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} /> : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} />))}
+                    {timeline.map((entry) => (entry.type === "commands" ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} /> : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} onEdit={entry.item.id === editableMessageId ? () => onEditMessage(entry.item) : undefined} />))}
                     {pendingTool ? (
                         <AgentPendingToolCard
                             summary={summarizeCanvasAgentOps(pendingTool.input?.ops || []) || toolName(pendingTool.name)}
@@ -130,12 +135,12 @@ export function AgentTaskProgress({ theme, busy }: { theme: (typeof canvasThemes
     );
 }
 
-const AgentChatMessageRow = memo(function AgentChatMessageRow({ item, theme }: { item: AgentChatItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+const AgentChatMessageRow = memo(function AgentChatMessageRow({ item, theme, onEdit }: { item: AgentChatItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onEdit?: () => void }) {
     const endpoint = useAgentStore((state) => state.url);
     const token = useAgentStore((state) => state.token);
     return (
         <div style={item.streamId ? undefined : historyMessageStyle}>
-            <AgentChatMessage item={agentMessageToChatMessage(item, endpoint, token)} theme={theme} />
+            <AgentChatMessage item={agentMessageToChatMessage(item, endpoint, token)} theme={theme} onEdit={onEdit} />
         </div>
     );
 });

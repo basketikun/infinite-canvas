@@ -171,6 +171,13 @@ export class CodexAppClient {
         return this.request("thread/archive", { threadId });
     }
 
+    /** 回退当前线程末尾已完成的 turn，线程 ID 保持不变。 */
+    async rollbackThread(threadId: string, numTurns = 1) {
+        const { thread } = await this.request("thread/rollback", { threadId, numTurns });
+        if (!thread.id) throw new Error("Codex app-server 没有返回 thread id");
+        return thread;
+    }
+
     /** 释放临时草稿线程的 App Server 订阅和进程内缓存。 */
     async closeSkillDraftThread(threadId: string) {
         try {
@@ -217,6 +224,11 @@ export class CodexAppClient {
         this.plansByTurn.forEach((item, key) => {
             if (item.threadId === threadId) this.plansByTurn.delete(key);
         });
+    }
+
+    /** 回退单个 turn 时保留同一线程其余轮次的计划缓存。 */
+    clearPlanUpdate(threadId: string, turnId: string) {
+        this.plansByTurn.delete(turnCacheKey(threadId, turnId));
     }
 
     /** 启动一个 Codex turn 并等待完成通知。 */

@@ -4,7 +4,7 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import { runClaudeTurn } from "../agent/claude.js";
-import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexClarification, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
+import { archiveCodexThread, CodexSkillLookupError, CodexTurnEditError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexClarification, resolveCodexSkill, resumeCodexThread, rollbackLatestCodexTurn, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
 import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
 import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
@@ -313,6 +313,16 @@ export function startHttpServer() {
         const messageId = String(req.body?.messageId || Date.now());
         const messageText = String(req.body?.messageText || prompt || `发送了 ${attachments.length} 张图片`);
         const messageMetadata = await messageMetadataStore.recordPending(messageId, req.body?.messageMetadata);
+        const replaceLastTurnId = String(req.body?.replaceLastTurnId || "");
+        if (replaceLastTurnId) {
+            try {
+                await rollbackLatestCodexTurn(emit, activeThreadId, replaceLastTurnId, workspace.workspacePath);
+                session.discardCodexTurn(activeThreadId, replaceLastTurnId);
+            } catch (error) {
+                await messageMetadataStore.remove(messageId, activeThreadId).catch((metadataError) => logger.warn("Failed to remove rejected edit metadata", { clientMessageId: messageId, error: metadataError }));
+                throw error;
+            }
+        }
         let threadId = activeThreadId;
         logger.info("Codex turn accepted", { threadId: req.body?.threadId, model: model || "default", reasoningEffort: effort || "default", promptLength: prompt.length, attachmentCount: attachments.length });
         session.bindClient(clientId);
@@ -346,6 +356,7 @@ export function startHttpServer() {
                 permissionMode: permissionMode(req.body?.permissionMode),
                 model,
                 effort,
+                allowThreadRecovery: !replaceLastTurnId,
                 ...(skill ? { skill: { name: skill.name, path: skill.path } } : {}),
                 messageText,
                 appEmit: emit,
@@ -435,6 +446,7 @@ export function startHttpServer() {
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
         logger.error("HTTP request failed", { method: req.method, path: req.path, error });
         if (error instanceof SkillStoreError || error instanceof CodexSkillLookupError) return void res.status(error.statusCode).json({ ok: false, error: error.message });
+        if (error instanceof CodexTurnEditError) return void res.status(409).json({ ok: false, error: error.message });
         res.status(500).json({ ok: false, error: error.message });
     });
 

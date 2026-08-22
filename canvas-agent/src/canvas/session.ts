@@ -23,7 +23,7 @@ export type ConversationState = {
     error?: string;
 };
 type McpInventoryItem = { name: string; authStatus?: string };
-export const AGENT_PROTOCOL_VERSION = 7;
+export const AGENT_PROTOCOL_VERSION = 8;
 
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
@@ -273,6 +273,25 @@ export class CanvasSession {
                 this.codexReplayEvents.delete(key);
                 this.codexReplayActiveItems.delete(key);
             }
+        });
+    }
+
+    /** 编辑回退后清除该 turn 的断线重放和待处理交互。 */
+    discardCodexTurn(threadId: string, turnId: string) {
+        if (!threadId || !turnId) return;
+        this.codexReplayEvents.forEach((event, key) => {
+            const eventThreadId = String(event.payload.threadId || event.payload.thread_id || "");
+            const eventTurnId = String(event.payload.turnId || event.payload.turn_id || "");
+            if (eventThreadId === threadId && eventTurnId === turnId) {
+                this.codexReplayEvents.delete(key);
+                this.codexReplayActiveItems.delete(key);
+            }
+        });
+        this.pendingApprovals.forEach((value, requestId) => {
+            if (String(value.threadId || value.thread_id || "") === threadId && String(value.turnId || value.turn_id || "") === turnId) this.pendingApprovals.delete(requestId);
+        });
+        this.pendingClarifications.forEach((value, requestId) => {
+            if (String(value.threadId || value.thread_id || "") === threadId && String(value.turnId || value.turn_id || "") === turnId) this.pendingClarifications.delete(requestId);
         });
     }
 

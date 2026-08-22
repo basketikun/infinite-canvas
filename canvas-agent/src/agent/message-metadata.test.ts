@@ -48,6 +48,22 @@ test("deleting a thread only removes its metadata", async (context) => {
     assert.equal(second[0].skill?.name, "skill-2");
 });
 
+test("removing a turn keeps metadata for other turns in the same thread", async (context) => {
+    const fixture = await createFixture(context);
+    for (const number of [1, 2]) {
+        await fixture.store.recordPending(`message-${number}`, { skill: { name: `skill-${number}`, path: `D:\\skills\\skill-${number}\\SKILL.md` } });
+        await fixture.store.bindTurn(`message-${number}`, "thread-1", `turn-${number}`);
+    }
+    await fixture.store.removeTurn("thread-1", "turn-1");
+
+    const messages = await fixture.reopen().mergeThread("thread-1", [
+        { role: "user", threadId: "thread-1", turnId: "turn-1" },
+        { role: "user", threadId: "thread-1", turnId: "turn-2" },
+    ]);
+    assert.equal(messages[0].skill, undefined);
+    assert.equal(messages[1].skill?.name, "skill-2");
+});
+
 test("history metadata is matched by thread and turn instead of client message id alone", async (context) => {
     const fixture = await createFixture(context);
     await fixture.store.recordPending("message-1", { skill: { name: "product-grid", path: "D:\\skills\\product-grid\\SKILL.md" } });
@@ -77,12 +93,10 @@ test("storage without a manifest is never overwritten", async (context) => {
     assert.equal(await fs.readFile(existingFile, "utf8"), "existing data");
 });
 
-test("oversized image previews are rejected instead of silently dropped", async (context) => {
+test("editable history preserves image data beyond preview size", async (context) => {
     const fixture = await createFixture(context);
-    await assert.rejects(
-        () => fixture.store.recordPending("message-1", { attachments: [{ id: "image-1", name: "large.png", url: `data:image/png;base64,${"a".repeat(500_001)}` }] }),
-        /attachments metadata is invalid/,
-    );
+    const metadata = await fixture.store.recordPending("message-1", { attachments: [{ id: "image-1", name: "large.png", url: `data:image/png;base64,${"A".repeat(500_001)}` }] });
+    assert.match(metadata?.attachments?.[0].url || "", /^agent-asset:/);
 });
 
 async function createFixture(context: TestContext, initialize = true) {

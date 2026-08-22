@@ -43,6 +43,22 @@ export type AgentSkillDraftInput = { source: "conversation" | "canvas"; threadId
 export type AgentSkillsResponse = { ok?: boolean; data?: AgentSkillSummary[]; errors?: unknown[] };
 export type AgentSkillResponse = { ok?: boolean; data?: AgentSkillDetail };
 export type AgentSkillDraftResponse = { ok?: boolean; data?: AgentSkillDraft };
+export type AgentCodexTurnInput = {
+    prompt: string;
+    messageText: string;
+    messageId: string;
+    clientId: string;
+    threadId: string;
+    conversationId: string;
+    expectedRevision: number;
+    permissionMode: "request" | "automatic" | "full";
+    model?: string;
+    effort?: AgentReasoningEffort | "";
+    skill?: Pick<AgentSkillSummary, "name" | "path">;
+    attachments?: unknown[];
+    messageMetadata?: unknown;
+    replaceLastTurnId?: string;
+};
 
 export async function postState(endpoint: string, token: string, clientId: string, snapshot: CanvasAgentSnapshot | null) {
     try {
@@ -81,6 +97,10 @@ export async function postCodexClarification(endpoint: string, token: string, re
 
 export async function interruptCodexTurn(endpoint: string, token: string, threadId?: string) {
     await fetchAgentJson(endpoint, token, "/agent/codex/interrupt", jsonPost({ threadId }));
+}
+
+export function postCodexTurn(endpoint: string, token: string, input: AgentCodexTurnInput) {
+    return fetchAgentJson<{ ok?: boolean; threadId?: string }>(endpoint, token, "/agent/codex/turn", jsonPost(input));
 }
 
 export async function acknowledgeCodexHistory(endpoint: string, token: string, threadId: string, turnIds: string[]) {

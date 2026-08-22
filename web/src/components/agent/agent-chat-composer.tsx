@@ -31,6 +31,8 @@ export function AgentChatComposer({
     onModelChange,
     onReasoningEffortChange,
     left,
+    editing,
+    onCancelEdit,
 }: {
     prompt: string;
     attachments?: AgentChatAttachment[];
@@ -53,6 +55,8 @@ export function AgentChatComposer({
     onModelChange?: (model: string) => void;
     onReasoningEffortChange?: (effort: AgentReasoningEffort) => void;
     left?: ReactNode;
+    editing?: boolean;
+    onCancelEdit?: () => void;
 }) {
     const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +99,7 @@ export function AgentChatComposer({
                         {left}
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
+                        {editing && onCancelEdit ? <Tooltip title={t("agent.composer.cancelEdit")} placement="top"><Button type="text" shape="circle" className="!h-10 !w-10 !min-w-10" icon={<X className="size-4" />} onClick={onCancelEdit} aria-label={t("agent.composer.cancelEdit")} /></Tooltip> : null}
                         {sending && onStop ? (
                             <Tooltip title={t("agent.composer.stop")} placement="top"><Button danger shape="circle" className="!h-10 !w-10 !min-w-10" icon={<Square className="size-4" />} onClick={() => void onStop()} aria-label={t("agent.composer.stop")} /></Tooltip>
                         ) : (

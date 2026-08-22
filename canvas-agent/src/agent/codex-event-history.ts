@@ -78,6 +78,20 @@ export class CodexEventHistory {
         });
     }
 
+    /** 回退最后一个 turn 后，仅删除该 turn 的补充事件。 */
+    removeTurn(threadId: string, turnId: string) {
+        return this.run(async () => {
+            if (!threadId || !turnId) return;
+            const data = await this.load();
+            const items = data.items.filter((item) => item.threadId !== threadId || item.turnId !== turnId);
+            const turns = data.turns.filter((turn) => turn.threadId !== threadId || turn.turnId !== turnId);
+            if (items.length === data.items.length && turns.length === data.turns.length) return;
+            const nextData = { version: 1 as const, items, turns };
+            await this.save(nextData);
+            this.data = nextData;
+        });
+    }
+
     private run<T>(task: () => Promise<T>) {
         const result = this.queue.then(task, task);
         this.queue = result.then(() => undefined, () => undefined);

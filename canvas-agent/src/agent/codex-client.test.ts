@@ -113,6 +113,19 @@ test("中断请求只作用于当前运行线程", async () => {
     assert.equal(await draftInterrupt, true);
 });
 
+test("回退最后一个 turn 使用同一 Codex thread", async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, () => undefined, emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+
+    const rollingBack = client.rollbackThread("thread-1");
+    const request = writes.at(-1);
+    assert.deepEqual(request, { id: 1, method: "thread/rollback", params: { threadId: "thread-1", numTurns: 1 } });
+    testClient.handle({ id: request?.id, result: { thread: { id: "thread-1" } } });
+    assert.equal((await rollingBack).id, "thread-1");
+});
+
 test("Skill 列表与启用配置使用 app-server 原生协议", async () => {
     const writes: Array<Record<string, unknown>> = [];
     const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };

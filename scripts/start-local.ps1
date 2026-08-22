@@ -59,8 +59,13 @@ function Confirm-AgentReady([string]$outputLog, [string]$errorLog) {
 }
 
 $web = Join-Path $root "web"
-$npx = (Get-Command npx.cmd -ErrorAction Stop).Source
+$agent = Join-Path $root "canvas-agent"
+$bun = (Get-Command bun.exe -ErrorAction Stop).Source
 $viteCommand = 'cd /d "' + $web + '" && bun run dev'
+if (!(Test-Path (Join-Path $agent "node_modules\\tsx\\package.json"))) {
+    $install = Start-Process -FilePath $bun -ArgumentList @("install", "--frozen-lockfile") -WorkingDirectory $agent -RedirectStandardOutput $agentOutputLog -RedirectStandardError $agentErrorLog -WindowStyle Hidden -PassThru -Wait
+    if ($install.ExitCode -ne 0) { throw "Canvas Agent dependency install failed. See $agentErrorLog" }
+}
 Start-ManagedProcess "vite" $env:ComSpec @("/d", "/c", $viteCommand) $root
-Start-ManagedProcess "agent" $npx @("--yes", "@basketikun/canvas-agent@latest") $root $true $agentOutputLog $agentErrorLog
+Start-ManagedProcess "agent" $bun @("src/index.ts") $agent $true $agentOutputLog $agentErrorLog
 Confirm-AgentReady $agentOutputLog $agentErrorLog

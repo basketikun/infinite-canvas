@@ -8,10 +8,9 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { readAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { imageMetadata } from "@/lib/canvas/canvas-node-factory";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
-import { resolveCanvasReferenceImages } from "@/lib/canvas/canvas-resource-references";
+import { resolveCanvasReferenceImages, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { readImageMeta } from "@/lib/image-utils";
 import { randomId } from "@/lib/utils";
 import { uploadImage } from "@/services/image-storage";
@@ -27,6 +26,7 @@ import {
     type AgentChatItem,
     type AgentClarificationAnswers,
     type AgentConversationState,
+    type AgentMessageAttachment,
     type AgentModel,
     type AgentPendingApproval,
     type AgentPendingClarification,
@@ -37,7 +37,7 @@ import {
 } from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
-import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postCodexClarification, postState, postToolResult } from "@/services/api/canvas-agent";
+import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postCodexClarification, postCodexTurn, postState, postToolResult, resolveAgentMessageAssetUrl, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentConnectView } from "./agent-connect-view";
@@ -85,10 +85,8 @@ import { AgentSkillsView } from "./agent-skills-view";
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
-const MESSAGE_PREVIEW_LONG_EDGE = 192;
-const MESSAGE_PREVIEW_MAX_LENGTH = 500_000;
 const DEFAULT_AGENT_URL = "http://127.0.0.1:17371";
-const AGENT_PROTOCOL_VERSION = 7;
+const AGENT_PROTOCOL_VERSION = 8;
 const HISTORY_RETRY_DELAYS_MS = [0, 150, 350, 700, 1200];
 const AGENT_REASONING_EFFORTS = new Set<AgentReasoningEffort>(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 const rt = (key: string, options?: Record<string, unknown>) => i18n.t(`agent.runtime.${key}`, options);
@@ -97,7 +95,6 @@ type AgentWorkspace = { workspacePath: string; activeThreadId?: string };
 type AgentThreadsResponse = { ok?: boolean; workspace?: AgentWorkspace; conversation?: AgentConversationState; data?: AgentThreadSummary[] };
 type AgentThreadResponse = { ok?: boolean; workspace?: AgentWorkspace; conversation?: AgentConversationState; thread?: AgentThreadSummary; messages?: AgentChatItem[]; settledTurnIds?: string[]; historyReady?: boolean };
 type AgentWorkspaceResponse = { ok?: boolean; workspace?: AgentWorkspace; conversation?: AgentConversationState };
-type AgentTurnResponse = { ok?: boolean; threadId?: string };
 type AgentModelsResponse = { ok?: boolean; data?: AgentModel[] };
 type AgentCodexState = { busy?: boolean; threadId?: string; turnId?: string };
 type AgentHelloEvent = {
@@ -122,6 +119,12 @@ type AgentBootstrapEvent = {
     failureReason?: string | null;
 };
 type AgentClientGlobal = typeof globalThis & { __infiniteCanvasAgentClientIdPromise?: Promise<string> };
+type AgentEditDraft = {
+    threadId: string;
+    turnId: string;
+    referenceImages: AgentAttachment[];
+    previous: { prompt: string; attachments: AgentAttachment[]; canvasReferences: CanvasResourceReference[]; selectedSkill: AgentSkillSummary | null };
+};
 
 function authoritativeHistoryTurnKeys(threadId: string, settledTurnIds: string[]) {
     return new Set(settledTurnIds.map((turnId) => `${threadId}\0${turnId}`));
@@ -248,8 +251,10 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const connectedRef = useRef(false);
     const errorLoggedRef = useRef(false);
     const attachmentUrlsRef = useRef(new Set<string>());
+    const editDraftRef = useRef<AgentEditDraft | null>(null);
     const clientIdRef = useRef("");
     const [clientReady, setClientReady] = useState(false);
+    const [editing, setEditing] = useState(false);
     const loadThreadsSequenceRef = useRef(0);
     const threadMessagesRef = useRef(new Map<string, AgentChatItem[]>());
     const authoritativeHistoryTurnsRef = useRef(new Set<string>());
@@ -478,7 +483,6 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 pendingApprovals,
                 pendingClarifications,
             });
-            if (!headless) message.success(rt("localAgentConnected"));
             void postState(endpoint, token, clientId, canvasContextRef.current?.snapshot || null);
             if (document.visibilityState === "visible" && document.hasFocus()) void activateAgentClient(endpoint, token, clientId);
             if (!busy && !nextThreadId && (!hello?.conversation || hello.conversation.status === "idle")) {
@@ -727,26 +731,136 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             document.removeEventListener("visibilitychange", activateVisible);
         };
     }, [connected, endpoint, token]);
+    const readMessageImage = async (value: string) => {
+        const source = resolveAgentMessageAssetUrl(endpoint, token, value);
+        if (!source) throw new Error(rt("editImageReadFailed"));
+        const response = await fetch(source);
+        if (!response.ok) throw new Error(rt("editImageReadFailed"));
+        const blob = await response.blob();
+        const dataUrl = await readDataUrl(blob);
+        const meta = await readImageMeta(dataUrl);
+        return { blob, dataUrl, meta };
+    };
+    const startEditMessage = async (item: AgentChatItem) => {
+        const current = useAgentStore.getState();
+        const latestUserMessage = [...current.messages].reverse().find((message) => message.role === "user" && Boolean(message.threadId && message.turnId));
+        if (editing || current.sending || current.waiting || current.loadingThreads || latestUserMessage?.id !== item.id || !item.threadId || !item.turnId) return;
+        const skillState = useAgentSkillStore.getState();
+        const selectedSkill = item.skill ? skillState.skills.find((skill) => skill.enabled && skill.name === item.skill.name && skill.path === item.skill.path) || null : null;
+        if (item.skill && !selectedSkill) {
+            message.warning(rt("editSkillUnavailable"));
+            return;
+        }
+        if ((item.canvasReferences || []).some((reference) => reference.kind === "image" && !reference.previewUrl)) {
+            message.warning(rt("editImageReadFailed"));
+            return;
+        }
+        let restoredAttachments: AgentAttachment[] = [];
+        const restoredAttachmentUrls = new Set<string>();
+        try {
+            restoredAttachments = await Promise.all((item.attachments || []).map(async (attachment: AgentMessageAttachment) => {
+                const image = await readMessageImage(attachment.dataUrl || attachment.url);
+                const url = URL.createObjectURL(image.blob);
+                attachmentUrlsRef.current.add(url);
+                restoredAttachmentUrls.add(url);
+                return {
+                    id: attachment.id,
+                    name: attachment.name,
+                    type: image.blob.type || attachment.type || image.meta.mimeType,
+                    size: image.blob.size || attachment.size || 0,
+                    width: image.meta.width || attachment.width || 0,
+                    height: image.meta.height || attachment.height || 0,
+                    url,
+                    dataUrl: image.dataUrl,
+                };
+            }));
+            const referenceImages = await Promise.all((item.canvasReferences || []).filter((reference) => reference.kind === "image" && reference.previewUrl).map(async (reference) => {
+                const image = await readMessageImage(reference.previewUrl!);
+                return {
+                    id: `canvas:${reference.nodeId}`,
+                    name: reference.title,
+                    type: image.blob.type || image.meta.mimeType,
+                    size: image.blob.size,
+                    width: image.meta.width,
+                    height: image.meta.height,
+                    url: image.dataUrl,
+                    dataUrl: image.dataUrl,
+                };
+            }));
+            const latest = useAgentStore.getState();
+            const latestMessage = [...latest.messages].reverse().find((message) => message.role === "user" && Boolean(message.threadId && message.turnId));
+            if (latestMessage?.id !== item.id || latest.activeThreadId !== item.threadId) {
+                restoredAttachmentUrls.forEach((url) => {
+                    URL.revokeObjectURL(url);
+                    attachmentUrlsRef.current.delete(url);
+                });
+                return;
+            }
+            editDraftRef.current = {
+                threadId: item.threadId,
+                turnId: item.turnId,
+                referenceImages,
+                previous: {
+                    prompt: latest.prompt,
+                    attachments: latest.attachments,
+                    canvasReferences: latest.canvasReferences,
+                    selectedSkill: skillState.selectedSkill,
+                },
+            };
+            useAgentSkillStore.getState().selectSkill(selectedSkill, item.text);
+            setAgentState({
+                prompt: item.text,
+                attachments: restoredAttachments,
+                canvasReferences: (item.canvasReferences || []).map((reference) => ({ ...reference, id: reference.nodeId, active: true })),
+            });
+            setEditing(true);
+        } catch (error) {
+            restoredAttachmentUrls.forEach((url) => {
+                URL.revokeObjectURL(url);
+                attachmentUrlsRef.current.delete(url);
+            });
+            message.error(error instanceof Error ? error.message : rt("editImageReadFailed"));
+        }
+    };
+    const cancelEditMessage = () => {
+        const draft = editDraftRef.current;
+        if (!draft) return;
+        const { selectedSkill, ...previous } = draft.previous;
+        const current = useAgentStore.getState();
+        const previousAttachmentUrls = new Set(previous.attachments.map((attachment) => attachment.url));
+        current.attachments.filter((attachment) => !previousAttachmentUrls.has(attachment.url)).forEach((attachment) => {
+            URL.revokeObjectURL(attachment.url);
+            attachmentUrlsRef.current.delete(attachment.url);
+        });
+        useAgentSkillStore.getState().selectSkill(selectedSkill, previous.prompt);
+        editDraftRef.current = null;
+        setEditing(false);
+        setAgentState(previous);
+    };
     const sendPrompt = async () => {
+        const editDraft = editDraftRef.current;
         const text = prompt.trim();
         const files = attachments;
         const skillState = useAgentSkillStore.getState();
         const selectedSkill = skillState.selectedSkill;
         const selectedSkillRevision = skillState.selectionRevision;
         const currentState = useAgentStore.getState();
+        if (editDraft && editDraft.threadId !== currentState.activeThreadId) return cancelEditMessage();
         const canvasNodeIds = new Set(currentState.canvasContext?.snapshot.nodes.map((node) => node.id) || []);
-        const canvasReferences = currentState.canvasReferences.filter((item) => canvasNodeIds.has(item.nodeId));
-        if (canvasReferences.length !== currentState.canvasReferences.length) {
+        const canvasReferences = editDraft ? currentState.canvasReferences : currentState.canvasReferences.filter((item) => canvasNodeIds.has(item.nodeId));
+        if (!editDraft && canvasReferences.length !== currentState.canvasReferences.length) {
             setAgentState({ canvasReferences });
             message.warning(rt(canvasReferences.length ? "someCanvasReferencesMissing" : "canvasReferencesMissing"));
         }
         const requestPrompt = promptWithCanvasReferences(promptWithAttachments(text, files), canvasReferences);
         if (!currentState.connected || !requestPrompt || currentState.sending || currentState.waiting || currentState.loadingThreads || !["ready", "warning"].includes(currentState.conversation.status)) return;
-        let referenceImages: AgentAttachment[] = [];
-        if (canvasReferences.some((item) => item.kind === "image")) {
+        const preservedReferenceImages = (editDraft?.referenceImages || []).filter((image) => canvasReferences.some((reference) => image.id === `canvas:${reference.nodeId}`));
+        let referenceImages: AgentAttachment[] = preservedReferenceImages;
+        const unresolvedImageReferences = canvasReferences.filter((reference) => reference.kind === "image" && !preservedReferenceImages.some((image) => image.id === `canvas:${reference.nodeId}`));
+        if (unresolvedImageReferences.length) {
             setAgentState({ sending: true, activity: rt("readingCanvasImages") });
             try {
-                referenceImages = await resolveCanvasReferenceImages(canvasReferences, currentState.canvasContext?.snapshot.nodes || []);
+                referenceImages = [...referenceImages, ...await resolveCanvasReferenceImages(unresolvedImageReferences, currentState.canvasContext?.snapshot.nodes || [])];
             } catch (error) {
                 setAgentState({ sending: false, activity: rt("canvasImageReadFailed") });
                 addMessage({ role: "error", title: rt("canvasImageReadFailed"), text: error instanceof Error ? error.message : rt("canvasImageReadFailed") });
@@ -776,7 +890,16 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         loadThreadsSequenceRef.current += 1;
         const currentBeforeSend = useAgentStore.getState();
         const requestThreadId = currentBeforeSend.activeThreadId;
-        setAgentState({ prompt: "", attachments: [], canvasReferences: [], activity: rt("sending"), sending: true, loadingThreads: false, activeTurnId: "", messages: currentBeforeSend.messages });
+        const removeReplacedTurn = (messages: AgentChatItem[]) => editDraft ? messages.filter((item) => item.threadId !== editDraft.threadId || item.turnId !== editDraft.turnId) : messages;
+        const messages = removeReplacedTurn(currentBeforeSend.messages);
+        if (editDraft) {
+            const turnKey = `${editDraft.threadId}\0${editDraft.turnId}`;
+            authoritativeHistoryTurnsRef.current.delete(turnKey);
+            liveTurnKeysRef.current.delete(turnKey);
+            const cached = threadMessagesRef.current.get(editDraft.threadId);
+            if (cached) threadMessagesRef.current.set(editDraft.threadId, removeReplacedTurn(cached));
+        }
+        setAgentState({ prompt: "", attachments: [], canvasReferences: [], activity: rt("sending"), sending: true, loadingThreads: false, activeTurnId: "", messages });
         addMessage({ id: messageId, itemId: "synthetic:user", clientMessageId: messageId, threadId: requestThreadId, turnId: "", role: "user", text: userText, attachments: files, canvasReferences: messageReferences, skill: messageSkill });
         let threadId = requestThreadId;
         try {
@@ -792,36 +915,38 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 rt("sendTask"),
                 `${modelName} · ${effortName}${selectedSkill ? ` · Skill ${selectedSkill.name}` : ""}${files.length ? ` · ${rt("attachmentCount", { count: files.length })}` : ""}${canvasReferences.length ? ` · ${rt("canvasReferenceCount", { count: canvasReferences.length })}` : ""} · ${compactText(text) || rt(canvasReferences.length ? "canvasReferencesOnly" : "attachmentsOnly")}`,
             );
-            const accepted = await fetchAgentJson<AgentTurnResponse>(endpoint, token, "/agent/codex/turn", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                    prompt: requestPrompt,
-                    messageText: userText,
-                    messageId,
-                    clientId: clientIdRef.current,
-                    threadId,
-                    conversationId: currentBeforeSend.conversation.conversationId,
-                    expectedRevision: currentBeforeSend.conversation.revision,
-                    permissionMode,
-                    model,
-                    effort: reasoningEffort,
-                    skill: selectedSkill ? { name: selectedSkill.name, path: selectedSkill.path } : undefined,
-                    attachments: requestFiles.map(({ id, name, type, size, width, height, dataUrl }) => ({ id, name, type, size, width, height, dataUrl })),
-                    messageMetadata,
-                }),
+            const accepted = await postCodexTurn(endpoint, token, {
+                prompt: requestPrompt,
+                messageText: userText,
+                messageId,
+                clientId: clientIdRef.current,
+                threadId,
+                conversationId: currentBeforeSend.conversation.conversationId,
+                expectedRevision: currentBeforeSend.conversation.revision,
+                permissionMode,
+                model,
+                effort: reasoningEffort,
+                skill: selectedSkill ? { name: selectedSkill.name, path: selectedSkill.path } : undefined,
+                attachments: requestFiles.map(({ id, name, type, size, width, height, dataUrl }) => ({ id, name, type, size, width, height, dataUrl })),
+                messageMetadata,
+                ...(editDraft ? { replaceLastTurnId: editDraft.turnId } : {}),
             });
             threadId = accepted.threadId || threadId;
             if (!threadId) throw new Error(rt("startConversationFailed"));
             if (selectedSkill) clearSkillSelection(selectedSkillRevision);
-            files.forEach((item) => {
+            (editDraft ? [...files, ...editDraft.previous.attachments] : files).forEach((item) => {
                 URL.revokeObjectURL(item.url);
                 attachmentUrlsRef.current.delete(item.url);
             });
+            if (editDraftRef.current === editDraft) {
+                editDraftRef.current = null;
+                setEditing(false);
+            }
         } catch (error) {
             const text = error instanceof Error ? error.message : rt("sendFailed");
             const response = error instanceof AgentApiError ? (error.response as { code?: string; state?: AgentConversationState }) : undefined;
             if (response?.state) applyConversationState(response.state);
+            if (editDraft) await loadThreads().catch(() => undefined);
             const stale = response?.code === "CONVERSATION_STALE";
             const busy = response?.code === "CONVERSATION_BUSY" || text.includes("Codex 正在运行");
             const state = useAgentStore.getState();
@@ -831,7 +956,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 if (next.length !== messages.length) threadMessagesRef.current.set(cachedThreadId, next);
             });
             const ownsCurrentThread = state.activeThreadId === (threadId || requestThreadId);
-            const restoreDraft = state.prompt || state.attachments.length || state.canvasReferences.length ? {} : { prompt, attachments: files, canvasReferences };
+            const restoreDraft = editDraft || (!state.prompt && !state.attachments.length && !state.canvasReferences.length) ? { prompt, attachments: files, canvasReferences } : {};
             if (ownsCurrentThread) {
                 setAgentState({
                     activity: rt(stale ? "conversationSynced" : busy ? "codexRunning" : "sendFailed"),
@@ -1571,11 +1696,13 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                         pendingClarifications={pendingClarifications}
                         sending={sending}
                         waiting={waiting}
+                        editing={editing}
                         onRejectTool={rejectPendingTool}
                         onApproveTool={approvePendingTool}
                         onApprovalDecision={decideApproval}
                         onClarificationSubmit={submitClarification}
                         onClarificationCancel={cancelClarification}
+                        onEditMessage={startEditMessage}
                     />
                     <AgentTaskProgress theme={theme} busy={sending || waiting} />
                     {tokenUsage ? <AgentUsageBar usage={tokenUsage} theme={theme} /> : null}
@@ -1610,6 +1737,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                             localStorage.setItem("canvas-agent-reasoning-effort", reasoningEffort);
                             setAgentState({ reasoningEffort });
                         }}
+                        editing={editing}
+                        onCancelEdit={cancelEditMessage}
                         left={
                             attachments.length ? (
                                 <span className="hidden text-[11px] @min-[660px]:inline" style={{ color: theme.node.muted }}>
@@ -1733,9 +1862,8 @@ function createId() {
     return randomId();
 }
 
-async function createMessageAttachmentMetadata(item: AgentAttachment) {
-    const url = Math.max(item.width, item.height) > MESSAGE_PREVIEW_LONG_EDGE || item.dataUrl.length > MESSAGE_PREVIEW_MAX_LENGTH ? await upscaleDataUrl(item.dataUrl, { targetLongEdge: MESSAGE_PREVIEW_LONG_EDGE, algorithm: "high" }) : item.dataUrl;
-    return { id: item.id, name: item.name, type: item.type, size: item.size, width: item.width, height: item.height, url };
+function createMessageAttachmentMetadata(item: AgentAttachment) {
+    return { id: item.id, name: item.name, type: item.type, size: item.size, width: item.width, height: item.height, url: item.dataUrl };
 }
 
 function clamp(value: number, min: number, max: number) {
