@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import stripAnsi from "strip-ansi";
+import { redactAgentLog } from "../utils/agent-runtime.js";
 
 import { VERSION } from "../config.js";
 import { logger } from "../utils/logger.js";
@@ -79,7 +80,7 @@ export class CodexAppClient {
         child.stdout?.on("data", (chunk) => client.read(chunk.toString()));
         child.stderr?.on("data", (chunk) => {
             if (client.skillDraftActive) return;
-            const text = stripAnsi(chunk.toString()).replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s+/, "");
+            const text = redactAgentLog(stripAnsi(chunk.toString()).replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s+/, ""));
             logger.warn("Codex app-server stderr", { text });
             emit("agent_log", { text });
         });

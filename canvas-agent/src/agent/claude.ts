@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { AGENT_PROMPT } from "../config.js";
+import { redactAgentLog } from "../utils/agent-runtime.js";
 import { errorMessage } from "../utils/value.js";
 import type { AgentEmit } from "./types.js";
 
@@ -32,7 +33,7 @@ function pipeJsonLines(child: ReturnType<typeof spawn>, emit: AgentEmit, agent: 
             }
         });
     });
-    child.stderr?.on("data", (chunk) => emit("agent_log", { text: chunk.toString() }));
+    child.stderr?.on("data", (chunk) => emit("agent_log", { text: redactAgentLog(chunk.toString()) }));
     child.on("error", (error) => emit("agent_error", { message: error.message }));
     child.on("close", (code) => emit("agent_done", { agent, code }));
 }
