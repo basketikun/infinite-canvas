@@ -64,16 +64,15 @@ OpenAI 兼容图像和文本能力继续复用现有接口：
 - `/v1/images/generations`：文生图。
 - `/v1/images/edits`：图生图/参考图编辑。
 - `/v1/responses`：文本问答、带图问答和在线 Agent 工具调用。
-- `/v1/models`：读取模型列表；火山方舟 Agent Plan 专属 `/api/plan/v3` 当前未提供 OpenAI `/models` 模型列表接口，需要手动填写模型名。
+- `/v1/models`：读取模型列表。
 
 视频能力支持两类接口：
 
 - OpenAI 风格视频：`POST /v1/videos`、`GET /v1/videos/{id}`、`GET /v1/videos/{id}/content`。
-- 火山方舟 Agent Plan / Seedance 2.0：Base URL 使用 `https://ark.cn-beijing.volces.com/api/plan/v3`，创建任务为 `POST /contents/generations/tasks`，查询任务为 `GET /contents/generations/tasks/{id}`，成功结果读取 `content.video_url`。
 
-Base URL 如果已经以 `/v1`、`/api/v3` 或 `/api/plan/v3` 结尾，系统不会再追加 `/v1`。因此 cpa 反代或火山方舟 Agent Plan 可以继续通过现有 Base URL + API Key + Model 方式配置，不需要新增火山生图 Provider。
+Base URL 如果已经以 `/v1` 结尾，系统不会再追加 `/v1`。
 
-配置弹窗里的“拉取模型列表”会尝试真实请求 OpenAI `/models`，不会为 Agent Plan 伪造模型结果。如果火山方舟 Agent Plan 返回 404，请手动增加 `doubao-seedance-2.0` 或文档列出的其他模型名。
+配置弹窗里的“拉取模型列表”会真实请求 OpenAI `/models`。
 
 可配置项：
 
@@ -91,7 +90,7 @@ Base URL 如果已经以 `/v1`、`/api/v3` 或 `/api/plan/v3` 结尾，系统不
 
 节点下方对话框和组装提示词输入框都支持 `@` 引用已连接的图片、文本、视频、音频等资源；`@` 引用图片时，输入框内会直接显示该图片的真实缩略图，而不再是「图片1」这类文字编号，发送时会按当前连接自动编号交给模型理解。由于引用改在对话框内直接 `@`，画布节点右上角不再显示「图片1 / 文本1」资源角标。
 
-视频生成可从文本节点读取 prompt，从图片节点读取参考图，从视频节点读取参考视频，从音频节点读取参考音频。Seedance 2.0 支持最多 9 张参考图、3 个参考视频、3 个参考音频；分辨率支持 `480p`、`720p`、`1080p`（fast 模型不支持 `1080p`），比例支持 `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9`、`adaptive`，时长支持 4-15 秒或智能时长。生成成功后会把视频插入画布为视频节点并使用原生播放器预览。参考视频和参考音频优先使用公网可访问 URL；本地素材会以前端可读取的数据传给兼容接口，是否支持取决于具体上游。
+视频生成可从文本节点读取 prompt，从图片节点读取参考图。生成成功后会把视频插入画布为视频节点并使用原生播放器预览。
 
 ## 画布助手
 
@@ -167,6 +166,4 @@ Codex App 插件的安装与使用见 [Codex App 插件](/zh-CN/docs/overview/co
 
 - 画布项目和“我的素材”目前只保存在浏览器本地，不会随账号同步。
 - AI API Key 保存在浏览器本地，并由浏览器直接请求配置的 OpenAI 兼容接口；只适合个人或可信环境使用。
-- Seedance 本地参考视频/音频更建议使用公网可访问 URL；上游是否接受前端传入的本地数据取决于具体兼容接口。
-- Seedance 返回远程视频 URL 时，前端会尽量下载为本地 Blob 持久化；如果因 CORS 或网络限制无法下载，会保留远程 URL，后续是否可播放取决于上游 URL 的有效期。
 - 画布更适合桌面端使用，移动端触控体验还未系统完善。
