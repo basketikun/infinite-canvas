@@ -31,8 +31,10 @@ export default function CanvasPage() {
     const mode = searchParams.get("mode");
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";
     const agentQuery = agentMode ? `?${searchParams.toString()}` : "";
+    const agentHash = window.location.hash;
+    const hasAgentCredentials = /(?:^#|&)agent(Url|Token)=/.test(agentHash);
     const enterProject = (id: string) => {
-        navigate(`/canvas/${id}${agentQuery}`);
+        navigate(`/canvas/${id}${agentQuery}${agentHash}`, { replace: hasAgentCredentials });
     };
     const createAndEnter = () => enterProject(createProject(t("canvas.defaultTitle", { count: projects.length + 1 })));
     const importCanvas = async (file?: File) => {

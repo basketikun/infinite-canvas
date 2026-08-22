@@ -356,7 +356,10 @@ function InfiniteCanvasPage() {
 
     useEffect(() => {
         if (!projectLoaded || !["new", "recent", "choose"].includes(searchParams.get("mode") || "")) return;
-        if (!searchParams.has("agentUrl")) openAgentPanel();
+        const timer = window.setTimeout(() => {
+            if (!useAgentStore.getState().fragmentBootstrap) openAgentPanel();
+        });
+        return () => window.clearTimeout(timer);
     }, [openAgentPanel, projectLoaded, searchParams]);
 
     useEffect(() => {
