@@ -128,11 +128,16 @@ function generationFlowOps(input: Record<string, unknown>, state: CanvasSnapshot
     const textId = `text-${crypto.randomUUID()}`;
     const configId = `config-${crypto.randomUUID()}`;
     const referenceNodeIds = Array.isArray(input.referenceNodeIds) ? input.referenceNodeIds.filter((id): id is string => typeof id === "string") : [];
-    const tokens = [`@[node:${textId}]`, ...referenceNodeIds.map((id) => `@[node:${id}]`)];
+    // When the prompt only @-mentions nodes already passed as references, reuse them instead of minting a duplicate text node.
+    const mentionedIds = [...prompt.matchAll(/@\[node:([\w-]+)\]/g)].map((match) => match[1]);
+    const reuseReferences = referenceNodeIds.length > 0 && mentionedIds.length > 0
+        && mentionedIds.every((id) => referenceNodeIds.includes(id))
+        && prompt.replace(/@\[node:[\w-]+\]/g, "").trim() === "";
+    const tokens = reuseReferences ? referenceNodeIds.map((id) => `@[node:${id}]`) : [`@[node:${textId}]`, ...referenceNodeIds.map((id) => `@[node:${id}]`)];
     return [
-        textNodeOp({ id: textId, text: prompt, title: String(input.title || "提示词") }, x, y),
+        ...(reuseReferences ? [] : [textNodeOp({ id: textId, text: prompt, title: String(input.title || "提示词") }, x, y)]),
         configNodeOp(configId, { ...input, prompt: tokens.join("\n") }, x + 420, y),
-        { type: "connect_nodes", fromNodeId: textId, toNodeId: configId },
+        ...(reuseReferences ? [] : [{ type: "connect_nodes", fromNodeId: textId, toNodeId: configId }]),
         ...referenceNodeIds.map((fromNodeId) => ({ type: "connect_nodes", fromNodeId, toNodeId: configId })),
         { type: "select_nodes", ids: [configId] },
         ...(input.autoRun ? [runGenerationOp(configId, mode, tokens.join("\n"))] : []),
