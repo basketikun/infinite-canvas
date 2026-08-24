@@ -35,6 +35,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Canvas Agent Codex 升级：启动 Canvas Agent 后应输出 Canvas Agent、内置 Codex 和本机 Codex 版本，实际运行的内置 Codex 应为 0.146.0；内置与本机版本不一致、未安装本机 Codex，或 npm 存在更新版本时应显示对应升级提醒，npm 检查失败不应阻止服务启动；Agent 应能正常连接 Codex、创建或恢复会话、发送消息并调用画布工具，运行中停止任务应只中断当前 turn，随后无需重启 Agent 即可继续发送新任务。
 - Canvas Agent Debug：普通启动应通过公共 logger 输出 Info、Warn 和 Error 日志；使用 `npx -y @basketikun/canvas-agent --debug` 启动后还应输出 Debug 日志并显示日志文件路径，终端统一采用“`YYYY-MM-DD HH:mm:ss` 级别 消息 详情”的纯文本单行格式，`~/.infinite-canvas/logs/` 下应按启动日期生成相同格式的 `canvas-agent-YYYY-MM-DD.log`，同一天多次启动应追加到同一文件；日志中不应出现连接 token 或图片 Data URL 原文。
 - Canvas Agent 凭据脱敏：Codex 与 Claude CLI 的 stderr 包含 Bearer token、`sk-` 密钥、显式 API key/token/authorization 赋值、ANSI 样式或跨输出分片的凭据时，调试日志和网页诊断事件均不应出现明文；普通 stderr 文本应保持不变。
+- Canvas Agent 配置权限：在 Linux 和 macOS 上保存配置后，`~/.infinite-canvas` 权限应为 `0700`，`canvas-agent.json` 权限应为 `0600`，已有的宽松权限也应被纠正；配置应能继续正常读写，Windows 启动不受影响。
 - 图片 API 模型参数：`gpt-image-*` 的生成和编辑请求不应发送 `response_format`，`dall-e-*` 请求仍应发送 `response_format: "b64_json"`。
 - 图片外链持久化：图片接口返回远程 URL 时，前端应立即下载为自包含图片数据并进入原有本地存储流程；浏览器因 CORS 无法下载时仍应保留原 URL 兜底。
 - Canvas Agent Codex 日志：Codex app-server 输出带颜色或样式控制符及 UTC 时间的 stderr 时，本地日志和网页诊断日志应只显示一份 `YYYY-MM-DD HH:mm:ss` 本地时间和干净文本，不应出现重复 ISO 时间或 `[2m`、`[31m` 等 ANSI 转义内容。
@@ -83,3 +84,4 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Agent 消息区分：用户消息应在右侧使用透明无气泡排版，AI 回复应在左侧使用无头像的开放式 Markdown 排版；长文本、多张附件、错误消息及浅色/深色主题下均应清晰且不溢出。
 - Agent 命令记录：命令执行中应显示运行状态；完成后，同一轮相邻命令应合并为「已执行 N 条命令」折叠行且默认不显示原始命令，单条展开后直接显示完整详情，多条展开后可分别查看命令、输出和退出状态；对话结束或刷新后分组与记录不应消失。
 - 跨域提示：生图、视频或音频请求被浏览器跨域策略拦截时，应明确提示需要通过自己的服务转发请求，不再只显示笼统的网络错误。
+Canvas Agent 配置权限
