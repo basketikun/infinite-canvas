@@ -54,6 +54,7 @@ type AgentStore = {
     connected: boolean;
     enabled: boolean;
     silentConnect: boolean;
+    fragmentBootstrap: boolean;
     prompt: string;
     attachments: AgentAttachment[];
     canvasReferences: CanvasResourceReference[];
@@ -105,6 +106,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     connected: false,
     enabled: false,
     silentConnect: false,
+    fragmentBootstrap: false,
     prompt: "",
     attachments: [],
     canvasReferences: [],
@@ -156,14 +158,14 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         localStorage.setItem("canvas-agent-url", endpoint);
         localStorage.setItem("canvas-agent-token", token);
         // Only set enabled here; LocalAgentPanel's effect owns SSE initialization.
-        set({ url: endpoint, token, enabled: true, silentConnect: silent, activity: i18n.t("agent.status.connecting"), connectError: "" });
+        set({ url: endpoint, token, enabled: true, silentConnect: silent, fragmentBootstrap: false, activity: i18n.t("agent.status.connecting"), connectError: "" });
     },
     disconnectAgent: (patch = {}) => {
         agentSource?.close();
         agentSource = null;
         if (connectTimer) clearTimeout(connectTimer);
         connectTimer = null;
-        set({ enabled: false, connected: false, silentConnect: false, activity: i18n.t("agent.state.offline"), conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} }, bootstrapStatus: null, mcpStartupStatuses: {}, ...patch });
+        set({ enabled: false, connected: false, silentConnect: false, fragmentBootstrap: false, activity: i18n.t("agent.state.offline"), conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} }, bootstrapStatus: null, mcpStartupStatuses: {}, ...patch });
     },
     addMessage: (item) => set((state) => ({ messages: [...state.messages, item] })),
     addEventLog: (item) => set((state) => ({ eventLogs: [...state.eventLogs.slice(-160), item] })),

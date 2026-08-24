@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Tooltip } from "antd";
 import dayjs from "dayjs";
 import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
+import { readAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { imageMetadata } from "@/lib/canvas/canvas-node-factory";
@@ -126,6 +127,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const { message, modal } = App.useApp();
+    const { hash } = useLocation();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     // Field-level selectors with useShallow rerender only when these fields change.
@@ -362,7 +364,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 protocolRejected = true;
                 source.close();
                 connectedRef.current = false;
-                setAgentState({ enabled: false, connected: false, waiting: false, sending: false, activity: rt("restartRequired"), connectError: text, silentConnect: false, pendingTool: null, pendingApprovals: [] });
+                setAgentState({ enabled: false, connected: false, waiting: false, sending: false, activity: rt("restartRequired"), connectError: text, silentConnect: false, fragmentBootstrap: false, pendingTool: null, pendingApprovals: [] });
                 useAgentSkillStore.getState().reset();
                 addEventLog(rt("versionMismatch"), text, hello);
                 if (!headless) message.error(text);
@@ -390,6 +392,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 sending: false,
                 connectError: "",
                 silentConnect: false,
+                fragmentBootstrap: false,
                 activeThreadId: nextThreadId,
                 activeTurnId,
                 messages,
@@ -558,6 +561,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 sending: false,
                 connectError: silent ? "" : text,
                 silentConnect: false,
+                fragmentBootstrap: false,
                 pendingTool: null,
                 pendingApprovals: [],
             });
@@ -938,8 +942,29 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             return;
         }
         errorLoggedRef.current = false;
-        setAgentState({ url: nextEndpoint, token: nextToken, enabled: true, connected: false, silentConnect: silent, activity: rt("connecting"), connectError: "", activeTab: "setup" });
+        setAgentState({ url: nextEndpoint, token: nextToken, enabled: true, connected: false, silentConnect: silent, fragmentBootstrap: false, activity: rt("connecting"), connectError: "", activeTab: "setup" });
     };
+
+    useLayoutEffect(() => {
+        const bootstrap = readAgentUrlBootstrap(hash);
+        if (!bootstrap) return;
+        navigate(`${window.location.pathname}${window.location.search}${bootstrap.remainingHash}`, { replace: true });
+        if (!bootstrap.url || !bootstrap.token) {
+            setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: rt(!bootstrap.url ? "addressRequired" : "agentNotFound") });
+            useAgentStore.getState().openPanel();
+            return;
+        }
+        try {
+            const parsed = new URL(bootstrap.url);
+            if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("invalid protocol");
+        } catch {
+            setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: rt("invalidAddress") });
+            useAgentStore.getState().openPanel();
+            return;
+        }
+        errorLoggedRef.current = false;
+        setAgentState({ url: bootstrap.url.replace(/\/$/, ""), token: bootstrap.token, enabled: true, connected: false, silentConnect: true, fragmentBootstrap: true, confirmTools: false, activity: rt("connecting"), connectError: "", activeTab: "setup" });
+    }, [hash, navigate, setAgentState]);
 
     useEffect(() => {
         if (urlAgentAutoConnect && confirmTools) setAgentState({ confirmTools: false });
@@ -967,6 +992,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             loadingThreads: false,
             waiting: false,
             sending: false,
+            fragmentBootstrap: false,
             pendingTool: null,
             pendingApprovals: [],
             conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} },
