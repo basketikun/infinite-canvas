@@ -233,17 +233,21 @@ function supportsGeminiImageSize(model: string) {
     return value.includes("gemini-3") || value.includes("3.1") || value.includes("3-pro");
 }
 
-function resolveImageDataUrl(item: Record<string, unknown>) {
+async function resolveImageDataUrl(item: Record<string, unknown>) {
     if (typeof item.b64_json === "string" && item.b64_json) {
         return `data:image/png;base64,${item.b64_json}`;
     }
     if (typeof item.url === "string" && item.url) {
-        return item.url;
+        try {
+            return await imageToDataUrl({ dataUrl: item.url });
+        } catch {
+            return item.url;
+        }
     }
     return null;
 }
 
-function parseImagePayload(payload: ImageApiResponse) {
+async function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || apiText("requestFailed"));
     }
@@ -253,8 +257,7 @@ function parseImagePayload(payload: ImageApiResponse) {
         || (payload as Record<string, unknown>).results as Array<Record<string, unknown>> | undefined
         || [];
     const images =
-        imageList
-            .map(resolveImageDataUrl)
+        (await Promise.all(imageList.map(resolveImageDataUrl)))
             .filter((value): value is string => Boolean(value))
             .map((dataUrl) => ({ id: nanoid(), dataUrl }));
 
@@ -766,7 +769,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 signal: options?.signal,
             },
         );
-        const images = parseImagePayload(response.data);
+        const images = await parseImagePayload(response.data);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("requestFailed")));
@@ -834,7 +837,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 
     try {
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });
-        const images = parseImagePayload(response.data);
+        const images = await parseImagePayload(response.data);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("requestFailed")));
