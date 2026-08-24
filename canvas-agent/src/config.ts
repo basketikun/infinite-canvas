@@ -26,8 +26,15 @@ export function loadConfig(create = false): CanvasAgentConfig {
 
 /** 将 Canvas Agent 配置写入用户配置目录。 */
 export function saveConfig(config: CanvasAgentConfig) {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+    writeConfigFile(CONFIG_DIR, CONFIG_FILE, config);
+}
+
+/** 写入配置并强制目录 0700、文件 0600，包括纠正已有宽松权限。 */
+export function writeConfigFile(dir: string, file: string, config: CanvasAgentConfig) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(file, JSON.stringify(config, null, 2), { mode: 0o600 });
+    fs.chmodSync(dir, 0o700);
+    fs.chmodSync(file, 0o600);
 }
 
 /** 确保站点级 Codex 工作空间存在并已初始化。 */
