@@ -145,12 +145,11 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     setCanvasContext: (canvasContext) => set({ canvasContext }),
     connectAgent: (options) => {
         const silent = options?.silent ?? false;
-        const endpoint = get().url.trim().replace(/\/$/, "");
+        const url = get().url.trim();
         const token = get().token.trim();
-        if (!endpoint || !token) return set({ connectError: silent ? "" : i18n.t("agent.state.connectionRequired") });
-        if (!normalizeLoopbackUrl(endpoint)) {
-            return set({ connectError: silent ? "" : i18n.t("agent.state.invalidUrl") });
-        }
+        if (!url || !token) return set({ connectError: silent ? "" : i18n.t("agent.state.connectionRequired") });
+        const endpoint = normalizeLoopbackUrl(url);
+        if (!endpoint) return set({ connectError: silent ? "" : i18n.t("agent.state.invalidUrl") });
         localStorage.setItem("canvas-agent-url", endpoint);
         localStorage.setItem("canvas-agent-token", token);
         // Only set enabled here; LocalAgentPanel's effect owns SSE initialization.

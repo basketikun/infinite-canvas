@@ -927,7 +927,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             }
             return;
         }
-        if (!normalizeLoopbackUrl(nextEndpoint)) {
+        const normalizedEndpoint = normalizeLoopbackUrl(nextEndpoint);
+        if (!normalizedEndpoint) {
             const text = rt("invalidAddress");
             if (!silent) {
                 setAgentState({ connectError: text });
@@ -936,7 +937,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             return;
         }
         errorLoggedRef.current = false;
-        setAgentState({ url: nextEndpoint, token: nextToken, enabled: true, connected: false, silentConnect: silent, activity: rt("connecting"), connectError: "", activeTab: "setup" });
+        setAgentState({ url: normalizedEndpoint, token: nextToken, enabled: true, connected: false, silentConnect: silent, activity: rt("connecting"), connectError: "", activeTab: "setup" });
     };
 
     useEffect(() => {
