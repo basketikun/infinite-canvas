@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [修复] Canvas Agent 转发 CLI 错误日志前脱敏常见凭据，避免调试日志和浏览器事件流泄露密钥。
+
 ## v0.16.0 - 2026-08-18
 
 + [新增] 提示词来源新增 Freestylefly GPT Image 2 内置来源。

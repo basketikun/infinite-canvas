@@ -28,6 +28,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Agent 工具确认模式：右侧面板标题栏不应再显示「工具确认」开关；对话输入框左下方应显示确认模式选择，默认选中「自动确认」，画布写入工具应直接执行；切换为「手动确认」后，画布写入工具应在对话中展示等待确认卡片，并支持批准或拒绝。
 - Canvas Agent Codex 升级：启动 Canvas Agent 后应输出 Canvas Agent、内置 Codex 和本机 Codex 版本，实际运行的内置 Codex 应为 0.146.0；内置与本机版本不一致、未安装本机 Codex，或 npm 存在更新版本时应显示对应升级提醒，npm 检查失败不应阻止服务启动；Agent 应能正常连接 Codex、创建或恢复会话、发送消息并调用画布工具，运行中停止任务应只中断当前 turn，随后无需重启 Agent 即可继续发送新任务。
 - Canvas Agent Debug：普通启动应通过公共 logger 输出 Info、Warn 和 Error 日志；使用 `npx -y @basketikun/canvas-agent --debug` 启动后还应输出 Debug 日志并显示日志文件路径，终端统一采用“`YYYY-MM-DD HH:mm:ss` 级别 消息 详情”的纯文本单行格式，`~/.infinite-canvas/logs/` 下应按启动日期生成相同格式的 `canvas-agent-YYYY-MM-DD.log`，同一天多次启动应追加到同一文件；日志中不应出现连接 token 或图片 Data URL 原文。
+- Canvas Agent 凭据脱敏：Codex 与 Claude CLI 的 stderr 包含 Bearer token、`sk-` 密钥、显式 API key/token/authorization 赋值、ANSI 样式或跨输出分片的凭据时，调试日志和网页诊断事件均不应出现明文；普通 stderr 文本应保持不变。
 - Canvas Agent Codex 日志：Codex app-server 输出带颜色或样式控制符及 UTC 时间的 stderr 时，本地日志和网页诊断日志应只显示一份 `YYYY-MM-DD HH:mm:ss` 本地时间和干净文本，不应出现重复 ISO 时间或 `[2m`、`[31m` 等 ANSI 转义内容。
 - Agent HTTP 诊断日志：网页发送一条普通消息后，本地 Debug 日志不应重复输出 `/health`、`/canvas/state`、`/canvas/activate` 成功请求、流式增量或完整会话响应，只保留 HTTP 请求与 Codex 生命周期摘要；右侧「日志」应以单行时间线展示发送、开始、回复、工具、完成用量和错误，不再输出 userMessage started/completed、流式摘要、重复 threadId 或大段原始 JSON。
 - Agent 排查日志：右侧「日志」中的排查视图应显示连接摘要，并可按错误、警告和信息筛选；向下查看日志时仅列表内部滚动，标题、连接状态、筛选数量和操作按钮保持固定；连续相同事件应折叠计数，单条日志可展开查看完整详情；原始 JSON、复制全部、复制最近错误和清空功能应继续可用，浅色与深色主题下均应清晰。

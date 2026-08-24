@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { AGENT_PROMPT } from "../config.js";
-import { redactAgentLog } from "../utils/agent-runtime.js";
+import { createAgentLogWriter } from "../utils/agent-runtime.js";
 import { errorMessage } from "../utils/value.js";
 import type { AgentEmit } from "./types.js";
 
@@ -21,6 +21,7 @@ function withAgentPrompt(prompt: string) {
 /** 将 Claude CLI 的 JSON Lines 输出转换为 Agent 事件。 */
 function pipeJsonLines(child: ReturnType<typeof spawn>, emit: AgentEmit, agent: string) {
     let out = "";
+    const stderr = createAgentLogWriter((text) => emit("agent_log", { text }));
     child.stdout?.on("data", (chunk) => {
         out += chunk.toString();
         const lines = out.split(/\r?\n/);
@@ -33,9 +34,15 @@ function pipeJsonLines(child: ReturnType<typeof spawn>, emit: AgentEmit, agent: 
             }
         });
     });
-    child.stderr?.on("data", (chunk) => emit("agent_log", { text: redactAgentLog(chunk.toString()) }));
-    child.on("error", (error) => emit("agent_error", { message: error.message }));
-    child.on("close", (code) => emit("agent_done", { agent, code }));
+    child.stderr?.on("data", (chunk) => stderr.write(chunk.toString()));
+    child.on("error", (error) => {
+        stderr.flush();
+        emit("agent_error", { message: error.message });
+    });
+    child.on("close", (code) => {
+        stderr.flush();
+        emit("agent_done", { agent, code });
+    });
 }
 
 /** 启动外部 Agent CLI，并将同步启动异常转换为事件。 */
