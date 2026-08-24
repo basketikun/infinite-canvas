@@ -453,17 +453,6 @@
         }
     }
 
-    @keyframes canvas-batch-child-out {
-        from {
-            opacity: 1;
-            transform: translate(0, 0) rotate(0) scale(1);
-        }
-
-        to {
-            opacity: 0;
-            transform: translate(var(--batch-from-x), var(--batch-from-y)) rotate(var(--batch-from-rotate)) scale(0.72);
-        }
-    }
 }
 
 ::view-transition-old(root),

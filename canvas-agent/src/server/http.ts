@@ -6,6 +6,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { runClaudeTurn } from "../agent/claude.js";
 import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
 import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
+import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
 import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
@@ -146,6 +147,12 @@ export function startHttpServer() {
         if (!data) throw new Error("图片附件内容无效");
         res.setHeader("Cache-Control", "no-store");
         res.type(attachment.type).send(Buffer.from(data, "base64"));
+    }));
+    app.get("/agent/message-assets/:messageKey/:assetFile", route(async (req, res) => {
+        const asset = await messageMetadataStore.readAsset(routeParam(req.params.messageKey), routeParam(req.params.assetFile));
+        if (!asset) return void res.status(404).json({ ok: false, error: "message asset not found" });
+        res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+        res.type(asset.contentType).send(asset.data);
     }));
     app.post("/agent/local-file/reveal", route(async (req, res) => {
         const filePath = String(req.body?.path || "");
@@ -305,6 +312,7 @@ export function startHttpServer() {
         const skill = req.body?.skill === undefined ? undefined : await resolveCodexSkill(emit, workspace.workspacePath, skillSelector(req.body.skill), true);
         const messageId = String(req.body?.messageId || Date.now());
         const messageText = String(req.body?.messageText || prompt || `发送了 ${attachments.length} 张图片`);
+        const messageMetadata = await messageMetadataStore.recordPending(messageId, req.body?.messageMetadata);
         let threadId = activeThreadId;
         logger.info("Codex turn accepted", { threadId: req.body?.threadId, model: model || "default", reasoningEffort: effort || "default", promptLength: prompt.length, attachmentCount: attachments.length });
         session.bindClient(clientId);
@@ -315,7 +323,7 @@ export function startHttpServer() {
             const attachmentRefs = session.setTurnAttachments(clientId, attachments);
             session.emitThread("chat_message", threadId, {
                 sourceClientId: clientId,
-                message: { id: `${threadId}:pending:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId: "", role: "user", text: messageText },
+                message: { id: `${threadId}:pending:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId: "", role: "user", text: messageText, ...messageMetadata },
             });
             let chatTurnId = "";
             /** 将包装层日志和兜底错误固定广播到当前 turn。 */
@@ -344,6 +352,7 @@ export function startHttpServer() {
                 onStart: () => session.bindClient(clientId),
                 onThread: (actualThreadId) => {
                     const threadChanged = actualThreadId !== threadId;
+                    void messageMetadataStore.bindThread(messageId, actualThreadId).catch((error) => logger.warn("Failed to bind message metadata to thread", { clientMessageId: messageId, threadId: actualThreadId, error }));
                     if (actualThreadId !== threadId) {
                         threadId = actualThreadId;
                         setActiveThread(threadId, { emptyThread: true, sourceClientId: clientId });
@@ -353,18 +362,19 @@ export function startHttpServer() {
                     if (threadChanged) {
                         session.emitThread("chat_message", threadId, {
                             sourceClientId: clientId,
-                            message: { id: `${threadId}:pending:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId: "", role: "user", text: messageText },
+                            message: { id: `${threadId}:pending:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId: "", role: "user", text: messageText, ...messageMetadata },
                         });
                     }
                 },
                 onTurn: (actualTurnId) => {
                     turnId = actualTurnId;
+                    void messageMetadataStore.bindTurn(messageId, threadId, turnId).catch((error) => logger.warn("Failed to bind message metadata to turn", { clientMessageId: messageId, threadId, turnId, error }));
                     if (chatTurnId !== turnId) {
                         chatTurnId = turnId;
                         session.emitThread("chat_message", threadId, {
                             turnId,
                             sourceClientId: clientId,
-                            message: { id: `${threadId}:${turnId}:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId, role: "user", text: messageText },
+                            message: { id: `${threadId}:${turnId}:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId, role: "user", text: messageText, ...messageMetadata },
                         });
                     }
                     logger.info("Codex turn started", { threadId, turnId, model: model || "default", reasoningEffort: effort || "default" });
@@ -372,6 +382,7 @@ export function startHttpServer() {
                 },
                 onFinish: () => {
                     logger.info("Codex turn finished", { threadId, turnId });
+                    if (!turnId) void messageMetadataStore.remove(messageId, threadId).catch((error) => logger.warn("Failed to remove unbound message metadata", { clientMessageId: messageId, error }));
                     session.clearTurnAttachments(clientId);
                     if (clientId) session.releaseClient(clientId);
                     session.setCodexState({ busy: false, threadId, turnId });
@@ -380,6 +391,7 @@ export function startHttpServer() {
             });
             res.json({ ok: true, threadId });
         } catch (error) {
+            await messageMetadataStore.remove(messageId, threadId).catch((metadataError) => logger.warn("Failed to remove rejected message metadata", { clientMessageId: messageId, error: metadataError }));
             session.releaseClient(clientId);
             session.setCodexState({ busy: false, threadId, turnId: "" });
             session.finishConversationRun(threadId);

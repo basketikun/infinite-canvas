@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { App, Button, Image, Modal } from "antd";
+import { App, Button, Image, Modal, Popover } from "antd";
 import { Brain, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleAlert, Copy, ExternalLink, FilePenLine, FileText, FolderOpen, ListChecks, LoaderCircle, Search, ShieldAlert, TerminalSquare, Wrench, XCircle } from "lucide-react";
 import { Streamdown, type LinkSafetyModalProps } from "streamdown";
 import { useTranslation } from "react-i18next";
@@ -7,8 +7,10 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { useAgentStore, type AgentPendingApproval } from "@/stores/use-agent-store";
-import { revealAgentLocalFile } from "@/services/api/canvas-agent";
+import { useAgentStore, type AgentCanvasReference, type AgentPendingApproval, type AgentSkillReference } from "@/stores/use-agent-store";
+import { resolveAgentMessageAssetUrl, revealAgentLocalFile } from "@/services/api/canvas-agent";
+import { AgentCanvasReferencePreview, canvasReferenceIcon, canvasReferenceKindLabel } from "./agent-canvas-reference-preview";
+import { agentInlineTokenClass, agentInlineTokenIconClass, agentInlineTokenMediaClass, agentReferenceMarker, parseAgentInlineTokens } from "./agent-chat-inline-tokens";
 
 const streamdownProps = () => ({
     className: "agent-streamdown",
@@ -94,6 +96,8 @@ export type AgentChatMessageItem = {
     meta?: string;
     detail?: unknown;
     attachments?: AgentChatAttachment[];
+    canvasReferences?: AgentCanvasReference[];
+    skill?: AgentSkillReference;
     /** Present while the message is actively streaming; cleared on completion. */
     streamId?: string;
 };
@@ -123,7 +127,7 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool }: {
                 style={{ color }}
             >
                 {isUser ? (
-                    <div className="whitespace-pre-wrap break-words">{item.text}</div>
+                    <AgentUserMessageContent text={item.text} references={item.canvasReferences || []} skill={item.skill} theme={theme} />
                 ) : (
                     <Streamdown {...streamdownProps()} animated={streamdownAnimation} isAnimating={!!item.streamId}>{item.text}</Streamdown>
                 )}
@@ -131,6 +135,52 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool }: {
                 {item.meta ? <div className={`mt-1 text-[11px] tabular-nums opacity-55 ${isUser ? "text-right" : ""}`}>{item.meta}</div> : null}
             </div>
         </div>
+    );
+}
+
+function AgentUserMessageContent({ text, references, skill, theme }: { text: string; references: AgentCanvasReference[]; skill?: AgentSkillReference; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    const tokens = parseAgentInlineTokens(text, references, skill);
+    return (
+        <div className="whitespace-pre-wrap break-words">
+            {tokens.map((token, index) => token.type === "text"
+                ? token.value
+                : token.type === "skill"
+                    ? <AgentSkillMention key={`skill:${index}`} skill={token.skill} theme={theme} />
+                    : <AgentCanvasMention key={`${token.reference.nodeId}:${index}`} reference={token.reference} theme={theme} />)}
+        </div>
+    );
+}
+
+function AgentSkillMention({ skill, theme }: { skill: AgentSkillReference; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    return <span className={agentInlineTokenClass} style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }} title={skill.path}>/{skill.displayName || skill.name}</span>;
+}
+
+function AgentCanvasMention({ reference, theme }: { reference: AgentCanvasReference; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    const node = useAgentStore((state) => state.canvasContext?.snapshot.nodes.find((item) => item.id === reference.nodeId));
+    const endpoint = useAgentStore((state) => state.url);
+    const token = useAgentStore((state) => state.token);
+    const previewUrl = resolveAgentMessageAssetUrl(endpoint, token, reference.previewUrl || node?.metadata?.content || "");
+    const previewText = reference.text || node?.metadata?.content || node?.metadata?.prompt;
+    const Icon = canvasReferenceIcon(reference.kind);
+    return (
+        <Popover
+            trigger={["hover", "focus"]}
+            placement="top"
+            mouseEnterDelay={0.15}
+            content={<AgentCanvasReferencePreview reference={reference} previewUrl={previewUrl} previewText={previewText} theme={theme} />}
+        >
+            <span
+                tabIndex={0}
+                className={`${agentInlineTokenClass} max-w-56 cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/10 dark:focus-visible:ring-white/15`}
+                style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                aria-label={i18n.t("agent.composer.mentions.referenceLabel", { kind: canvasReferenceKindLabel(reference.kind), title: reference.title })}
+            >
+                {reference.kind === "image" && previewUrl
+                    ? <img src={previewUrl} alt="" className={agentInlineTokenMediaClass} />
+                    : <Icon className={agentInlineTokenIconClass} />}
+                <span>{agentReferenceMarker(reference)}</span>
+            </span>
+        </Popover>
     );
 }
 

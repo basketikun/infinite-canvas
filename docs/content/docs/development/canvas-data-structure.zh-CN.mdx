@@ -77,6 +77,18 @@ type CanvasNodeData = {
 `metadata` 当前常用字段：
 
 ```ts
+type CanvasNodeImage = {
+  id: string;
+  status: "idle" | "success" | "loading" | "error";
+  errorDetails?: string;
+  content: string;
+  storageKey: string;
+  naturalWidth: number;
+  naturalHeight: number;
+  bytes: number;
+  mimeType: string;
+};
+
 type CanvasNodeMetadata = {
   content?: string;
   prompt?: string;
@@ -90,11 +102,8 @@ type CanvasNodeMetadata = {
   naturalWidth?: number;
   naturalHeight?: number;
   freeResize?: boolean;
-  isBatchRoot?: boolean;
-  batchRootId?: string;
-  batchChildIds?: string[];
+  images?: CanvasNodeImage[];
   primaryImageId?: string;
-  imageBatchExpanded?: boolean;
   inputOrder?: string[];
   storageKey?: string;
   mimeType?: string;
@@ -108,7 +117,7 @@ type CanvasNodeMetadata = {
 - 视频节点：`content` 是当前可播放的视频 URL，通常是 `blob:` URL；`storageKey` 指向本地视频 Blob；`bytes/mimeType` 保存文件信息。
 - 文本节点：`content` 保存文本内容；`fontSize` 保存字体大小；`prompt/status/errorDetails` 保存生成状态。
 - 生成配置节点：`generationMode/model/size/count/inputOrder` 保存生成配置；`generationMode` 可选择文本、图片或视频；上游输入通过 `connections` 计算。
-- 图片组节点：根节点用 `isBatchRoot/batchChildIds/primaryImageId/imageBatchExpanded` 记录批量生成结果；子图节点用 `batchRootId` 指回根节点。
+- 多图图片节点：批量生成仍只保存为一个图片节点，请求开始前会在 `images` 中创建全部图片槽位，每个槽位通过 `status/errorDetails` 独立记录实时状态，成功后补充图片数据；最先成功的槽位会立即写入 `primaryImageId`，并由节点级 `content` 和图片元数据展示；展开状态仅属于当前界面，不写入项目数据。
 
 ## 连线结构
 

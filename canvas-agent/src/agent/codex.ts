@@ -9,6 +9,7 @@ import { errorMessage, field, type JsonRecord } from "../utils/value.js";
 import { CodexAppClient, CodexReportedError } from "./codex-client.js";
 import { codexEventHistory } from "./codex-event-history.js";
 import { settledTurnIds, summarizeCodexThread, threadMessages } from "./codex-history.js";
+import { messageMetadataStore } from "./message-metadata.js";
 import type { CodexReasoningEffort, CodexSkillMetadata, CodexSkillSelector, CodexSkillsListEntry } from "./codex-protocol.js";
 import type { AgentAttachment, AgentEmit, AgentPermissionMode } from "./types.js";
 
@@ -97,7 +98,8 @@ export async function resumeCodexThread(emit: AgentEmit, threadId: string, cwd?:
     const thread = await resumeLoadedThread(app, threadId, cwd, permissionMode, true, preheat);
     const history = await loadCodexHistory(emit, threadId, cwd);
     const supplementalItems = await codexEventHistory.readThread(threadId);
-    return { thread, messages: threadMessages(history.thread, app.planUpdates(threadId), supplementalItems), settledTurnIds: settledTurnIds(history.thread, supplementalItems), historyReady: history.historyReady };
+    const messages = await mergeMessageMetadata(threadId, threadMessages(history.thread, app.planUpdates(threadId), supplementalItems));
+    return { thread, messages, settledTurnIds: settledTurnIds(history.thread, supplementalItems), historyReady: history.historyReady };
 }
 
 /** 查询当前工作空间中的 Codex 线程。 */
@@ -150,7 +152,8 @@ export async function readCodexThread(emit: AgentEmit, threadId: string, cwd?: s
     const app = await getCodexApp(emit);
     const history = await loadCodexHistory(emit, threadId, cwd);
     const supplementalItems = await codexEventHistory.readThread(threadId);
-    return { thread: summarizeCodexThread(history.thread), messages: threadMessages(history.thread, app.planUpdates(threadId), supplementalItems), settledTurnIds: settledTurnIds(history.thread, supplementalItems), historyReady: history.historyReady };
+    const messages = await mergeMessageMetadata(threadId, threadMessages(history.thread, app.planUpdates(threadId), supplementalItems));
+    return { thread: summarizeCodexThread(history.thread), messages, settledTurnIds: settledTurnIds(history.thread, supplementalItems), historyReady: history.historyReady };
 }
 
 /** 归档指定 Codex 线程。 */
@@ -165,7 +168,17 @@ export async function archiveCodexThread(emit: AgentEmit, threadId: string, cwd?
     await app.archiveThread(threadId);
     app.clearPlanUpdates(threadId);
     await codexEventHistory.removeThread(threadId);
+    await messageMetadataStore.removeThread(threadId).catch((error) => logger.warn("Failed to remove archived thread message metadata", { threadId, error }));
     if (loadedThreadId === threadId) loadedThreadId = "";
+}
+
+async function mergeMessageMetadata<T extends { role: string; threadId: string; turnId: string }>(threadId: string, messages: T[]) {
+    try {
+        return await messageMetadataStore.mergeThread(threadId, messages);
+    } catch (error) {
+        logger.warn("Failed to read thread message metadata", { threadId, error });
+        return messages;
+    }
 }
 
 /** 判断线程异常是否允许自动新建线程后重试。 */

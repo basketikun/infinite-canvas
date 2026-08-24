@@ -5,11 +5,9 @@ import { useTranslation } from "react-i18next";
 
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { isPlainEnterKey } from "@/lib/keyboard-event";
-import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
-import type { AgentModel, AgentPermissionMode, AgentReasoningEffort } from "@/stores/use-agent-store";
+import { useAgentStore, type AgentModel, type AgentPermissionMode, type AgentReasoningEffort } from "@/stores/use-agent-store";
 import type { AgentChatAttachment } from "./agent-chat-message";
-import { AgentSkillPicker } from "./agent-skill-picker";
+import { AgentChatPromptInput } from "./agent-chat-prompt-input";
 
 export function AgentChatComposer({
     prompt,
@@ -58,9 +56,8 @@ export function AgentChatComposer({
 }) {
     const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const selectedSkill = useAgentSkillStore((state) => state.selectedSkill);
-    const clearSkillSelection = useAgentSkillStore((state) => state.clearSelection);
-    const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length);
+    const canvasReferences = useAgentStore((state) => state.canvasReferences);
+    const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length || canvasReferences.length);
     return (
         <div className="px-2 pb-2 pt-2" onWheelCapture={(event) => event.stopPropagation()}>
             <div className="rounded-[24px] border px-3 pb-3 pt-3 shadow-lg" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }}>
@@ -78,36 +75,7 @@ export function AgentChatComposer({
                         ))}
                     </div>
                 ) : null}
-                {selectedSkill ? (
-                    <div className="mb-2 flex items-center px-1">
-                        <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
-                            <span className="truncate">{selectedSkill.interface?.displayName || selectedSkill.name}</span>
-                            <button type="button" className="grid size-4 shrink-0 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" onClick={() => clearSkillSelection()} aria-label={t("agent.composer.removeSkill")}>
-                                <X className="size-3" />
-                            </button>
-                        </span>
-                    </div>
-                ) : null}
-                <textarea
-                    value={prompt}
-                    onChange={(event) => onPromptChange(event.target.value)}
-                    onPaste={(event) => {
-                        if (!onAddFiles) return;
-                        const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
-                        if (!images.length) return;
-                        event.preventDefault();
-                        void onAddFiles(images);
-                    }}
-                    onKeyDown={(event) => {
-                        if (!isPlainEnterKey(event)) return;
-                        event.preventDefault();
-                        if (!canSubmit) return;
-                        void onSubmit();
-                    }}
-                    className="thin-scrollbar max-h-32 min-h-20 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:opacity-45"
-                    style={{ color: theme.node.text }}
-                    placeholder={placeholder}
-                />
+                <AgentChatPromptInput value={prompt} disabled={disabled || sending} placeholder={placeholder} theme={theme} onChange={onPromptChange} onSubmit={() => { if (canSubmit) void onSubmit(); }} onAddFiles={onAddFiles} />
                 <div className="@container mt-2 flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-1">
                         {onAddFiles ? (
@@ -121,7 +89,6 @@ export function AgentChatComposer({
                                 </Tooltip>
                             </>
                         ) : null}
-                        <AgentSkillPicker />
                         {onConfirmToolsChange ? <ToolConfirmationMenu confirmTools={Boolean(confirmTools)} theme={theme} onChange={onConfirmToolsChange} /> : null}
                         {permissionMode && onPermissionModeChange ? <PermissionModeMenu permissionMode={permissionMode} theme={theme} onChange={onPermissionModeChange} /> : null}
                         {models?.length && model && reasoningEffort && onModelChange && onReasoningEffortChange ? <AgentModelControls models={models} model={model} reasoningEffort={reasoningEffort} onModelChange={onModelChange} onReasoningEffortChange={onReasoningEffortChange} /> : null}

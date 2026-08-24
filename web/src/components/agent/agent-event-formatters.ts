@@ -1,8 +1,10 @@
 import { isSiteTool, SITE_TOOL_LABELS } from "@/lib/agent/agent-site-tools";
 import i18n from "@/i18n";
 import { summarizeCanvasAgentOps, type CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
+import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { randomId } from "@/lib/utils";
-import { useAgentStore, type AgentAttachment, type AgentChatItem, type AgentEventLog, type AgentTokenUsage } from "@/stores/use-agent-store";
+import { resolveAgentMessageAssetUrl } from "@/services/api/canvas-agent";
+import { useAgentStore, type AgentAttachment, type AgentChatItem, type AgentEventLog, type AgentMessageAttachment, type AgentTokenUsage } from "@/stores/use-agent-store";
 import type { AgentChatAttachment } from "./agent-chat-message";
 export const REASONING_PLACEHOLDER = i18n.t("agent.events.analyzing");
 
@@ -55,12 +57,12 @@ export type AgentUserDetail = { kind: string; status: string; rows?: Array<{ lab
 
 export type AgentLogContext = { endpoint: string; connected: boolean; enabled: boolean; activity: string; waiting: boolean; sending: boolean; messages: number; pendingTool?: string };
 
-export function agentMessageToChatMessage(item: AgentChatItem) {
-    return { ...item, meta: item.role === "user" || item.role === "assistant" ? undefined : item.meta, attachments: item.attachments?.map(agentAttachmentToChatAttachment) };
+export function agentMessageToChatMessage(item: AgentChatItem, endpoint: string, token: string) {
+    return { ...item, meta: item.role === "user" || item.role === "assistant" ? undefined : item.meta, attachments: item.attachments?.map((attachment) => agentAttachmentToChatAttachment(attachment, endpoint, token)) };
 }
 
-export function agentAttachmentToChatAttachment(item: AgentAttachment): AgentChatAttachment {
-    return { id: item.id, name: item.name, url: item.dataUrl || item.url };
+export function agentAttachmentToChatAttachment(item: AgentMessageAttachment, endpoint: string, token: string): AgentChatAttachment {
+    return { id: item.id, name: item.name, url: resolveAgentMessageAssetUrl(endpoint, token, item.dataUrl || item.url) };
 }
 
 export function formatAgentEvent(event: AgentEventPayload): Omit<AgentChatItem, "id"> | null {
@@ -486,6 +488,14 @@ export function promptWithAttachments(text: string, attachments: AgentAttachment
     return text || (attachments.length ? tr("attachmentPrompt") : "");
 }
 
+export function promptWithCanvasReferences(text: string, references: CanvasResourceReference[]) {
+    if (!references.length) return text;
+    const task = text || "请处理引用的画布素材。";
+    const list = references.map((item, index) => `${index + 1}. mention=${JSON.stringify(`@${item.label}`)}, nodeId=${JSON.stringify(item.nodeId)}, title=${JSON.stringify(item.title)}, type=${item.kind}`).join("\n");
+    const imageHint = references.some((item) => item.kind === "image") ? "\n其中图片素材的实际内容已作为本轮图片附件提供，可直接查看；nodeId 用于后续画布操作。" : "";
+    return `${task}\n\n本轮引用的当前画布素材：\n${list}${imageHint}\n需要读取或操作这些素材时，先调用 canvas_get_state，并使用上面的 nodeId 精确定位，不要按标题猜测节点。`;
+}
+
 export function attachmentPayloadBytes(attachments: AgentAttachment[]) {
     return attachments.reduce((total, item) => total + item.dataUrl.length, 0);
 }
@@ -529,7 +539,7 @@ export function upsertAgentMessage(messages: AgentChatItem[], item: AgentChatIte
     const index = messages.findIndex((current) => current.id === item.id);
     if (index < 0) return [...messages, item];
     const current = messages[index];
-    const next = { ...current, ...item, attachments: item.attachments || current.attachments, historyText: item.historyText || current.historyText };
+    const next = { ...current, ...item, ...mergeLocalMessageMetadata(current, item) };
     return messages.map((message, itemIndex) => itemIndex === index ? next : message);
 }
 
@@ -543,9 +553,8 @@ export function mergeAgentMessages(snapshot: AgentChatItem[], current: AgentChat
             return;
         }
         const history = messages[index];
-        const next = live
-            ? { ...history, ...item, attachments: item.attachments || history.attachments, historyText: item.historyText || history.historyText }
-            : { ...history, attachments: item.attachments || history.attachments, historyText: item.historyText || history.historyText };
+        const metadata = mergeLocalMessageMetadata(history, item);
+        const next = live ? { ...history, ...item, ...metadata } : { ...history, ...metadata };
         messages = messages.map((message, itemIndex) => itemIndex === index ? next : message);
     });
     return messages;
@@ -557,27 +566,12 @@ export function normalizeHistoryMessages(messages: AgentChatItem[]) {
         .map(({ streamId: _streamId, ...item }) => scopeChatItem({ ...item, text: normalizeText(item.text) } as AgentChatItem, item.threadId!, item.turnId!));
 }
 
-export function mergeHistoryAttachments(messages: AgentChatItem[], currentMessages: AgentChatItem[]) {
-    const currentUsers = currentMessages.filter((item) => item.role === "user" && item.attachments?.length).reverse();
-    return [...messages]
-        .reverse()
-        .map((item) => {
-            if (item.role !== "user") return item;
-            let index = item.clientMessageId
-                ? currentUsers.findIndex((current) => current.clientMessageId === item.clientMessageId && current.threadId === item.threadId)
-                : -1;
-            if (index < 0 && item.turnId) index = currentUsers.findIndex((current) => current.turnId === item.turnId && current.threadId === item.threadId);
-            if (index < 0) {
-                const candidates = currentUsers
-                    .map((current, candidateIndex) => ({ current, candidateIndex }))
-                    .filter(({ current }) => current.threadId === item.threadId && (current.text === item.text || current.historyText === item.text));
-                if (new Set(candidates.map(({ current }) => current.clientMessageId || current.id)).size === 1) index = candidates[0]?.candidateIndex ?? -1;
-            }
-            if (index < 0) return item;
-            const current = currentUsers.splice(index, 1)[0];
-            return { ...item, text: current.text, historyText: current.historyText, attachments: current.attachments };
-        })
-        .reverse();
+function mergeLocalMessageMetadata(current: AgentChatItem, incoming: AgentChatItem) {
+    return {
+        attachments: incoming.attachments || current.attachments,
+        canvasReferences: incoming.canvasReferences || current.canvasReferences,
+        skill: incoming.skill || current.skill,
+    };
 }
 
 export function reasoningActivityText(items: Record<string, string>, fallback = "") {

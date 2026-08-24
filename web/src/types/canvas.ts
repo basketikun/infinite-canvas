@@ -25,6 +25,25 @@ export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasGenerationMode = "text" | "image" | "video" | "audio";
 export type CanvasImageGenerationType = "generation" | "edit";
 
+export type CanvasNodeImage = {
+    id: string;
+    status: CanvasNodeStatus;
+    errorDetails?: string;
+    content: string;
+    storageKey: string;
+    naturalWidth: number;
+    naturalHeight: number;
+    bytes: number;
+    mimeType: string;
+};
+
+export type CanvasNodeText = {
+    id: string;
+    status: CanvasNodeStatus;
+    errorDetails?: string;
+    content: string;
+};
+
 export type CanvasNodeMetadata = {
     content?: string;
     composerContent?: string;
@@ -40,6 +59,9 @@ export type CanvasNodeMetadata = {
     quality?: string;
     background?: string;
     count?: number;
+    textCount?: number;
+    texts?: CanvasNodeText[];
+    primaryTextId?: string;
     seconds?: string;
     vquality?: string;
     generateAudio?: string;
@@ -52,12 +74,8 @@ export type CanvasNodeMetadata = {
     naturalWidth?: number;
     naturalHeight?: number;
     freeResize?: boolean;
-    isBatchRoot?: boolean;
-    batchRootId?: string;
-    batchChildIds?: string[];
-    batchUsesReferenceImages?: boolean;
+    images?: CanvasNodeImage[];
     primaryImageId?: string;
-    imageBatchExpanded?: boolean;
     storageKey?: string;
     mimeType?: string;
     bytes?: number;

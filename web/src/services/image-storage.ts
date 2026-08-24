@@ -14,6 +14,8 @@ export type UploadedImage = {
 };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
+const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
+const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
@@ -71,13 +73,16 @@ export async function setImageBlob(storageKey: string, blob: Blob) {
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }) {
     const url = image.dataUrl || (await resolveImageUrl(image.storageKey, image.url || ""));
     if (!url || url.startsWith("data:")) return url;
+    let response: Response;
     try {
-        return blobToDataUrl(await (await fetch(url)).blob());
+        response = await fetch(url);
     } catch {
         // If the remote URL is not fetchable (CORS / network), return it as-is
         // so the image can still be displayed directly.
         return url;
     }
+    if (!response.ok) throw new Error(i18n.t("common.imageReadFailed"));
+    return blobToDataUrl(await response.blob());
 }
 
 export async function deleteStoredImages(keys: Iterable<string>) {
@@ -93,6 +98,14 @@ export async function deleteStoredImages(keys: Iterable<string>) {
 
 export async function cleanupUnusedImages(usedData: unknown) {
     const usedKeys = collectImageStorageKeys(usedData);
+    await Promise.all([
+        imageLogStore.iterate((value) => {
+            collectImageStorageKeys(value, usedKeys);
+        }),
+        videoLogStore.iterate((value) => {
+            collectImageStorageKeys(value, usedKeys);
+        }),
+    ]);
     const unused: string[] = [];
     await store.iterate((_value, key) => {
         if (!usedKeys.has(key)) unused.push(key);

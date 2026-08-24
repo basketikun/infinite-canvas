@@ -2,5 +2,5 @@
   "title": "Business",
   "root": true,
   "defaultOpen": true,
-  "pages": ["license", "cla", "business"]
+  "pages": ["license", "business"]
 }

@@ -22,7 +22,6 @@
 ## Business
 
 - [Open-source License](/docs/business/license)
-- [Contributor License Agreement](/docs/business/cla)
 - [Business Cooperation](/docs/business/business)
 
 ## Support and Security

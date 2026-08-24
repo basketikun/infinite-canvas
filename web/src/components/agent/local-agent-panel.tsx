@@ -7,16 +7,17 @@ import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { imageMetadata } from "@/lib/canvas/canvas-node-factory";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
+import { resolveCanvasReferenceImages } from "@/lib/canvas/canvas-resource-references";
 import { readImageMeta } from "@/lib/image-utils";
 import { randomId } from "@/lib/utils";
 import { uploadImage } from "@/services/image-storage";
-import { bindPendingAgentUserMessage, deleteAgentThreadMessages, deletePendingAgentUserMessage, moveAgentUserMessage, readAgentUserMessages, savePendingAgentUserMessage } from "@/services/agent-chat-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
-import { useAgentStore, type AgentBootstrapStatus, type AgentCanvasContext, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
+import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
 import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@/services/api/canvas-agent";
@@ -44,12 +45,12 @@ import {
     isCurrentThreadEvent,
     isReasoningSummary,
     mergeAgentMessages,
-    mergeHistoryAttachments,
     mergeStreamText,
     normalizeHistoryMessages,
     normalizeText,
     parseEventData,
     promptWithAttachments,
+    promptWithCanvasReferences,
     reasoningActivityText,
     registerLiveAgentTurn,
     scopeChatItem,
@@ -67,8 +68,10 @@ import { AgentSkillsView } from "./agent-skills-view";
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
+const MESSAGE_PREVIEW_LONG_EDGE = 192;
+const MESSAGE_PREVIEW_MAX_LENGTH = 500_000;
 const DEFAULT_AGENT_URL = "http://127.0.0.1:17371";
-const AGENT_PROTOCOL_VERSION = 5;
+const AGENT_PROTOCOL_VERSION = 6;
 const HISTORY_RETRY_DELAYS_MS = [0, 150, 350, 700, 1200];
 const AGENT_REASONING_EFFORTS = new Set<AgentReasoningEffort>(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 const rt = (key: string, options?: Record<string, unknown>) => i18n.t(`agent.runtime.${key}`, options);
@@ -198,7 +201,6 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         return () => { disposed = true; };
     }, []);
     const loadThreadSnapshot = useCallback(async (threadId: string, sequence: number, response?: AgentThreadResponse, expectedTurnId = "") => {
-        const storedMessagesPromise = readAgentUserMessages(threadId).catch(() => []);
         let thread = response;
         let lastError: unknown;
         for (const delayMs of HISTORY_RETRY_DELAYS_MS) {
@@ -213,7 +215,6 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 continue;
             }
             const history = normalizeHistoryMessages(thread.messages || []);
-            const storedMessages = await storedMessagesPromise;
             const latest = useAgentStore.getState();
             if (sequence !== loadThreadsSequenceRef.current || latest.activeThreadId !== threadId) return false;
             const historyTurns = authoritativeHistoryTurnKeys(threadId, thread.settledTurnIds || []);
@@ -221,9 +222,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             historyTurns.forEach((key) => liveTurnKeysRef.current.delete(key));
             if (latest.activeTurnId) liveTurnKeysRef.current.add(`${threadId}\0${latest.activeTurnId}`);
             authoritativeHistoryTurnsRef.current = historyTurns;
-            const attachmentSources = [...latest.messages, ...storedMessages.map((item) => ({ ...item, threadId }))];
-            const snapshot = mergeHistoryAttachments(history, attachmentSources);
-            const messages = mergeAgentMessages(snapshot, latest.messages, threadId, liveTurnKeysRef.current);
+            const messages = mergeAgentMessages(history, latest.messages, threadId, liveTurnKeysRef.current);
             threadMessagesRef.current.set(threadId, messages);
             setAgentState({ messages, connectError: "" });
             const coveredTurnIds = [...historyTurns].map((key) => key.slice(threadId.length + 1));
@@ -496,15 +495,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         source.addEventListener("workspace_changed", (event) => {
             const data = parseEventData<AgentWorkspaceEvent>(event);
             if (!data) return;
-            enqueueEvent(async () => {
-                const nextThreadId = data.activeThreadId ?? data.threadId ?? "";
-                const current = useAgentStore.getState();
-                const pendingMessage = [...current.messages].reverse().find((item) => item.role === "user" && !item.turnId);
-                const keepPendingMessage = Boolean(data.emptyThread && pendingMessage && (current.sending || current.waiting) && (!data.sourceClientId || data.sourceClientId === clientIdRef.current));
-                const pendingThreadId = pendingMessage?.threadId || current.activeThreadId;
-                if (keepPendingMessage && nextThreadId) {
-                    await moveAgentUserMessage(pendingThreadId, nextThreadId, pendingMessage!.clientMessageId || pendingMessage!.itemId || pendingMessage!.id).catch(() => undefined);
-                }
+            enqueueEvent(() => {
                 if (data.conversation) applyConversationState(data.conversation);
                 else applyWorkspaceChange(data);
                 if (!data.draftThread) void loadThreads(Boolean(data.emptyThread));
@@ -521,25 +512,12 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 const turnId = data.turnId ?? data.message!.turnId ?? "";
                 const clientMessageId = data.message!.clientMessageId || data.message!.itemId || data.message!.id;
                 if (current.activeThreadId !== threadId) return;
-                const pending = data.message!.role === "user"
-                    ? [...current.messages].reverse().find((item) => item.role === "user" && item.threadId === threadId && !item.turnId && (!clientMessageId || item.clientMessageId === clientMessageId))
-                    : undefined;
-                const next = scopeChatItem({
-                    ...data.message!,
-                    ...(pending ? { clientMessageId: pending.clientMessageId, text: pending.text, historyText: pending.historyText, attachments: pending.attachments } : {}),
-                }, threadId, turnId);
-                const currentMessages = pending && turnId ? current.messages.filter((item) => item.id !== pending.id) : current.messages;
+                const next = scopeChatItem(data.message!, threadId, turnId);
+                const currentMessages = data.message!.role === "user" && clientMessageId
+                    ? current.messages.filter((item) => item.role !== "user" || item.clientMessageId !== clientMessageId || item.id === next.id)
+                    : current.messages;
                 const messages = upsertAgentMessage(currentMessages, next);
                 setAgentState({ messages });
-                if (next.role === "user" && clientMessageId) void bindPendingAgentUserMessage(threadId, clientMessageId, turnId).catch(() => undefined);
-                if (next.role === "user" && !next.attachments?.length) {
-                    void readAgentUserMessages(threadId).then((storedMessages) => {
-                        const stored = storedMessages.find((item) => item.id === clientMessageId || Boolean(turnId && item.turnId === turnId));
-                        const latest = useAgentStore.getState();
-                        if (!stored || latest.activeThreadId !== threadId || !latest.messages.some((item) => item.id === next.id)) return;
-                        setAgentState({ messages: upsertAgentMessage(latest.messages, { ...next, text: stored.text, historyText: stored.historyText, attachments: stored.attachments }) });
-                    }).catch(() => undefined);
-                }
             });
         });
         source.addEventListener("agent_log", (event) => {
@@ -649,26 +627,60 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const skillState = useAgentSkillStore.getState();
         const selectedSkill = skillState.selectedSkill;
         const selectedSkillRevision = skillState.selectionRevision;
-        const requestPrompt = promptWithAttachments(text, files);
         const currentState = useAgentStore.getState();
+        const canvasNodeIds = new Set(currentState.canvasContext?.snapshot.nodes.map((node) => node.id) || []);
+        const canvasReferences = currentState.canvasReferences.filter((item) => canvasNodeIds.has(item.nodeId));
+        if (canvasReferences.length !== currentState.canvasReferences.length) {
+            setAgentState({ canvasReferences });
+            message.warning(rt(canvasReferences.length ? "someCanvasReferencesMissing" : "canvasReferencesMissing"));
+        }
+        const requestPrompt = promptWithCanvasReferences(promptWithAttachments(text, files), canvasReferences);
         if (!currentState.connected || !requestPrompt || currentState.sending || currentState.waiting || currentState.loadingThreads || !["ready", "warning"].includes(currentState.conversation.status)) return;
-        if (attachmentPayloadBytes(files) > MAX_ATTACHMENT_PAYLOAD_BYTES) {
+        let referenceImages: AgentAttachment[] = [];
+        if (canvasReferences.some((item) => item.kind === "image")) {
+            setAgentState({ sending: true, activity: rt("readingCanvasImages") });
+            try {
+                referenceImages = await resolveCanvasReferenceImages(canvasReferences, currentState.canvasContext?.snapshot.nodes || []);
+            } catch (error) {
+                setAgentState({ sending: false, activity: rt("canvasImageReadFailed") });
+                addMessage({ role: "error", title: rt("canvasImageReadFailed"), text: error instanceof Error ? error.message : rt("canvasImageReadFailed") });
+                return;
+            }
+        }
+        const requestFiles = [...files, ...referenceImages.filter((reference) => !files.some((file) => file.dataUrl === reference.dataUrl))];
+        if (requestFiles.length > MAX_ATTACHMENTS) {
+            setAgentState({ sending: false, activity: rt("tooManyImages") });
+            addMessage({ role: "error", title: rt("tooManyImages"), text: rt("imageCountLimit", { count: MAX_ATTACHMENTS }) });
+            return;
+        }
+        if (attachmentPayloadBytes(requestFiles) > MAX_ATTACHMENT_PAYLOAD_BYTES) {
+            setAgentState({ sending: false, activity: rt("imageTooLarge") });
             addMessage({ role: "error", title: rt("imageTooLarge"), text: rt("imagePayloadTooLarge") });
             return;
         }
         const messageId = createId();
-        const userText = text || rt("imagesSent", { count: files.length });
+        const userText = text || rt(files.length ? "imagesSent" : "canvasReferencesSent", { count: files.length || canvasReferences.length });
+        const messageReferences: AgentCanvasReference[] = await Promise.all(canvasReferences.map(async ({ nodeId, label, title, kind, previewUrl, text }) => {
+            const image = referenceImages.find((item) => item.id === `canvas:${nodeId}`);
+            return { nodeId, label, title, kind, previewUrl: image ? (await createMessageAttachmentMetadata(image)).url : previewUrl, text };
+        }));
+        const messageSkill = selectedSkill ? { name: selectedSkill.name, path: selectedSkill.path, displayName: selectedSkill.interface?.displayName || undefined } : undefined;
         loadThreadsSequenceRef.current += 1;
         const currentBeforeSend = useAgentStore.getState();
         const requestThreadId = currentBeforeSend.activeThreadId;
-        setAgentState({ prompt: "", attachments: [], activity: rt("sending"), sending: true, loadingThreads: false, activeTurnId: "", messages: currentBeforeSend.messages });
-        addMessage({ id: messageId, itemId: "synthetic:user", clientMessageId: messageId, threadId: requestThreadId, turnId: "", role: "user", text: userText, historyText: requestPrompt, attachments: files });
+        setAgentState({ prompt: "", attachments: [], canvasReferences: [], activity: rt("sending"), sending: true, loadingThreads: false, activeTurnId: "", messages: currentBeforeSend.messages });
+        addMessage({ id: messageId, itemId: "synthetic:user", clientMessageId: messageId, threadId: requestThreadId, turnId: "", role: "user", text: userText, attachments: files, canvasReferences: messageReferences, skill: messageSkill });
         let threadId = requestThreadId;
         try {
-            if (files.length) await savePendingAgentUserMessage({ id: messageId, role: "user", text: userText, historyText: requestPrompt, attachments: files });
+            const messageAttachments = await Promise.all(files.map(createMessageAttachmentMetadata));
+            const messageMetadata = {
+                ...(messageAttachments.length ? { attachments: messageAttachments } : {}),
+                ...(messageReferences.length ? { canvasReferences: messageReferences } : {}),
+                ...(messageSkill ? { skill: messageSkill } : {}),
+            };
             const modelName = models.find((item) => item.model === model)?.displayName || model || rt("defaultModel");
             const effortName = reasoningEffort ? i18n.t(`agent.composer.effort.${reasoningEffort}`) : rt("defaultEffort");
-            addEventLog(rt("sendTask"), `${modelName} · ${effortName}${selectedSkill ? ` · Skill ${selectedSkill.name}` : ""}${files.length ? ` · ${rt("attachmentCount", { count: files.length })}` : ""} · ${compactText(text) || rt("attachmentsOnly")}`);
+            addEventLog(rt("sendTask"), `${modelName} · ${effortName}${selectedSkill ? ` · Skill ${selectedSkill.name}` : ""}${files.length ? ` · ${rt("attachmentCount", { count: files.length })}` : ""}${canvasReferences.length ? ` · ${rt("canvasReferenceCount", { count: canvasReferences.length })}` : ""} · ${compactText(text) || rt(canvasReferences.length ? "canvasReferencesOnly" : "attachmentsOnly")}`);
             const accepted = await fetchAgentJson<AgentTurnResponse>(endpoint, token, "/agent/codex/turn", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
@@ -684,23 +696,18 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     model,
                     effort: reasoningEffort,
                     skill: selectedSkill ? { name: selectedSkill.name, path: selectedSkill.path } : undefined,
-                    attachments: files.map(({ id, name, type, size, width, height, dataUrl }) => ({ id, name, type, size, width, height, dataUrl })),
+                    attachments: requestFiles.map(({ id, name, type, size, width, height, dataUrl }) => ({ id, name, type, size, width, height, dataUrl })),
+                    messageMetadata,
                 }),
             });
             threadId = accepted.threadId || threadId;
             if (!threadId) throw new Error(rt("startConversationFailed"));
             if (selectedSkill) clearSkillSelection(selectedSkillRevision);
-            if (files.length) {
-                const latestMessage = useAgentStore.getState().messages.find((item) => item.clientMessageId === messageId);
-                const acceptedThreadId = latestMessage?.threadId || threadId;
-                await bindPendingAgentUserMessage(acceptedThreadId, messageId, latestMessage?.turnId || "").catch((error) => addEventLog(rt("attachmentHistoryFailed"), error));
-            }
             files.forEach((item) => {
                 URL.revokeObjectURL(item.url);
                 attachmentUrlsRef.current.delete(item.url);
             });
         } catch (error) {
-            if (files.length) await deletePendingAgentUserMessage(messageId).catch(() => undefined);
             const text = error instanceof Error ? error.message : rt("sendFailed");
             const response = error instanceof AgentApiError ? error.response as { code?: string; state?: AgentConversationState } : undefined;
             if (response?.state) applyConversationState(response.state);
@@ -713,7 +720,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 if (next.length !== messages.length) threadMessagesRef.current.set(cachedThreadId, next);
             });
             const ownsCurrentThread = state.activeThreadId === (threadId || requestThreadId);
-            const restoreDraft = state.prompt || state.attachments.length ? {} : { prompt, attachments: files };
+            const restoreDraft = state.prompt || state.attachments.length || state.canvasReferences.length ? {} : { prompt, attachments: files, canvasReferences };
             if (ownsCurrentThread) {
                 setAgentState({
                     activity: rt(stale ? "conversationSynced" : busy ? "codexRunning" : "sendFailed"),
@@ -1029,20 +1036,16 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const deleteThreads = async (threadIds: string[]) => {
         if (!connected || !threadIds.length || sending || waiting || loadingThreads) return;
         const operation = beginThreadOperation();
-        const deletedThreadIds: string[] = [];
+        let deletedCount = 0;
         try {
             for (const threadId of new Set(threadIds)) {
                 await fetchAgentJson(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current }) });
                 threadMessagesRef.current.delete(threadId);
-                deletedThreadIds.push(threadId);
+                deletedCount += 1;
             }
-            void deleteAgentThreadMessages(deletedThreadIds).catch(() => undefined);
             await loadThreads();
-            message.success(rt("recordsDeleted", { count: deletedThreadIds.length }));
+            message.success(rt("recordsDeleted", { count: deletedCount }));
         } catch (error) {
-            if (deletedThreadIds.length) {
-                void deleteAgentThreadMessages(deletedThreadIds).catch(() => undefined);
-            }
             await loadThreads();
             addEventLog(rt("deleteConversationFailed"), error);
             message.error(error instanceof Error ? error.message : rt("deleteConversationFailed"));
@@ -1373,7 +1376,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     {tokenUsage ? <AgentUsageBar usage={tokenUsage} theme={theme} /> : null}
                     <AgentChatComposer
                         prompt={prompt}
-                        attachments={attachments.map(agentAttachmentToChatAttachment)}
+                        attachments={attachments.map((attachment) => agentAttachmentToChatAttachment(attachment, endpoint, token))}
                         disabled={!connected || !conversationReady || loadingThreads}
                         sending={sending || waiting}
                         placeholder={conversation.status === "idle" || conversation.status === "preparing"
@@ -1520,6 +1523,13 @@ async function attachmentNodeOps(endpoint: string, token: string, clientId: stri
 
 function createId() {
     return randomId();
+}
+
+async function createMessageAttachmentMetadata(item: AgentAttachment) {
+    const url = Math.max(item.width, item.height) > MESSAGE_PREVIEW_LONG_EDGE || item.dataUrl.length > MESSAGE_PREVIEW_MAX_LENGTH
+        ? await upscaleDataUrl(item.dataUrl, { targetLongEdge: MESSAGE_PREVIEW_LONG_EDGE, algorithm: "high" })
+        : item.dataUrl;
+    return { id: item.id, name: item.name, type: item.type, size: item.size, width: item.width, height: item.height, url };
 }
 
 function clamp(value: number, min: number, max: number) {

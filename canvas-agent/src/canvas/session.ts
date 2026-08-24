@@ -23,7 +23,7 @@ export type ConversationState = {
     error?: string;
 };
 type McpInventoryItem = { name: string; authStatus?: string };
-export const AGENT_PROTOCOL_VERSION = 5;
+export const AGENT_PROTOCOL_VERSION = 6;
 
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",

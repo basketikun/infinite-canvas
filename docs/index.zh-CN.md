@@ -21,7 +21,6 @@
 ## 商务合作
 
 - [开源协议](/zh-CN/docs/business/license)
-- [贡献者协议](/zh-CN/docs/business/cla)
 - [商务合作](/zh-CN/docs/business/business)
 
 ## 支持与安全
