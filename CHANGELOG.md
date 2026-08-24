@@ -3,6 +3,7 @@
 ## Unreleased
 
 + [修复] Canvas Agent 转发 CLI 错误日志前脱敏常见凭据，避免调试日志和浏览器事件流泄露密钥。
++ [修复] GPT Image 模型请求不再发送不受支持的 `response_format` 参数。
 
 ## v0.16.0 - 2026-08-18
 
