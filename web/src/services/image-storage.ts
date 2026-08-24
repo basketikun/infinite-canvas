@@ -53,7 +53,9 @@ export async function setImageBlob(storageKey: string, blob: Blob) {
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }) {
     const url = image.dataUrl || (await resolveImageUrl(image.storageKey, image.url || ""));
     if (!url || url.startsWith("data:")) return url;
-    return blobToDataUrl(await (await fetch(url)).blob());
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(i18n.t("common.imageReadFailed"));
+    return blobToDataUrl(await response.blob());
 }
 
 export async function deleteStoredImages(keys: Iterable<string>) {

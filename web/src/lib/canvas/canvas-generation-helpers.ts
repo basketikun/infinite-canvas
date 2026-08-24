@@ -83,11 +83,12 @@ export function getGenerationCount(count: string) {
 }
 
 export function getInputSummary(inputs: NodeGenerationInput[]) {
+    const resources = [...new Map(inputs.flatMap((input) => (input.type === "group" ? input.children : [input])).map((input) => [input.nodeId, input])).values()];
     return {
-        textCount: inputs.filter((input) => input.type === "text").length,
-        imageCount: inputs.filter((input) => input.type === "image").length,
-        videoCount: inputs.filter((input) => input.type === "video").length,
-        audioCount: inputs.filter((input) => input.type === "audio").length,
+        textCount: resources.filter((input) => input.type === "text").length,
+        imageCount: resources.filter((input) => input.type === "image").length,
+        videoCount: resources.filter((input) => input.type === "video").length,
+        audioCount: resources.filter((input) => input.type === "audio").length,
     };
 }
 
@@ -121,6 +122,7 @@ export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
                       status: "error" as const,
                       errorDetails: i18n.t("canvas.generation.interrupted"),
                       images: node.metadata.images?.map((image) => (image.status === "loading" ? { ...image, status: "error" as const, errorDetails: i18n.t("canvas.generation.interrupted") } : image)),
+                      texts: node.metadata.texts?.map((text) => (text.status === "loading" ? { ...text, status: "error" as const, errorDetails: i18n.t("canvas.generation.interrupted") } : text)),
                   },
               }
             : node,
