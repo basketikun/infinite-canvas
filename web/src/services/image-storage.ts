@@ -19,13 +19,48 @@ const videoLogStore = localforage.createInstance({ name: "infinite-canvas", stor
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    if (typeof input === "string") {
+        try {
+            const response = await fetch(input);
+            if (!response.ok) throw new Error(`image download failed: HTTP ${response.status}`);
+            return uploadImageBlob(await response.blob());
+        } catch (error) {
+            // Cross-origin image hosts may allow display but block fetch. Keep the usable remote URL instead of failing a successful generation.
+            const remote = await readRemoteImageMeta(input);
+            if (remote) return { url: input, storageKey: "", ...remote };
+            throw error;
+        }
+    }
+    return uploadImageBlob(input);
+}
+
+async function uploadImageBlob(blob: Blob): Promise<UploadedImage> {
     const storageKey = `image:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = await readImageMeta(url);
     return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+}
+
+function readRemoteImageMeta(url: string) {
+    if (!/^https?:\/\//i.test(url)) return Promise.resolve<Pick<UploadedImage, "width" | "height" | "bytes" | "mimeType"> | null>(null);
+    return new Promise<Pick<UploadedImage, "width" | "height" | "bytes" | "mimeType"> | null>((resolve) => {
+        const image = new Image();
+        const timer = window.setTimeout(() => resolve(null), 5000);
+        const finish = (value: Pick<UploadedImage, "width" | "height" | "bytes" | "mimeType"> | null) => {
+            window.clearTimeout(timer);
+            resolve(value);
+        };
+        image.onload = () => finish({ width: image.naturalWidth || 1024, height: image.naturalHeight || 1024, bytes: 0, mimeType: imageMimeType(url) });
+        image.onerror = () => finish(null);
+        image.src = url;
+    });
+}
+
+function imageMimeType(url: string) {
+    const extension = url.split(/[?#]/, 1)[0].match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+    return extension === "jpg" || extension === "jpeg" ? "image/jpeg" : extension === "webp" ? "image/webp" : extension === "gif" ? "image/gif" : "image/png";
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {
