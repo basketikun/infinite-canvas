@@ -355,6 +355,8 @@ export default {
         updateFailed: "Failed to load the latest version information",
         types: { added: "Added", fixed: "Fixed", changed: "Changed", optimized: "Optimized", docs: "Docs" },
     },
+    imageChannelPicker: { summary: "{{model}} · {{count}} providers", concurrency: "Concurrency {{count}}", empty: "Configure an image model provider first" },
+    imageChannelBadge: { showAlways: "{{channel}} · {{model}}; click to keep provider labels visible", autoHide: "{{channel}} · {{model}}; click to return to auto-hide" },
     config: {
         title: "Settings & Preferences",
         invalidFile: "The settings file format is invalid",

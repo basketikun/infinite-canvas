@@ -355,6 +355,8 @@ export default {
         updateFailed: "获取最新版本信息失败",
         types: { added: "新增", fixed: "修复", changed: "调整", optimized: "优化", docs: "文档" },
     },
+    imageChannelPicker: { summary: "{{model}} · {{count}} 个渠道", concurrency: "并发 {{count}}", empty: "请先配置生图模型渠道" },
+    imageChannelBadge: { showAlways: "{{channel}} · {{model}}；点击常驻显示", autoHide: "{{channel}} · {{model}}；点击恢复自动隐藏" },
     config: {
         title: "配置与用户偏好",
         invalidFile: "配置文件格式不正确",
