@@ -10,7 +10,10 @@ export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
 export type ChannelModel = {
+    /** Actual model identifier sent to this channel. */
     name: string;
+    /** Optional logical name used to group equivalent models across channels. */
+    alias?: string;
     capability: ModelCapability;
     script?: string;
 };
@@ -21,6 +24,8 @@ export type ModelChannel = {
     baseUrl: string;
     apiKey: string;
     apiFormat: ApiCallFormat;
+    /** Requests dispatched to this channel at the same time; defaults to 1 when absent. */
+    maxConcurrency?: number;
     models: ChannelModel[];
 };
 
@@ -32,6 +37,8 @@ export type AiConfig = {
     channels: ModelChannel[];
     model: string;
     imageModel: string;
+    /** Channel-qualified image models sharing one alias; falls back to imageModel when absent. */
+    imageModelTargets?: string[];
     videoModel: string;
     textModel: string;
     audioModel: string;
@@ -79,6 +86,7 @@ export const defaultConfig: AiConfig = {
             baseUrl: OPENAI_BASE_URL,
             apiKey: "",
             apiFormat: "openai",
+            maxConcurrency: 1,
             models: [
                 { name: "gpt-image-2", capability: "image" },
                 { name: "grok-imagine-video", capability: "video" },
@@ -89,6 +97,7 @@ export const defaultConfig: AiConfig = {
     ],
     model: "default::gpt-image-2",
     imageModel: "default::gpt-image-2",
+    imageModelTargets: ["default::gpt-image-2"],
     videoModel: "default::grok-imagine-video",
     textModel: "default::gpt-5.5",
     audioModel: "default::gpt-4o-mini-tts",
@@ -125,6 +134,7 @@ type ConfigStore = {
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
+    setImageModelTargets: (targets: string[]) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey) => void;
@@ -152,8 +162,10 @@ export function guessCapability(name: string): ModelCapability {
 function findChannelModel(config: AiConfig, value: string): { channel: ModelChannel; model: ChannelModel } | null {
     const decoded = decodeChannelModel(value);
     const name = decoded?.model || value;
-    const channel = decoded ? config.channels.find((item) => item.id === decoded.channelId) : config.channels.find((item) => item.models.some((model) => model.name === name));
-    const model = channel?.models.find((item) => item.name === name);
+    const exactChannel = config.channels.find((item) => item.models.some((model) => model.name === name));
+    const aliasChannel = config.channels.find((item) => item.models.some((model) => model.alias?.trim() === name));
+    const channel = decoded ? config.channels.find((item) => item.id === decoded.channelId) : exactChannel || aliasChannel;
+    const model = channel?.models.find((item) => item.name === name || (!decoded && item.alias?.trim() === name));
     return channel && model ? { channel, model } : null;
 }
 
@@ -204,6 +216,11 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+            setImageModelTargets: (targets) =>
+                set((state) => {
+                    const imageModelTargets = normalizeImageModelTargets(targets[0] || state.config.imageModel, targets, state.config.channels);
+                    return { config: { ...state.config, imageModelTargets } };
+                }),
             updateWebdavConfig: (key, value) =>
                 set((state) => ({
                     webdav: {
@@ -227,6 +244,7 @@ export const useConfigStore = create<ConfigStore>()(
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
                 const channels = normalizeChannels(config);
                 const models = modelOptionsFromChannels(channels);
+                const imageModel = normalizeModelOptionValue(config.imageModel || config.model, channels);
                 return {
                     ...current,
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
@@ -236,7 +254,8 @@ export const useConfigStore = create<ConfigStore>()(
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
-                        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
+                        imageModel,
+                        imageModelTargets: normalizeImageModelTargets(imageModel, config.imageModelTargets, channels),
                         videoModel: normalizeModelOptionValue(config.videoModel, channels),
                         textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
                         audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
@@ -271,8 +290,9 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         if (!name || seen.has(name)) continue;
         seen.add(name);
         const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
+        const alias = typeof item === "string" ? undefined : item.alias?.trim() || undefined;
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
-        result.push({ name, capability, script });
+        result.push({ name, alias, capability, script });
     }
     return result;
 }
@@ -285,6 +305,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         baseUrl: channel?.baseUrl?.trim() || defaultBaseUrlForApiFormat(apiFormat),
         apiKey: channel?.apiKey || "",
         apiFormat,
+        maxConcurrency: normalizeChannelConcurrency(channel?.maxConcurrency),
         models: normalizeChannelModels(channel?.models),
     };
 }
@@ -307,11 +328,25 @@ export function modelOptionName(value: string) {
     return decodeChannelModel(value)?.model || value;
 }
 
+export function modelOptionAlias(config: AiConfig, value: string) {
+    const matched = findChannelModel(config, value);
+    return matched?.model.alias?.trim() || matched?.model.name || modelOptionName(value);
+}
+
 export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
     const channel = config.channels.find((item) => item.id === decoded.channelId);
-    return channel ? `${decoded.model}（${channel.name}）` : decoded.model;
+    const model = channel?.models.find((item) => item.name === decoded.model);
+    const alias = model?.alias?.trim() || decoded.model;
+    const callName = alias !== decoded.model ? ` · ${decoded.model}` : "";
+    return channel ? `${alias}（${channel.name}${callName}）` : `${alias}${callName}`;
+}
+
+export function modelOptionChannelName(channels: ModelChannel[], value: string) {
+    const decoded = decodeChannelModel(value);
+    if (!decoded) return "";
+    return channels.find((channel) => channel.id === decoded.channelId)?.name || decoded.channelId;
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
@@ -326,8 +361,11 @@ export function normalizeModelOptionValue(value: string | undefined, channels: M
         const channel = channels.find((item) => item.id === decoded.channelId);
         return channel && channel.models.some((item) => item.name === decoded.model) ? model : "";
     }
-    const channel = channels.find((item) => item.models.some((entry) => entry.name === model)) || channels[0];
-    return channel && channel.models.some((item) => item.name === model) ? encodeChannelModel(channel.id, model) : model;
+    const exactChannel = channels.find((item) => item.models.some((entry) => entry.name === model));
+    if (exactChannel) return encodeChannelModel(exactChannel.id, model);
+    const aliasChannel = channels.find((item) => item.models.some((entry) => entry.alias?.trim() === model));
+    const aliasModel = aliasChannel?.models.find((entry) => entry.alias?.trim() === model);
+    return aliasChannel && aliasModel ? encodeChannelModel(aliasChannel.id, aliasModel.name) : model;
 }
 
 export function resolveModelChannel(config: AiConfig, value: string) {
@@ -338,14 +376,39 @@ export function resolveModelChannel(config: AiConfig, value: string) {
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
-    const channel = resolveModelChannel(config, value);
+    const matched = findChannelModel(config, value);
+    const channel = matched?.channel || resolveModelChannel(config, value);
     return {
         ...config,
-        model: modelOptionName(value || config.model),
+        model: matched?.model.name || modelOptionName(value || config.model),
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
     };
+}
+
+/** Keep only the image targets that share one alias, falling back to the primary model when nothing matches. */
+export function normalizeImageModelTargets(primary: string, targets: string[] | undefined, channels: ModelChannel[]) {
+    const normalizedPrimary = normalizeModelOptionValue(primary, channels);
+    const isImageTarget = (value: string) => {
+        const decoded = decodeChannelModel(value);
+        const channel = decoded ? channels.find((item) => item.id === decoded.channelId) : undefined;
+        return Boolean(decoded && channel?.models.some((model) => model.name === decoded.model && model.capability === "image"));
+    };
+    const selected = Array.from(new Set((Array.isArray(targets) ? targets : []).map((value) => normalizeModelOptionValue(value, channels)).filter(isImageTarget)));
+    const aliasOf = (value: string) => {
+        const decoded = decodeChannelModel(value);
+        const model = decoded ? channels.find((item) => item.id === decoded.channelId)?.models.find((item) => item.name === decoded.model) : undefined;
+        return model?.alias?.trim() || modelOptionName(value);
+    };
+    const modelAlias = aliasOf(selected[0] || normalizedPrimary);
+    const normalized = selected.filter((value) => aliasOf(value) === modelAlias);
+    if (normalized.length) return normalized;
+    return normalizedPrimary && isImageTarget(normalizedPrimary) ? [normalizedPrimary] : [];
+}
+
+export function normalizeChannelConcurrency(value: unknown) {
+    return Math.max(1, Math.min(20, Math.floor(Math.abs(Number(value)) || 1)));
 }
 
 function normalizeChannels(config: AiConfig) {
