@@ -32,7 +32,8 @@ export async function resolveCanvasReferenceImages(references: CanvasResourceRef
         const node = nodesById.get(reference.nodeId);
         if (!node) throw new Error(i18n.t("agent.composer.mentions.resourceMissing", { title: reference.title }));
         const metadata = node.metadata;
-        const dataUrl = await imageToDataUrl({ storageKey: metadata?.storageKey, url: reference.previewUrl });
+        // Keep the per-reference message below: imageToDataUrl now throws instead of returning an empty string.
+        const dataUrl = await imageToDataUrl({ storageKey: metadata?.storageKey, url: reference.previewUrl }).catch(() => "");
         if (!dataUrl.startsWith("data:image/")) throw new Error(i18n.t("agent.composer.mentions.imageReadFailed", { title: reference.title }));
         const meta = metadata?.naturalWidth && metadata.naturalHeight
             ? { width: metadata.naturalWidth, height: metadata.naturalHeight, mimeType: metadata.mimeType || dataUrl.match(/^data:([^;]+)/)?.[1] || "image/png" }

@@ -18,6 +18,14 @@ const imageLogStore = localforage.createInstance({ name: "infinite-canvas", stor
 const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
 const objectUrls = new Map<string, string>();
 
+// A reference image or a stored file could not be read locally, so retrying the same request on another channel cannot help.
+export class ImageReadError extends Error {
+    constructor() {
+        super(i18n.t("common.imageReadFailed"));
+        this.name = "ImageReadError";
+    }
+}
+
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
     const storageKey = `image:${nanoid()}`;
@@ -52,9 +60,14 @@ export async function setImageBlob(storageKey: string, blob: Blob) {
 
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }) {
     const url = image.dataUrl || (await resolveImageUrl(image.storageKey, image.url || ""));
-    if (!url || url.startsWith("data:")) return url;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(i18n.t("common.imageReadFailed"));
+    if (url.startsWith("data:")) return url;
+    // Every failure here has to be an ImageReadError, or the scheduler treats it as a channel fault and repeats the
+    // same broken read on every remaining channel. An unresolvable source used to return "" and send an empty reference.
+    if (!url) throw new ImageReadError();
+    const response = await fetch(url).catch(() => {
+        throw new ImageReadError();
+    });
+    if (!response.ok) throw new ImageReadError();
     return blobToDataUrl(await response.blob());
 }
 
@@ -97,7 +110,7 @@ function blobToDataUrl(blob: Blob) {
     return new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error(i18n.t("common.imageReadFailed")));
+        reader.onerror = () => reject(new ImageReadError());
         reader.readAsDataURL(blob);
     });
 }

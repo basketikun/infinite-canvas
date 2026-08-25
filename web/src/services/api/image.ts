@@ -6,7 +6,7 @@ import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
-import { imageToDataUrl } from "@/services/image-storage";
+import { ImageReadError, imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
@@ -806,6 +806,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         try {
             return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
         } catch (error) {
+            // A reference image failed to read locally; keep the original error so the caller can tell it apart from a channel failure.
+            if (error instanceof ImageReadError) throw error;
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
