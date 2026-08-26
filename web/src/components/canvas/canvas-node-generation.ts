@@ -47,14 +47,13 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const resourceInputs = flattenGenerationInputs(inputs);
     const upstreamText = resourceInputs
         .map((input) => input.text)
-        .filter(Boolean)
-        .join("\n\n");
+        .filter((text): text is string => Boolean(text));
     const referenceImages = resourceInputs.map((input) => input.image).filter((image): image is ReferenceImage => Boolean(image));
     const referenceVideos = resourceInputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
     const referenceAudios = resourceInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     return {
-        prompt: upstreamText ? `${prompt}\n\n${upstreamText}` : prompt,
+        prompt: appendDistinctTextInputs(prompt, upstreamText),
         referenceImages,
         referenceVideos,
         referenceAudios,
@@ -63,6 +62,29 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
         videoCount: referenceVideos.length,
         audioCount: referenceAudios.length,
     };
+}
+
+function appendDistinctTextInputs(prompt: string, inputs: string[]) {
+    const promptBlocks = splitTextBlocks(prompt);
+    const blocks = [...promptBlocks];
+    const seen = new Set(promptBlocks.map(normalizeTextBlock));
+
+    inputs.flatMap(splitTextBlocks).forEach((block) => {
+        const normalized = normalizeTextBlock(block);
+        if (seen.has(normalized)) return;
+        seen.add(normalized);
+        blocks.push(block);
+    });
+
+    return blocks.join("\n\n");
+}
+
+function splitTextBlocks(value: string) {
+    return value.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+}
+
+function normalizeTextBlock(value: string) {
+    return value.replace(/\s+/g, " ").toLowerCase();
 }
 
 function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: string): NodeGenerationContext {

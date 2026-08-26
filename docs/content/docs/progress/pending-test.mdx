@@ -7,6 +7,7 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
+- Connected prompt deduplication: ordinary generation flows should append each distinct connected text block once, skip blocks already present in the typed prompt regardless of case or whitespace, and preserve the original order of all remaining text.
 - Canvas Agent generation-flow references: when a generation prompt contains only `@[node:...]` references already passed through `referenceNodeIds`, the existing text, image, video, audio, or group nodes should connect directly to the generated config node without creating a duplicate prompt text node; prompts containing ordinary prose should continue creating their own prompt text node.
 - Video frame capture: right-clicking a video node with content should show Capture first frame, Capture last frame, and Capture current frame. Each action should create and select a proportional image node to the right, connect the video to the image, use the player's visible position for the current frame, and leave the original playback position unchanged.
 - Text nodes: the Generate button should no longer appear in the upper-right corner of the node body, and text should use the full content area. The image-generation action in the hover toolbar should continue to create a generation configuration.
