@@ -232,6 +232,18 @@ export const useConfigStore = create<ConfigStore>()(
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
                 const channels = normalizeChannels(config);
                 const models = modelOptionsFromChannels(channels);
+                // Models without a user script keep the stored capability only when keyword matching agrees;
+                // otherwise (e.g. mis-tagged "inkling"→video from older builds) they fall back to re-guessing.
+                for (const channel of channels) {
+                    channel.models = channel.models.map((model) => (model.script || model.capability === guessCapability(model.name) ? model : { ...model, capability: guessCapability(model.name) }));
+                }
+                // Default model per capability must actually match that capability; mismatched persisted
+                // defaults (e.g. a text model saved as the video default) are cleared instead of kept.
+                const capabilityOf = (value: string) => findChannelModel({ ...config, channels }, value)?.model.capability;
+                const validOrDefault = (value: string, capability: ModelCapability) => {
+                    const normalized = normalizeModelOptionValue(value, channels);
+                    return normalized && capabilityOf(normalized) === capability ? normalized : "";
+                };
                 return {
                     ...current,
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
@@ -241,10 +253,10 @@ export const useConfigStore = create<ConfigStore>()(
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
-                        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
-                        videoModel: normalizeModelOptionValue(config.videoModel, channels),
-                        textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
-                        audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
+                        imageModel: validOrDefault(config.imageModel || config.model, "image"),
+                        videoModel: validOrDefault(config.videoModel, "video"),
+                        textModel: validOrDefault(config.textModel || config.model, "text"),
+                        audioModel: validOrDefault(config.audioModel || defaultConfig.audioModel, "audio"),
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
                         audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
