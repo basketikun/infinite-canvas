@@ -61,13 +61,14 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
 
     const fetchModels = async () => {
         if (!channel) return;
-        if (!channel.baseUrl.trim() || !channel.apiKey.trim()) {
+        const keylessFetch = channel.baseUrl.includes("openrouter.ai");
+        if (!keylessFetch && (!channel.baseUrl.trim() || !channel.apiKey.trim())) {
             message.error(t("config.modelSelect.missingConfig"));
             return;
         }
         setLoading(true);
         try {
-            const models = await fetchChannelModels(channel);
+            const models = await fetchChannelModels(channel, keylessFetch);
             setFetched(models);
             setActiveTab("new");
             message.success(t("config.modelSelect.fetched", { count: models.length }));

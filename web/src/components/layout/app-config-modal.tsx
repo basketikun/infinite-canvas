@@ -13,7 +13,9 @@ import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { channelFromPreset, enrichModelsForChannel, fetchPresetModels, type ProviderPreset } from "@/lib/provider-presets";
+import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ChannelModel, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { ProviderPickerModal } from "@/components/layout/provider-picker-modal";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -93,7 +95,32 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const updateChannels = (channels: ModelChannel[]) => saveConfig(withChannels(config, channels));
 
-    const addChannel = () => {
+    const [pickerOpen, setPickerOpen] = useState(false);
+
+    /** Insert a preset channel immediately, then auto-fetch its live catalog in the background (no key needed for public catalogs). */
+    const addPresetChannel = (preset: ProviderPreset) => {
+        const channel = channelFromPreset(preset);
+        updateChannels([...config.channels, channel]);
+        setEditingChannelId(channel.id);
+        if (!preset.fetchModels) return;
+        void (async () => {
+            try {
+                const ids = await fetchPresetModels(preset);
+                const latest = useConfigStore.getState().config;
+                const target = latest.channels.find((item) => item.id === channel.id);
+                if (!target) return; // user deleted the channel while fetching
+                const merged = mergeChannelModels(target.models, enrichModelsForChannel(target, ids));
+                updateChannels(latest.channels.map((item) => (item.id === channel.id ? { ...item, models: merged } : item)));
+                message.success(t("config.providers.fetched", { count: merged.length }));
+            } catch {
+                // curated fallback models stay in place; user can still fetch manually after pasting a key
+            }
+        })();
+    };
+
+    const addChannel = () => setPickerOpen(true);
+
+    const addCustomChannel = () => {
         const channel = createModelChannel({ name: t("config.channels.numberedName", { count: config.channels.length + 1 }) });
         updateChannels([...config.channels, channel]);
         setEditingChannelId(channel.id);
@@ -327,6 +354,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 </div>
             ) : null}
             <ChannelEditorDrawer open={Boolean(editingChannel)} channel={editingChannel} onSave={saveChannel} onClose={() => setEditingChannelId("")} />
+            <ProviderPickerModal open={pickerOpen} onPick={addPresetChannel} onCustom={addCustomChannel} onClose={() => setPickerOpen(false)} />
         </>
     );
 }
@@ -354,6 +382,13 @@ export function AppConfigModal() {
             <AppConfigPanel showDoneButton initialTab={configTab} />
         </Modal>
     );
+}
+
+/** Union two model lists by name, keeping existing entries (capabilities/scripts) intact. */
+function mergeChannelModels(current: ChannelModel[], incoming: ChannelModel[]): ChannelModel[] {
+    const map = new Map(current.map((model) => [model.name, model]));
+    for (const model of incoming) if (!map.has(model.name)) map.set(model.name, model);
+    return Array.from(map.values());
 }
 
 function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {

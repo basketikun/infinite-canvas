@@ -132,7 +132,7 @@ type ConfigStore = {
     clearPromptContinue: () => void;
 };
 
-const VIDEO_KEYWORDS = ["video", "sora", "veo", "kling", "wan", "hailuo"];
+const VIDEO_KEYWORDS = ["video", "sora", "veo", "veo3", "kling", "wan", "hailuo"];
 
 export function boolConfig(value: string, fallback: boolean) {
     return value ? value === "true" : fallback;
@@ -140,12 +140,17 @@ export function boolConfig(value: string, fallback: boolean) {
 const AUDIO_KEYWORDS = ["audio", "tts", "speech", "voice", "music", "sound"];
 const IMAGE_KEYWORDS = ["seedream", "gpt-image", "image", "dall-e", "dalle", "imagen", "flux", "sdxl", "stable-diffusion", "midjourney"];
 
+/** Keyword match on separator-delimited tokens, so e.g. "inkling" no longer matches "kling". */
+function matchesCapabilityKeyword(value: string, keywords: string[]) {
+    const tokens = value.toLowerCase().split(/[^a-z0-9]+/);
+    return keywords.some((keyword) => tokens.includes(keyword));
+}
+
 /** Best-effort default capability for a freshly fetched model name; user can override in the channel editor. */
 export function guessCapability(name: string): ModelCapability {
-    const value = name.toLowerCase();
-    if (VIDEO_KEYWORDS.some((keyword) => value.includes(keyword))) return "video";
-    if (AUDIO_KEYWORDS.some((keyword) => value.includes(keyword))) return "audio";
-    if (IMAGE_KEYWORDS.some((keyword) => value.includes(keyword))) return "image";
+    if (matchesCapabilityKeyword(name, VIDEO_KEYWORDS)) return "video";
+    if (matchesCapabilityKeyword(name, AUDIO_KEYWORDS)) return "audio";
+    if (matchesCapabilityKeyword(name, IMAGE_KEYWORDS)) return "image";
     return "text";
 }
 
