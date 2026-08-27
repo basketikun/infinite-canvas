@@ -214,7 +214,7 @@ form.set("prompt", prompt);
 form.set("n", String(params.count));
 form.set("response_format", "b64_json");
 for (const dataUrl of images) {
-  form.append("image", await (await fetch(dataUrl)).blob(), "ref.png");
+  form.append("image[]", await (await fetch(dataUrl)).blob(), "ref.png");
 }
 const edited = await request({
   method: "post",

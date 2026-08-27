@@ -776,11 +776,29 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
+    const quality = normalizeQuality(config.quality);
+    const requestSize = resolveRequestSize(quality, config.size);
+    const background = normalizeBackground(config.background);
+    const requestJsonEdit = async () => {
+        const images = await Promise.all(references.map((image) => imageToDataUrl(image)));
+        const response = await axios.post<ImageApiResponse>(
+            aiApiUrl(requestConfig, "/images/edits"),
+            {
+                model: requestConfig.model,
+                prompt: withSystemPrompt(requestConfig, requestPrompt),
+                images: images.map((image_url) => ({ image_url })),
+                n,
+                output_format: IMAGE_OUTPUT_FORMAT,
+                ...(quality ? { quality } : {}),
+                ...(requestSize ? { size: requestSize } : {}),
+                ...(background ? { background } : {}),
+            },
+            { headers: aiHeaders(requestConfig, "application/json"), signal: options?.signal },
+        );
+        return parseImagePayload(response.data);
+    };
     const script = resolveModelScript(config, config.model || config.imageModel);
     if (script) {
-        const quality = normalizeQuality(config.quality);
-        const requestSize = resolveRequestSize(quality, config.size);
-        const background = normalizeBackground(config.background);
         const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
         try {
             const result = await runModelPlugin({
@@ -794,7 +812,15 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             });
             return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
         } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
+            const message = readAxiosError(error, apiText("requestFailed"));
+            if (references.length > 1 && !mask && /Duplicate parameter: ['"]?image/i.test(message)) {
+                try {
+                    return await requestJsonEdit();
+                } catch (fallbackError) {
+                    throw new Error(readAxiosError(fallbackError, message));
+                }
+            }
+            throw new Error(message);
         }
     }
     if (requestConfig.apiFormat === "gemini") {
@@ -806,9 +832,6 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         }
     }
 
-    const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
-    const background = normalizeBackground(config.background);
     const formData = new FormData();
     formData.set("model", requestConfig.model);
     formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));
@@ -828,7 +851,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         formData.set("background", background);
     }
     const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-    files.forEach((file) => formData.append("image", file));
+    files.forEach((file) => formData.append(references.length > 1 ? "image[]" : "image", file));
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
