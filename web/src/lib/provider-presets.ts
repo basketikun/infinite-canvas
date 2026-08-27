@@ -14,8 +14,12 @@ export type ProviderPreset = {
     capabilities?: Record<string, ModelCapability>;
     /** Per-model API call script overrides (keyed by model id). */
     scripts?: Record<string, string>;
-    /** Attached to every image-capable model (for providers whose image endpoint differs). */
-    imageScript?: string;
+    /**
+     * Fallback call script per capability, attached to every model of that capability that has no
+     * entry in `scripts`. Providers whose API is not OpenAI-compatible (fal queue, Replicate
+     * predictions) need one for every model their catalog returns, not just the curated few.
+     */
+    capabilityScripts?: Partial<Record<ModelCapability, string>>;
     /** Fetch the live catalog with an API key, including whatever metadata the provider publishes. */
     fetchModels?: (apiKey: string) => Promise<CatalogModel[]>;
     /** True when the public catalog is readable without a key (OpenRouter). */
@@ -30,6 +34,7 @@ type OpenRouterModel = {
 };
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+const FAL_CATALOG_URL = "https://api.fal.ai/v1/models";
 
 /** OpenAI-compatible providers: GET {base}/models with Bearer auth. Publishes ids only, no metadata. */
 async function fetchOpenAiCompatible(baseUrl: string, apiKey: string): Promise<CatalogModel[]> {
@@ -139,6 +144,46 @@ return ${extract};`;
 
 const FAL_IMAGE_SCRIPT = falQueue("(result.images || []).map((img) => img.url).filter(Boolean)");
 const FAL_VIDEO_SCRIPT = falQueue("result.video?.url || \"\"");
+const FAL_AUDIO_SCRIPT = falQueue("{ url: result.audio?.url || result.audio_url || \"\" }");
+
+/**
+ * fal LLM / vision endpoints also go through the queue API, so they cannot use the default
+ * OpenAI-compatible chat path. Messages are flattened into a single prompt because the queue
+ * endpoints take `prompt` plus an optional `system_prompt` rather than a message array.
+ */
+const FAL_TEXT_SCRIPT = `// fal.ai text generation (queued LLM endpoints)
+const headers = { Authorization: "Key " + apiKey };
+const history = (messages || []).filter((item) => item.role !== "system");
+const payload = { prompt: history.map((item) => item.content).join("\n\n") };
+if (systemPrompt) payload.system_prompt = systemPrompt;
+const queued = await http.post("https://queue.fal.run/" + model, payload, { headers });
+const base = "https://queue.fal.run/" + model + "/requests/" + queued.request_id;
+await poll(
+  () => http.get(base + "/status", { headers }),
+  (status) => status.status === "COMPLETED"
+);
+const result = await http.get(base, { headers });
+const text = result.output || result.response || "";
+if (text) onDelta(text);
+return text;`;
+
+/**
+ * Replicate image models: same predictions API as video, but the output is one or more image URLs.
+ * Reference images go in `input.image`, the most common field name across Replicate image models —
+ * models that name it differently (flux-kontext uses `input_image`) need this script edited.
+ */
+const REPLICATE_IMAGE_SCRIPT = `// Replicate predictions API (image)
+const headers = { Authorization: "Bearer " + apiKey, Prefer: "wait" };
+const input = { prompt };
+if (images && images.length) input.image = images[0];
+const pred = await http.post("https://api.replicate.com/v1/models/" + model + "/predictions", { input }, { headers });
+let output = pred.output;
+if (!output) {
+  const done = await poll(() => http.get(pred.urls.get, { headers }), (p) => p.status === "succeeded" || p.status === "failed");
+  if (done.status === "failed") throw new Error(done.error || "generation failed");
+  output = done.output;
+}
+return Array.isArray(output) ? output.filter(Boolean) : [output].filter(Boolean);`;
 
 /** Replicate predictions API: sync call via Prefer: wait, poll fallback, output is a URL. */
 const REPLICATE_VIDEO_SCRIPT = `// Replicate predictions API (video)
@@ -180,6 +225,109 @@ const uri = done.response?.generatedVideos?.[0]?.video?.uri;
 if (!uri) throw new Error("no video returned");
 return uri + (uri.includes("?") ? "&" : "?") + "key=" + apiKey;`;
 
+/** fal categories read as "{input}-to-{output}"; the output half is the capability we store. */
+const FAL_OUTPUT_MODALITY: Record<string, string> = { image: "image", video: "video", audio: "audio", speech: "audio", text: "text" };
+
+/**
+ * Modalities implied by a fal category. Returns undefined for categories outside the four
+ * capabilities this app models (3d, training, workflow, json), so they are dropped rather than
+ * silently filed as text.
+ */
+function falModalities(category: string): { inputModalities: string[]; outputModalities: string[] } | undefined {
+    if (category === "llm") return { inputModalities: ["text"], outputModalities: ["text"] };
+    if (category === "vision") return { inputModalities: ["text", "image"], outputModalities: ["text"] };
+    const [input, output] = category.split("-to-");
+    const outputModality = output && FAL_OUTPUT_MODALITY[output];
+    if (!input || !outputModality) return undefined;
+    const inputModality = FAL_OUTPUT_MODALITY[input] || "text";
+    return { inputModalities: inputModality === "text" ? ["text"] : ["text", inputModality], outputModalities: [outputModality] };
+}
+
+type FalModel = { endpoint_id?: string; metadata?: { display_name?: string; category?: string; status?: string } };
+
+/**
+ * fal's public catalog: cursor-paginated, 100 per page (~900 models), readable without a key.
+ * Publishes no pricing.
+ *
+ * Keyless reads are rate-limited and walking every page unauthenticated does hit 429, so a page
+ * that fails after the first one returns the models gathered so far rather than throwing away a
+ * usable partial catalog. Supplying a key raises the limit and is used when the channel has one.
+ */
+async function fetchFalCatalog(apiKey: string): Promise<CatalogModel[]> {
+    const headers = apiKey ? { Authorization: `Key ${apiKey}` } : undefined;
+    const models: CatalogModel[] = [];
+    let cursor = "";
+    // The page cap stops a runaway loop if the cursor ever fails to advance.
+    for (let page = 0; page < 20; page++) {
+        let payload: { models?: FalModel[]; next_cursor?: string; has_more?: boolean };
+        try {
+            const response = await axios.get<typeof payload>(`${FAL_CATALOG_URL}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, { headers });
+            payload = response.data;
+        } catch (error) {
+            if (!models.length) throw error;
+            break; // rate-limited or transient: keep the pages we already have
+        }
+        for (const model of payload.models || []) {
+            const id = model.endpoint_id;
+            if (!id || model.metadata?.status === "deprecated") continue;
+            const modalities = falModalities(model.metadata?.category || "");
+            if (!modalities) continue;
+            models.push({ id, label: model.metadata?.display_name, ...modalities });
+        }
+        if (!payload.has_more || !payload.next_cursor) break;
+        cursor = payload.next_cursor;
+    }
+    return models;
+}
+
+/**
+ * Replicate has no capability metadata on a model, and its full /v1/models list is many thousands
+ * of entries deep. Its curated collections carry exactly the signal we need, so read those instead.
+ */
+const REPLICATE_COLLECTIONS: Array<{ slug: string; inputModalities: string[]; outputModalities: string[] }> = [
+    { slug: "text-to-image", inputModalities: ["text"], outputModalities: ["image"] },
+    { slug: "image-editing", inputModalities: ["text", "image"], outputModalities: ["image"] },
+    { slug: "text-to-video", inputModalities: ["text"], outputModalities: ["video"] },
+    { slug: "image-to-video", inputModalities: ["text", "image"], outputModalities: ["video"] },
+    { slug: "text-to-speech", inputModalities: ["text"], outputModalities: ["audio"] },
+    { slug: "ai-music-generation", inputModalities: ["text"], outputModalities: ["audio"] },
+    { slug: "language-models", inputModalities: ["text"], outputModalities: ["text"] },
+];
+
+type ReplicateModel = { owner?: string; name?: string; description?: string };
+
+/** Replicate requires a token for every endpoint, so this cannot run before a key is entered. */
+async function fetchReplicateCatalog(apiKey: string): Promise<CatalogModel[]> {
+    if (!apiKey) throw new Error("Replicate requires an API token to read its catalog");
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    const merged = new Map<string, CatalogModel>();
+    const results = await Promise.allSettled(
+        REPLICATE_COLLECTIONS.map(async (collection) => {
+            const response = await axios.get<{ models?: ReplicateModel[] }>(`https://api.replicate.com/v1/collections/${collection.slug}`, { headers });
+            return { collection, models: response.data.models || [] };
+        }),
+    );
+    for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        const { collection, models } = result.value;
+        for (const model of models) {
+            if (!model.owner || !model.name) continue;
+            const id = `${model.owner}/${model.name}`;
+            const existing = merged.get(id);
+            // A model can appear in several collections (text-to-image and image-editing, say);
+            // union the modalities so its image-input support is not lost to whichever came first.
+            merged.set(id, {
+                id,
+                label: existing?.label || model.name,
+                inputModalities: Array.from(new Set([...(existing?.inputModalities || []), ...collection.inputModalities])),
+                outputModalities: Array.from(new Set([...(existing?.outputModalities || []), ...collection.outputModalities])),
+            });
+        }
+    }
+    if (!merged.size) throw new Error("Replicate returned no models for the known collections");
+    return Array.from(merged.values());
+}
+
 /** Standard OpenAI-compatible catalog fetch shared by most presets. */
 const openAiCompatible = (baseUrl: string) => (apiKey: string) => fetchOpenAiCompatible(baseUrl, apiKey);
 
@@ -199,15 +347,11 @@ export const providerPresets: ProviderPreset[] = [
             "fal-ai/flux-pro/v1.1",
         ],
         capabilities: { "fal-ai/luma-dream-machine": "video" },
-        scripts: {
-            "fal-ai/kling-video/v2/master/text-to-video": FAL_VIDEO_SCRIPT,
-            "fal-ai/kling-video/v2/master/image-to-video": FAL_VIDEO_SCRIPT,
-            "fal-ai/minimax/video-01": FAL_VIDEO_SCRIPT,
-            "fal-ai/luma-dream-machine": FAL_VIDEO_SCRIPT,
-            "fal-ai/veo3": FAL_VIDEO_SCRIPT,
-            "fal-ai/flux/schnell": FAL_IMAGE_SCRIPT,
-            "fal-ai/flux-pro/v1.1": FAL_IMAGE_SCRIPT,
-        },
+        // Every fal model goes through the same queue API, so the scripts are assigned by capability
+        // rather than listed per model - the live catalog returns ~900 of them.
+        capabilityScripts: { image: FAL_IMAGE_SCRIPT, video: FAL_VIDEO_SCRIPT, audio: FAL_AUDIO_SCRIPT, text: FAL_TEXT_SCRIPT },
+        keylessCatalog: true,
+        fetchModels: fetchFalCatalog,
     },
     {
         id: "gemini",
@@ -241,12 +385,8 @@ export const providerPresets: ProviderPreset[] = [
         apiFormat: "openai",
         models: ["kwaivgi/kling-v2.1", "bytedance/seedance-1-pro", "wavespeedai/wan-2.1-t2v-480p", "minimax/video-01"],
         capabilities: { "bytedance/seedance-1-pro": "video" },
-        scripts: {
-            "kwaivgi/kling-v2.1": REPLICATE_VIDEO_SCRIPT,
-            "bytedance/seedance-1-pro": REPLICATE_VIDEO_SCRIPT,
-            "wavespeedai/wan-2.1-t2v-480p": REPLICATE_VIDEO_SCRIPT,
-            "minimax/video-01": REPLICATE_VIDEO_SCRIPT,
-        },
+        capabilityScripts: { image: REPLICATE_IMAGE_SCRIPT, video: REPLICATE_VIDEO_SCRIPT },
+        fetchModels: fetchReplicateCatalog,
     },
     {
         id: "openrouter",
@@ -254,7 +394,7 @@ export const providerPresets: ProviderPreset[] = [
         baseUrl: OPENROUTER_BASE,
         apiFormat: "openai",
         models: ["google/gemini-2.5-flash-image", "google/gemini-3.1-flash-image", "google/gemini-3-pro-image", "openai/gpt-5-image", "google/gemini-2.5-flash", "openai/gpt-4o-mini"],
-        imageScript: OPENROUTER_IMAGE_SCRIPT,
+        capabilityScripts: { image: OPENROUTER_IMAGE_SCRIPT },
         keylessCatalog: true,
         fetchModels: fetchOpenRouterCatalog,
     },
@@ -270,7 +410,7 @@ function applyPreset(preset: ProviderPreset | undefined, models: ChannelModel[])
         const useOverride = override && model.capabilitySource !== "provider";
         const capability = useOverride ? override : model.capability;
         const capabilitySource = useOverride ? ("provider" as const) : model.capabilitySource;
-        const script = preset?.scripts?.[model.name] || (preset?.imageScript && capability === "image" ? preset.imageScript : undefined);
+        const script = preset?.scripts?.[model.name] || preset?.capabilityScripts?.[capability];
         return { ...model, capability, capabilitySource, script };
     });
 }

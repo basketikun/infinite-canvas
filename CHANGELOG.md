@@ -15,6 +15,9 @@
 + [新增] 模型选择弹窗新增能力筛选，便于在 400+ 模型中定位。
 + [新增] 图生图时，服务商明确声明不支持图片输入的模型会在选择器中置灰提示。
 + [新增] 视频创作台在当前渠道没有视频模型时给出说明，并列出支持视频的服务商与一键添加入口（OpenRouter 目录中没有任何视频模型）。
++ [新增] fal.ai 支持在线拉取完整模型目录（约 900 个，无需 Key），按 `text-to-image`／`image-to-video` 等类别自动判定模型能力与是否支持图片输入；3D、训练、workflow 等本应用不支持的类别会被过滤掉。keyless 拉取受服务商限流，中途失败时保留已取回的部分而不是整体失败。
++ [新增] Replicate 支持按官方精选集合（text-to-image、image-editing、text-to-video、image-to-video、text-to-speech、ai-music-generation、language-models）拉取模型并判定能力；Replicate 全部接口都需要 API Token，请先填写 Key 再拉取。
++ [调整] 预设的调用脚本改为按能力下发（`capabilityScripts`），fal.ai 与 Replicate 拉取到的每个模型都会自动获得对应的队列／predictions 调用脚本，不再只有预置的少数几个可用；新增 fal.ai 音频与文本调用脚本、Replicate 生图调用脚本。
 
 + [修复] 文档站默认英文路径不再因内部语言重写产生重定向循环。
 + [优化] 文档站移动端折叠菜单新增分类切换入口，桌面端增加随滚动高亮的本页目录。
