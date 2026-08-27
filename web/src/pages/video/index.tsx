@@ -17,7 +17,7 @@ import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
-import { boolConfig, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, modelMatchesCapability, modelOptionLabel, selectableModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
@@ -100,7 +100,9 @@ export default function VideoPage() {
     const processedCommandRef = useRef(0);
     const agentTaskIdRef = useRef<string | undefined>(undefined);
 
-    const model = effectiveConfig.videoModel || effectiveConfig.model;
+    // Fall back only within this capability: config.model may hold a model of another kind
+    // (or one from a deleted channel), and showing it here misrepresents what would run.
+    const model = modelMatchesCapability(effectiveConfig, effectiveConfig.videoModel, "video") ? effectiveConfig.videoModel : modelMatchesCapability(effectiveConfig, effectiveConfig.model, "video") ? effectiveConfig.model : "";
     const canGenerate = Boolean(prompt.trim());
 
     useEffect(() => {
@@ -509,12 +511,23 @@ export default function VideoPage() {
 function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const { t } = useTranslation();
+    // Some providers (OpenRouter, for one) publish no video models at all, so an empty picker here is
+    // expected rather than broken. Say so, and point at the providers that do generate video.
+    const hasVideoModels = selectableModelsByCapability(config, "video").length > 0;
 
     return (
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">{t("workbench.model")}</span>
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("videoModel", value)} capability="video" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                {!hasVideoModels ? (
+                    <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+                        <span>{t("workbench.noVideoModels")}</span>
+                        <Button size="small" type="link" className="!h-auto !p-0 !text-xs" onClick={() => openConfigDialog(false)}>
+                            {t("workbench.addVideoProvider")}
+                        </Button>
+                    </span>
+                ) : null}
             </label>
             <div className="col-span-2">
                 <VideoSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />

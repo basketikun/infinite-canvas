@@ -3,7 +3,9 @@ import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import type { CatalogModel } from "@/lib/model-catalog";
+import { describeModelPrice, formatModelPrice } from "@/lib/model-pricing";
+import { defaultBaseUrlForApiFormat, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
 
@@ -34,12 +36,15 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
         patch({ apiFormat, baseUrl });
     };
 
-    const applySelection = (names: string[]) => {
+    /** Keep already-configured models untouched; new picks are normalized so catalog metadata is stored. */
+    const applySelection = (selection: Array<string | CatalogModel>) => {
         const map = new Map(draft.models.map((model) => [model.name, model]));
-        setModels(names.map((name) => map.get(name) || { name, capability: guessCapability(name) }));
+        const idOf = (item: string | CatalogModel) => (typeof item === "string" ? item : item.id);
+        setModels(selection.flatMap((item) => map.get(idOf(item)) || normalizeChannelModels([item])));
     };
 
-    const setCapability = (name: string, capability: ModelCapability) => setModels(draft.models.map((model) => (model.name === name ? { ...model, capability } : model)));
+    // An explicit choice here is authoritative and must survive reloads, so it is stamped as such.
+    const setCapability = (name: string, capability: ModelCapability) => setModels(draft.models.map((model) => (model.name === name ? { ...model, capability, capabilitySource: "user" as const } : model)));
     const setScript = (name: string, script: string) => setModels(draft.models.map((model) => (model.name === name ? { ...model, script: script || undefined } : model)));
     const removeModel = (name: string) => setModels(draft.models.filter((model) => model.name !== name));
 
@@ -97,8 +102,15 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                 {draft.models.length ? (
                     draft.models.map((model) => (
                         <div key={model.name} className="flex flex-wrap items-center gap-3 rounded-md px-2 py-1.5 hover:bg-stone-50 dark:hover:bg-stone-900/40">
-                            <span className="min-w-0 flex-1 truncate text-sm" title={model.name}>
-                                {model.name}
+                            <span className="flex min-w-0 flex-1 flex-col">
+                                <span className="min-w-0 truncate text-sm" title={model.label ? `${model.name} · ${model.label}` : model.name}>
+                                    {model.name}
+                                </span>
+                                {formatModelPrice(model.pricing, model.capability) ? (
+                                    <span className="truncate text-xs tabular-nums text-stone-500 dark:text-stone-400" title={describeModelPrice(model.pricing)}>
+                                        {formatModelPrice(model.pricing, model.capability)}
+                                    </span>
+                                ) : null}
                             </span>
                             <div className="flex shrink-0 items-center gap-2">
                                 <Segmented size="small" value={model.capability} options={capabilityOptions} onChange={(value) => setCapability(model.name, value as ModelCapability)} />

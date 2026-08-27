@@ -4,15 +4,28 @@ import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
+import { acceptsImageInput as acceptsImageInputOf, capabilityFromModalities, type CatalogModel, type ModelPricing } from "@/lib/model-catalog";
 
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
+export type CapabilitySource = "provider" | "user" | "guess";
 
 export type ChannelModel = {
     name: string;
     capability: ModelCapability;
     script?: string;
+    /**
+     * Where `capability` came from. "provider" (declared modalities) and "user" (channel editor)
+     * are authoritative and must survive reloads; only "guess" entries may be re-classified.
+     */
+    capabilitySource?: CapabilitySource;
+    /** Provider says the model accepts image input (image-to-image); undefined when unknown. */
+    acceptsImageInput?: boolean;
+    /** Live pricing from the provider catalog, USD per unit. */
+    pricing?: ModelPricing;
+    /** Human-readable name from the provider catalog. */
+    label?: string;
 };
 
 export type ModelChannel = {
@@ -132,21 +145,29 @@ type ConfigStore = {
     clearPromptContinue: () => void;
 };
 
-const VIDEO_KEYWORDS = ["video", "sora", "veo", "veo3", "kling", "wan", "hailuo"];
+const VIDEO_KEYWORDS = ["video", "sora", "veo", "veo3", "kling", "wan", "hailuo", "seedance", "runway", "luma"];
 
 export function boolConfig(value: string, fallback: boolean) {
     return value ? value === "true" : fallback;
 }
 const AUDIO_KEYWORDS = ["audio", "tts", "speech", "voice", "music", "sound"];
-const IMAGE_KEYWORDS = ["seedream", "gpt-image", "image", "dall-e", "dalle", "imagen", "flux", "sdxl", "stable-diffusion", "midjourney"];
+const IMAGE_KEYWORDS = ["seedream", "image", "dalle", "imagen", "flux", "sdxl", "midjourney", "gpt image", "dall e", "stable diffusion"];
 
-/** Keyword match on separator-delimited tokens, so e.g. "inkling" no longer matches "kling". */
+/**
+ * Keyword match on separator-delimited tokens, so e.g. "inkling" no longer matches "kling".
+ * Multi-word keywords are written space-separated and matched against the rejoined token
+ * stream, because a keyword containing a separator can never equal a single token.
+ */
 function matchesCapabilityKeyword(value: string, keywords: string[]) {
-    const tokens = value.toLowerCase().split(/[^a-z0-9]+/);
-    return keywords.some((keyword) => tokens.includes(keyword));
+    const tokens = value
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter(Boolean);
+    const joined = tokens.join(" ");
+    return keywords.some((keyword) => (keyword.includes(" ") ? joined.includes(keyword) : tokens.includes(keyword)));
 }
 
-/** Best-effort default capability for a freshly fetched model name; user can override in the channel editor. */
+/** Best-effort default capability for a model name, used only when the provider declares no modalities. */
 export function guessCapability(name: string): ModelCapability {
     if (matchesCapabilityKeyword(name, VIDEO_KEYWORDS)) return "video";
     if (matchesCapabilityKeyword(name, AUDIO_KEYWORDS)) return "audio";
@@ -160,6 +181,11 @@ function findChannelModel(config: AiConfig, value: string): { channel: ModelChan
     const channel = decoded ? config.channels.find((item) => item.id === decoded.channelId) : config.channels.find((item) => item.models.some((model) => model.name === name));
     const model = channel?.models.find((item) => item.name === name);
     return channel && model ? { channel, model } : null;
+}
+
+/** The stored ChannelModel behind a picker value, for reading pricing / image-input support. */
+export function channelModelOf(config: AiConfig, value: string): ChannelModel | undefined {
+    return findChannelModel(config, value)?.model;
 }
 
 export function modelCapabilityOf(config: AiConfig, value: string): ModelCapability | undefined {
@@ -176,7 +202,9 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
     const fallbackModel = capability === "image" ? defaultConfig.imageModel : capability === "video" ? defaultConfig.videoModel : capability === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
     if (currentModel && modelMatchesCapability(config, currentModel, capability)) return currentModel;
     if (defaultModel && modelMatchesCapability(config, defaultModel, capability)) return defaultModel;
-    return fallbackModel;
+    // Only fall back to the shipped default when it actually exists in the user's channels; otherwise
+    // return "" so the caller can show an empty state instead of firing a request that cannot succeed.
+    return modelMatchesCapability(config, fallbackModel, capability) ? fallbackModel : "";
 }
 
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
@@ -232,10 +260,15 @@ export const useConfigStore = create<ConfigStore>()(
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
                 const channels = normalizeChannels(config);
                 const models = modelOptionsFromChannels(channels);
-                // Models without a user script keep the stored capability only when keyword matching agrees;
-                // otherwise (e.g. mis-tagged "inkling"→video from older builds) they fall back to re-guessing.
+                // Heal stale capabilities from older builds (e.g. mis-tagged "inkling"→video) without
+                // destroying intent: only entries that were themselves guessed are re-guessed. Capabilities
+                // that came from a provider catalog or from the channel editor are left exactly as stored.
                 for (const channel of channels) {
-                    channel.models = channel.models.map((model) => (model.script || model.capability === guessCapability(model.name) ? model : { ...model, capability: guessCapability(model.name) }));
+                    channel.models = channel.models.map((model) => {
+                        if (model.script || model.capabilitySource === "provider" || model.capabilitySource === "user") return model;
+                        const guessed = guessCapability(model.name);
+                        return model.capability === guessed ? model : { ...model, capability: guessed, capabilitySource: "guess" };
+                    });
                 }
                 // Default model per capability must actually match that capability; mismatched persisted
                 // defaults (e.g. a text model saved as the video default) are cleared instead of kept.
@@ -279,17 +312,54 @@ export function useEffectiveConfig() {
     return useMemo(() => ({ ...config, channelMode: "local" as const }), [config]);
 }
 
-/** Normalize a mixed list of raw model names or model objects into deduped ChannelModel entries. */
-export function normalizeChannelModels(models: Array<string | ChannelModel> | undefined): ChannelModel[] {
+function isCatalogModel(item: string | ChannelModel | CatalogModel): item is CatalogModel {
+    return typeof item !== "string" && "id" in item;
+}
+
+/**
+ * Normalize a mixed list of raw model names, stored ChannelModels, or freshly fetched CatalogModels
+ * into deduped ChannelModel entries. Provider-declared modalities beat name guessing when present.
+ */
+export function normalizeChannelModels(models: Array<string | ChannelModel | CatalogModel> | undefined): ChannelModel[] {
     const seen = new Set<string>();
     const result: ChannelModel[] = [];
     for (const item of models || []) {
-        const name = (typeof item === "string" ? item : item?.name || "").trim();
+        if (typeof item === "string") {
+            const name = item.trim();
+            if (!name || seen.has(name)) continue;
+            seen.add(name);
+            result.push({ name, capability: guessCapability(name), capabilitySource: "guess" });
+            continue;
+        }
+        if (isCatalogModel(item)) {
+            const name = (item.id || "").trim();
+            if (!name || seen.has(name)) continue;
+            seen.add(name);
+            const declared = capabilityFromModalities(item.outputModalities);
+            result.push({
+                name,
+                capability: declared || guessCapability(name),
+                capabilitySource: declared ? "provider" : "guess",
+                acceptsImageInput: acceptsImageInputOf(item.inputModalities),
+                pricing: item.pricing,
+                label: item.label,
+            });
+            continue;
+        }
+        const name = (item?.name || "").trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
-        const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
-        result.push({ name, capability, script });
+        result.push({
+            name,
+            capability: item.capability || guessCapability(name),
+            // Legacy entries predate capabilitySource; they must count as guesses so stale
+            // mis-tags can still heal. Only the channel editor marks a capability as "user".
+            capabilitySource: item.capabilitySource || "guess",
+            script: item.script?.trim() || undefined,
+            acceptsImageInput: item.acceptsImageInput,
+            pricing: item.pricing,
+            label: item.label,
+        });
     }
     return result;
 }

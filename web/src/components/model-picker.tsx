@@ -5,20 +5,23 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { describeModelPrice, formatModelPrice } from "@/lib/model-pricing";
+import { channelModelOf, modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelPickerProps = {
     config: AiConfig;
     value?: string;
     onChange: (model: string) => void;
     capability?: ModelCapability;
+    /** Set when the request will send reference images; models the provider says cannot accept them are disabled. */
+    requiresImageInput?: boolean;
     className?: string;
     fullWidth?: boolean;
     placeholder?: string;
     onMissingConfig?: () => void;
 };
 
-export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder, onMissingConfig }: ModelPickerProps) {
+export function ModelPicker({ config, value, onChange, capability, requiresImageInput = false, className, fullWidth = false, placeholder, onMissingConfig }: ModelPickerProps) {
     const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
@@ -70,11 +73,15 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 onMouseDown={(event) => event.stopPropagation()}
             >
                 {options.length ? (
-                    options.map((model) => (
-                        <SelectItem key={model} value={model} textValue={modelOptionLabel(config, model)}>
-                            <ModelLabel config={config} model={model} />
-                        </SelectItem>
-                    ))
+                    options.map((model) => {
+                        // Only block when the provider positively says there is no image input; unknown stays selectable.
+                        const unsupported = requiresImageInput && channelModelOf(config, model)?.acceptsImageInput === false;
+                        return (
+                            <SelectItem key={model} value={model} textValue={modelOptionLabel(config, model)} disabled={unsupported}>
+                                <ModelLabel config={config} model={model} unsupported={unsupported} />
+                            </SelectItem>
+                        );
+                    })
                 ) : (
                     <SelectItem value="__empty__" disabled>
                         {emptyModelLabel(config, capability)}
@@ -87,15 +94,27 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
 
 function emptyModelLabel(config: AiConfig, capability?: ModelCapability) {
     const label = capability ? i18n.t(`settingsPanels.model.capabilities.${capability}`) : "";
-    if (capability && config.models.length) return i18n.t("settingsPanels.model.assign", { capability: label });
-    return config.models.length ? i18n.t("settingsPanels.model.noMatch", { capability: label }) : i18n.t("settingsPanels.model.addFirst");
+    if (!config.models.length) return i18n.t("settingsPanels.model.addFirst");
+    // Video is the common dead end: providers like OpenRouter publish no video models at all,
+    // so name the providers that do instead of leaving the user staring at an empty list.
+    if (capability === "video") return i18n.t("settingsPanels.model.noVideoProvider");
+    if (capability) return i18n.t("settingsPanels.model.assign", { capability: label });
+    return i18n.t("settingsPanels.model.noMatch", { capability: label });
 }
 
-function ModelLabel({ config, model }: { config: AiConfig; model: string }) {
+function ModelLabel({ config, model, unsupported = false }: { config: AiConfig; model: string; unsupported?: boolean }) {
+    const entry = channelModelOf(config, model);
+    const price = formatModelPrice(entry?.pricing, entry?.capability || "text");
     return (
         <span className="flex min-w-0 items-center gap-2">
             <ModelIcon model={model} />
-            <span className="truncate">{modelOptionLabel(config, model)}</span>
+            <span className="min-w-0 flex-1 truncate">{modelOptionLabel(config, model)}</span>
+            {unsupported ? <span className="shrink-0 text-xs text-amber-600 dark:text-amber-500">{i18n.t("settingsPanels.model.noImageInput")}</span> : null}
+            {!unsupported && price ? (
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground" title={describeModelPrice(entry?.pricing)}>
+                    {price}
+                </span>
+            ) : null}
         </span>
     );
 }

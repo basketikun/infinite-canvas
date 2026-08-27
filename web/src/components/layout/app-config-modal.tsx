@@ -384,10 +384,30 @@ export function AppConfigModal() {
     );
 }
 
-/** Union two model lists by name, keeping existing entries (capabilities/scripts) intact. */
+/**
+ * Union two model lists by name. A refreshed catalog always wins on metadata (pricing, image-input
+ * support, label) and on capability - except where the user set the capability by hand, which is
+ * intent we must not overwrite. Locally edited scripts are always preserved.
+ */
 function mergeChannelModels(current: ChannelModel[], incoming: ChannelModel[]): ChannelModel[] {
     const map = new Map(current.map((model) => [model.name, model]));
-    for (const model of incoming) if (!map.has(model.name)) map.set(model.name, model);
+    for (const model of incoming) {
+        const existing = map.get(model.name);
+        if (!existing) {
+            map.set(model.name, model);
+            continue;
+        }
+        const keepCapability = existing.capabilitySource === "user";
+        map.set(model.name, {
+            ...existing,
+            capability: keepCapability ? existing.capability : model.capability,
+            capabilitySource: keepCapability ? existing.capabilitySource : model.capabilitySource,
+            acceptsImageInput: model.acceptsImageInput ?? existing.acceptsImageInput,
+            pricing: model.pricing ?? existing.pricing,
+            label: model.label ?? existing.label,
+            script: existing.script || model.script,
+        });
+    }
     return Array.from(map.values());
 }
 

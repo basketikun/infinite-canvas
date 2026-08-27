@@ -878,7 +878,7 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
     }
 }
 
-export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">, keyless = false) {
+export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">) {
     try {
         if (config.apiFormat === "gemini") {
             const response = await axios.get<GeminiPayload>(geminiApiUrl({ ...defaultGeminiConfig, ...config }), { headers: geminiHeaders({ ...defaultGeminiConfig, ...config }) });
@@ -900,8 +900,9 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
     }
 }
 
+/** Bare model ids from a channel's own /models endpoint. Prefer fetchChannelCatalog for preset channels. */
 export async function fetchChannelModels(channel: ModelChannel, keyless = false) {
-    return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: keyless ? "" : channel.apiKey, apiFormat: channel.apiFormat }, keyless);
+    return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: keyless ? "" : channel.apiKey, apiFormat: channel.apiFormat });
 }
 
 const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "model" | "systemPrompt"> = {
