@@ -42,6 +42,12 @@ function pluginUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path.startsWith("/") ? path : `/${path}`);
 }
 
+/**
+ * Convenience request with the channel's credential header attached — and omitted when the channel
+ * has no key, so a noAuth provider is never sent an empty credential. A script's own `headers` are
+ * spread last and win, which is how fal replaces Bearer with its `Key` scheme; a script that builds
+ * an Authorization header from `apiKey` is therefore responsible for its own empty-key guard.
+ */
 function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHttp {
     const run = async (method: "get" | "post", path: string, body: unknown, opts?: PluginHttpOptions) => {
         const isForm = typeof FormData !== "undefined" && body instanceof FormData;
