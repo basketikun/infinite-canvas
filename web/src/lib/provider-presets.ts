@@ -203,8 +203,13 @@ if (done.status !== "completed") throw new Error(done.error || ("video generatio
 // unsigned_urls point straight at the upstream provider and, as the name says, carry no signature:
 // fetching one returns a short access-denied body that saves as a "successful" 67-byte video. The
 // content endpoint proxies the real bytes, and needs the API key that http.get already attaches.
-const blob = await http.get("/videos/" + job.id + "/content", { responseType: "blob" });
-if (!blob || blob.size < 1024) throw new Error("video download returned " + ((blob && blob.size) || 0) + " bytes");
+// The job is already rendered and already billed by the time we get here, so a failed download
+// must name the job: it is the only handle left for fetching the video you paid for.
+const content = "/videos/" + job.id + "/content";
+const blob = await http.get(content, { responseType: "blob" });
+if (!blob || blob.size < 1024) {
+  throw new Error("video download returned " + ((blob && blob.size) || 0) + " bytes. The job is generated and billed - retrieve it from " + http.url(content));
+}
 return { blob };`;
 
 /** fal.ai queue API with Key auth: submit -> poll status -> fetch result. Works for image and video. */
