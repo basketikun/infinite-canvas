@@ -199,9 +199,13 @@ const done = await poll(
   { intervalMs: 5000, timeoutMs: 600000 }
 );
 if (done.status !== "completed") throw new Error(done.error || ("video generation " + done.status));
-const url = (done.unsigned_urls || [])[0];
-if (!url) throw new Error("no video returned");
-return { url };`;
+
+// unsigned_urls point straight at the upstream provider and, as the name says, carry no signature:
+// fetching one returns a short access-denied body that saves as a "successful" 67-byte video. The
+// content endpoint proxies the real bytes, and needs the API key that http.get already attaches.
+const blob = await http.get("/videos/" + job.id + "/content", { responseType: "blob" });
+if (!blob || blob.size < 1024) throw new Error("video download returned " + ((blob && blob.size) || 0) + " bytes");
+return { blob };`;
 
 /** fal.ai queue API with Key auth: submit -> poll status -> fetch result. Works for image and video. */
 const falQueue = (extract: string) => `// fal.ai queued generation (Key auth)
