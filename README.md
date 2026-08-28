@@ -101,6 +101,18 @@ docker compose up -d
 
 如果默认的OpenAI接口调用方式与您的API不同，可自定义生图/视频脚本调用。
 
+### New API 集成
+
+本 fork 支持通过 URL fragment 从 New API 安全导入当前用户的 Base URL 和 API Key，fragment 不会发送到 Web 服务器：
+
+```text
+https://canvas.example.com/#source=newapi&baseUrl=https%3A%2F%2Fapi.example.com%3A10443&apiKey={key}
+```
+
+首次连接会读取该 Token 可见的模型并自动分类文本、Seedream 图片、Seedance 视频和 TTS 模型。后续连接只更新凭据，不覆盖用户已有的模型配置和画布数据。
+
+Seedream 参考图编辑使用 `/v1/images/generations` 的 JSON `image` 字段；Seedream 5.0 Pro 蒙版编辑会把选区转换为 `<bbox>` 空间指令。Seedance 文生视频和图生视频使用 New API `/v1/videos` 的 JSON 请求格式。
+
 ## 效果展示
 
 <table width="100%">

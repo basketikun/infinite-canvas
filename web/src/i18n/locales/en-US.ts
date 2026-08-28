@@ -442,6 +442,12 @@ export default {
         export: "Export settings",
         imported: "Settings and preferences imported",
         importedDirectConfig: "Local direct connection settings imported",
+        newApi: {
+            connected: "Connected to New API and synchronized available models",
+            invalidBaseUrl: "The New API URL is invalid or does not match the canvas host",
+            invalidApiKey: "The New API token format is invalid",
+            modelSyncFailed: "Connected to New API, but model synchronization failed. Retry in Settings.",
+        },
         importFailed: "Failed to read the settings file",
         saved: "Settings saved",
         savedContinue: "Settings saved. Continue with your previous request.",

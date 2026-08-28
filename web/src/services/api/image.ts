@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import i18n from "@/i18n";
+import { formatSeedreamRegions, type MaskRegion } from "@/lib/image-mask-regions";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
@@ -95,6 +96,7 @@ type GeminiPayload = {
 };
 type GeminiStreamState = { buffer: string; text: string; toolCalls: ResponseToolCall[]; error?: string };
 type RequestOptions = { signal?: AbortSignal };
+type ImageEditRequestOptions = RequestOptions & { maskRegions?: MaskRegion[] };
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -115,6 +117,8 @@ const IMAGE_MAX_PIXELS = 8294400;
 const IMAGE_MAX_EDGE = 3840;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
+const SEEDREAM_PREFIX = "doubao-seedream-";
+const SEEDREAM_MASK_MODEL = "doubao-seedream-5-0-pro-260628";
 
 const GEMINI_SUPPORTED_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"];
 const GEMINI_IMAGE_SIZE_BY_QUALITY: Record<string, string> = { low: "1K", medium: "2K", high: "4K", standard: "1K", hd: "2K" };
@@ -128,6 +132,29 @@ function normalizeQuality(quality: string) {
 /** Only "transparent" is forwarded; any other value (incl. empty) means keep the default opaque background. */
 function normalizeBackground(background: string | undefined) {
     return background?.trim().toLowerCase() === "transparent" ? "transparent" : undefined;
+}
+
+export function isSeedreamModel(model: string) {
+    return model.trim().toLowerCase().startsWith(SEEDREAM_PREFIX);
+}
+
+export function buildSeedreamImagePayload(config: AiConfig, prompt: string, images: string[] = [], maskRegions: MaskRegion[] = []) {
+    if (maskRegions.length && config.model !== SEEDREAM_MASK_MODEL) throw new Error(apiText("maskModelUnsupported"));
+    const quality = normalizeQuality(config.quality);
+    const size = resolveRequestSize(quality, config.size);
+    const background = normalizeBackground(config.background);
+    const regionText = maskRegions.length ? formatSeedreamRegions(maskRegions) : "";
+    const editPrompt = regionText ? `${prompt}\n\n仅修改图 1 的以下区域：${regionText}。区域外保持不变。` : prompt;
+    return {
+        model: config.model,
+        prompt: withSystemPrompt(config, editPrompt),
+        ...(images.length ? { image: images.length === 1 ? images[0] : images } : {}),
+        ...(quality ? { quality } : {}),
+        ...(size ? { size } : {}),
+        ...(background ? { background } : {}),
+        response_format: "b64_json",
+        output_format: IMAGE_OUTPUT_FORMAT,
+    };
 }
 
 /** Map "quality + ratio" to an explicit pixel dimension like "3840x2160". */
@@ -682,6 +709,18 @@ async function requestGeminiImages(config: AiConfig, prompt: string, references:
     return (await Promise.all(requests)).flat();
 }
 
+async function requestSeedreamImages(config: AiConfig, prompt: string, references: ReferenceImage[], count: number, maskRegions: MaskRegion[] = [], options?: RequestOptions) {
+    const images = await Promise.all(references.map((image) => imageToDataUrl(image)));
+    const payload = buildSeedreamImagePayload(config, prompt, images, maskRegions);
+    const requests = Array.from({ length: count }, () =>
+        axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, {
+            headers: aiHeaders(config, "application/json"),
+            signal: options?.signal,
+        }),
+    );
+    return (await Promise.all(requests)).flatMap((response) => parseImagePayload(response.data));
+}
+
 async function requestGeminiImagesOnce(config: AiConfig, prompt: string, references: ReferenceImage[], options?: RequestOptions) {
     const parts: GeminiPart[] = [{ text: prompt }];
     for (const image of references) {
@@ -744,6 +783,13 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
+    if (isSeedreamModel(requestConfig.model)) {
+        try {
+            return await requestSeedreamImages(requestConfig, prompt, [], n, [], options);
+        } catch (error) {
+            throw new Error(readAxiosError(error, apiText("requestFailed")));
+        }
+    }
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
@@ -772,7 +818,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     }
 }
 
-export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
+export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: ImageEditRequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
@@ -801,6 +847,14 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         if (mask) throw new Error(apiText("geminiMaskUnsupported"));
         try {
             return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
+        } catch (error) {
+            throw new Error(readAxiosError(error, apiText("requestFailed")));
+        }
+    }
+    if (isSeedreamModel(requestConfig.model)) {
+        if (mask && !options?.maskRegions?.length) throw new Error(apiText("maskModelUnsupported"));
+        try {
+            return await requestSeedreamImages(requestConfig, requestPrompt, references, n, options?.maskRegions, options);
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }

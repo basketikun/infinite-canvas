@@ -9,7 +9,16 @@ import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, re
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 
-type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null };
+type VideoResponse = {
+    id: string;
+    status?: string;
+    error?: { message?: string };
+    url?: string;
+    result_url?: string;
+    video_url?: string;
+    content?: { video_url?: string; url?: string } | null;
+    metadata?: { url?: string } | null;
+};
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type RequestOptions = { signal?: AbortSignal };
@@ -117,6 +126,25 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    if (isSeedanceModel(config.model)) {
+        const images = await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)));
+        const payload = buildSeedanceVideoPayload(config, prompt, images);
+        try {
+            const created = unwrapVideoResponse(
+                (
+                    await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), payload, {
+                        headers: aiHeaders(config, "application/json"),
+                        signal: options?.signal,
+                    })
+                ).data,
+            );
+            if (!created.id) throw new Error(apiText("noVideoTaskId"));
+            return { id: created.id, provider: "openai", model };
+        } catch (error) {
+            throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
+        }
+    }
+
     const body = new FormData();
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
@@ -189,6 +217,35 @@ function normalizeVideoResolution(value: string) {
     return `${resolution}p`;
 }
 
+export function isSeedanceModel(model: string) {
+    return model.trim().toLowerCase().startsWith("doubao-seedance-");
+}
+
+export function buildSeedanceVideoPayload(config: AiConfig, prompt: string, images: string[] = []) {
+    return {
+        model: config.model,
+        prompt,
+        seconds: normalizeVideoSeconds(config.videoSeconds),
+        ...(images.length ? { images } : {}),
+        metadata: {
+            resolution: normalizeVideoResolution(config.vquality),
+            ratio: normalizeVideoRatio(config.size),
+            generate_audio: boolConfig(config.videoGenerateAudio, true),
+            watermark: boolConfig(config.videoWatermark, false),
+        },
+    };
+}
+
+function normalizeVideoRatio(value: string) {
+    if (/^\d+:\d+$/.test(value || "")) return value;
+    const match = (value || "").match(/^(\d+)x(\d+)$/);
+    if (!match) return "16:9";
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (width === height) return "1:1";
+    return width > height ? "16:9" : "9:16";
+}
+
 function unwrapVideoResponse(payload: ApiVideoResponse) {
     return unwrapEnvelope(payload, apiText("noVideoTask"));
 }
@@ -204,7 +261,7 @@ function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
 }
 
 function videoResultUrl(payload: VideoResponse) {
-    return [payload.video_url, payload.result_url, payload.url, payload.content?.video_url, payload.content?.url].find((url) => typeof url === "string" && (isPublicMediaUrl(url) || /\.mp4(\?|#|$)/i.test(url)));
+    return [payload.video_url, payload.result_url, payload.url, payload.content?.video_url, payload.content?.url, payload.metadata?.url].find((url) => typeof url === "string" && (isPublicMediaUrl(url) || /\.mp4(\?|#|$)/i.test(url)));
 }
 
 function readApiErrorMessage(value: unknown): string {

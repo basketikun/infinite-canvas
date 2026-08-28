@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [新增] 支持通过 URL fragment 从 New API 安全导入当前用户 Token，并自动同步与分类可用模型。
++ [新增] 适配 New API 下的 Seedream 参考图、区域编辑和 Seedance 文生/图生视频请求格式。
+
 ## v0.16.0 - 2026-08-18
 
 + [新增] 提示词来源新增 Freestylefly GPT Image 2 内置来源。

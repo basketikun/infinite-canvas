@@ -5,11 +5,13 @@ import { Brush, Eraser, Redo2, RotateCcw, Undo2, WandSparkles, X, ZoomIn, ZoomOu
 import { useTranslation } from "react-i18next";
 
 import { readImageMeta } from "@/lib/image-utils";
+import { extractMaskRegionsFromCanvas, type MaskRegion } from "@/lib/image-mask-regions";
 import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
 
 export type CanvasImageMaskEditPayload = {
     prompt: string;
     maskDataUrl: string;
+    regions: MaskRegion[];
 };
 
 type DrawMode = "paint" | "erase";
@@ -205,8 +207,9 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         const canvas = maskCanvasRef.current;
         if (!nextPrompt) return setError(t("canvas.editors.maskPromptRequired"));
         if (!canvas) return;
-        if (!canvasHasPaint(canvas)) return setError(t("canvas.editors.maskRequired"));
-        onConfirm({ prompt: nextPrompt, maskDataUrl: buildEditMask(canvas) });
+        const regions = extractMaskRegionsFromCanvas(canvas);
+        if (!regions.length) return setError(t("canvas.editors.maskRequired"));
+        onConfirm({ prompt: nextPrompt, maskDataUrl: buildEditMask(canvas), regions });
     };
 
     return (
@@ -399,16 +402,6 @@ function replayMask(strokes: MaskStroke[], maskCanvas: HTMLCanvasElement | null,
             drawMaskStroke(previewContext, previous, point, stroke.size);
         });
     }
-}
-
-function canvasHasPaint(canvas: HTMLCanvasElement) {
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) return false;
-    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    for (let index = 3; index < data.length; index += 4) {
-        if (data[index] > 0) return true;
-    }
-    return false;
 }
 
 function buildEditMask(selectionCanvas: HTMLCanvasElement) {

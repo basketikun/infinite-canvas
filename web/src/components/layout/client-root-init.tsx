@@ -3,51 +3,81 @@ import { useEffect, useRef } from "react";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
+import { fetchChannelModels } from "@/services/api/image";
+import {
+    applyDirectLaunch,
+    cleanDirectLaunchUrl,
+    hasIntegratedModels,
+    NEW_API_BOOTSTRAP_MARKER,
+    parseDirectLaunch,
+} from "@/services/integrations/new-api-bootstrap";
+import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
     const { t } = useTranslation();
     const handledConfigParams = useRef(false);
-    const updateConfig = useConfigStore((state) => state.updateConfig);
-    const config = useConfigStore((state) => state.config);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
 
     usePromptSourceScheduler();
 
     useEffect(() => {
         if (handledConfigParams.current) return;
-        const searchParams = new URLSearchParams(window.location.search);
-        const baseUrl = searchParams.get("baseUrl") || searchParams.get("baseurl");
-        const apiKey = searchParams.get("apiKey") || searchParams.get("apikey");
-        if (!baseUrl && !apiKey) return;
+        const parsed = parseDirectLaunch(window.location);
+        if (!parsed) return;
         handledConfigParams.current = true;
-        searchParams.delete("baseUrl");
-        searchParams.delete("baseurl");
-        searchParams.delete("apiKey");
-        searchParams.delete("apikey");
-        window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
-        const firstChannel = config.channels[0];
-        updateConfig(
-            "channels",
-            firstChannel
-                ? config.channels.map((channel, index) =>
-                      index === 0
-                          ? {
-                                ...channel,
-                                ...(baseUrl ? { baseUrl } : {}),
-                                ...(apiKey ? { apiKey } : {}),
-                            }
-                          : channel,
-                  )
-                : [createModelChannel({ id: "default", name: t("config.channels.defaultName"), baseUrl: baseUrl || undefined, apiKey: apiKey || "" })],
-        );
-        if (baseUrl) updateConfig("baseUrl", baseUrl);
-        if (apiKey) updateConfig("apiKey", apiKey);
-        openConfigDialog(false);
-        message.success(t("config.importedDirectConfig"));
-    }, [config.channels, message, openConfigDialog, t, updateConfig]);
+        if ("error" in parsed) {
+            window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+            message.error(t(`config.newApi.${parsed.error}`));
+            return;
+        }
+
+        const { launch } = parsed;
+        window.history.replaceState(null, "", cleanDirectLaunchUrl(window.location, launch.source));
+
+        const initialize = async () => {
+            const current = useConfigStore.getState().config;
+            let fetchedModels: string[] | undefined;
+            let modelSyncFailed = false;
+            const shouldFetchModels =
+                launch.source === "newapi" &&
+                Boolean(launch.baseUrl && launch.apiKey) &&
+                (!window.localStorage.getItem(NEW_API_BOOTSTRAP_MARKER) || !hasIntegratedModels(current, launch.baseUrl || ""));
+
+            if (shouldFetchModels && launch.baseUrl && launch.apiKey) {
+                try {
+                    fetchedModels = await fetchChannelModels(
+                        createModelChannel({
+                            id: "new-api",
+                            name: "New API",
+                            baseUrl: launch.baseUrl,
+                            apiKey: launch.apiKey,
+                            apiFormat: "openai",
+                        }),
+                    );
+                } catch {
+                    modelSyncFailed = true;
+                }
+            }
+
+            const nextConfig = applyDirectLaunch(current, launch, fetchedModels);
+            useConfigStore.setState({ config: nextConfig });
+
+            if (launch.source === "newapi" && fetchedModels?.length) {
+                window.localStorage.setItem(NEW_API_BOOTSTRAP_MARKER, "1");
+            }
+
+            if (modelSyncFailed || (launch.source === "newapi" && !hasIntegratedModels(nextConfig, launch.baseUrl || ""))) {
+                openConfigDialog(false);
+                message.error(t("config.newApi.modelSyncFailed"));
+                return;
+            }
+            message.success(t(launch.source === "newapi" ? "config.newApi.connected" : "config.importedDirectConfig"));
+        };
+
+        void initialize();
+    }, [message, openConfigDialog, t]);
 
     return <>{children}</>;
 }

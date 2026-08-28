@@ -44,19 +44,11 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
         }
     }
     assertAudioConfig(requestConfig, model);
-    const instructions = config.audioInstructions.trim();
 
     try {
         const response = await axios.post<Blob>(
             aiApiUrl(requestConfig, "/audio/speech"),
-            {
-                model,
-                input: prompt,
-                voice: normalizeAudioVoiceValue(config.audioVoice),
-                response_format: format,
-                speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
-                ...(instructions ? { instructions } : {}),
-            },
+            buildOpenAiAudioPayload(config, model, prompt),
             { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
         );
         await assertAudioBlob(response.data);
@@ -64,6 +56,18 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("audioGenerationFailed")));
     }
+}
+
+export function buildOpenAiAudioPayload(config: AiConfig, model: string, prompt: string) {
+    const instructions = config.audioInstructions.trim();
+    return {
+        model,
+        input: prompt,
+        voice: normalizeAudioVoiceValue(config.audioVoice),
+        response_format: normalizeAudioFormatValue(config.audioFormat),
+        speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
+        ...(instructions ? { instructions } : {}),
+    };
 }
 
 async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {
