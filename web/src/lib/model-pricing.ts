@@ -28,6 +28,10 @@ export function formatModelPrice(pricing: ModelPricing | undefined, capability: 
     if (capability === "image" && typeof pricing.imageOutputToken === "number") {
         return `${formatRate(pricing.imageOutputToken)} ${i18n.t("modelPricing.perMillionImageTokens")}`;
     }
+    // Video is billed per second or per clip, never per token, and OpenRouter fills the token fields
+    // of all 27 of its video models with a placeholder "0". Rendering that would advertise paid
+    // models as free, so show nothing until a provider publishes a rate in the unit it actually bills.
+    if (capability === "video") return "";
     const { prompt, completion } = pricing;
     if (typeof prompt === "number" || typeof completion === "number") {
         const input = typeof prompt === "number" ? formatRate(prompt) : "—";

@@ -44,10 +44,19 @@ async function fetchOpenAiCompatible(baseUrl: string, apiKey: string): Promise<C
     return catalogFromIds((response.data.data || []).map((model) => model.id || ""));
 }
 
-/** OpenRouter publishes declared modalities and per-unit USD pricing for every model. */
+/**
+ * OpenRouter publishes declared modalities and per-unit USD pricing for every model.
+ *
+ * `output_modalities` is required and is not merely a filter: a bare GET /models returns only the
+ * text models (387 of them), which silently hides the 27 video, 50 image and 4 audio models the
+ * site lists. Asking for all four returns the whole catalog in one call.
+ */
+const OPENROUTER_MODALITIES = "text,image,video,audio";
+
 async function fetchOpenRouterCatalog(apiKey: string): Promise<CatalogModel[]> {
     const response = await axios.get<{ data?: OpenRouterModel[] }>(buildApiUrl(OPENROUTER_BASE, "/models"), {
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        params: { output_modalities: OPENROUTER_MODALITIES },
     });
     const fetchedAt = Date.now();
     return (response.data.data || [])
@@ -126,6 +135,32 @@ try {
   }
   return results;
 }`;
+
+/**
+ * OpenRouter video generation is a job API, not a single call: POST /videos returns
+ * { id, polling_url, status }, and the caller polls that url until status is terminal. Only
+ * "completed" carries `unsigned_urls`; "failed", "cancelled" and "expired" all end the job.
+ * Reference images ride along as `input_references`, matching the image script.
+ */
+const OPENROUTER_VIDEO_SCRIPT = `// OpenRouter video generation (POST /videos, then poll the job)
+const body = { model, prompt };
+if (params.seconds) body.duration = Number(params.seconds);
+if (params.resolution) body.resolution = params.resolution;
+if (params.ratio && params.ratio !== "auto") body.aspect_ratio = params.ratio;
+if (typeof params.generateAudio === "boolean") body.generate_audio = params.generateAudio;
+if (images && images.length) {
+  body.input_references = images.map((url) => ({ type: "image_url", image_url: { url } }));
+}
+const job = await http.post("/videos", body);
+const done = await poll(
+  () => http.get(job.polling_url || "/videos/" + job.id),
+  (state) => (["completed", "failed", "cancelled", "expired"].includes(state.status) ? state : null),
+  { intervalMs: 5000, timeoutMs: 600000 }
+);
+if (done.status !== "completed") throw new Error(done.error || ("video generation " + done.status));
+const url = (done.unsigned_urls || [])[0];
+if (!url) throw new Error("no video returned");
+return { url };`;
 
 /** fal.ai queue API with Key auth: submit -> poll status -> fetch result. Works for image and video. */
 const falQueue = (extract: string) => `// fal.ai queued generation (Key auth)
@@ -389,7 +424,7 @@ export const providerPresets: ProviderPreset[] = [
         // The auto-routers declare every output modality, so they would otherwise land in the image
         // picker as if they were image models. They route text; treat them as such.
         capabilities: { "openrouter/auto": "text", "openrouter/auto-beta": "text" },
-        capabilityScripts: { image: OPENROUTER_IMAGE_SCRIPT },
+        capabilityScripts: { image: OPENROUTER_IMAGE_SCRIPT, video: OPENROUTER_VIDEO_SCRIPT },
         keylessCatalog: true,
         fetchModels: fetchOpenRouterCatalog,
     },
