@@ -13,8 +13,20 @@ import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { channelFromPreset, enrichModelsForChannel, fetchPresetModels, type ProviderPreset } from "@/lib/provider-presets";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ChannelModel, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { channelFromPreset, enrichModelsForChannel, fetchPresetModels, mergeChannelModels, type ProviderPreset } from "@/lib/provider-presets";
+import {
+    channelIsConnected,
+    createModelChannel,
+    modelOptionsFromChannels,
+    normalizeModelOptionValue,
+    selectableModelsByCapability,
+    useConfigStore,
+    type AiConfig,
+    type ApiCallFormat,
+    type ConfigTabKey,
+    type ModelCapability,
+    type ModelChannel,
+} from "@/stores/use-config-store";
 import { ProviderPickerModal } from "@/components/layout/provider-picker-modal";
 
 type ModelGroup = {
@@ -225,6 +237,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                 <div className="mt-1 truncate text-xs text-stone-500">
                                                     {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
                                                 </div>
+                                                {channelIsConnected(channel) ? null : <div className="mt-1 truncate text-xs text-amber-600 dark:text-amber-500">{t("config.channels.notConnected")}</div>}
                                             </div>
                                             <div className="flex shrink-0 gap-2">
                                                 <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
@@ -382,33 +395,6 @@ export function AppConfigModal() {
             <AppConfigPanel showDoneButton initialTab={configTab} />
         </Modal>
     );
-}
-
-/**
- * Union two model lists by name. A refreshed catalog always wins on metadata (pricing, image-input
- * support, label) and on capability - except where the user set the capability by hand, which is
- * intent we must not overwrite. Locally edited scripts are always preserved.
- */
-function mergeChannelModels(current: ChannelModel[], incoming: ChannelModel[]): ChannelModel[] {
-    const map = new Map(current.map((model) => [model.name, model]));
-    for (const model of incoming) {
-        const existing = map.get(model.name);
-        if (!existing) {
-            map.set(model.name, model);
-            continue;
-        }
-        const keepCapability = existing.capabilitySource === "user";
-        map.set(model.name, {
-            ...existing,
-            capability: keepCapability ? existing.capability : model.capability,
-            capabilitySource: keepCapability ? existing.capabilitySource : model.capabilitySource,
-            acceptsImageInput: model.acceptsImageInput ?? existing.acceptsImageInput,
-            pricing: model.pricing ?? existing.pricing,
-            label: model.label ?? existing.label,
-            script: existing.script || model.script,
-        });
-    }
-    return Array.from(map.values());
 }
 
 function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {

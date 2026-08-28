@@ -192,9 +192,15 @@ export function modelCapabilityOf(config: AiConfig, value: string): ModelCapabil
     return findChannelModel(config, value)?.model.capability;
 }
 
+/**
+ * True when `value` is a model we could actually run for `capability`: right capability, and on a
+ * provider that has a key. Every caller uses this to decide whether a saved default is still good,
+ * and a model on a keyless provider is not - its every request would fail authentication.
+ */
 export function modelMatchesCapability(config: AiConfig, value: string, capability?: ModelCapability) {
-    if (!capability) return true;
-    return modelCapabilityOf(config, value) === capability;
+    const found = findChannelModel(config, value);
+    if (!found || !channelIsConnected(found.channel)) return false;
+    return !capability || found.model.capability === capability;
 }
 
 export function resolveModelForCapability(config: AiConfig, currentModel: string | undefined, capability: ModelCapability) {
@@ -207,9 +213,18 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
     return modelMatchesCapability(config, fallbackModel, capability) ? fallbackModel : "";
 }
 
+/** A provider is usable only once it has both an endpoint and a key; anything else 401s on first call. */
+export function channelIsConnected(channel: ModelChannel) {
+    return Boolean(channel.baseUrl.trim() && channel.apiKey.trim());
+}
+
+/**
+ * Models a picker may offer. Only connected providers contribute: offering a model from a
+ * keyless provider produces a picker entry whose every request fails authentication, which
+ * reads to the user as "the app is broken" rather than "this provider has no key".
+ */
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
-    if (!capability) return config.models;
-    return config.channels.flatMap((channel) => channel.models.filter((model) => model.capability === capability).map((model) => encodeChannelModel(channel.id, model.name)));
+    return config.channels.filter(channelIsConnected).flatMap((channel) => channel.models.filter((model) => !capability || model.capability === capability).map((model) => encodeChannelModel(channel.id, model.name)));
 }
 
 /** The user script (if any) attached to a model; empty string means use the system default call. */
@@ -272,10 +287,15 @@ export const useConfigStore = create<ConfigStore>()(
                 }
                 // Default model per capability must actually match that capability; mismatched persisted
                 // defaults (e.g. a text model saved as the video default) are cleared instead of kept.
-                const capabilityOf = (value: string) => findChannelModel({ ...config, channels }, value)?.model.capability;
+                // A default must also live on a connected provider: a model saved against a channel
+                // whose key was since cleared would fail authentication on every single request.
+                const usableCapabilityOf = (value: string) => {
+                    const found = findChannelModel({ ...config, channels }, value);
+                    return found && channelIsConnected(found.channel) ? found.model.capability : undefined;
+                };
                 const validOrDefault = (value: string, capability: ModelCapability) => {
                     const normalized = normalizeModelOptionValue(value, channels);
-                    return normalized && capabilityOf(normalized) === capability ? normalized : "";
+                    return normalized && usableCapabilityOf(normalized) === capability ? normalized : "";
                 };
                 return {
                     ...current,
@@ -421,7 +441,18 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.some((item) => item.name === model));
-    return matched || config.channels[0] || createModelChannel({ id: "default", name: i18n.t("config.channels.defaultName"), baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })) });
+    return (
+        matched ||
+        config.channels[0] ||
+        createModelChannel({
+            id: "default",
+            name: i18n.t("config.channels.defaultName"),
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            apiFormat: config.apiFormat,
+            models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })),
+        })
+    );
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {

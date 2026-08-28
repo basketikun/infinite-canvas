@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import { catalogFromIds, normalizePricing, parsePrice, type CatalogModel } from "@/lib/model-catalog";
-import { buildApiUrl, normalizeChannelModels, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, normalizeChannelModels, useConfigStore, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 export type ProviderPreset = {
     id: string;
@@ -143,8 +143,8 @@ const result = await http.get(base, { headers });
 return ${extract};`;
 
 const FAL_IMAGE_SCRIPT = falQueue("(result.images || []).map((img) => img.url).filter(Boolean)");
-const FAL_VIDEO_SCRIPT = falQueue("result.video?.url || \"\"");
-const FAL_AUDIO_SCRIPT = falQueue("{ url: result.audio?.url || result.audio_url || \"\" }");
+const FAL_VIDEO_SCRIPT = falQueue('result.video?.url || ""');
+const FAL_AUDIO_SCRIPT = falQueue('{ url: result.audio?.url || result.audio_url || "" }');
 
 /**
  * fal LLM / vision endpoints also go through the queue API, so they cannot use the default
@@ -337,15 +337,7 @@ export const providerPresets: ProviderPreset[] = [
         name: "fal.ai",
         baseUrl: "https://queue.fal.run",
         apiFormat: "openai",
-        models: [
-            "fal-ai/kling-video/v2/master/text-to-video",
-            "fal-ai/kling-video/v2/master/image-to-video",
-            "fal-ai/minimax/video-01",
-            "fal-ai/luma-dream-machine",
-            "fal-ai/veo3",
-            "fal-ai/flux/schnell",
-            "fal-ai/flux-pro/v1.1",
-        ],
+        models: ["fal-ai/kling-video/v2/master/text-to-video", "fal-ai/kling-video/v2/master/image-to-video", "fal-ai/minimax/video-01", "fal-ai/luma-dream-machine", "fal-ai/veo3", "fal-ai/flux/schnell", "fal-ai/flux-pro/v1.1"],
         capabilities: { "fal-ai/luma-dream-machine": "video" },
         // Every fal model goes through the same queue API, so the scripts are assigned by capability
         // rather than listed per model - the live catalog returns ~900 of them.
@@ -394,6 +386,9 @@ export const providerPresets: ProviderPreset[] = [
         baseUrl: OPENROUTER_BASE,
         apiFormat: "openai",
         models: ["google/gemini-2.5-flash-image", "google/gemini-3.1-flash-image", "google/gemini-3-pro-image", "openai/gpt-5-image", "google/gemini-2.5-flash", "openai/gpt-4o-mini"],
+        // The auto-routers declare every output modality, so they would otherwise land in the image
+        // picker as if they were image models. They route text; treat them as such.
+        capabilities: { "openrouter/auto": "text", "openrouter/auto-beta": "text" },
         capabilityScripts: { image: OPENROUTER_IMAGE_SCRIPT },
         keylessCatalog: true,
         fetchModels: fetchOpenRouterCatalog,
@@ -402,14 +397,15 @@ export const providerPresets: ProviderPreset[] = [
 
 /**
  * Apply a preset's hand-written capability fixes and call scripts on top of normalized models.
- * A preset override outranks name guessing but not a capability the provider itself declared.
+ * A preset override is a curated fix for a specific model id, so it outranks both name guessing
+ * and the provider's own declaration - providers do get this wrong (OpenRouter's auto-router
+ * declares image output it will not actually produce).
  */
 function applyPreset(preset: ProviderPreset | undefined, models: ChannelModel[]): ChannelModel[] {
     return models.map((model) => {
         const override = preset?.capabilities?.[model.name];
-        const useOverride = override && model.capabilitySource !== "provider";
-        const capability = useOverride ? override : model.capability;
-        const capabilitySource = useOverride ? ("provider" as const) : model.capabilitySource;
+        const capability = override || model.capability;
+        const capabilitySource = override ? ("provider" as const) : model.capabilitySource;
         const script = preset?.scripts?.[model.name] || preset?.capabilityScripts?.[capability];
         return { ...model, capability, capabilitySource, script };
     });
@@ -454,9 +450,78 @@ export async function fetchChannelCatalog(channel: ModelChannel): Promise<Catalo
     return catalogFromIds(await fetchChannelModels(channel));
 }
 
+/**
+ * Union two model lists by name. A refreshed catalog always wins on metadata (pricing, image-input
+ * support, label) and on capability - except where the user set the capability by hand, which is
+ * intent we must not overwrite. Locally edited scripts are always preserved.
+ */
+export function mergeChannelModels(current: ChannelModel[], incoming: ChannelModel[]): ChannelModel[] {
+    const map = new Map(current.map((model) => [model.name, model]));
+    for (const model of incoming) {
+        const existing = map.get(model.name);
+        if (!existing) {
+            map.set(model.name, model);
+            continue;
+        }
+        const keepCapability = existing.capabilitySource === "user";
+        map.set(model.name, {
+            ...existing,
+            capability: keepCapability ? existing.capability : model.capability,
+            capabilitySource: keepCapability ? existing.capabilitySource : model.capabilitySource,
+            acceptsImageInput: model.acceptsImageInput ?? existing.acceptsImageInput,
+            pricing: model.pricing ?? existing.pricing,
+            label: model.label ?? existing.label,
+            script: existing.script || model.script,
+        });
+    }
+    return Array.from(map.values());
+}
+
+/**
+ * Connect a channel: pull its whole catalog and fold it into whatever the channel already has.
+ * This is the only import path the UI needs - the user picks which model to use in the studio
+ * pickers, which filter by capability, so there is nothing to hand-select here.
+ */
+export async function connectChannel(channel: ModelChannel): Promise<ChannelModel[]> {
+    const catalog = await fetchChannelCatalog(channel);
+    if (!catalog.length) throw new Error("provider returned an empty model list");
+    return mergeChannelModels(channel.models, enrichModelsForChannel(channel, catalog));
+}
+
 /** Apply a preset's capability fixes and call scripts to a fetched catalog (or a bare id list). */
 export function enrichModelsForChannel(channel: ModelChannel, models: Array<string | CatalogModel>): ChannelModel[] {
     return applyPreset(presetForChannel(channel), normalizeChannelModels(models));
 }
 
 export type { ChannelModel };
+
+/**
+ * Re-attach preset call scripts to channels that were saved before those scripts shipped.
+ * Without this, an OpenRouter channel added by an earlier build keeps `script: undefined`
+ * forever and image requests fall through to the generic OpenAI paths — `/images/edits`,
+ * which OpenRouter does not implement, so every image-to-image call 404s.
+ *
+ * The store's own rehydration cannot do this: it would have to import this module, which
+ * imports the store. A script already stored (preset or hand-edited) is never overwritten.
+ */
+export function healPresetScripts(): void {
+    const { config } = useConfigStore.getState();
+    let changed = false;
+    const channels = config.channels.map((channel) => {
+        const preset = presetForChannel(channel);
+        if (!preset) return channel;
+        let channelChanged = false;
+        const models = channel.models.map((model) => {
+            if (model.script) return model;
+            const script = preset.scripts?.[model.name] || preset.capabilityScripts?.[model.capability];
+            if (!script) return model;
+            channelChanged = true;
+            return { ...model, script };
+        });
+        if (!channelChanged) return channel;
+        changed = true;
+        return { ...channel, models };
+    });
+    if (!changed) return;
+    useConfigStore.setState({ config: { ...config, channels } });
+}

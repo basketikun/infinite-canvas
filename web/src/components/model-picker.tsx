@@ -25,7 +25,10 @@ export function ModelPicker({ config, value, onChange, capability, requiresImage
     const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
-    const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
+    const options = useMemo(
+        () => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))),
+        [capability, config, value],
+    );
     const current = value || "";
     const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
 
@@ -94,7 +97,9 @@ export function ModelPicker({ config, value, onChange, capability, requiresImage
 
 function emptyModelLabel(config: AiConfig, capability?: ModelCapability) {
     const label = capability ? i18n.t(`settingsPanels.model.capabilities.${capability}`) : "";
-    if (!config.models.length) return i18n.t("settingsPanels.model.addFirst");
+    // Models on a provider with no key are deliberately not offered, so "you have models" must mean
+    // usable ones - otherwise a fully unconfigured app tells the user to go assign capabilities.
+    if (!selectableModelsByCapability(config).length) return i18n.t("settingsPanels.model.addFirst");
     // Video is the common dead end: providers like OpenRouter publish no video models at all,
     // so name the providers that do instead of leaving the user staring at an empty list.
     if (capability === "video") return i18n.t("settingsPanels.model.noVideoProvider");
@@ -129,8 +134,8 @@ function resolveModelIcon(model: string) {
     if (name.includes("claude") || name.includes("anthropic")) return "/icons/claude.svg";
     if (name.includes("gemini") || name.includes("google")) return "/icons/gemini.svg";
     if (name.includes("gpt") || name.includes("openai")) return "/icons/openai.svg";
-    if (name.includes("grok") || name.includes("grok")) return "/icons/grok.svg";
-    if (name.includes("deepseek") || name.includes("deepseek")) return "/icons/deepseek.svg";
-    if (name.includes("glm") || name.includes("glm")) return "/icons/glm.svg";
+    if (name.includes("grok") || name.includes("xai")) return "/icons/grok.svg";
+    if (name.includes("deepseek")) return "/icons/deepseek.svg";
+    if (name.includes("glm") || name.includes("zhipu")) return "/icons/glm.svg";
     return "";
 }

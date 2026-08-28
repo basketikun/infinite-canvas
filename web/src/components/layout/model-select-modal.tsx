@@ -1,6 +1,6 @@
 import { App, Button, Checkbox, Input, Modal, Segmented, Tabs } from "antd";
 import { RefreshCw, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { capabilityFromModalities, type CatalogModel } from "@/lib/model-catalog";
@@ -25,16 +25,23 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
     const [catalog, setCatalog] = useState<Map<string, CatalogModel>>(new Map());
     const [capabilityFilter, setCapabilityFilter] = useState<CapabilityFilter>("all");
 
+    // `selectedNames` is rebuilt by the parent on every keystroke it re-renders for, so it can never
+    // be an effect dependency: it would wipe the fetched list and the checkboxes mid-selection.
+    // Seed the modal once per opening, reading the names through a ref.
+    const selectedNamesRef = useRef(selectedNames);
+    selectedNamesRef.current = selectedNames;
+
     useEffect(() => {
         if (!open) return;
-        setExisting(selectedNames);
+        const names = selectedNamesRef.current;
+        setExisting(names);
         setFetched([]);
-        setSelected(new Set(selectedNames));
-        setActiveTab(selectedNames.length ? "existing" : "new");
+        setSelected(new Set(names));
+        setActiveTab(names.length ? "existing" : "new");
         setSearch("");
         setManual("");
         setCapabilityFilter("all");
-    }, [open, selectedNames]);
+    }, [open]);
 
     /** Capability we would store for a model id, mirroring normalizeChannelModels. */
     const capabilityOf = (name: string): ModelCapability => capabilityFromModalities(catalog.get(name)?.outputModalities) || guessCapability(name);
