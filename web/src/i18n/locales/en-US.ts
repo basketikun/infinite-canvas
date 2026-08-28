@@ -465,12 +465,11 @@ export default {
         },
         providers: {
             title: "Add provider",
-            description: "Pick a provider — the channel and models are pre-wired, just paste your API key. OpenRouter fetches its full catalog live.",
+            description: "Pick a provider — the endpoint and a few starter models are pre-wired. Paste your API key, then press Connect to import its full catalog.",
             custom: "Custom / manual",
             customHint: "Set Base URL, protocol, and models yourself (relays, self-hosted, etc.)",
             fetchModels: "Fetch all models",
             fetching: "Fetching models…",
-            fetched: "Fetched {{count}} models",
             fetchFailed: "Failed to fetch models",
             fetchUnsupported: "This provider doesn't support automatic model fetching — add models manually.",
             presetsReady: "{{count}} preset models ready",

@@ -465,12 +465,11 @@ export default {
         },
         providers: {
             title: "添加渠道",
-            description: "选择服务商即自动配置渠道和模型，只需粘贴 API Key。OpenRouter 可在线拉取全部模型。",
+            description: "选择服务商即自动配置接口地址和几个常用模型。粘贴 API Key 后点「连接」，即可导入该渠道的全部模型。",
             custom: "自定义 / 手动",
             customHint: "自行填写接口地址、协议与模型（中转站、自建服务等）",
             fetchModels: "拉取全部模型",
             fetching: "正在拉取模型…",
-            fetched: "已拉取 {{count}} 个模型",
             fetchFailed: "拉取模型失败",
             fetchUnsupported: "该服务商不支持自动拉取模型，请手动添加。",
             presetsReady: "{{count}} 个预设模型已就绪",

@@ -13,7 +13,7 @@ import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { channelFromPreset, enrichModelsForChannel, fetchPresetModels, mergeChannelModels, type ProviderPreset } from "@/lib/provider-presets";
+import { channelFromPreset, type ProviderPreset } from "@/lib/provider-presets";
 import {
     channelIsConnected,
     createModelChannel,
@@ -87,7 +87,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     const finishConfig = () => {
-        const ready = config.channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
+        const ready = config.channels.some((channel) => channelIsConnected(channel) && channel.models.length);
         setConfigDialogOpen(false);
         if (!ready) return;
         message.success(t(shouldPromptContinue ? "config.savedContinue" : "config.saved"));
@@ -109,25 +109,15 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const [pickerOpen, setPickerOpen] = useState(false);
 
-    /** Insert a preset channel immediately, then auto-fetch its live catalog in the background (no key needed for public catalogs). */
+    /**
+     * Insert a preset channel with its curated fallback models and open the editor. No catalog is
+     * fetched here: every request this app makes to a provider follows a button the user pressed,
+     * and the editor's Connect button is that button.
+     */
     const addPresetChannel = (preset: ProviderPreset) => {
         const channel = channelFromPreset(preset);
         updateChannels([...config.channels, channel]);
         setEditingChannelId(channel.id);
-        if (!preset.fetchModels) return;
-        void (async () => {
-            try {
-                const ids = await fetchPresetModels(preset);
-                const latest = useConfigStore.getState().config;
-                const target = latest.channels.find((item) => item.id === channel.id);
-                if (!target) return; // user deleted the channel while fetching
-                const merged = mergeChannelModels(target.models, enrichModelsForChannel(target, ids));
-                updateChannels(latest.channels.map((item) => (item.id === channel.id ? { ...item, models: merged } : item)));
-                message.success(t("config.providers.fetched", { count: merged.length }));
-            } catch {
-                // curated fallback models stay in place; user can still fetch manually after pasting a key
-            }
-        })();
     };
 
     const addChannel = () => setPickerOpen(true);
