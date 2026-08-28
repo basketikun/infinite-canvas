@@ -1,7 +1,7 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
 import i18n from "@/i18n";
-import { buildApiUrl, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { authHeaders, buildApiUrl, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type RequestOptions = { signal?: AbortSignal };
 
@@ -50,7 +50,7 @@ function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHtt
             url: pluginUrl(config, path),
             data: method === "post" ? body : undefined,
             params: opts?.params,
-            headers: pluginHeaders({ Authorization: `Bearer ${config.apiKey}`, ...opts?.headers }, method === "post" && !isForm && body !== undefined),
+            headers: pluginHeaders({ ...authHeaders(config), ...opts?.headers }, method === "post" && !isForm && body !== undefined),
             responseType: opts?.responseType || "json",
             signal: options?.signal,
         });

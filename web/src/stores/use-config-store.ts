@@ -519,6 +519,25 @@ export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
     return OPENAI_BASE_URL;
 }
 
+/**
+ * Credential header for a channel, omitted entirely when it has no key.
+ *
+ * A keyless (noAuth) provider must not be sent `Authorization: Bearer` with an empty credential:
+ * that is malformed per RFC 6750, and a strict gateway rejects it where it would have accepted no
+ * header at all - failing exactly the local and self-hosted gateways noAuth exists to serve. Every
+ * request path shares this one helper so the guard cannot drift back apart.
+ */
+export function authHeaders(config: Pick<AiConfig, "apiKey">): Record<string, string> {
+    const apiKey = (config.apiKey || "").trim();
+    return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+}
+
+/** The same rule for Gemini's key header. */
+export function geminiAuthHeaders(config: Pick<AiConfig, "apiKey">): Record<string, string> {
+    const apiKey = (config.apiKey || "").trim();
+    return apiKey ? { "x-goog-api-key": apiKey } : {};
+}
+
 function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
     return apiFormat === "gemini" ? apiFormat : "openai";
 }

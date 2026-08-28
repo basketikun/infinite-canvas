@@ -5,7 +5,7 @@ import i18n from "@/i18n";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { authHeaders, boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 
@@ -28,7 +28,7 @@ function aiApiUrl(config: AiConfig, path: string) {
 
 function aiHeaders(config: AiConfig, contentType?: string) {
     return {
-        Authorization: `Bearer ${config.apiKey}`,
+        ...authHeaders(config),
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
 }
