@@ -109,53 +109,81 @@ async function fetchXaiCatalog(apiKey: string): Promise<CatalogModel[]> {
 }
 
 /**
- * OpenRouter image generation uses POST /images (b64_json in data[]) instead of /images/generations.
- * Reference images for image-to-image go in `input_references`; without them an edit request
- * silently degrades into plain text-to-image.
+ * Shared by both OpenRouter scripts. This app stores a size ("1024x1024", "1280x720", sometimes a
+ * hand-typed "800x600"); the API accepts only an aspect-ratio enum, and rejects a pixel string
+ * outright. Compare as numbers and take the closest option the model actually allows.
  */
-const OPENROUTER_IMAGE_SCRIPT = `// OpenRouter image generation (POST /images, b64_json result)
-const body = { model, prompt };
-if (params.size) body.aspect_ratio = params.size;
-if (images && images.length) {
-  body.input_references = images.map((url) => ({ type: "image_url", image_url: { url } }));
-}
-const n = Math.min(params.count || 1, 10);
-const single = { ...body };
-if (n > 1) body.n = n;
-try {
-  const data = await http.post("/images", body);
-  return (data.data || []).map((item) => item.b64_json).filter(Boolean);
-} catch (error) {
-  if (n <= 1) throw error;
-  // single-image providers reject n>1: fall back to sequential calls, keeping the references
-  const results = [];
-  for (let i = 0; i < n; i++) {
-    const data = await http.post("/images", single);
-    results.push(...(data.data || []).map((item) => item.b64_json).filter(Boolean));
-  }
-  return results;
-}`;
-
-/**
- * OpenRouter video generation is a job API, not a single call: POST /videos returns
- * { id, polling_url, status }, and the caller polls that url until status is terminal. Only
- * "completed" carries `unsigned_urls`; "failed", "cancelled" and "expired" all end the job.
- *
- * Every parameter is a per-model enum, and the three models disagree completely: Veo 3.1 takes
- * 4/6/8 seconds at 720p/1080p/4K, Sora 2 Pro takes 4/8/12/16/20, Seedance takes anything from 4 to
- * 30 at 480p/720p. Our own settings are a fixed list that matches none of them, and this app stores
- * video size as "1280x720" where the API wants the aspect ratio "16:9" - so the script reads each
- * model's declared limits from /videos/models and snaps to them instead of sending a rejected enum.
- */
-const OPENROUTER_VIDEO_SCRIPT = `// OpenRouter video generation (POST /videos, then poll the job)
-// Size here is whatever the studio holds - a preset like "1280x720", a hand-typed "800x600", or an
-// "16:9" from a script. Compare them as numbers and take the closest option the model allows, since
-// the API only accepts its enum and a pixel string is rejected outright.
-const STANDARD_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"];
+const RATIO_SNIPPET = `const STANDARD_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"];
 const ratioValue = (text) => {
   const [w, h] = String(text || "").split(/[:x×]/).map(Number);
   return w > 0 && h > 0 ? w / h : 0;
 };
+const closestRatio = (options, wanted) => options.reduce((best, option) => (Math.abs(ratioValue(option) - wanted) < Math.abs(ratioValue(best) - wanted) ? option : best));`;
+
+/**
+ * OpenRouter image generation uses POST /images (b64_json in data[]) instead of /images/generations.
+ *
+ * Every constraint is per-model and published on /images/models: the aspect-ratio enum, how many
+ * images one call may return (Gemini caps n at 1 where GPT Image allows 10), how many reference
+ * images are accepted (3 vs 16), and whether quality and background are understood at all. Sending
+ * a value outside any of these is a flat 400, and this app stores its size as pixels, which is
+ * never a valid aspect ratio - so read the limits and fit the request to them.
+ */
+const OPENROUTER_IMAGE_SCRIPT = `// OpenRouter image generation (POST /images, b64_json result)
+${RATIO_SNIPPET}
+
+// Per-model limits. Optional: if the lookup fails the request still goes out with our own settings.
+let specs = null;
+try {
+  const list = await http.get("/images/models");
+  const found = (list.data || list || []).find((item) => item.id === model);
+  specs = (found && found.supported_parameters) || null;
+} catch (error) {
+  specs = null;
+}
+const enumValues = (name) => (specs && specs[name] && specs[name].values) || null;
+const rangeMax = (name) => (specs && specs[name] && typeof specs[name].max === "number" ? specs[name].max : null);
+
+const body = { model, prompt };
+
+const ratioOptions = (enumValues("aspect_ratio") || STANDARD_RATIOS).filter((value) => value !== "auto");
+const wantedRatio = ratioValue(params.size);
+if (wantedRatio && ratioOptions.length) body.aspect_ratio = closestRatio(ratioOptions, wantedRatio);
+
+const qualities = enumValues("quality");
+if (params.quality && qualities && qualities.includes(params.quality)) body.quality = params.quality;
+const backgrounds = enumValues("background");
+if (params.background && backgrounds && backgrounds.includes(params.background)) body.background = params.background;
+
+// More references than the model accepts is rejected outright, so send only what fits.
+if (images && images.length) {
+  const maxRefs = rangeMax("input_references");
+  const refs = maxRefs === null ? images : images.slice(0, maxRefs);
+  if (refs.length) body.input_references = refs.map((url) => ({ type: "image_url", image_url: { url } }));
+}
+
+const maxCount = rangeMax("n") || 10;
+const n = Math.max(1, Math.min(params.count || 1, maxCount));
+const single = { ...body };
+if (n > 1) body.n = n;
+// Returned as { b64_json } objects, not bare strings: a bare string is taken for a URL and the
+// raw base64 then fails to load, which loses every image the model actually produced.
+const collect = (data) => (data.data || []).map((item) => item.b64_json).filter(Boolean).map((b64_json) => ({ b64_json }));
+try {
+  const data = await http.post("/images", body);
+  return collect(data);
+} catch (error) {
+  if (n <= 1) throw error;
+  // A model that rejects n>1 anyway: fall back to sequential calls, keeping the references.
+  const results = [];
+  for (let i = 0; i < n; i++) {
+    results.push(...collect(await http.post("/images", single)));
+  }
+  return results;
+}`;
+
+const OPENROUTER_VIDEO_SCRIPT = `// OpenRouter video generation (POST /videos, then poll the job)
+${RATIO_SNIPPET}
 
 // Per-model limits. Treated as optional: if this lookup fails the request still goes out with our
 // own settings, which is no worse than not having asked.
@@ -181,9 +209,7 @@ else if (resolution) body.resolution = resolution;
 const ratios = specs && specs.supported_aspect_ratios;
 const allowed = ratios && ratios.length ? ratios : STANDARD_RATIOS;
 const wantedRatio = ratioValue(params.ratio);
-if (wantedRatio) {
-  body.aspect_ratio = allowed.reduce((best, option) => (Math.abs(ratioValue(option) - wantedRatio) < Math.abs(ratioValue(best) - wantedRatio) ? option : best));
-}
+if (wantedRatio) body.aspect_ratio = closestRatio(allowed, wantedRatio);
 
 // Asking for audio from a model that cannot produce it is rejected outright, so only pass the flag
 // when the model advertises support.
