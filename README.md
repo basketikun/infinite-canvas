@@ -29,6 +29,8 @@
 >
 > 如果你需要稳定维护自己的分支，建议自行 fork 后独立开发。二次开发与 PR 请保留原作者信息和前端页面标识。
 
+<p align="center"><b>English</b> · <a href="#简体中文">简体中文</a></p>
+
 ## 赞助商
 
 <table>
@@ -58,7 +60,89 @@
   </tr>
 </table>
 
-## 核心功能
+## English
+
+Infinite Canvas is an open-source workbench for image creation. It puts canvas composition, AI image generation, reference-image editing, a conversational assistant, a prompt library, and asset collection in one interface — built for exploring visual directions and iterating on results continuously.
+
+> [!CAUTION]
+> The project is under active development and does not guarantee compatibility with older data. Local storage formats may change without migration.
+>
+> If you need a stable branch of your own, fork it and develop independently. For derivative work and pull requests, please keep the original author credit and the front-end page identity.
+
+### Features
+
+- **Infinite canvas** — multi-canvas projects, node drag and zoom, connections, minimap, undo/redo, import/export.
+- **AI creation** — the browser talks directly to the OpenAI-compatible endpoint you configure: text-to-image, image-to-image, reference-image editing, text chat, audio, and video.
+- **Canvas assistant** — converse and generate around the selected node and its upstream nodes, then insert results back into the canvas.
+- **Local agent** — connect Codex / Claude Code through the local Canvas Agent so an agent can drive the current canvas over MCP.
+- **Codex app plugin** — installing it registers the MCP server and tries to start the local agent automatically.
+- **Plugin system** — install, enable, update and remove remote node plugins by URL, with a TypeScript SDK for writing your own canvas nodes.
+- **Custom API calls** — override how image and video endpoints are called, to fit relays and self-hosted services.
+- **Prompt library** — seven built-in open-source prompt sources plus your own standard JSON sources, fetched by the browser and cached in IndexedDB.
+
+Full details in the [feature guide](docs/content/docs/overview/features.mdx).
+
+### Quick start
+
+Your API key, base URL, canvases, assets and generation history are stored locally in the browser by default.
+
+#### Local development
+
+```bash
+git clone git@github.com:basketikun/infinite-canvas.git
+cd infinite-canvas
+cd web
+bun install
+bun run dev
+```
+
+#### Docker
+
+```bash
+git clone git@github.com:basketikun/infinite-canvas.git
+cd infinite-canvas
+docker compose up -d
+```
+
+The default port is 3000, reachable at `http://localhost:3000`.
+
+### Connecting a provider
+
+Open **Settings → Providers → Add provider**, pick a preset (fal.ai, Google Gemini, OpenAI, xAI, Replicate, OpenRouter) or choose Custom, then:
+
+1. Paste your **API Key**. Leave it empty and tick _This provider needs no API key_ only for a local or self-hosted gateway that authenticates by IP.
+2. Press **Connect**. The provider's entire catalog is imported in one request — there is no model list to hand-pick. Nothing is fetched until you press it.
+3. Pick the model you want in the Image, Video, or Canvas studio. Those pickers filter by capability, so a text model never appears under Image.
+
+**API format** decides the wire protocol: the request path, the auth header, and the request body shape. Presets set it correctly — leave it on `OpenAI` for OpenRouter and most relays, and choose `Gemini` only when the endpoint really is Google's Generative Language API.
+
+Models on a provider with no key are hidden from every picker rather than offered and then failing to authenticate. A provider whose catalog is public (OpenRouter, fal.ai) can be imported before you add a key, but its models stay hidden until you do.
+
+If the default OpenAI-style call does not match your API, you can write a custom image or video request script per model.
+
+### Contact
+
+For custom development or image-API enquiries: 1844025705@qq.com · QQ 1844025705
+
+### Sponsorship
+
+This project is open to advertising sponsorship. Reach out through the contact above.
+
+### Community
+
+[LinuxDO](https://linux.do/) · QQ group: https://qm.qq.com/q/DFnKzZ807u
+
+### License
+
+[MIT License](LICENSE). Anyone may use, copy, modify, distribute, sublicense and sell this project, including in closed-source products.
+
+---
+
+<a id="简体中文"></a>
+
+## 简体中文
+
+### 核心功能
 
 - 无限画布：多画布项目、节点拖拽缩放、连线、小地图、撤销重做、导入导出。
 - AI 创作：浏览器前台直连你配置的 OpenAI 兼容接口，支持文生图、图生图、参考图编辑、文本问答、音频和视频生成。
@@ -73,11 +157,23 @@
 
 如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
 
-## 快速开始
+### 快速开始
 
 AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器本地。
 
-### 本地开发
+#### 配置渠道
+
+打开 **设置 → 渠道 → 新增渠道**，选择预设服务商（fal.ai、Google Gemini、OpenAI、xAI、Replicate、OpenRouter）或自定义，然后：
+
+1. 粘贴 **API Key**。只有按 IP 鉴权的本地或自建网关，才留空并勾选「该渠道无需 API Key」。
+2. 点击 **连接**。一次请求即导入该渠道的完整模型目录，无需手动挑选；未点击前不会发出任何请求。
+3. 在生图、视频或画布创作台里选择要用的模型。选择器按能力筛选，文本模型不会出现在生图里。
+
+**接口格式**决定通信协议：请求路径、鉴权头和请求体结构。预设已自动设好 —— OpenRouter 和多数中转站保持 `OpenAI`，只有当接口确实是 Google Generative Language API 时才选 `Gemini`。
+
+未填写 Key 的渠道，其模型不会出现在任何选择器中，以免选中后必然鉴权失败。目录公开的渠道（OpenRouter、fal.ai）可以先导入再填 Key，但在填写之前模型仍然不会出现在创作台。
+
+#### 本地开发
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
@@ -87,7 +183,7 @@ bun install
 bun run dev
 ```
 
-### Docker 运行
+#### Docker 运行
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
@@ -101,7 +197,7 @@ docker compose up -d
 
 如果默认的OpenAI接口调用方式与您的API不同，可自定义生图/视频脚本调用。
 
-## 效果展示
+### 效果展示
 
 <table width="100%">
   <tr>
@@ -122,27 +218,29 @@ docker compose up -d
   </tr>
 </table>
 
-## 联系方式
+### 联系方式
 
 项目定制二次开发需求 / 生图 API 需求可联系。
 
 邮箱：1844025705@qq.com · QQ：1844025705
 
-## 赞助支持
+### 赞助支持
 
 本项目长期开放广告赞助合作，欢迎品牌 / 产品投放，你的支持是持续更新的动力！
 
 有广告赞助意向请通过上方联系方式沟通。
 
-## 社区支持
+### 社区支持
 
 学 AI，上 L 站：[LinuxDO](https://linux.do/)
 
 点击链接加入群聊【AI开源交流】：https://qm.qq.com/q/DFnKzZ807u
 
-## 开源协议
+### 开源协议
 
 本项目使用 [MIT License](LICENSE)。任何人都可以免费使用、复制、修改、分发、再授权和商业使用本项目，也可以用于闭源产品。
+
+---
 
 ## Star History
 
