@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import type { CatalogModel } from "@/lib/model-catalog";
 import { describeModelPrice, formatModelPrice } from "@/lib/model-pricing";
-import { connectChannel } from "@/lib/provider-presets";
+import { channelSupportsKeylessCatalog, connectChannel } from "@/lib/provider-presets";
 import { channelIsConnected, defaultBaseUrlForApiFormat, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
@@ -77,6 +77,15 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
 
     if (!draft) return null;
 
+    /**
+     * OpenRouter and fal publish their catalogs without authentication, so importing one is possible
+     * before a key exists - gating the button on `channelIsConnected` left the user staring at a
+     * disabled Connect for a provider we could read right then. The key is still required to run a
+     * model, which is what the warning below says.
+     */
+    const keylessCatalog = channelSupportsKeylessCatalog(draft);
+    const canImport = channelIsConnected(draft) || keylessCatalog;
+
     const changeApiFormat = (apiFormat: ApiCallFormat) => {
         const baseUrl = !draft.baseUrl.trim() || draft.baseUrl.trim() === defaultBaseUrlForApiFormat(draft.apiFormat) ? defaultBaseUrlForApiFormat(apiFormat) : draft.baseUrl;
         patch({ apiFormat, baseUrl });
@@ -144,7 +153,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                         <div className="text-sm font-semibold">{t("config.channelEditor.models")}</div>
                         <div className="mt-0.5 text-xs text-stone-500">{t("config.channelEditor.modelDescription", { count: draft.models.length })}</div>
                     </div>
-                    <Button type="primary" icon={<Plug className="size-4" />} loading={connecting} disabled={!channelIsConnected(draft)} onClick={() => void connect(draft)}>
+                    <Button type="primary" icon={<Plug className="size-4" />} loading={connecting} disabled={!canImport} onClick={() => void connect(draft)}>
                         {t(draft.models.length ? "config.channelEditor.refresh" : "config.channelEditor.connect")}
                     </Button>
                 </div>
@@ -155,7 +164,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                         </Tag>
                     ))}
                 </div>
-                {channelIsConnected(draft) ? null : <div className="mt-3 text-xs text-amber-600 dark:text-amber-500">{t("config.channelEditor.needsKey")}</div>}
+                {channelIsConnected(draft) ? null : <div className="mt-3 text-xs text-amber-600 dark:text-amber-500">{t(keylessCatalog ? "config.channelEditor.keyNeededForStudio" : "config.channelEditor.needsKey")}</div>}
             </div>
 
             <div className="mt-4 mb-3 flex flex-wrap items-center justify-between gap-2">

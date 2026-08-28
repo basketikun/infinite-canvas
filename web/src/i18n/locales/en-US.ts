@@ -512,6 +512,7 @@ export default {
             connected: "Connected - {{count}} models imported",
             connectFailed: "Could not reach this provider",
             needsKey: "Add an API key - or tick the no-key box above - to import this provider's models.",
+            keyNeededForStudio: "You can import the catalog now, but add an API key before these models appear in the studio.",
             addManually: "Add manually",
             listTruncated: "Showing {{shown}} of {{total}} - search or filter to narrow this list.",
             noMatch: "No model matches this filter.",

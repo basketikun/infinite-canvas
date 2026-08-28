@@ -512,6 +512,7 @@ export default {
             connected: "已连接 - 导入 {{count}} 个模型",
             connectFailed: "无法连接该渠道",
             needsKey: "填写 API Key，或勾选上面的免密选项，然后点「连接」导入模型。",
+            keyNeededForStudio: "现在就能导入模型列表，但要填写 API Key 后这些模型才会出现在工作台。",
             addManually: "手动添加",
             listTruncated: "显示 {{shown}} / {{total}} 个，使用搜索或筛选缩小范围。",
             noMatch: "没有符合当前筛选的模型。",
