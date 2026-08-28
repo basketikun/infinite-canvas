@@ -22,6 +22,13 @@ export type ChannelModel = {
     script?: string;
     /** Where `capability` came from; see CapabilitySource for the precedence order. */
     capabilitySource?: CapabilitySource;
+    /**
+     * Who wrote `script`. "user" is hand-authored and must survive a catalog refresh untouched;
+     * "preset" is ours and must be replaced by a refresh, otherwise a fix to a shipped script can
+     * never reach a channel that already stored the broken version. Absent means preset: no released
+     * build ever stored a script the user did not write, since preset scripts arrived with this work.
+     */
+    scriptSource?: "preset" | "user";
     /** Provider says the model accepts image input (image-to-image); undefined when unknown. */
     acceptsImageInput?: boolean;
     /** Live pricing from the provider catalog, USD per unit. */
@@ -412,6 +419,7 @@ export function normalizeChannelModels(models: Array<string | ChannelModel | Cat
             // mis-tags can still heal. Only the channel editor marks a capability as "user".
             capabilitySource: item.capabilitySource || "guess",
             script: item.script?.trim() || undefined,
+            scriptSource: item.scriptSource,
             acceptsImageInput: item.acceptsImageInput,
             pricing: item.pricing,
             label: item.label,

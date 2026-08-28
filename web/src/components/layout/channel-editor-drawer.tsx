@@ -100,7 +100,9 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
 
     // An explicit choice here is authoritative and must survive reloads, so it is stamped as such.
     const setCapability = (name: string, capability: ModelCapability) => setModels(draft.models.map((model) => (model.name === name ? { ...model, capability, capabilitySource: "user" as const } : model)));
-    const setScript = (name: string, script: string) => setModels(draft.models.map((model) => (model.name === name ? { ...model, script: script || undefined } : model)));
+    // Editing here claims the script as the user's, so a later catalog refresh leaves it alone.
+    // Clearing it hands the model back to the preset.
+    const setScript = (name: string, script: string) => setModels(draft.models.map((model) => (model.name === name ? { ...model, script: script || undefined, scriptSource: script ? ("user" as const) : undefined } : model)));
     const removeModel = (name: string) => setModels(draft.models.filter((model) => model.name !== name));
 
     const save = () => {

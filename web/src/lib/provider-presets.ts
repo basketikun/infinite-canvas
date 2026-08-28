@@ -148,7 +148,14 @@ try {
  * model's declared limits from /videos/models and snaps to them instead of sending a rejected enum.
  */
 const OPENROUTER_VIDEO_SCRIPT = `// OpenRouter video generation (POST /videos, then poll the job)
-const RATIOS = { "1280x720": "16:9", "720x1280": "9:16", "1024x1024": "1:1", "1792x1024": "16:9", "1024x1792": "9:16" };
+// Size here is whatever the studio holds - a preset like "1280x720", a hand-typed "800x600", or an
+// "16:9" from a script. Compare them as numbers and take the closest option the model allows, since
+// the API only accepts its enum and a pixel string is rejected outright.
+const STANDARD_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"];
+const ratioValue = (text) => {
+  const [w, h] = String(text || "").split(/[:x×]/).map(Number);
+  return w > 0 && h > 0 ? w / h : 0;
+};
 
 // Per-model limits. Treated as optional: if this lookup fails the request still goes out with our
 // own settings, which is no worse than not having asked.
@@ -172,10 +179,10 @@ if (resolutions && resolutions.length) body.resolution = resolutions.includes(re
 else if (resolution) body.resolution = resolution;
 
 const ratios = specs && specs.supported_aspect_ratios;
-const ratio = RATIOS[params.ratio] || (typeof params.ratio === "string" && params.ratio.includes(":") ? params.ratio : null);
-if (ratio) {
-  if (!ratios || !ratios.length) body.aspect_ratio = ratio;
-  else body.aspect_ratio = ratios.includes(ratio) ? ratio : ratios[0];
+const allowed = ratios && ratios.length ? ratios : STANDARD_RATIOS;
+const wantedRatio = ratioValue(params.ratio);
+if (wantedRatio) {
+  body.aspect_ratio = allowed.reduce((best, option) => (Math.abs(ratioValue(option) - wantedRatio) < Math.abs(ratioValue(best) - wantedRatio) ? option : best));
 }
 
 // Asking for audio from a model that cannot produce it is rejected outright, so only pass the flag
@@ -475,8 +482,10 @@ function applyPreset(preset: ProviderPreset | undefined, models: ChannelModel[])
         const override = model.capabilitySource === "user" ? undefined : preset?.capabilities?.[model.name];
         const capability = override || model.capability;
         const capabilitySource = override ? ("preset" as const) : model.capabilitySource;
-        const script = preset?.scripts?.[model.name] || preset?.capabilityScripts?.[capability];
-        return { ...model, capability, capabilitySource, script };
+        const presetScript = preset?.scripts?.[model.name] || preset?.capabilityScripts?.[capability];
+        // A hand-written script is the user's, and outranks ours exactly like a hand-set capability.
+        if (model.scriptSource === "user") return { ...model, capability, capabilitySource };
+        return { ...model, capability, capabilitySource, script: presetScript, scriptSource: presetScript ? ("preset" as const) : undefined };
     });
 }
 
@@ -540,7 +549,9 @@ export function mergeChannelModels(current: ChannelModel[], incoming: ChannelMod
             acceptsImageInput: model.acceptsImageInput ?? existing.acceptsImageInput,
             pricing: model.pricing ?? existing.pricing,
             label: model.label ?? existing.label,
-            script: existing.script || model.script,
+            // Ours to replace unless the user wrote it: a stored preset script that keeps winning is a
+            // shipped bug that no refresh can ever reach.
+            ...(existing.scriptSource === "user" ? { script: existing.script, scriptSource: existing.scriptSource } : { script: model.script ?? existing.script, scriptSource: model.scriptSource }),
         });
     }
     return Array.from(map.values());
@@ -591,7 +602,7 @@ export function healPresetScripts(): void {
             const script = preset.scripts?.[model.name] || preset.capabilityScripts?.[model.capability];
             if (!script) return model;
             channelChanged = true;
-            return { ...model, script };
+            return { ...model, script, scriptSource: "preset" as const };
         });
         if (!channelChanged) return channel;
         changed = true;
