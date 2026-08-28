@@ -468,11 +468,6 @@ export default {
             description: "Pick a provider — the endpoint and a few starter models are pre-wired. Paste your API key, then press Connect to import its full catalog.",
             custom: "Custom / manual",
             customHint: "Set Base URL, protocol, and models yourself (relays, self-hosted, etc.)",
-            fetchModels: "Fetch all models",
-            fetching: "Fetching models…",
-            fetchFailed: "Failed to fetch models",
-            fetchUnsupported: "This provider doesn't support automatic model fetching — add models manually.",
-            presetsReady: "{{count}} preset models ready",
             hints: {
                 fal: "Kling, Veo 3, MiniMax, Luma + FLUX images (queue API)",
                 gemini: "Veo 3.1 video, Nano Banana images, Gemini text",
