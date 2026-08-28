@@ -140,17 +140,51 @@ try {
  * OpenRouter video generation is a job API, not a single call: POST /videos returns
  * { id, polling_url, status }, and the caller polls that url until status is terminal. Only
  * "completed" carries `unsigned_urls`; "failed", "cancelled" and "expired" all end the job.
- * Reference images ride along as `input_references`, matching the image script.
+ *
+ * Every parameter is a per-model enum, and the three models disagree completely: Veo 3.1 takes
+ * 4/6/8 seconds at 720p/1080p/4K, Sora 2 Pro takes 4/8/12/16/20, Seedance takes anything from 4 to
+ * 30 at 480p/720p. Our own settings are a fixed list that matches none of them, and this app stores
+ * video size as "1280x720" where the API wants the aspect ratio "16:9" - so the script reads each
+ * model's declared limits from /videos/models and snaps to them instead of sending a rejected enum.
  */
 const OPENROUTER_VIDEO_SCRIPT = `// OpenRouter video generation (POST /videos, then poll the job)
+const RATIOS = { "1280x720": "16:9", "720x1280": "9:16", "1024x1024": "1:1", "1792x1024": "16:9", "1024x1792": "9:16" };
+
+// Per-model limits. Treated as optional: if this lookup fails the request still goes out with our
+// own settings, which is no worse than not having asked.
+let specs = null;
+try {
+  const list = await http.get("/videos/models");
+  specs = (list.data || list || []).find((item) => item.id === model) || null;
+} catch (error) {
+  specs = null;
+}
+
+const nearest = (options, wanted) => options.reduce((best, value) => (Math.abs(value - wanted) < Math.abs(best - wanted) ? value : best));
 const body = { model, prompt };
-if (params.seconds) body.duration = Number(params.seconds);
-if (params.resolution) body.resolution = params.resolution;
-if (params.ratio && params.ratio !== "auto") body.aspect_ratio = params.ratio;
-if (typeof params.generateAudio === "boolean") body.generate_audio = params.generateAudio;
+
+const seconds = Number(params.seconds) || 6;
+body.duration = specs && specs.supported_durations && specs.supported_durations.length ? nearest(specs.supported_durations, seconds) : seconds;
+
+const resolutions = specs && specs.supported_resolutions;
+const resolution = params.resolution;
+if (resolutions && resolutions.length) body.resolution = resolutions.includes(resolution) ? resolution : resolutions[0];
+else if (resolution) body.resolution = resolution;
+
+const ratios = specs && specs.supported_aspect_ratios;
+const ratio = RATIOS[params.ratio] || (typeof params.ratio === "string" && params.ratio.includes(":") ? params.ratio : null);
+if (ratio) {
+  if (!ratios || !ratios.length) body.aspect_ratio = ratio;
+  else body.aspect_ratio = ratios.includes(ratio) ? ratio : ratios[0];
+}
+
+// Asking for audio from a model that cannot produce it is rejected outright, so only pass the flag
+// when the model advertises support.
+if (typeof params.generateAudio === "boolean" && (!specs || specs.generate_audio)) body.generate_audio = params.generateAudio;
 if (images && images.length) {
   body.input_references = images.map((url) => ({ type: "image_url", image_url: { url } }));
 }
+
 const job = await http.post("/videos", body);
 const done = await poll(
   () => http.get(job.polling_url || "/videos/" + job.id),

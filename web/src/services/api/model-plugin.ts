@@ -1,6 +1,7 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
 import i18n from "@/i18n";
+import { readRequestError } from "@/lib/api-error";
 import { authHeaders, buildApiUrl, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type RequestOptions = { signal?: AbortSignal };
@@ -51,16 +52,24 @@ function pluginUrl(config: AiConfig, path: string) {
 function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHttp {
     const run = async (method: "get" | "post", path: string, body: unknown, opts?: PluginHttpOptions) => {
         const isForm = typeof FormData !== "undefined" && body instanceof FormData;
-        const response = await axios.request({
-            method,
-            url: pluginUrl(config, path),
-            data: method === "post" ? body : undefined,
-            params: opts?.params,
-            headers: pluginHeaders({ ...authHeaders(config), ...opts?.headers }, method === "post" && !isForm && body !== undefined),
-            responseType: opts?.responseType || "json",
-            signal: options?.signal,
-        });
-        return response.data;
+        try {
+            const response = await axios.request({
+                method,
+                url: pluginUrl(config, path),
+                data: method === "post" ? body : undefined,
+                params: opts?.params,
+                headers: pluginHeaders({ ...authHeaders(config), ...opts?.headers }, method === "post" && !isForm && body !== undefined),
+                responseType: opts?.responseType || "json",
+                signal: options?.signal,
+            });
+            return response.data;
+        } catch (error) {
+            if (axios.isCancel(error) || (error instanceof DOMException && error.name === "AbortError")) throw error;
+            // Axios only says "Request failed with status code 400", which reads the same whether the
+            // provider rejected the prompt on moderation grounds or refused an unsupported parameter.
+            // Re-throw carrying whatever the provider wrote, so the user is told which one it was.
+            throw new Error(readRequestError(error, i18n.t("modelPlugin.requestFailed")));
+        }
     };
     return {
         url: (path) => pluginUrl(config, path),
