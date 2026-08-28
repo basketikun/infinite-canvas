@@ -290,64 +290,78 @@ export const useConfigStore = create<ConfigStore>()(
             partialize: (state) => ({ config: state.config, webdav: state.webdav, migrations: state.migrations }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
-                const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
-                const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
-                const config = { ...defaultConfig, ...persistedConfig };
-                if (!Array.isArray(persistedConfig.channels)) config.channels = [];
-                const channels = normalizeChannels(config);
-                const models = modelOptionsFromChannels(channels);
-                // Heal stale capabilities from older builds (e.g. mis-tagged "inkling"→video) without
-                // destroying intent: only entries that were themselves guessed are re-guessed. A capability
-                // set by the user, by a preset override, or by the provider's catalog is left as stored.
-                for (const channel of channels) {
-                    channel.models = channel.models.map((model) => {
-                        if (model.script || (model.capabilitySource || "guess") !== "guess") return model;
-                        const guessed = guessCapability(model.name);
-                        return model.capability === guessed ? model : { ...model, capability: guessed, capabilitySource: "guess" };
-                    });
-                }
-                // Default model per capability must actually match that capability; mismatched persisted
-                // defaults (e.g. a text model saved as the video default) are cleared instead of kept.
-                // A default must also live on a connected provider: a model saved against a channel
-                // whose key was since cleared would fail authentication on every single request.
-                const usableCapabilityOf = (value: string) => {
-                    const found = findChannelModel({ ...config, channels }, value);
-                    return found && channelIsConnected(found.channel) ? found.model.capability : undefined;
-                };
-                const validOrDefault = (value: string, capability: ModelCapability) => {
-                    const normalized = normalizeModelOptionValue(value, channels);
-                    return normalized && usableCapabilityOf(normalized) === capability ? normalized : "";
-                };
-                return {
-                    ...current,
-                    webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
-                    migrations: { ...(persistedState.migrations || {}) },
-                    config: {
-                        ...config,
-                        channelMode: "local",
-                        apiFormat: normalizeApiFormat(config.apiFormat),
-                        channels,
-                        models,
-                        imageModel: validOrDefault(config.imageModel || config.model, "image"),
-                        videoModel: validOrDefault(config.videoModel, "video"),
-                        textModel: validOrDefault(config.textModel || config.model, "text"),
-                        audioModel: validOrDefault(config.audioModel || defaultConfig.audioModel, "audio"),
-                        audioVoice: config.audioVoice || defaultConfig.audioVoice,
-                        audioFormat: config.audioFormat || defaultConfig.audioFormat,
-                        audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
-                        audioInstructions: config.audioInstructions || "",
-                        reasoningEffort: config.reasoningEffort || "auto",
-                        videoSeconds: config.videoSeconds || "6",
-                        vquality: config.vquality || "720",
-                        videoGenerateAudio: config.videoGenerateAudio || "true",
-                        videoWatermark: config.videoWatermark || "false",
-                        canvasImageCount: config.canvasImageCount || "3",
-                    },
-                };
+                const { config, webdav, migrations } = normalizePersistedConfig(persistedState);
+                return { ...current, config, webdav, migrations };
             },
         },
     ),
 );
+
+export type PersistedConfigState = { config?: Partial<AiConfig>; webdav?: Partial<WebdavSyncConfig>; migrations?: MigrationFlags };
+
+/**
+ * Turn a stored config blob into state this app can actually run on: defaults filled in, channels
+ * and models normalized, stale guessed capabilities re-guessed, per-capability defaults dropped
+ * unless they point at a connected provider.
+ *
+ * Both entry points go through here. Config restored from localStorage and config restored from an
+ * exported file are the same untrusted blob, and an import that skipped this arrived with defaults
+ * pointing at providers that cannot authenticate and capabilities from whichever build wrote it.
+ */
+export function normalizePersistedConfig(persisted: PersistedConfigState): { config: AiConfig; webdav: WebdavSyncConfig; migrations: MigrationFlags } {
+    const persistedConfig = (persisted.config || {}) as Partial<AiConfig>;
+    const config = { ...defaultConfig, ...persistedConfig };
+    if (!Array.isArray(persistedConfig.channels)) config.channels = [];
+    const channels = normalizeChannels(config);
+    const models = modelOptionsFromChannels(channels);
+    // Heal stale capabilities from older builds (e.g. mis-tagged "inkling"→video) without destroying
+    // intent: only entries that were themselves guessed are re-guessed. A capability set by the user,
+    // by a preset override, or by the provider's catalog is left exactly as stored.
+    for (const channel of channels) {
+        channel.models = channel.models.map((model) => {
+            if (model.script || (model.capabilitySource || "guess") !== "guess") return model;
+            const guessed = guessCapability(model.name);
+            return model.capability === guessed ? model : { ...model, capability: guessed, capabilitySource: "guess" };
+        });
+    }
+    // Default model per capability must actually match that capability; mismatched stored defaults
+    // (e.g. a text model saved as the video default) are cleared instead of kept. A default must also
+    // live on a connected provider: a model saved against a channel whose key was since cleared would
+    // fail authentication on every single request.
+    const usableCapabilityOf = (value: string) => {
+        const found = findChannelModel({ ...config, channels }, value);
+        return found && channelIsConnected(found.channel) ? found.model.capability : undefined;
+    };
+    const validOrDefault = (value: string, capability: ModelCapability) => {
+        const normalized = normalizeModelOptionValue(value, channels);
+        return normalized && usableCapabilityOf(normalized) === capability ? normalized : "";
+    };
+    return {
+        webdav: { ...defaultWebdavSyncConfig, ...(persisted.webdav || {}) },
+        migrations: { ...(persisted.migrations || {}) },
+        config: {
+            ...config,
+            channelMode: "local",
+            apiFormat: normalizeApiFormat(config.apiFormat),
+            channels,
+            models,
+            imageModel: validOrDefault(config.imageModel || config.model, "image"),
+            videoModel: validOrDefault(config.videoModel, "video"),
+            textModel: validOrDefault(config.textModel || config.model, "text"),
+            audioModel: validOrDefault(config.audioModel || defaultConfig.audioModel, "audio"),
+            audioVoice: config.audioVoice || defaultConfig.audioVoice,
+            audioFormat: config.audioFormat || defaultConfig.audioFormat,
+            audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
+            audioInstructions: config.audioInstructions || "",
+            reasoningEffort: config.reasoningEffort || "auto",
+            videoSeconds: config.videoSeconds || "6",
+            vquality: config.vquality || "720",
+            videoGenerateAudio: config.videoGenerateAudio || "true",
+            videoWatermark: config.videoWatermark || "false",
+            canvasImageCount: config.canvasImageCount || "3",
+        },
+    };
+}
 
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
