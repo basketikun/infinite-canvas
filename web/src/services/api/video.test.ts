@@ -42,7 +42,6 @@ describe("Seedance video requests", () => {
         expect(payload.images).toEqual(["data:image/png;base64,AAA"]);
         expect(payload.metadata).toEqual({
             resolution: "720p",
-            ratio: "9:16",
             generate_audio: false,
             watermark: true,
         });

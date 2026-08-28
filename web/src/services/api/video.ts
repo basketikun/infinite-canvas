@@ -229,7 +229,7 @@ export function buildSeedanceVideoPayload(config: AiConfig, prompt: string, imag
         ...(images.length ? { images } : {}),
         metadata: {
             resolution: normalizeVideoResolution(config.vquality),
-            ratio: normalizeVideoRatio(config.size),
+            ...(images.length ? {} : { ratio: normalizeVideoRatio(config.size) }),
             generate_audio: boolConfig(config.videoGenerateAudio, true),
             watermark: boolConfig(config.videoWatermark, false),
         },
