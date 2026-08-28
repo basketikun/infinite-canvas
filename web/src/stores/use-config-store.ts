@@ -247,9 +247,14 @@ export function resolveModelScript(config: AiConfig, value: string) {
     return findChannelModel(config, value)?.model.script?.trim() || "";
 }
 
+/**
+ * Gate in front of every generate path. It must agree with what the pickers offer, so it asks
+ * `channelIsConnected` rather than re-testing for a key: a noAuth provider is offerable and must
+ * therefore also be runnable.
+ */
 function isAiConfigReady(config: AiConfig, model: string) {
     const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
+    return Boolean(model.trim() && channelIsConnected(channel));
 }
 
 export const useConfigStore = create<ConfigStore>()(
