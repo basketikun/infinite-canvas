@@ -9,16 +9,18 @@ import { acceptsImageInput as acceptsImageInputOf, capabilityFromModalities, typ
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
-export type CapabilitySource = "provider" | "user" | "guess";
+/**
+ * Where a model's capability came from, in precedence order: "user" (channel editor) beats
+ * "preset" (our curated per-id fix list) beats "provider" (the catalog's declared modalities)
+ * beats "guess" (name matching). Only "guess" entries may be silently re-classified.
+ */
+export type CapabilitySource = "user" | "preset" | "provider" | "guess";
 
 export type ChannelModel = {
     name: string;
     capability: ModelCapability;
     script?: string;
-    /**
-     * Where `capability` came from. "provider" (declared modalities) and "user" (channel editor)
-     * are authoritative and must survive reloads; only "guess" entries may be re-classified.
-     */
+    /** Where `capability` came from; see CapabilitySource for the precedence order. */
     capabilitySource?: CapabilitySource;
     /** Provider says the model accepts image input (image-to-image); undefined when unknown. */
     acceptsImageInput?: boolean;
@@ -35,6 +37,12 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
+    /**
+     * This provider needs no API key - a local gateway (Ollama, LM Studio, LiteLLM) or one that
+     * authenticates by IP. Without it a keyless provider would be treated as unconfigured and its
+     * models would silently vanish from every picker.
+     */
+    noAuth?: boolean;
 };
 
 export type AiConfig = {
@@ -131,9 +139,13 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
     lastSyncedAt: "",
 };
 
+/** Ids of one-shot data migrations already applied, so they never run twice. */
+export type MigrationFlags = Record<string, boolean>;
+
 type ConfigStore = {
     config: AiConfig;
     webdav: WebdavSyncConfig;
+    migrations: MigrationFlags;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
@@ -213,9 +225,12 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
     return modelMatchesCapability(config, fallbackModel, capability) ? fallbackModel : "";
 }
 
-/** A provider is usable only once it has both an endpoint and a key; anything else 401s on first call. */
+/**
+ * A provider is usable once it has an endpoint and a way to authenticate. Anything else would
+ * 401 on its first call, so its models must not be offered.
+ */
 export function channelIsConnected(channel: ModelChannel) {
-    return Boolean(channel.baseUrl.trim() && channel.apiKey.trim());
+    return Boolean(channel.baseUrl.trim() && (channel.apiKey.trim() || channel.noAuth));
 }
 
 /**
@@ -242,6 +257,7 @@ export const useConfigStore = create<ConfigStore>()(
         (set, get) => ({
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
+            migrations: {},
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
@@ -266,7 +282,7 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
-            partialize: (state) => ({ config: state.config, webdav: state.webdav }),
+            partialize: (state) => ({ config: state.config, webdav: state.webdav, migrations: state.migrations }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
@@ -276,11 +292,11 @@ export const useConfigStore = create<ConfigStore>()(
                 const channels = normalizeChannels(config);
                 const models = modelOptionsFromChannels(channels);
                 // Heal stale capabilities from older builds (e.g. mis-tagged "inkling"→video) without
-                // destroying intent: only entries that were themselves guessed are re-guessed. Capabilities
-                // that came from a provider catalog or from the channel editor are left exactly as stored.
+                // destroying intent: only entries that were themselves guessed are re-guessed. A capability
+                // set by the user, by a preset override, or by the provider's catalog is left as stored.
                 for (const channel of channels) {
                     channel.models = channel.models.map((model) => {
-                        if (model.script || model.capabilitySource === "provider" || model.capabilitySource === "user") return model;
+                        if (model.script || (model.capabilitySource || "guess") !== "guess") return model;
                         const guessed = guessCapability(model.name);
                         return model.capability === guessed ? model : { ...model, capability: guessed, capabilitySource: "guess" };
                     });
@@ -300,6 +316,7 @@ export const useConfigStore = create<ConfigStore>()(
                 return {
                     ...current,
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
+                    migrations: { ...(persistedState.migrations || {}) },
                     config: {
                         ...config,
                         channelMode: "local",
@@ -393,6 +410,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         models: normalizeChannelModels(channel?.models),
+        noAuth: channel?.noAuth || undefined,
     };
 }
 

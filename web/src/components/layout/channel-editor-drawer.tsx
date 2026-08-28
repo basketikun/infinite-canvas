@@ -1,6 +1,6 @@
-import { App, Button, Drawer, Empty, Input, Segmented, Select, Space, Tag } from "antd";
+import { App, Button, Checkbox, Drawer, Empty, Input, Segmented, Select, Space, Tag } from "antd";
 import { ListPlus, Plug, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { CatalogModel } from "@/lib/model-catalog";
@@ -26,9 +26,6 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     const [connecting, setConnecting] = useState(false);
     const [filter, setFilter] = useState<CapabilityFilter>("all");
     const [search, setSearch] = useState("");
-    // Fingerprint of the endpoint+key we already auto-imported, so re-renders while typing in
-    // other fields cannot re-trigger the fetch.
-    const autoConnectedRef = useRef("");
     const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
         { label: "OpenAI", value: "openai" },
         { label: "Gemini", value: "gemini" },
@@ -38,7 +35,6 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     useEffect(() => {
         if (open && channel) setDraft(channel);
         if (!open) {
-            autoConnectedRef.current = "";
             setFilter("all");
             setSearch("");
         }
@@ -58,30 +54,26 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     const patch = (value: Partial<ModelChannel>) => setDraft((current) => (current ? { ...current, ...value } : current));
     const setModels = (models: ChannelModel[]) => patch({ models });
 
-    /** Pull the provider's whole catalog. Which model to use is chosen in the studio pickers. */
-    const connect = async (target: ModelChannel, silent = false) => {
+    /**
+     * Pull the provider's whole catalog. Which model to use is chosen in the studio pickers, so
+     * this is the entire import step - there is nothing to hand-select afterwards.
+     *
+     * Deliberately driven by the button alone. Keying this off the API key field fired one request
+     * per keystroke, and the in-flight guard dropped the keystroke that completed the key, so a
+     * provider whose catalog needs a valid key could end up importing nothing and saying nothing.
+     */
+    const connect = async (target: ModelChannel) => {
         setConnecting(true);
         try {
             const models = await connectChannel(target);
             setDraft((current) => (current && current.id === target.id ? { ...current, models } : current));
             message.success(t("config.channelEditor.connected", { count: models.length }));
         } catch (error) {
-            // A silent run is the automatic one; it must not shout at a user who is still typing a key.
-            if (!silent) message.error(error instanceof Error ? error.message : t("config.channelEditor.connectFailed"));
+            message.error(error instanceof Error ? error.message : t("config.channelEditor.connectFailed"));
         } finally {
             setConnecting(false);
         }
     };
-
-    // Pasting a key is the whole setup step: import the catalog as soon as one is present.
-    useEffect(() => {
-        if (!open || !draft || connecting) return;
-        const fingerprint = `${draft.id}:${draft.baseUrl.trim()}:${draft.apiKey.trim()}`;
-        if (!channelIsConnected(draft) || autoConnectedRef.current === fingerprint) return;
-        autoConnectedRef.current = fingerprint;
-        void connect(draft, true);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, draft?.id, draft?.baseUrl, draft?.apiKey]);
 
     if (!draft) return null;
 
@@ -138,7 +130,11 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">API Key</span>
-                    <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
+                    <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." disabled={Boolean(draft.noAuth)} />
+                    <Checkbox className="mt-2" checked={Boolean(draft.noAuth)} onChange={(event) => patch({ noAuth: event.target.checked || undefined })}>
+                        <span className="text-sm">{t("config.channelEditor.noAuth")}</span>
+                    </Checkbox>
+                    <div className="mt-1 text-xs text-stone-500">{t("config.channelEditor.noAuthHint")}</div>
                 </label>
             </div>
 

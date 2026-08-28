@@ -397,15 +397,15 @@ export const providerPresets: ProviderPreset[] = [
 
 /**
  * Apply a preset's hand-written capability fixes and call scripts on top of normalized models.
- * A preset override is a curated fix for a specific model id, so it outranks both name guessing
- * and the provider's own declaration - providers do get this wrong (OpenRouter's auto-router
- * declares image output it will not actually produce).
+ * A preset override is a curated fix for a specific model id, so it outranks the provider's own
+ * declaration - providers do get this wrong (OpenRouter's auto-router declares image output it
+ * will not actually produce). It never outranks the user's own choice in the channel editor.
  */
 function applyPreset(preset: ProviderPreset | undefined, models: ChannelModel[]): ChannelModel[] {
     return models.map((model) => {
-        const override = preset?.capabilities?.[model.name];
+        const override = model.capabilitySource === "user" ? undefined : preset?.capabilities?.[model.name];
         const capability = override || model.capability;
-        const capabilitySource = override ? ("provider" as const) : model.capabilitySource;
+        const capabilitySource = override ? ("preset" as const) : model.capabilitySource;
         const script = preset?.scripts?.[model.name] || preset?.capabilityScripts?.[capability];
         return { ...model, capability, capabilitySource, script };
     });
@@ -496,16 +496,22 @@ export function enrichModelsForChannel(channel: ModelChannel, models: Array<stri
 export type { ChannelModel };
 
 /**
- * Re-attach preset call scripts to channels that were saved before those scripts shipped.
- * Without this, an OpenRouter channel added by an earlier build keeps `script: undefined`
- * forever and image requests fall through to the generic OpenAI paths — `/images/edits`,
- * which OpenRouter does not implement, so every image-to-image call 404s.
+ * One-shot repair for channels saved before the per-provider call scripts shipped: without it an
+ * OpenRouter channel from an earlier build keeps `script: undefined` forever and image requests
+ * fall through to the generic OpenAI paths — `/images/edits`, which OpenRouter does not
+ * implement, so every image-to-image call 404s.
+ *
+ * It runs once and records that it did. Re-running on every boot would resurrect a script the
+ * user deliberately cleared, because "cleared" and "never had one" are the same stored value.
  *
  * The store's own rehydration cannot do this: it would have to import this module, which
  * imports the store. A script already stored (preset or hand-edited) is never overwritten.
  */
+const PRESET_SCRIPTS_MIGRATION = "preset-scripts-v1";
+
 export function healPresetScripts(): void {
-    const { config } = useConfigStore.getState();
+    const { config, migrations } = useConfigStore.getState();
+    if (migrations[PRESET_SCRIPTS_MIGRATION]) return;
     let changed = false;
     const channels = config.channels.map((channel) => {
         const preset = presetForChannel(channel);
@@ -522,6 +528,7 @@ export function healPresetScripts(): void {
         changed = true;
         return { ...channel, models };
     });
-    if (!changed) return;
-    useConfigStore.setState({ config: { ...config, channels } });
+    // Record the run either way, so a no-op boot still closes the migration out.
+    const applied = { ...migrations, [PRESET_SCRIPTS_MIGRATION]: true };
+    useConfigStore.setState(changed ? { config: { ...config, channels }, migrations: applied } : { migrations: applied });
 }
