@@ -19,6 +19,34 @@
 + [新增] Replicate 支持按官方精选集合（text-to-image、image-editing、text-to-video、image-to-video、text-to-speech、ai-music-generation、language-models）拉取模型并判定能力；Replicate 全部接口都需要 API Token，请先填写 Key 再拉取。
 + [调整] 预设的调用脚本改为按能力下发（`capabilityScripts`），fal.ai 与 Replicate 拉取到的每个模型都会自动获得对应的队列／predictions 调用脚本，不再只有预置的少数几个可用；新增 fal.ai 音频与文本调用脚本、Replicate 生图调用脚本。
 
+### Provider setup / 渠道配置
+
+**English**
+
++ [Fix] OpenRouter now imports its whole catalog. `GET /models` without parameters returns only text models (387), silently hiding the 27 video, 50 image and 4 audio models the site lists; the request now asks for every output modality and the counts match openrouter.ai/models.
++ [Fix] OpenRouter video generation works. Requests sent the studio's pixel size (`1280x720`) as `aspect_ratio`, which takes an enum, so every request was rejected. Duration, resolution and aspect ratio are now read from each model's published limits and matched to the closest allowed value, and results download through `/videos/{jobId}/content` — the `unsigned_urls` a job returns are unsigned and yield an access-denied body that used to be saved as a 67-byte "successful" video.
++ [Fix] OpenRouter image generation works. It carried the same pixel-string `aspect_ratio` defect, and behind it the script returned bare base64 that was taken for a URL, discarding every image the model produced. Requests now respect each model's limits for aspect ratio, image count, reference-image count, quality and background.
++ [Fix] Provider errors are reported. A script failure surfaced only as "Request failed with status code 400", so a content-moderation refusal and an unsupported parameter read identically; the provider's own message is now extracted from the response body.
++ [Change] Connecting a provider is one button that imports the whole catalog, and no request is made until it is pressed. Model choice happens in the studio pickers, which already filter by capability.
++ [Fix] Models on a provider with no API key are no longer offered. The shipped default image model pointed at exactly such a provider, so a fresh install failed authentication on its first generation.
++ [New] A provider that needs no API key — a local or self-hosted gateway authenticating by IP — can declare that, instead of having its models silently vanish from every picker.
++ [Fix] The credential header is omitted entirely when a provider has no key, rather than sent as an empty `Authorization: Bearer`, which is malformed and rejected by strict gateways.
++ [Fix] A catalog refresh replaces preset call scripts, so a shipped fix reaches channels that already stored a broken version; hand-written scripts are never overwritten.
++ [Fix] Imported configuration files go through the same normalization as a reload, instead of entering the store raw.
+
+**简体中文**
+
++ [修复] OpenRouter 现在会导入完整目录。不带参数的 `GET /models` 只返回文本模型（387 个），静默隐藏了官网列出的 27 个视频、50 个生图和 4 个音频模型；现在会请求全部输出模态，数量与 openrouter.ai/models 一致。
++ [修复] OpenRouter 视频生成可用。此前把创作台的像素尺寸（`1280x720`）当作 `aspect_ratio` 发送，而该字段只接受枚举值，因此每次请求都被拒绝。现在时长、清晰度与宽高比都会读取每个模型公布的限制并取最接近的合法值；结果改为通过 `/videos/{jobId}/content` 下载 —— 任务返回的 `unsigned_urls` 未签名，直接抓取只会得到拒绝访问的响应体，此前会被当成 67 字节的「成功」视频保存。
++ [修复] OpenRouter 生图可用。它有同样的像素字符串 `aspect_ratio` 问题；其后还藏着一个缺陷：脚本返回裸 base64，被当作 URL 处理，模型产出的图片被全部丢弃。现在请求会遵守每个模型对宽高比、出图数量、参考图数量、quality 与 background 的限制。
++ [修复] 渠道错误会如实显示。此前脚本失败只显示「Request failed with status code 400」，内容审核拒绝与参数不受支持看起来完全一样；现在会从响应体中提取渠道自己的错误信息。
++ [调整] 连接渠道改为一个按钮导入完整目录，未点击前不会发出任何请求。具体用哪个模型在创作台选择器里挑，那里本来就按能力筛选。
++ [修复] 未填写 API Key 的渠道，其模型不再出现在选择器中。内置的默认生图模型恰好指向这类渠道，导致全新安装的首次生成必然鉴权失败。
++ [新增] 无需 API Key 的渠道（按 IP 鉴权的本地或自建网关）可以显式声明，而不是让其模型从所有选择器中悄悄消失。
++ [修复] 渠道没有 Key 时不再发送空的 `Authorization: Bearer` 头，而是整个头都不发送 —— 空凭据格式非法，严格的网关会直接拒绝。
++ [修复] 刷新模型列表会替换预设调用脚本，使已保存旧版本的渠道也能拿到修复；用户手写的脚本永不被覆盖。
++ [修复] 导入的配置文件会经过与重新加载相同的规范化流程，而不是原样写入。
+
 + [修复] 文档站默认英文路径不再因内部语言重写产生重定向循环。
 + [优化] 文档站移动端折叠菜单新增分类切换入口，桌面端增加随滚动高亮的本页目录。
 + [优化] 画布左侧元素列表按组展示树形层级，组内节点支持展开和收起。

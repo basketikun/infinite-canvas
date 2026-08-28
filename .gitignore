@@ -8,6 +8,12 @@ data/
 *.tsbuildinfo
 .DS_Store
 .idea
+
+# Local tooling and deploy state - never part of a contribution.
+# Agent skills live in .agents/, which is tracked on purpose.
+.claude/
+.vercel/
+.vercel
 web/dist
 
 **/dist
