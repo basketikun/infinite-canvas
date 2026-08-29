@@ -5,13 +5,8 @@ import { useTranslation } from "react-i18next";
 
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 import { fetchChannelModels } from "@/services/api/image";
-import {
-    applyDirectLaunch,
-    cleanDirectLaunchUrl,
-    hasIntegratedModels,
-    NEW_API_BOOTSTRAP_MARKER,
-    parseDirectLaunch,
-} from "@/services/integrations/new-api-bootstrap";
+import { startCanvasSessionPresence } from "@/services/integrations/canvas-session-presence";
+import { applyDirectLaunch, cleanDirectLaunchUrl, hasIntegratedModels, NEW_API_BOOTSTRAP_MARKER, parseDirectLaunch } from "@/services/integrations/new-api-bootstrap";
 import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
@@ -21,6 +16,8 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
 
     usePromptSourceScheduler();
+
+    useEffect(() => startCanvasSessionPresence(), []);
 
     useEffect(() => {
         if (handledConfigParams.current) return;
@@ -40,10 +37,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             const current = useConfigStore.getState().config;
             let fetchedModels: string[] | undefined;
             let modelSyncFailed = false;
-            const shouldFetchModels =
-                launch.source === "newapi" &&
-                Boolean(launch.baseUrl && launch.apiKey) &&
-                (!window.localStorage.getItem(NEW_API_BOOTSTRAP_MARKER) || !hasIntegratedModels(current, launch.baseUrl || ""));
+            const shouldFetchModels = launch.source === "newapi" && Boolean(launch.baseUrl && launch.apiKey) && (!window.localStorage.getItem(NEW_API_BOOTSTRAP_MARKER) || !hasIntegratedModels(current, launch.baseUrl || ""));
 
             if (shouldFetchModels && launch.baseUrl && launch.apiKey) {
                 try {
