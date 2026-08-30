@@ -30,7 +30,7 @@ export default async function ChangelogPage({ params }: PageProps<'/[lang]/docs/
   const toc = getTableOfContents(changelog);
 
   return (
-    <DocsPage toc={toc}>
+    <DocsPage toc={toc} tableOfContent={{ style: 'clerk' }}>
       <DocsTitle>{text.title}</DocsTitle>
       <DocsDescription>{text.description}</DocsDescription>
       <DocsBody>

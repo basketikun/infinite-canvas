@@ -113,7 +113,7 @@ type CanvasNodeMetadata = {
 
 不同节点的使用方式：
 
-- 图片节点：`content` 是当前可展示的图片 URL，通常是 `blob:` URL；`storageKey` 指向本地图片 Blob；`naturalWidth/naturalHeight/bytes/mimeType` 保存原图信息。
+- 图片节点：`content` 是当前可展示的图片 URL，成功保存本地时通常是 `blob:` URL，因 CORS 无法读取但仍可显示时也可能保留远程 URL；`storageKey` 仅在图片已经写入本地 Blob 时存在；`naturalWidth/naturalHeight/bytes/mimeType` 保存原图信息。
 - 视频节点：`content` 是当前可播放的视频 URL，通常是 `blob:` URL；`storageKey` 指向本地视频 Blob；`bytes/mimeType` 保存文件信息。
 - 文本节点：`content` 保存文本内容；`fontSize` 保存字体大小；`prompt/status/errorDetails` 保存生成状态。
 - 生成配置节点：`generationMode/model/size/count/inputOrder` 保存生成配置；`generationMode` 可选择文本、图片或视频；上游输入通过 `connections` 计算。
@@ -196,7 +196,7 @@ type UploadedImage = {
 ```ts
 {
   content: image.url,
-  storageKey: image.storageKey,
+  ...(image.storageKey ? { storageKey: image.storageKey } : {}),
   status: "success",
   naturalWidth: image.width,
   naturalHeight: image.height,
@@ -205,7 +205,7 @@ type UploadedImage = {
 }
 ```
 
-因此，`content` 只适合当前浏览器会话展示，不能作为长期文件标识；长期标识是 `storageKey`。
+因此，已保存图片的 `content` 只适合当前浏览器会话展示，长期标识是 `storageKey`。如果跨域限制导致图片无法读取，节点会保留可能过期的远程 `content`，并且没有 `storageKey`，不能视为已经完成本地持久化。
 
 ## 图片读取和旧数据迁移
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, type Dispatch, type MutableRefObject, 
 import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
+import { imageToDataUrl } from "@/services/image-storage";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { decodeChannelModel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-generation-helpers";
@@ -54,7 +55,15 @@ export function usePluginHost(params: PluginHostParams) {
                 ensureReady(config);
                 const references = toReferences(options?.references);
                 const items = references.length ? await requestEdit(config, prompt, references, undefined, { signal: options?.signal }) : await requestGeneration(config, prompt, { signal: options?.signal });
-                return { images: items.map((item) => item.dataUrl) };
+                const images = await Promise.all(items.map(async (item) => {
+                    try {
+                        return await imageToDataUrl({ dataUrl: item.dataUrl }, { signal: options?.signal });
+                    } catch (error) {
+                        if (options?.signal?.aborted) throw error;
+                        return item.dataUrl;
+                    }
+                }));
+                return { images };
             },
             generateVideo: async (prompt, options) => {
                 const config = {

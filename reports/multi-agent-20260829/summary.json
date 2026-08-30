@@ -5,7 +5,7 @@
   "expected_conflicts": 200,
   "unexpected_failures": 0,
   "backend_tests": {
-    "passed": 134,
+    "passed": 144,
     "failed": 0
   },
   "frontend_tests": {

@@ -50,7 +50,7 @@ type CanvasConnection = {
 
 Node positions and sizes use canvas-world coordinates. Edges store only node IDs; their paths are calculated while rendering. Deleting a node removes its connected edges.
 
-Common metadata includes content, prompt, status, generation mode, model, size, count, natural dimensions, image results, input order, `storageKey`, MIME type, and byte size. A multi-image generation remains one image node: `images` creates all requested slots before generation starts and records each slot's `status`, `errorDetails`, and completed image data. `primaryImageId` selects the result mirrored by the node-level `content` and image metadata; the first successful slot becomes primary immediately. Image and video `content` values are normally session-scoped `blob:` URLs; `storageKey` is the persistent identity.
+Common metadata includes content, prompt, status, generation mode, model, size, count, natural dimensions, image results, input order, `storageKey`, MIME type, and byte size. A multi-image generation remains one image node: `images` creates all requested slots before generation starts and records each slot's `status`, `errorDetails`, and completed image data. `primaryImageId` selects the result mirrored by the node-level `content` and image metadata; the first successful slot becomes primary immediately. Persisted image and video `content` values are normally session-scoped `blob:` URLs, with `storageKey` as the persistent identity. If CORS prevents reading an otherwise displayable image, `content` may remain a potentially expiring remote URL and `storageKey` is omitted.
 
 ## Assistant sessions
 
@@ -68,6 +68,6 @@ Message references and generated images use the same blob-storage rules. They ar
 
 ## Media lifecycle
 
-`uploadImage()` converts a Blob or data URL to a Blob, creates an `image:<id>` storage key, stores it in `image_files`, creates an in-memory object URL, reads its dimensions, and returns the URL and metadata. Opening a project resolves each storage key into a fresh object URL.
+`uploadImage()` accepts a Blob, data URL, or remote URL. It downloads remote data once, verifies that the Blob decodes as an image, stores it in `image_files` under an `image:<id>` key, and returns an in-memory object URL plus metadata. If CORS blocks byte access but the browser can still display the remote image, it returns that URL without a storage key. Opening a project resolves each stored key into a fresh object URL.
 
 Cleanup is reference-based. After deleting nodes, canvases, assets, or assistant sessions, the application collects every still-referenced storage key, removes unreferenced blobs, revokes their object URLs, and removes them from the in-memory cache. This prevents deleting a file still shared by another canvas feature.

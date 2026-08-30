@@ -11,6 +11,20 @@ html {
   scrollbar-gutter: stable;
 }
 
+@media (min-width: 60rem) and (max-width: 79.999rem) {
+  #nd-docs-layout:has(#nd-toc) {
+    --fd-toc-width: 220px;
+  }
+
+  #nd-toc {
+    display: flex;
+  }
+
+  [data-toc-popover] {
+    display: none;
+  }
+}
+
 body {
   font-family: var(--font-body);
 }

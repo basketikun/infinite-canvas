@@ -1,14 +1,20 @@
 ---
-title: 第三方 GitHub 提示词仓库
-description: 当前已接入同步逻辑的第三方提示词仓库
+title: 第三方提示词来源
+description: 当前内置的 7 个第三方提示词来源
 ---
 
-# 第三方 GitHub 提示词仓库
+# 第三方提示词来源
 
-| 地址 | 状态 |
+应用内置以下 7 个来源。提示词数据统一从 [Image Prompts](https://github.com/yukkcat/image-prompts) 的标准 JSON 读取，原项目地址用于查看来源内容。
+
+| 来源 | 原项目 |
 | --- | --- |
-| https://github.com/ZeroLu/awesome-gpt-image | 已实现同步逻辑 |
-| https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts | 已实现同步逻辑 |
-| https://github.com/YouMind-OpenLab/awesome-gpt-image-2 | 已实现同步逻辑 |
-| https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts | 已实现同步逻辑 |
-| https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts | 已实现同步逻辑 |
+| Banana Prompt Quicker | https://glidea.github.io/banana-prompt-quicker/ |
+| DavidWu GPT Image 2 | https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts |
+| Freestylefly GPT Image 2 | https://github.com/freestylefly/awesome-gpt-image-2 |
+| Awesome GPT Image | https://github.com/ZeroLu/awesome-gpt-image |
+| Awesome GPT-4o | https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts |
+| YouMind GPT Image 2 | https://github.com/YouMind-OpenLab/awesome-gpt-image-2 |
+| YouMind Nano Banana Pro | https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts |
+
+每个内置来源都可独立启用和拉取。配置页还支持添加自定义标准 JSON 来源，以及按周期批量更新；拉取失败时继续使用该来源上一次成功缓存。

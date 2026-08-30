@@ -32,7 +32,7 @@ export default async function Page({ params }: PageProps<'/[lang]/docs'>) {
   const toc = getTableOfContents(content);
 
   return (
-    <DocsPage toc={toc}>
+    <DocsPage toc={toc} tableOfContent={{ style: 'clerk' }}>
       <DocsTitle>{text.title}</DocsTitle>
       <DocsDescription>{text.description}</DocsDescription>
       <DocsBody>
