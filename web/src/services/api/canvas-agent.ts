@@ -1,6 +1,7 @@
 import i18n from "@/i18n";
 import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { AgentReasoningEffort } from "@/stores/use-agent-store";
+import type { ExternalAgentActivity, ExternalAgentRecord } from "@/stores/use-agent-store";
 
 type AgentConfigResponse = { ok?: boolean; protocolVersion?: number; url?: string; token?: string; hasToken?: boolean };
 const AGENT_MESSAGE_ASSET_PATTERN = /^agent-asset:([a-f0-9]{64})\/([a-f0-9]{64}\.(?:gif|jpe?g|png|webp))$/;
@@ -40,6 +41,7 @@ export type AgentSkillDraftInput = { source: "conversation" | "canvas"; threadId
 export type AgentSkillsResponse = { ok?: boolean; data?: AgentSkillSummary[]; errors?: unknown[] };
 export type AgentSkillResponse = { ok?: boolean; data?: AgentSkillDetail };
 export type AgentSkillDraftResponse = { ok?: boolean; data?: AgentSkillDraft };
+export type CollaborationSessionSummary = { id: string; title: string; goal: string; mode: "broadcast" | "orchestrated"; status: "open" | "completed" | "cancelled"; taskCount: number; completedTaskCount: number; results: Array<{ taskId: string; taskTitle: string; agentName: string; agentKind: string; agentInstanceId: string; status: "completed" | "failed"; summary: string; data?: unknown }>; createdAt: number; updatedAt: number };
 
 export async function postState(endpoint: string, token: string, clientId: string, snapshot: CanvasAgentSnapshot | null) {
     try {
@@ -60,7 +62,7 @@ export async function activateAgentClient(endpoint: string, token: string, clien
     } catch {}
 }
 
-export async function postToolResult(endpoint: string, token: string, clientId: string, body: { requestId: string; result?: unknown; error?: string }) {
+export async function postToolResult(endpoint: string, token: string, clientId: string, body: { requestId: string; result?: unknown; error?: string | { code: string; message: string; detail?: Record<string, unknown> } }) {
     await fetchAgentJson(endpoint, token, `/canvas/result?clientId=${encodeURIComponent(clientId)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 }
 
@@ -78,6 +80,26 @@ export async function acknowledgeCodexHistory(endpoint: string, token: string, t
 
 export async function revealAgentLocalFile(endpoint: string, token: string, path: string) {
     await fetchAgentJson(endpoint, token, "/agent/local-file/reveal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path }) });
+}
+
+export function fetchCollaborationSessions(endpoint: string, token: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: CollaborationSessionSummary[] }>(endpoint, token, "/collaboration/sessions");
+}
+
+export function fetchExternalAgents(endpoint: string, token: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: ExternalAgentRecord[] }>(endpoint, token, "/agents");
+}
+
+export function fetchExternalAgentActivities(endpoint: string, token: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: ExternalAgentActivity[] }>(endpoint, token, "/agents/activity");
+}
+
+export function markExternalAgentApproval(endpoint: string, token: string, activityId: string) {
+    return fetchAgentJson<{ ok?: boolean }>(endpoint, token, `/agents/activity/${encodeURIComponent(activityId)}/approval`, jsonPost({}));
+}
+
+export function createBroadcastSession(endpoint: string, token: string, input: { title: string; goal: string; targetKinds: Array<"codex" | "zcode" | "trae"> }) {
+    return fetchAgentJson(endpoint, token, "/collaboration/sessions", jsonPost(input));
 }
 
 export function resolveAgentMessageAssetUrl(endpoint: string, token: string, value: string) {

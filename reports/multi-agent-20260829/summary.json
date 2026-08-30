@@ -1,0 +1,21 @@
+{
+  "scenario": "multi-agent optimistic concurrency",
+  "iterations": 1000,
+  "successful_merges": 800,
+  "expected_conflicts": 200,
+  "unexpected_failures": 0,
+  "backend_tests": {
+    "passed": 134,
+    "failed": 0
+  },
+  "frontend_tests": {
+    "passed": 34,
+    "failed": 0
+  },
+  "api_smoke": {
+    "registered_agents": ["codex", "zcode", "trae"],
+    "broadcast_session_created": true,
+    "broadcast_session_completed": true,
+    "result_agents": ["codex", "zcode", "trae"]
+  }
+}

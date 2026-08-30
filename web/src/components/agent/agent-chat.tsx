@@ -15,6 +15,7 @@ const historyMessageStyle = { contentVisibility: "auto", containIntrinsicSize: "
 export function AgentChatTimeline({
     theme,
     pendingTool,
+    pendingToolCount,
     pendingApprovals,
     sending,
     waiting,
@@ -24,6 +25,7 @@ export function AgentChatTimeline({
 }: {
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     pendingTool: AgentPendingToolCall | null;
+    pendingToolCount: number;
     pendingApprovals: AgentPendingApproval[];
     sending: boolean;
     waiting: boolean;
@@ -84,7 +86,7 @@ export function AgentChatTimeline({
                         : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} />)}
                     {pendingTool ? (
                         <AgentPendingToolCard
-                            summary={summarizeCanvasAgentOps(pendingTool.input?.ops || []) || toolName(pendingTool.name)}
+                            summary={`${pendingTool.agent?.name ? `${pendingTool.agent.name} · ` : ""}${summarizeCanvasAgentOps(pendingTool.input?.ops || []) || toolName(pendingTool.name)}${pendingToolCount > 1 ? ` · +${pendingToolCount - 1}` : ""}`}
                             detail={toolCallDetail(pendingTool.name, pendingTool.input, "pending")}
                             theme={theme}
                             onReject={onRejectTool}

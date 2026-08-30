@@ -47,7 +47,7 @@ npx -y @basketikun/canvas-agent
 
 ## MCP 与连接地址
 
-插件在新的 Codex 任务中加载时会自动启动 `npx -y @basketikun/canvas-agent mcp`。这个 MCP 进程负责提供画布工具，不提供网页连接服务；
+插件在新的 Codex 任务中加载时会自动启动 `npx -y @basketikun/canvas-agent mcp --agent codex --name Codex`。这个 MCP 进程负责提供画布工具，不提供网页连接服务；
 上面启动的普通 Canvas Agent 负责提供 `Local URL` 和 `Connect token`。两个进程读取同一份本地配置，因此不需要用户手动填写地址或 token。
 
 ## 打开模式

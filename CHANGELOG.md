@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [新增] Canvas Agent 支持 Codex、ZCode、TraeCode 等外部 Agent 同时连接，并提供群发任务邮箱、主从协作和可选 Codex 主动调度。
++ [新增] 画布写操作加入项目与版本校验、节点级乐观并发合并、来源活动记录和多请求逐条审批，避免并发静默覆盖。
++ [修复] 修复 Agent 心跳无法恢复在线状态、协作租约和终态流转异常，并在取消主动调度时同步中断 Codex。
 + [新增] 支持通过 URL fragment 从 New API 安全导入当前用户 Token，并自动同步与分类可用模型。
 + [新增] 适配 New API 下的 Seedream 参考图、区域编辑和 Seedance 文生/图生视频请求格式。
 

@@ -145,7 +145,8 @@ Codex 调 canvas_create_text_node
 
 - `Canvas Agent` 默认只监听 `127.0.0.1`。
 - 网页连接必须携带本机生成的 `Connect token`。
-- 第一次带正确 token 连接后，`Canvas Agent` 会记录网页 Origin，避免其他来源复用当前本机 Agent。
+- 网页带正确 token 连接后，`Canvas Agent` 会把该网页 Origin 加入本机白名单；该白名单只约束浏览器跨域请求，不限制本机 MCP 客户端数量。
+- 外部 Agent 的身份用于本机协作归属和界面展示，不是独立认证凭据；能够读取同一个 Connect token 的本机进程处于同一信任边界。
 - Codex 不直接访问浏览器 DOM，也不直接持有画布内部状态。
 - 线上网页不保存本机 Codex 登录态、API Key 或本地文件权限。
 - 画布写操作最终由浏览器前端执行，因此可以在前端做确认、撤销和权限控制。

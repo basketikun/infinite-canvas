@@ -5,10 +5,15 @@ import express, { type NextFunction, type Request, type Response } from "express
 
 import { runClaudeTurn } from "../agent/claude.js";
 import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
+import { readAgentIdentity } from "../agent/identity.js";
+import { AgentRegistry } from "../agent/registry.js";
 import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
 import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
-import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
+import { AGENT_PROTOCOL_VERSION, CanvasSession, CanvasToolResultError } from "../canvas/session.js";
+import { isToolName, parseToolInput } from "../canvas/tools.js";
+import { CollaborationCoordinator } from "../collaboration/coordinator.js";
+import { CodexDispatchAdapter } from "../collaboration/adapters/codex.js";
 import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
@@ -48,6 +53,12 @@ export function startHttpServer() {
         session.trackCodexEvent(type, data);
         threadId ? session.emitThread(type, threadId, data) : session.emitAll(type, data);
     };
+    const agentRegistry = new AgentRegistry((type, payload) => session.emitAll(type, payload));
+    const collaboration = new CollaborationCoordinator(
+        undefined,
+        (payload) => session.emitAll("collaboration_changed", payload),
+        { codex: new CodexDispatchAdapter(emit, () => ensureSiteWorkspace(config).workspacePath) },
+    );
     /** 保存并广播当前站点工作空间的活跃线程。 */
     const setActiveThread = (activeThreadId: string, payload: Record<string, unknown> = {}, preserveConversation = false) => {
         const workspace = updateSiteWorkspace(config, { activeThreadId: activeThreadId || undefined });
@@ -127,7 +138,7 @@ export function startHttpServer() {
         res.status(401).json({ ok: false, error: "invalid token" });
     });
     app.get("/events", (req, res) => {
-        session.openEvents(requestUrl(req, config), res, ensureSiteWorkspace(config).activeThreadId || "");
+        session.openEvents(requestUrl(req, config), res, ensureSiteWorkspace(config).activeThreadId || "", agentRegistry.snapshot());
     });
     app.post("/canvas/state", (req, res) => {
         session.updateState(req.body, String(req.query.clientId || "") || undefined);
@@ -169,7 +180,47 @@ export function startHttpServer() {
         res.setHeader("Cache-Control", "no-store");
         res.type(path.extname(filePath)).send(await readFile(filePath));
     }));
-    app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
+    app.post("/agents/register", route(async (req, res) => {
+        res.json({ ok: true, agent: agentRegistry.touch(readAgentIdentity(req)) });
+    }));
+    app.post("/agents/unregister", route(async (req, res) => {
+        agentRegistry.unregister(readAgentIdentity(req));
+        res.json({ ok: true });
+    }));
+    app.get("/agents", (_req, res) => res.json({ ok: true, data: agentRegistry.snapshot() }));
+    app.get("/agents/activity", (_req, res) => res.json({ ok: true, data: agentRegistry.activitySnapshot() }));
+    app.post("/agents/activity/:activityId/approval", (req, res) => {
+        agentRegistry.approval(routeParam(req.params.activityId));
+        res.json({ ok: true });
+    });
+    app.get("/collaboration/sessions", route(async (_req, res) => res.json({ ok: true, data: await collaboration.listSessions() })));
+    app.post("/collaboration/sessions", route(async (req, res) => {
+        const input = parseToolInput("collaboration_create_plan", { ...(req.body || {}), mode: "broadcast" }) as Record<string, unknown>;
+        res.status(201).json({ ok: true, data: await collaboration.createFromWeb(input) });
+    }));
+    app.post("/api/tools", route(async (req, res) => {
+        const identity = readAgentIdentity(req);
+        const name = req.body?.name;
+        if (!isToolName(name)) throw new Error(`未知工具：${String(name)}`);
+        const input = parseToolInput(name, req.body?.input || {}) as Record<string, unknown>;
+        const snapshot = session.canvasStateSnapshot;
+        const mode = name.startsWith("collaboration_")
+            ? name === "collaboration_create_plan" ? (input.mode === "broadcast" ? "broadcast" : "orchestrated") : await collaboration.modeFor(String(input.sessionId || ""))
+            : "independent";
+        const activity = agentRegistry.begin(identity, name, mode, Number(input.baseRevision) || undefined, snapshot?.projectId);
+        try {
+            const result = name.startsWith("collaboration_")
+                ? await collaboration.handle(name, input, identity)
+                : await session.callTool(name, input, { identity, activityId: activity.activityId });
+            const revision = Number((result as Record<string, unknown> | null)?.revision) || undefined;
+            agentRegistry.finish(activity.activityId, { resultRevision: revision });
+            res.json({ ok: true, result });
+        } catch (error) {
+            const code = String((error as { code?: unknown })?.code || "TOOL_FAILED");
+            agentRegistry.finish(activity.activityId, { errorCode: code });
+            throw error;
+        }
+    }));
     app.get("/agent/codex/workspace", (_req, res) => {
         const workspace = ensureSiteWorkspace(config);
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot });
@@ -428,6 +479,7 @@ export function startHttpServer() {
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
         logger.error("HTTP request failed", { method: req.method, path: req.path, error });
         if (error instanceof SkillStoreError || error instanceof CodexSkillLookupError) return void res.status(error.statusCode).json({ ok: false, error: error.message });
+        if (error instanceof CanvasToolResultError) return void res.status(error.statusCode).json({ ok: false, code: error.code, error: error.message, detail: error.detail });
         res.status(500).json({ ok: false, error: error.message });
     });
 
@@ -437,7 +489,7 @@ export function startHttpServer() {
         console.log(`Local URL: ${config.url}`);
         console.log(`Connect token: ${config.token}`);
         console.log("Codex MCP is not installed by this command.");
-        console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp");
+        console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp --agent codex --name Codex");
         console.log("Remove manually added MCP: codex mcp remove infinite-canvas");
         if (logger.enabled) console.log(`Debug log: ${logger.filePath}`);
         logger.info("Canvas Agent started", { url: config.url, workspace: ensureSiteWorkspace(config).workspacePath, debugLog: logger.filePath });

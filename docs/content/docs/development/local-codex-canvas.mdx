@@ -46,7 +46,8 @@ Writes are automatically confirmed by default. Switch the side panel to manual c
 ## Security boundary
 
 - Canvas Agent binds to `127.0.0.1` by default.
-- Browser connections require the generated token and are bound to the first accepted origin.
+- Browser connections require the generated token, and each authenticated origin is added to the local allowlist. This browser CORS allowlist does not limit local MCP clients.
+- External Agent identities provide local attribution and coordination rather than separate authentication. Local processes that can read the same connect token share one trust boundary.
 - Codex does not directly access the DOM or own the canvas state.
 - The hosted website does not store the local Codex login, API keys, or local file permissions.
 - The browser remains responsible for executing writes, approvals, undo, and permission controls.

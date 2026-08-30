@@ -21,7 +21,111 @@ export type CanvasAgentSnapshot = {
     connections: CanvasConnection[];
     selectedNodeIds: string[];
     viewport: ViewportTransform;
+    revision: number;
 };
+
+export type CanvasChangeSet = { nodeIds: string[]; connectionIds: string[]; selection: boolean; viewport: boolean; allConnections?: boolean };
+export type CanvasRevisionEntry = CanvasChangeSet & { revision: number };
+export type CanvasAgentWriteRequest = { projectId: string; baseRevision: number; ops: CanvasAgentOp[] };
+
+export class CanvasRevisionError extends Error {
+    constructor(
+        readonly code: "CANVAS_PROJECT_CHANGED" | "CANVAS_REVISION_CONFLICT" | "CANVAS_REVISION_EXPIRED",
+        readonly detail: Record<string, unknown>,
+    ) {
+        super(code === "CANVAS_PROJECT_CHANGED" ? "当前画布已切换，请重新读取后重试" : code === "CANVAS_REVISION_EXPIRED" ? "画布版本已过期，请重新读取后重试" : "画布内容已变化，请重新读取后重试");
+        this.name = "CanvasRevisionError";
+    }
+}
+
+export function canvasSnapshotChanges(previous: CanvasAgentSnapshot, next: CanvasAgentSnapshot): CanvasChangeSet {
+    const nodeIds = changedEntityIds(previous.nodes, next.nodes);
+    const connectionIds = changedEntityIds(previous.connections, next.connections);
+    return {
+        nodeIds,
+        connectionIds,
+        selection: JSON.stringify(previous.selectedNodeIds) !== JSON.stringify(next.selectedNodeIds),
+        viewport: JSON.stringify(previous.viewport) !== JSON.stringify(next.viewport),
+    };
+}
+
+export function canvasOpsTouches(ops: CanvasAgentOp[]): CanvasChangeSet {
+    const nodeIds = new Set<string>();
+    const connectionIds = new Set<string>();
+    let selection = false;
+    let viewport = false;
+    let allConnections = false;
+    ops.forEach((op) => {
+        if (op.type === "add_node" || op.type === "update_node") {
+            if (op.id) nodeIds.add(op.id);
+        }
+        if (op.type === "run_generation") nodeIds.add(op.nodeId);
+        if (op.type === "delete_node") (op.ids || (op.id ? [op.id] : [])).forEach((id) => nodeIds.add(id));
+        if (op.type === "connect_nodes") {
+            if (op.id) connectionIds.add(op.id);
+            nodeIds.add(op.fromNodeId);
+            nodeIds.add(op.toNodeId);
+        }
+        if (op.type === "delete_connections") {
+            (op.ids || (op.id ? [op.id] : [])).forEach((id) => connectionIds.add(id));
+            allConnections ||= Boolean(op.all);
+        }
+        if (op.type === "select_nodes") selection = true;
+        if (op.type === "set_viewport") viewport = true;
+    });
+    return { nodeIds: [...nodeIds], connectionIds: [...connectionIds], selection, viewport, allConnections };
+}
+
+export function assertCanvasWrite(request: CanvasAgentWriteRequest, current: CanvasAgentSnapshot, journal: CanvasRevisionEntry[]) {
+    if (request.projectId !== current.projectId) throw new CanvasRevisionError("CANVAS_PROJECT_CHANGED", { projectId: current.projectId, currentRevision: current.revision, action: "read_and_retry" });
+    const currentNodeIds = new Set(current.nodes.map((node) => node.id));
+    const availableNodeIds = new Set(currentNodeIds);
+    const currentConnectionIds = new Set(current.connections.map((connection) => connection.id));
+    const invalidNodeIds = new Set<string>();
+    const invalidConnectionIds = new Set<string>();
+    request.ops.forEach((op) => {
+        if (op.type === "add_node" && op.id) {
+            if (availableNodeIds.has(op.id)) invalidNodeIds.add(op.id);
+            else availableNodeIds.add(op.id);
+        }
+        if ((op.type === "update_node" || op.type === "run_generation") && !availableNodeIds.has(op.type === "run_generation" ? op.nodeId : op.id)) invalidNodeIds.add(op.type === "run_generation" ? op.nodeId : op.id);
+        if (op.type === "delete_node") (op.ids || (op.id ? [op.id] : [])).forEach((id) => {
+            if (!availableNodeIds.has(id)) invalidNodeIds.add(id);
+            else availableNodeIds.delete(id);
+        });
+        if (op.type === "connect_nodes") {
+            if (!availableNodeIds.has(op.fromNodeId)) invalidNodeIds.add(op.fromNodeId);
+            if (!availableNodeIds.has(op.toNodeId)) invalidNodeIds.add(op.toNodeId);
+            if (op.id && currentConnectionIds.has(op.id)) invalidConnectionIds.add(op.id);
+            else if (op.id) currentConnectionIds.add(op.id);
+        }
+    });
+    if (invalidNodeIds.size || invalidConnectionIds.size) throw new CanvasRevisionError("CANVAS_REVISION_CONFLICT", { baseRevision: request.baseRevision, currentRevision: current.revision, nodeIds: [...invalidNodeIds], connectionIds: [...invalidConnectionIds], action: "read_and_retry" });
+    if (request.baseRevision > current.revision) throw new CanvasRevisionError("CANVAS_REVISION_CONFLICT", { baseRevision: request.baseRevision, currentRevision: current.revision, action: "read_and_retry" });
+    if (request.baseRevision === current.revision) return;
+    const firstRevision = journal[0]?.revision ?? current.revision;
+    if (request.baseRevision < firstRevision - 1) throw new CanvasRevisionError("CANVAS_REVISION_EXPIRED", { baseRevision: request.baseRevision, currentRevision: current.revision, action: "read_and_retry" });
+    const touched = canvasOpsTouches(request.ops);
+    const changed = journal.filter((item) => item.revision > request.baseRevision);
+    const changedNodes = new Set(changed.flatMap((item) => item.nodeIds));
+    const changedConnections = new Set(changed.flatMap((item) => item.connectionIds));
+    const nodeIds = touched.nodeIds.filter((id) => changedNodes.has(id));
+    const connectionIds = touched.connectionIds.filter((id) => changedConnections.has(id));
+    const connectionConflict = touched.allConnections && changed.some((item) => item.connectionIds.length || item.allConnections);
+    const selectionConflict = touched.selection && changed.some((item) => item.selection);
+    const viewportConflict = touched.viewport && changed.some((item) => item.viewport);
+    if (nodeIds.length || connectionIds.length || connectionConflict || selectionConflict || viewportConflict) {
+        throw new CanvasRevisionError("CANVAS_REVISION_CONFLICT", {
+            baseRevision: request.baseRevision,
+            currentRevision: current.revision,
+            nodeIds,
+            connectionIds,
+            selection: selectionConflict,
+            viewport: viewportConflict,
+            action: "read_and_retry",
+        });
+    }
+}
 
 export function summarizeCanvasAgentOps(ops?: CanvasAgentOp[]) {
     const counts = (Array.isArray(ops) ? ops : []).reduce<Record<string, number>>((acc, op) => {
@@ -32,6 +136,12 @@ export function summarizeCanvasAgentOps(ops?: CanvasAgentOp[]) {
     return Object.entries(counts)
         .map(([type, count]) => `${opLabel(type)} ${count}`)
         .join("，");
+}
+
+function changedEntityIds<T extends { id: string }>(previous: T[], next: T[]) {
+    const left = new Map(previous.map((item) => [item.id, JSON.stringify(item)]));
+    const right = new Map(next.map((item) => [item.id, JSON.stringify(item)]));
+    return [...new Set([...left.keys(), ...right.keys()])].filter((id) => left.get(id) !== right.get(id));
 }
 
 export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasAgentOp[]) {

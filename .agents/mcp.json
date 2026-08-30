@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "infinite-canvas": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@basketikun/canvas-agent",
+        "mcp",
+        "--agent",
+        "zcode",
+        "--name",
+        "ZCode"
+      ]
+    }
+  }
+}

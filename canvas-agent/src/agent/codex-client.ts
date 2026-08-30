@@ -775,7 +775,8 @@ function canvasAgentMcpCommand() {
     const current = process.argv.find((arg) => /index\.(t|j)s$/.test(arg)) || "";
     const entry = path.resolve(current || fileURLToPath(new URL("../index.js", import.meta.url)));
     const tsx = path.join(path.dirname(entry), "..", "node_modules", "tsx", "dist", "cli.mjs");
-    return entry.endsWith(".ts") ? { command: process.execPath, args: [tsx, entry, "mcp"] } : { command: process.execPath, args: [entry, "mcp"] };
+    const identityArgs = ["--agent", "codex", "--name", "Canvas Codex", "--instance", "embedded-codex"];
+    return entry.endsWith(".ts") ? { command: process.execPath, args: [tsx, entry, "mcp", ...identityArgs] } : { command: process.execPath, args: [entry, "mcp", ...identityArgs] };
 }
 
 /** 生成 Codex app-server 使用的 MCP 配置。 */

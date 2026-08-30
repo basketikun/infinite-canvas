@@ -2,7 +2,7 @@
   "mcpServers": {
     "infinite-canvas": {
       "command": "npx",
-      "args": ["-y", "@basketikun/canvas-agent", "mcp"],
+      "args": ["-y", "@basketikun/canvas-agent", "mcp", "--agent", "codex", "--name", "Codex"],
       "startup_timeout_sec": 20,
       "tool_timeout_sec": 90
     }

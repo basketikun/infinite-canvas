@@ -135,13 +135,13 @@ Codex CLI <-> canvas-agent MCP <-> 当前网页画布
 用户本机 Codex 配置示例：
 
 ```bash
-codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp
+codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp --agent codex --name Codex
 ```
 
 本仓库调试时可使用，实际配置建议替换为本机绝对路径：
 
 ```bash
-codex mcp add infinite-canvas -- node /path/to/infinite-canvas/canvas-agent/dist/index.js mcp
+codex mcp add infinite-canvas -- node /path/to/infinite-canvas/canvas-agent/dist/index.js mcp --agent codex --name Codex
 ```
 
 网页侧边栏助手另走 Canvas Agent 的对话通道。Canvas Agent 使用官方 `@openai/codex` CLI 的 `codex app-server --stdio` 启动并续用同一个 thread，启动时会注入 `infinite-canvas` MCP 配置并把 `default_tools_approval_mode` 设为 `approve`，避免 Codex 自己的 MCP 审批卡住侧边栏；真正修改画布前由网页侧边栏做二次确认。
@@ -189,7 +189,7 @@ Claude Code 侧当前 MVP 先调用本机 Claude Code CLI 的流式 JSON 输出�
 如果希望 Claude Code 也能操作当前画布，需要给 Claude Code 配置同一个 MCP：
 
 ```bash
-claude mcp add --scope user --transport stdio infinite-canvas -- npx -y @basketikun/canvas-agent mcp
+claude mcp add --scope user --transport stdio infinite-canvas -- npx -y @basketikun/canvas-agent mcp --agent claude --name "Claude Code"
 ```
 
 Canvas Agent 调用 Claude Code 时默认允许 `mcp__infinite-canvas__*`，避免 print 模式被工具审批卡住；真正修改画布仍由网页侧边栏确认。
@@ -246,3 +246,15 @@ Canvas Agent 调用 Claude Code 时默认允许 `mcp__infinite-canvas__*`，避�
 - 网页侧边栏默认只展示本地 Codex，并展示结构化回复。
 - 侧边栏能展示一次 `canvas_apply_ops` 工具调用和结果。
 - 断开 Canvas Agent 后，网页能显示清晰的本机连接失败提示。
+
+## 多 Agent 协作扩展
+
+当前架构进一步支持 Codex、ZCode、TraeCode 等多个外部 MCP 客户端同时连接：
+
+- 每个 MCP 进程通过 `--agent`、`--name` 和可选 `--instance` 声明独立身份。
+- 画布读取返回 `projectId` 与单调递增的 `revision`；写操作必须携带读取版本。
+- 不同节点的并发修改自动合并，同一节点或失效项目的写入返回结构化冲突，Agent 重读后重试。
+- 用户手动修改、插件操作和生成结果同样进入 revision journal，不会被旧 Agent 请求静默覆盖。
+- 多个待确认画布写入进入 FIFO 队列，并在“协作”页显示在线 Agent 和最近活动。
+
+跨产品调度使用持久化任务邮箱。`broadcast` 会让多个目标 Agent 分别领取同一任务并提交结果；`orchestrated` 允许主 Agent 创建带父子关系和依赖的任务。外部 MCP 客户端必须主动轮询任务，服务端不能通过 MCP 反向唤醒它们。Codex 还可显式选择 app-server 主动调度，默认与 ZCode、TraeCode 一样使用任务邮箱。

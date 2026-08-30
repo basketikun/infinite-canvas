@@ -1,0 +1,45 @@
+import type { ExternalAgentIdentity, ExternalAgentKind } from "../agent/identity.js";
+
+export type CollaborationMode = "broadcast" | "orchestrated";
+export type CollaborationRole = "coordinator" | "worker";
+export type CollaborationStatus = "open" | "completed" | "cancelled";
+export type CollaborationTaskStatus = "draft" | "open" | "claimed" | "completed" | "failed" | "cancelled";
+export type CollaborationMember = ExternalAgentIdentity & { role: CollaborationRole; joinedAt: number; lastSeenAt: number };
+export type TaskClaim = { agent: ExternalAgentIdentity; attempt: number; claimedAt: number; leaseUntil: number };
+export type TaskResult = { agent: ExternalAgentIdentity; attempt: number; status: "completed" | "failed"; summary: string; data?: unknown; createdAt: number };
+export type TaskEnvelope = {
+    id: string;
+    sessionId: string;
+    parentTaskId?: string;
+    title: string;
+    instructions: string;
+    targetKinds: ExternalAgentKind[];
+    dependsOn: string[];
+    depth: number;
+    status: CollaborationTaskStatus;
+    claims: TaskClaim[];
+    results: TaskResult[];
+    attempts: Record<string, number>;
+    createdAt: number;
+    updatedAt: number;
+    deadlineAt?: number;
+    canvasProjectId?: string;
+    canvasRevision?: number;
+    codexDispatch?: "mailbox" | "active";
+};
+export type CollaborationSession = {
+    id: string;
+    title: string;
+    goal: string;
+    mode: CollaborationMode;
+    status: CollaborationStatus;
+    coordinator?: ExternalAgentIdentity;
+    members: CollaborationMember[];
+    tasks: TaskEnvelope[];
+    maxDepth: number;
+    maxTasks: number;
+    maxParallelClaims: number;
+    createdAt: number;
+    updatedAt: number;
+};
+export type CollaborationData = { version: 1; sessions: CollaborationSession[] };
