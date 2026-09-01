@@ -257,7 +257,9 @@ function jsonTypeToZod(node: unknown): ZodTypeAny {
             return z.array(item);
         }
         case "object":
-            return z.object(jsonSchemaToZodShape(spec));
+            // JSON Schema 默认 additionalProperties=true,故对象需 passthrough,
+            // 否则 Zod 默认 strip 会丢弃 patch/params 等开放字段。
+            return z.object(jsonSchemaToZodShape(spec)).passthrough();
         default:
             return z.any();
     }
