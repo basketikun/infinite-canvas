@@ -1,37 +1,9 @@
 import { definePlugin, useEffect, useMemo, useRef, useState } from "@infinite-canvas/plugin-sdk";
 import type { CanvasNodeContentProps, CanvasNodeContext, CanvasNodePanelProps } from "@infinite-canvas/plugin-sdk";
-
-type H3Ref = { url: string; type: "image" | "video" | "audio"; name: string; storageKey?: string };
-type H3Segment = { id: string; start?: number; prompt?: string; duration?: number; result?: string; results?: H3Ref[]; status?: string; taskMode?: string; seed?: number | string; audioMode?: string; audioDenoiseStrength?: number; addSourceAsReference?: boolean; promptPrimaryAudioOrdinal?: number; strictPromptTags?: boolean; referenceVideoPolicy?: string; refImageSize?: string; refs?: { image?: H3Ref[]; video?: H3Ref[]; audio?: H3Ref[] }; refItems?: H3Ref[]; aspectRatio?: string; megapixels?: number; videoSteps?: number; denoise?: number; trimIn?: number; trimOut?: number; motionContextEnabled?: boolean; tailFrameEnabled?: boolean; motionContextNoiseEnabled?: boolean; motionContextNoiseAlpha?: number; motionContextNoiseAlphaEnd?: number; motionContextNoiseRampFrames?: number; combatLoraWeight?: number; cinematicLoraWeight?: number };
-
-const defaultPrompt = "保持原视频的动作、镜头和环境，替换主体角色，动作连贯，人物外观稳定。";
-const defaultH3Model = "h3\\10Eros_minimax_h3_TURBO-hybrid_beta4_int8_convrot_2.safetensors";
-const h3ModelOptions = [
-    { value: "h3\\10Eros_minimax_h3_TURBO-hybrid_beta4_int8_convrot_2.safetensors", label: "10Eros H3 Turbo Hybrid Beta4 INT8" },
-    { value: "h3\\10Eros_minimax_h3_TURBO-hybrid_beta3_int8_convrot.safetensors", label: "10Eros H3 Turbo Hybrid Beta3 INT8" },
-    { value: "h3\\minimax_h3_ref2va_pruned_int8_convrot.safetensors", label: "Ref2VA Pruned INT8 ConvRot" },
-    { value: "h3\\minimax_h3_ref2va_int8_convrot.safetensors", label: "Ref2VA INT8 ConvRot" },
-    { value: "h3\\minimax_h3_fl2va_pruned_int8_convrot.safetensors", label: "FL2VA Pruned INT8 ConvRot" },
-    { value: "h3\\minimax_h3_fl2va_int8_convrot.safetensors", label: "FL2VA INT8 ConvRot" },
-    { value: "h3\\minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors", label: "Hybrid FL2VA / Ref2VA B25-49 INT8" },
-    { value: "h3\\DasiwaMinimaxH3_dasiwaREF2VAHybridV1.safetensors", label: "Dasiwa REF2VA Hybrid V1" },
-];
-function normalizeH3Model(value: unknown) {
-    const model = String(value || "").trim();
-    if (!model || /^(10eros\s*max\s*h3|minimax\s*h3)$/i.test(model)) return defaultH3Model;
-    if (/hybrid_beta4_int8_convrot_2\.safetensors$/i.test(model)) return defaultH3Model;
-    if (/hybrid_beta3_int8_convrot\.safetensors$/i.test(model)) return "h3\\10Eros_minimax_h3_TURBO-hybrid_beta3_int8_convrot.safetensors";
-    const key = model.toLowerCase().replace(/^.*[\\/]/, "");
-    const aliases: Record<string, string> = {
-        "minimax_h3_ref2va_pruned_int8_convrot.safetensors": "h3\\minimax_h3_ref2va_pruned_int8_convrot.safetensors",
-        "minimax_h3_ref2va_int8_convrot.safetensors": "h3\\minimax_h3_ref2va_int8_convrot.safetensors",
-        "minimax_h3_fl2va_pruned_int8_convrot.safetensors": "h3\\minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-        "minimax_h3_fl2va_int8_convrot.safetensors": "h3\\minimax_h3_fl2va_int8_convrot.safetensors",
-        "10eros_max_h3_turbo-hybrid_beta4_int8_convrot_2.safetensors": defaultH3Model,
-        "10eros_minimax_h3_turbo-hybrid_beta4_int8_convrot_2.safetensors": defaultH3Model,
-    };
-    return aliases[key] || model;
-}
+import type { H3Ref, H3Segment } from "./types";
+import { characterSwapLora, defaultH3Model, defaultPrompt, h3LoraOptions, h3ModelOptions } from "./constants";
+import { compatibleH3Settings, normalizeH3Model, sameRef } from "./services/h3-models";
+import { ClipSettings } from "./components/ClipSettings";
 const h3Css = `
 [data-canvas-no-zoom] { width:100%; height:100%; min-width:0; min-height:0; font-family:Inter,"Microsoft YaHei",sans-serif; }
 [data-canvas-no-zoom] button,[data-canvas-no-zoom] select,[data-canvas-no-zoom] input,[data-canvas-no-zoom] textarea { font-family:inherit; }
@@ -160,6 +132,7 @@ const buttonStyle = (ctx: CanvasNodeContext, active = false) => ({
 });
 
 function readRefs(ctx: CanvasNodeContext): H3Ref[] {
+    const currentNode = ctx.getNode(ctx.node.id) || ctx.node;
     const connected = ctx.getUpstream().flatMap((node) => {
         const media = node.metadata || {};
         const url = String(media.content || media.url || media.localUrl || media.sourceUrl || "").trim();
@@ -168,7 +141,7 @@ function readRefs(ctx: CanvasNodeContext): H3Ref[] {
         const type = mime.startsWith("video/") || node.type === "video" ? "video" : mime.startsWith("audio/") || node.type === "audio" ? "audio" : "image";
         return [{ url, type: type as H3Ref["type"], name: node.title || type, storageKey: String(media.storageKey || "") || undefined }];
     });
-    const characterAssets = ctx.node.metadata?.h3CharacterAssets;
+    const characterAssets = currentNode.metadata?.h3CharacterAssets;
     const characterRefs = Array.isArray(characterAssets) ? characterAssets.flatMap((asset) => {
         if (!asset || typeof asset !== "object") return [];
         const item = asset as Record<string, unknown>;
@@ -181,7 +154,7 @@ function readRefs(ctx: CanvasNodeContext): H3Ref[] {
             return url ? [{ url, type: "image" as const, name: `${role} · ${String(ref.name || "角色参考图")}`, storageKey: String(ref.storageKey || "") || undefined }] : [];
         });
     }) : [];
-    const legacy = ctx.node.metadata?.h3Refs;
+    const legacy = currentNode.metadata?.h3Refs;
     const legacyRefs = legacy && typeof legacy === "object" ? Object.entries(legacy as Record<string, unknown>).flatMap(([kind, values]) => Array.isArray(values) ? values.flatMap((value) => {
         if (!value || typeof value !== "object") return [];
         const item = value as Record<string, unknown>;
@@ -190,7 +163,7 @@ function readRefs(ctx: CanvasNodeContext): H3Ref[] {
         const type = kind === "video" ? "video" : kind === "audio" ? "audio" : "image";
         return [{ url, type: type as H3Ref["type"], name: String(item.name || `${kind}-ref`), storageKey: String(item.storageKey || "") || undefined }];
     }) : []) : [];
-    return [...connected, ...characterRefs, ...legacyRefs].filter((item, index, all) => all.findIndex((other) => other.url === item.url) === index);
+    return [...connected, ...characterRefs, ...legacyRefs].filter((item, index, all) => all.findIndex((other) => sameRef(other, item)) === index);
 }
 
 function normalizeDroppedRef(event: React.DragEvent<HTMLElement>): H3Ref | null {
@@ -318,7 +291,7 @@ function H3ContentFinal({ ctx }: CanvasNodeContentProps) {
     const moveClip = (event: React.DragEvent<HTMLDivElement>, targetId: string) => { event.preventDefault(); const sourceId = event.dataTransfer.getData("application/x-infinite-canvas-clip"); if (!sourceId || sourceId === targetId) return; const from = segments.findIndex((item) => item.id === sourceId); const to = segments.findIndex((item) => item.id === targetId); if (from < 0 || to < 0) return; const next = [...segments]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved); ctx.updateMetadata({ segments: compactSegmentStarts(next), selectedSegmentId: sourceId }); };
     const clip = (segment: H3Segment, index: number) => <div key={segment.id} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-infinite-canvas-clip", segment.id); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => moveClip(event, segment.id)} onClick={() => ctx.updateMetadata({ selectedSegmentId: segment.id, playhead: Number(segment.start || 0) })} style={{ position: "absolute", left: `${Number(segment.start || 0) / total * 100}%`, width: `${Math.max(5, Number(segment.duration || 1) / total * 100)}%`, top: 7, bottom: 7, minWidth: 70, overflow: "hidden", border: `1px solid ${segment.id === selected?.id ? "#ef4444" : ctx.theme.node.stroke}`, borderRadius: 5, background: segment.id === selected?.id ? ctx.theme.toolbar.activeBg : ctx.theme.node.fill, cursor: "grab", display: "grid", gridTemplateColumns: "22px 1fr 30px 22px", alignItems: "center", gap: 3, padding: 3, boxSizing: "border-box" }}><span>〰</span><b style={{ textAlign: "center", fontSize: 10 }}>Clip {index + 1}<br /><small>{Number(segment.start || 0).toFixed(0)}s - {(Number(segment.start || 0) + Number(segment.duration || 0)).toFixed(0)}s</small></b><span style={{ fontSize: 10 }}>⌘{refsForSegment(segment).length}</span><button type="button" disabled={segments.length <= 1} onClick={(event) => { event.stopPropagation(); const next = segments.filter((item) => item.id !== segment.id); ctx.updateMetadata({ segments: compactSegmentStarts(next), selectedSegmentId: next[Math.max(0, index - 1)]?.id }); }} style={{ border: 0, background: "transparent", color: ctx.theme.node.muted }}>×</button></div>;
     const addSegment = () => { const next = compactSegmentStarts([...segments, { id: `segment-${Date.now()}`, prompt: defaultPrompt, duration: 5, status: "idle" }]); ctx.updateMetadata({ segments: next, selectedSegmentId: next[next.length - 1].id }); };
-    const run = (all = false) => { ctx.openPanel(); setTimeout(() => ctx.emit("minimax-h3:run", { nodeId: ctx.node.id, all }), 0); };
+    const run = (all = false) => requestH3Run(ctx, all);
     return <div data-canvas-no-zoom onMouseDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()} style={{ width: "100%", height: "100%", minHeight: 0, display: "grid", gridTemplateRows: "42px 1fr", overflow: "hidden", color: ctx.theme.node.text, background: ctx.theme.node.fill }}>
         <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 12px", borderBottom: `1px solid ${ctx.theme.node.stroke}`, fontWeight: 900, fontSize: 13 }}><span>▣</span><span>MiniMax H3</span><small style={{ color: ctx.theme.node.muted }}>{playhead.toFixed(1)}s / {total.toFixed(1)}s</small><span style={{ marginLeft: "auto", color: metadata.status === "error" ? "#ef4444" : ctx.theme.node.muted, fontSize: 10 }}>{metadata.status === "loading" ? "生成中" : metadata.status === "success" ? "已完成" : metadata.status === "error" ? "失败" : ""}</span><button type="button" disabled={!preview} title="下载当前结果" style={{ ...buttonStyle(ctx), padding: "5px 8px" }} onClick={() => preview && window.open(preview, "_blank")}>⇩</button><button type="button" onClick={() => ctx.openPanel()} style={{ ...buttonStyle(ctx), padding: "5px 8px" }}>↗</button></header>
         <div style={{ minHeight: 0, display: "grid", gridTemplateColumns: "190px minmax(0,1fr)", gap: 8, padding: 8 }}>
@@ -449,9 +422,76 @@ function H3PlayheadStyle({ percent }: { percent: number }) {
     return <style>{`.minimax-canvas-workbench .minimax-edit-timeline::after{left:${position}}.minimax-canvas-workbench .minimax-edit-timeline::before{content:"";display:block;position:absolute;z-index:15;top:0;left:${position};width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #f8fafc;transform:translateX(-50%);pointer-events:none}`}</style>;
 }
 
+function requestH3Run(ctx: CanvasNodeContext, all = false) {
+    const node = ctx.getNode(ctx.node.id) || ctx.node;
+    const metadata = node.metadata || {};
+    if (["queued", "loading"].includes(String(metadata.status))) return;
+    const segments = segmentsFor(metadata);
+    const selectedId = String(metadata.selectedSegmentId || segments[0]?.id || "");
+    const selectedSegment = segments.find((s) => s.id === selectedId) || segments[0];
+    // 从 DOM 读取当前 textarea 的 prompt 值（H3Panel 和 H3ContentExact）
+    const panelTextarea = document.querySelector<HTMLTextAreaElement>(`textarea[placeholder="描述动作、镜头与角色替换要求"]`);
+    const workbenchTextarea = document.querySelector<HTMLTextAreaElement>(`.minimax-canvas-workbench .minimax-current-panel textarea`);
+    const domPrompt = panelTextarea?.value?.trim() || workbenchTextarea?.value?.trim() || "";
+    // 优先使用 DOM 值，其次是 selected segment 的 prompt
+    const currentPrompt = domPrompt || selectedSegment?.prompt || "";
+    const nextSegments = segments.map((segment) => {
+        const shouldRun = all || segment.id === selectedId;
+        if (!shouldRun) return segment;
+        // 如果当前 segment 是选中的，优先使用 DOM 值，其次使用 segment 的现有值
+        const newPrompt = segment.id === selectedId && (currentPrompt || segment.prompt) ? (currentPrompt || segment.prompt) : segment.prompt;
+        return { ...segment, status: "queued", progress: 0, runtimeTaskId: "", prompt: newPrompt };
+    });
+    ctx.updateMetadata({
+        selectedSegmentId: selectedId,
+        segments: nextSegments,
+        prompt: currentPrompt || selectedSegment?.prompt || metadata.prompt,
+        status: "queued",
+        runRequestId: `h3-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        runRequestAll: all,
+        runRequestConsumedId: "",
+        runtimeTaskId: "",
+        runProgress: 0,
+        runStartedAt: Date.now(),
+        runFinishedAt: undefined,
+        errorDetails: "",
+    });
+    ctx.openPanel();
+    // Keep the event for already-mounted panels; the request metadata above
+    // is the durable fallback for panels that mount after this event fires.
+    setTimeout(() => ctx.emit("minimax-h3:run", { nodeId: ctx.node.id, requestId: `h3-${Date.now()}`, all }), 0);
+}
+
+function h3LogMedia(ref: H3Ref) {
+    return { url: ref.url, name: ref.name, type: ref.type, ...(ref.storageKey ? { storageKey: ref.storageKey } : {}) };
+}
+
+async function createH3Log(ctx: CanvasNodeContext, segment: H3Segment | undefined, prompt: string, refs: H3Ref[], params: Record<string, unknown>) {
+    try {
+        return await ctx.generationLogs.create({
+            projectId: ctx.projectId, nodeId: ctx.node.id, segmentId: segment?.id, status: "queued",
+            platform: String(params.engine || "ComfyUI"), workflow: String(params.workflow || "MiniMax H3"), model: String(params.modelName || ""),
+            taskMode: String(params.taskMode || segment?.taskMode || "r2v"), prompt, references: refs.map(h3LogMedia),
+            inputCounts: { image: refs.filter((ref) => ref.type === "image").length, video: refs.filter((ref) => ref.type === "video").length, audio: refs.filter((ref) => ref.type === "audio").length },
+            startedAt: new Date().toISOString(), durationMs: 0, outputs: [], params,
+        });
+    } catch (error) {
+        console.warn("[minimax-h3] failed to create generation log", error);
+        return null;
+    }
+}
+
+async function finishH3Log(ctx: CanvasNodeContext, taskId: string, status: "success" | "failed" | "cancelled", patch: Record<string, unknown>) {
+    try {
+        const logs = await ctx.generationLogs.list({ projectId: ctx.projectId, nodeId: ctx.node.id, limit: 500 });
+        const log = logs.find((item) => item.runtimeTaskId === taskId);
+        if (log) await ctx.generationLogs.update(log.id, { status, ...patch });
+    } catch (error) { console.warn("[minimax-h3] failed to update generation log", error); }
+}
+
 function H3StatusBadge({ status, error, onRetry }: { status: string; error: string; onRetry: () => void }) {
     if (!status || status === "idle") return null;
-    const label = status === "loading" ? "生成中…" : status === "success" ? "已完成" : status === "error" ? `失败：${error || "未知错误"}` : status;
+    const label = status === "queued" ? "排队中…" : status === "loading" ? "生成中…" : status === "success" ? "已完成" : status === "cancelled" ? "已取消" : status === "error" ? `失败：${error || "未知错误"}` : status;
     return <div className={`minimax-status-badge ${status}`}><span>{label}</span>{status === "error" ? <button type="button" onClick={(event) => { event.stopPropagation(); onRetry(); }}>重试</button> : null}</div>;
 }
 
@@ -629,12 +669,13 @@ function H3RefSelectionBinder({ ctx, segments, total }: { ctx: CanvasNodeContext
                     const value = JSON.parse(raw) as Record<string, unknown>;
                     const url = String(value.url || value.dataUrl || value.localUrl || value.originalLocalUrl || value.sourceUrl || value.path || "").trim();
                     const kind = String(value.kind || value.type || "image").toLowerCase();
-                    const ref: H3Ref = { url, name: String(value.name || "Ref"), type: kind.startsWith("video") ? "video" : kind.startsWith("audio") ? "audio" : "image" };
+                    const storageKey = String(value.storageKey || "").trim();
+                    const ref: H3Ref = { url, name: String(value.name || "Ref"), type: kind.startsWith("video") ? "video" : kind.startsWith("audio") ? "audio" : "image", ...(storageKey ? { storageKey } : {}) };
                     const metadata = ctx.node.metadata || {};
                     const currentSegments = segmentsFor(metadata);
                     const selectedId = String(metadata.selectedSegmentId || currentSegments[0]?.id || "");
                     const selectedSegment = currentSegments.find((item) => item.id === selectedId);
-                    if (ref.url && selectedSegment && !refsForSegment(selectedSegment).some((item) => item.url === ref.url)) {
+                    if (ref.url && selectedSegment && !refsForSegment(selectedSegment).some((item) => sameRef(item, ref))) {
                         const nextRefs = [...refsForSegment(selectedSegment), ref];
                         event.preventDefault();
                         event.stopImmediatePropagation();
@@ -690,30 +731,6 @@ function H3RefSelectionBinder({ ctx, segments, total }: { ctx: CanvasNodeContext
     return null;
 }
 
-function H3ExactAdvancedFields({ ctx, metadata, segment, patch }: { ctx: CanvasNodeContext; metadata: Record<string, unknown>; segment: H3Segment | undefined; patch: (value: Partial<H3Segment>) => void }) {
-    if (!segment) return null;
-    const field = { width: "100%", minWidth: 0, boxSizing: "border-box", border: `1px solid ${ctx.theme.node.stroke}`, borderRadius: 5, padding: "4px 5px", background: ctx.theme.node.panel, color: ctx.theme.node.text, fontSize: 10 } as const;
-    return <div className="minimax-settings-extra" style={{ display: "contents" }}>
-        <label className="minimax-wide-setting"><span>Task mode</span><select value={String(segment.taskMode || "r2v")} onChange={(event) => patch({ taskMode: event.target.value })} style={field}><option value="r2v">参考主体</option><option value="rv2v">视频编辑</option><option value="i2v">图生视频</option></select></label>
-        <label className="minimax-wide-setting"><span>Payment</span><select value={String(metadata.rhPayment || "free")} onChange={(event) => ctx.updateMetadata({ rhPayment: event.target.value })} style={field}><option value="free">Free</option><option value="wallet">Wallet</option></select></label>
-        <label><span>LoRA</span><select value={metadata.minimaxGlobalLoraEnabled === false ? "off" : "on"} onChange={(event) => ctx.updateMetadata({ minimaxGlobalLoraEnabled: event.target.value !== "off" })} style={field}><option value="on">启用 LoRA</option><option value="off">关闭 LoRA</option></select></label>
-        <label className="minimax-wide-setting"><span>Base model</span><select value={normalizeH3Model(metadata.minimaxBaseModel || metadata.modelName)} onChange={(event) => ctx.updateMetadata({ minimaxBaseModel: event.target.value, modelName: event.target.value })} style={field}>{h3ModelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-        <label><span>Video steps</span><input type="number" min="1" max="60" value={Number(segment.videoSteps || metadata.videoSteps || 8)} onChange={(event) => patch({ videoSteps: Number(event.target.value) })} style={field} /></label>
-        <label><span>Denoise</span><input type="number" min="0" max="1" step="0.05" value={Number(segment.denoise ?? metadata.denoise ?? 0.65)} onChange={(event) => patch({ denoise: Number(event.target.value) })} style={field} /></label>
-        <label><span>Seed</span><input type="number" min="0" max="4294967295" value={String(segment.seed ?? "")} onChange={(event) => patch({ seed: event.target.value })} placeholder="random" style={field} /></label>
-        <label><span>LoRA name</span><input value={String(metadata.loraName || metadata.minimaxLoraName || "")} onChange={(event) => ctx.updateMetadata({ loraName: event.target.value, minimaxLoraName: event.target.value })} placeholder="optional" style={field} /></label>
-        <label><span>TE speed</span><select value={metadata.minimaxGlobalTeAccel === true ? "fast" : "std"} onChange={(event) => ctx.updateMetadata({ minimaxGlobalTeAccel: event.target.value === "fast" })} style={field}><option value="std">std</option><option value="fast">fast</option></select></label>
-        <label><span>Combat LoRA</span><input type="number" min="0" max="2" step="0.01" value={Number(segment.combatLoraWeight || metadata.minimaxCombatLoraWeight || 0)} onChange={(event) => patch({ combatLoraWeight: Number(event.target.value) })} style={field} /></label>
-        <label><span>Cinematic LoRA</span><input type="number" min="0" max="2" step="0.01" value={Number(segment.cinematicLoraWeight || metadata.minimaxCinematicLoraWeight || 0)} onChange={(event) => patch({ cinematicLoraWeight: Number(event.target.value) })} style={field} /></label>
-        <Toggle ctx={ctx} label="Motion Context" value={segment.motionContextEnabled !== false} onChange={(value) => patch({ motionContextEnabled: value, tailFrameEnabled: value })} />
-        <label><span>Global MP</span><input type="number" min="0.1" max="2" step="0.1" value={Number(metadata.minimaxGlobalMegapixels || metadata.megapixels || 1)} onChange={(event) => ctx.updateMetadata({ minimaxGlobalMegapixels: Number(event.target.value) })} style={field} /></label>
-        <label><span>Global steps</span><input type="number" min="1" max="60" value={Number(metadata.minimaxGlobalVideoSteps || metadata.videoSteps || 6)} onChange={(event) => ctx.updateMetadata({ minimaxGlobalVideoSteps: Number(event.target.value) })} style={field} /></label>
-        <Toggle ctx={ctx} label="Global LoRA" value={metadata.minimaxGlobalLoraEnabled !== false} onChange={(value) => ctx.updateMetadata({ minimaxGlobalLoraEnabled: value })} />
-        <Toggle ctx={ctx} label="Global TE" value={metadata.minimaxGlobalTeAccel === true} onChange={(value) => ctx.updateMetadata({ minimaxGlobalTeAccel: value })} />
-        <button type="button" className="minimax-run-all" onClick={() => { ctx.openPanel(); setTimeout(() => ctx.emit("minimax-h3:run-all", { nodeId: ctx.node.id }), 0); }}>一键运行全部 Clip</button>
-    </div>;
-}
-
 function H3ContentExact({ ctx }: CanvasNodeContentProps) {
     const metadata = ctx.node.metadata || {};
     const segments = segmentsFor(metadata);
@@ -746,10 +763,10 @@ function H3ContentExact({ ctx }: CanvasNodeContentProps) {
     const addRef = (event: React.DragEvent<HTMLDivElement>) => { event.preventDefault(); event.stopPropagation(); const ref = normalizeDroppedRef(event); if (!ref) return; const rect = event.currentTarget.getBoundingClientRect(); const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width))); const time = ratio * total; const target = segments.find((item) => time >= Number(item.start || 0) && time < Number(item.start || 0) + Math.max(0.5, Number(item.duration || 1))) || selected; if (!target) return; const targetRefs = refsForSegment(target); if (targetRefs.some((item) => item.url === ref.url)) return; const next = [...targetRefs, ref]; ctx.updateMetadata({ selectedSegmentId: target.id, segments: segments.map((item) => item.id === target.id ? { ...item, refItems: next, refs: { image: next.filter((item) => item.type === "image"), video: next.filter((item) => item.type === "video"), audio: next.filter((item) => item.type === "audio") } } : item) }); };
     const addRefToSelected = (event: React.DragEvent<HTMLDivElement>) => { event.preventDefault(); event.stopPropagation(); const ref = normalizeDroppedRef(event); if (!ref || !selected || selectedRefs.some((item) => item.url === ref.url)) return; const next = [...selectedRefs, ref]; ctx.updateMetadata({ selectedSegmentId: selected.id, segments: segments.map((item) => item.id === selected.id ? { ...item, refItems: next, refs: { image: next.filter((item) => item.type === "image"), video: next.filter((item) => item.type === "video"), audio: next.filter((item) => item.type === "audio") } } : item) }); };
     const clipCard = (segment: H3Segment, index: number) => { const left = Number(segment.start || 0) / total * 100; const width = Math.max(5, Number(segment.duration || 1) / total * 100); const active = segment.id === selected?.id; const refs = refsForSegment(segment); return <div key={segment.id} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-infinite-canvas-clip", segment.id); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const ref = normalizeDroppedRef(event); if (ref) { const existing = refsForSegment(segment); if (existing.some((item) => item.url === ref.url)) return; const nextRefs = [...existing, ref]; ctx.updateMetadata({ selectedSegmentId: segment.id, segments: segments.map((item) => item.id === segment.id ? { ...item, refItems: nextRefs, refs: { image: nextRefs.filter((item) => item.type === "image"), video: nextRefs.filter((item) => item.type === "video"), audio: nextRefs.filter((item) => item.type === "audio") } } : item) }); return; } const id = event.dataTransfer.getData("application/x-infinite-canvas-clip"); if (!id || id === segment.id) return; const from = segments.findIndex((item) => item.id === id); const to = segments.findIndex((item) => item.id === segment.id); if (from < 0 || to < 0) return; const next = [...segments]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved); ctx.updateMetadata({ segments: compactSegmentStarts(next), selectedSegmentId: id }); }} onClick={() => ctx.updateMetadata({ selectedSegmentId: segment.id, playhead: Number(segment.start || 0) })} className={`minimax-tl-clip ${active ? "active" : ""}`} style={{ left: `${left}%`, width: `${width}%` }}><div className="minimax-clip-media">{segment.result ? <video src={segment.result} muted playsInline preload="metadata" /> : <div className="minimax-clip-empty"><H3Icon name="clapperboard" /></div>}</div><button type="button" className={`minimax-clip-motion ${segment.motionContextEnabled === false ? "off" : ""}`} title="Motion Context" onClick={(event) => { event.stopPropagation(); ctx.updateMetadata({ segments: segments.map((item) => item.id === segment.id ? { ...item, motionContextEnabled: item.motionContextEnabled === false } : item) }); }}><H3Icon name="waves" /></button><div className="minimax-clip-meta"><b>Clip {index + 1}</b><span>{fmt(Number(segment.start || 0))} - {fmt(Number(segment.start || 0) + Number(segment.duration || 0))}</span></div>{refs.length ? <span className="minimax-clip-ref-count"><H3Icon name="paperclip" /> {refs.length}</span> : null}{segments.length > 1 ? <button type="button" className="minimax-clip-delete" onClick={(event) => { event.stopPropagation(); const next = segments.filter((item) => item.id !== segment.id); ctx.updateMetadata({ segments: compactSegmentStarts(next), selectedSegmentId: next[Math.max(0, index - 1)]?.id || "" }); }}><H3Icon name="close" /></button> : null}</div>; };
-    return <div className="minimax-canvas-workbench" data-canvas-no-zoom data-h3-node-id={ctx.node.id} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
+    return <div className="minimax-canvas-workbench" data-canvas-no-zoom data-h3-node-id={ctx.node.id} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onClickCapture={(event) => { const target = (event.target as HTMLElement).closest<HTMLButtonElement>(".minimax-run"); if (!target) return; event.preventDefault(); event.stopPropagation(); requestH3Run(ctx); }} onClick={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
         <H3PaneHandles ctx={ctx} />
         <H3PlayheadStyle percent={total ? (playhead / total) * 100 : 0} />
-        <H3StatusBadge status={String(metadata.status || selected?.status || "idle")} error={String(metadata.errorDetails || metadata.error || "")} onRetry={() => { ctx.openPanel(); setTimeout(() => ctx.emit("minimax-h3:run", { nodeId: ctx.node.id }), 0); }} />
+        <H3StatusBadge status={String(metadata.status || selected?.status || "idle")} error={String(metadata.errorDetails || metadata.error || "")} onRetry={() => requestH3Run(ctx)} />
         <H3RulerScrubber ctx={ctx} total={total} previewH={previewH} libraryW={libraryW} />
         <H3RefSelectionBinder ctx={ctx} segments={segments} total={total} />
         <H3VideoPreviewFallback ctx={ctx} />
@@ -757,11 +774,11 @@ function H3ContentExact({ ctx }: CanvasNodeContentProps) {
         <H3PromptEnhanceBinder ctx={ctx} segment={selected} />
         <H3PromptInsertBinder ctx={ctx} segment={selected} />
         <style>{`.minimax-canvas-workbench{--minimax-preview-h:${previewH}px;--minimax-video-h:${videoTrackH}px;--minimax-ref-lane-h:${refLaneH}px;--minimax-ref-h:${Math.max(78, refLanes * refLaneH)}px}.minimax-canvas-workbench .minimax-wb-body{grid-template-columns:${libraryW}px minmax(0,1fr)}.minimax-canvas-workbench .minimax-wb-main{grid-template-rows:var(--minimax-preview-h) calc(28px + var(--minimax-video-h) + var(--minimax-ref-h)) minmax(150px,1fr)}.minimax-canvas-workbench .minimax-edit-timeline{grid-template-rows:28px var(--minimax-video-h) var(--minimax-ref-h)}`}</style>
-        <div className="minimax-wb-toolbar"><div className="minimax-brand"><H3Icon name="clapperboard" /> <span>MiniMax H3</span><b>{fmt(playhead)} / {fmt(total)}</b></div><div className="minimax-transport"><button type="button" title="播放" onClick={() => ctx.updateMetadata({ playhead: playhead >= total ? 0 : total })}><H3Icon name="play" /></button><button type="button" title="新增片段" onClick={() => { const next = compactSegmentStarts([...segments, { id: `segment-${Date.now()}`, prompt: String(metadata.prompt || defaultPrompt), duration: 5, status: "idle" }]); ctx.updateMetadata({ segments: next, selectedSegmentId: next[next.length - 1].id }); }}><H3Icon name="plus" /></button></div><div className="minimax-top-actions"><button type="button" title="下载当前片段" disabled={!selected?.result} onClick={() => { if (!selected?.result) return; const link = document.createElement("a"); link.href = resultUrl(selected.result); link.download = `Clip-${selectedIndex + 1}.mp4`; link.click(); }}><H3Icon name="download" /></button><button type="button" title="打开参数" onClick={() => ctx.openPanel()}><H3Icon name="settings" /></button></div></div>
+         <div className="minimax-wb-toolbar"><div className="minimax-brand"><H3Icon name="clapperboard" /> <span>MiniMax H3</span><em title="已加载新版 H3 插件">v1.2</em><b>{fmt(playhead)} / {fmt(total)}</b></div><div className="minimax-transport"><button type="button" title="播放" onClick={() => ctx.updateMetadata({ playhead: playhead >= total ? 0 : total })}><H3Icon name="play" /></button><button type="button" title="新增片段" onClick={() => { const next = compactSegmentStarts([...segments, { id: `segment-${Date.now()}`, prompt: String(metadata.prompt || defaultPrompt), duration: 5, status: "idle" }]); ctx.updateMetadata({ segments: next, selectedSegmentId: next[next.length - 1].id }); }}><H3Icon name="plus" /></button></div><div className="minimax-top-actions"><button type="button" title="下载当前片段" disabled={!selected?.result} onClick={() => { if (!selected?.result) return; const link = document.createElement("a"); link.href = resultUrl(selected.result); link.download = `Clip-${selectedIndex + 1}.mp4`; link.click(); }}><H3Icon name="download" /></button><button type="button" title="打开参数" onClick={() => ctx.openPanel()}><H3Icon name="settings" /></button></div></div>
         <div className="minimax-wb-body"><aside className="minimax-library"><div className="minimax-library-head"><H3Icon name="database" /> <span>Assets</span></div><div className="minimax-library-list">{assets.map((ref) => thumbnail(ref, true))}{!assets.length ? <div className="minimax-library-empty"><H3Icon name="database" /><span>Assets</span></div> : null}</div><div className="minimax-library-head minimax-output-head"><H3Icon name="output" /> <span>Output</span></div><div className="minimax-library-list minimax-output-list">{outputs.map((ref) => thumbnail(ref, true))}{!outputs.length ? <div className="minimax-library-empty"><H3Icon name="output" /><span>Output</span></div> : null}</div></aside>
             <main className="minimax-wb-main"><div className="minimax-player-stage"><H3PreviewPlayer ctx={ctx} url={preview} kind={previewKind} playhead={playhead} playRequest={playRequest} /></div>
                 <div className="minimax-edit-timeline"><div className="minimax-timeline-controls"><button type="button" onClick={() => ctx.updateMetadata({ playhead: playhead >= total ? 0 : total })}><H3Icon name="play" /></button></div><div className="minimax-ruler"><div className="minimax-track-content">{Array.from({ length: 6 }).map((_, index) => <span className="minimax-tick" key={index} style={{ left: `${index * 20}%` }}><b>{fmt(total * index / 5)}</b></span>)}</div></div><div className="minimax-add-gutter" /><div className="minimax-track-label minimax-video-label">Video</div><div className="minimax-track minimax-video-track"><div className="minimax-track-content">{segments.map(clipCard)}</div></div><button type="button" className="minimax-video-add" onClick={() => { const next = compactSegmentStarts([...segments, { id: `segment-${Date.now()}`, prompt: defaultPrompt, duration: 5, status: "idle" }]); ctx.updateMetadata({ segments: next, selectedSegmentId: next[next.length - 1].id }); }}><H3Icon name="plus" /></button><div className="minimax-track-label minimax-ref-label">Refs</div><div className="minimax-ref-track" onDragOver={(event) => event.preventDefault()} onDrop={addRef}><div className="minimax-ref-content">{Array.from({ length: refLanes }).map((_, lane) => <div className="minimax-ref-lane" key={lane}>{segments.map((segment) => { const ref = refsForSegment(segment)[lane]; const left = Number(segment.start || 0) / total * 100; const width = Math.max(5, Number(segment.duration || 1) / total * 100); return <div key={segment.id} className={`minimax-ref-clip ${segment.id === selected?.id ? "active" : ""} ${ref ? "has-ref" : "is-empty"}`} style={{ left: `${left}%`, width: `${width}%` }} onClick={(event) => { event.stopPropagation(); ctx.updateMetadata({ selectedSegmentId: segment.id, playhead: Number(segment.start || 0) }); }}>{ref ? <div className="minimax-ref-media">{ref.type === "video" ? <video src={ref.url} muted playsInline preload="metadata" /> : ref.type === "image" ? <img src={ref.url} alt={ref.name} /> : <span>{ref.name}</span>}</div> : <div className="minimax-clip-empty"><H3Icon name="paperclip" /></div>}{ref ? <><span className="minimax-ref-counts">{ref.name || `Ref ${lane + 1}`}</span><button type="button" title="移除参考" onClick={(event) => { event.stopPropagation(); patchSelected({ refItems: selectedRefs.filter((item) => item.url !== ref.url), refs: { image: imageRefs.filter((item) => item.url !== ref.url), video: videoRefs.filter((item) => item.url !== ref.url), audio: audioRefs.filter((item) => item.url !== ref.url) } }); }}>×</button></> : null}</div>; })}</div>)}</div></div><div className="minimax-ref-gutter" /></div>
-                <section className="minimax-current-panel"><div className="minimax-current-head"><div className="minimax-current-title"><span className="minimax-current-dot" /><b>Clip {selectedIndex + 1}</b><span>{fmt(Number(selected?.start || 0))} - {fmt(Number(selected?.start || 0) + Number(selected?.duration || 0))}</span></div><div className="minimax-current-refs"><span><H3Icon name="database" /> {imageRefs.length}</span><span><H3Icon name="clapperboard" /> {videoRefs.length}</span><span><H3Icon name="output" /> {audioRefs.length}</span></div></div><div className="minimax-current-ref-items">{selectedRefs.map((ref) => thumbnail(ref, true, true))}{!selectedRefs.length ? <span><H3Icon name="paperclip" /> Refs：从 Assets 拖入参考素材</span> : null}</div><label className="minimax-prompt-field"><span><H3Icon name="prompt" /> Prompt <button type="button" onClick={() => ctx.openPanel()}>增强</button>{imageRefs.length ? <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? "\n" : ""}@图片${imageRefs.length}` })}>@图片{imageRefs.length}</button> : null}{videoRefs.length ? <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? "\n" : ""}@视频${videoRefs.length}` })}>@视频{videoRefs.length}</button> : null}{audioRefs.length ? <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? "\n" : ""}@音频${audioRefs.length}` })}>@音频{audioRefs.length}</button> : null}</span><textarea value={String(selected?.prompt || "")} onChange={(event) => patchSelected({ prompt: event.target.value })} /><div className="minimax-prompt-modes">{["多参考", "模板", "定义", "摘要", "保留", "分辨", "声景", "配乐"].map((label) => <button type="button" key={label} onClick={() => { const tag = label === "多参考" ? `@图片${Math.max(1, imageRefs.length)}` : label === "定义" ? "<Subject 1>" : label === "分辨" ? "<Video 1>" : label === "声景" ? "<Audio 1>" : label === "模板" ? "保持主体身份、服装和镜头连续" : label === "摘要" ? "动作与镜头摘要：" : label === "保留" ? "保持不变：" : "配乐："; patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? "\n" : ""}${tag}` }); }}>{label}</button>)}</div><small className="minimax-prompt-syntax"><code>@图片1~3</code> <code>@视频1~3</code> <code>@音频1~3</code> · <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? " " : ""}《计数》` })}>《计数》</button> <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? " " : ""}《总数》` })}>《总数》</button> <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? " " : ""}《进度》` })}>《进度》</button></small></label><div className="minimax-clip-parameters"><div className="minimax-section-label"><H3Icon name="sliders" /> <span>Clip settings</span></div><div className="minimax-settings"><label className="minimax-wide-setting"><span>Engine</span><select value={String(metadata.minimaxEngine || "comfyui")} onChange={(event) => ctx.updateMetadata({ minimaxEngine: event.target.value })}><option value="comfyui">ComfyUI</option><option value="runninghub">RunningHub</option></select></label><label><span>Duration</span><input type="number" value={Number(selected?.duration || 5)} onChange={(event) => patchSelected({ duration: Number(event.target.value) })} /><b>s</b></label><label><span>Megapixels</span><input type="number" step="0.1" value={Number(selected?.megapixels || metadata.megapixels || 0.4)} onChange={(event) => patchSelected({ megapixels: Number(event.target.value) })} /><b>MP</b></label><label className="minimax-wide-setting"><span>Aspect ratio</span><select value={String(selected?.aspectRatio || "16:9")} onChange={(event) => patchSelected({ aspectRatio: event.target.value })}><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option></select></label><H3ExactAdvancedFields ctx={ctx} metadata={metadata} segment={selected} patch={patchSelected} /><button type="button" className="minimax-run" onClick={() => { ctx.openPanel(); setTimeout(() => ctx.emit("minimax-h3:run", { nodeId: ctx.node.id }), 0); }}><H3Icon name="sparkles" /> Generate clip</button></div></div></section>
+                 <section className="minimax-current-panel"><div className="minimax-current-head"><div className="minimax-current-title"><span className="minimax-current-dot" /><b>Clip {selectedIndex + 1}</b><span>{fmt(Number(selected?.start || 0))} - {fmt(Number(selected?.start || 0) + Number(selected?.duration || 0))}</span></div><div className="minimax-current-refs"><span><H3Icon name="database" /> {imageRefs.length}</span><span><H3Icon name="clapperboard" /> {videoRefs.length}</span><span><H3Icon name="output" /> {audioRefs.length}</span></div></div><div className="minimax-current-ref-items">{selectedRefs.map((ref) => thumbnail(ref, true, true))}{!selectedRefs.length ? <span><H3Icon name="paperclip" /> Refs：从 Assets 拖入参考素材</span> : null}</div><label className="minimax-prompt-field"><span><H3Icon name="prompt" /> Prompt <button type="button" onClick={() => ctx.openPanel()}>增强</button>{imageRefs.length ? <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? "\n" : ""}@图片${imageRefs.length}` })}>@图片{imageRefs.length}</button> : null}{videoRefs.length ? <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? "\n" : ""}@视频${videoRefs.length}` })}>@视频{videoRefs.length}</button> : null}{audioRefs.length ? <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? "\n" : ""}@音频${audioRefs.length}` })}>@音频{audioRefs.length}</button> : null}</span><textarea value={String(selected?.prompt || "")} onChange={(event) => patchSelected({ prompt: event.target.value })} /><div className="minimax-prompt-modes">{["多参考", "模板", "定义", "摘要", "保留", "分辨", "声景", "配乐"].map((label) => <button type="button" key={label} onClick={() => { const tag = label === "多参考" ? `@图片${Math.max(1, imageRefs.length)}` : label === "定义" ? "<Subject 1>" : label === "分辨" ? "<Video 1>" : label === "声景" ? "<Audio 1>" : label === "模板" ? "保持主体身份、服装和镜头连续" : label === "摘要" ? "动作与镜头摘要：" : label === "保留" ? "保持不变：" : "配乐："; patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? "\n" : ""}${tag}` }); }}>{label}</button>)}</div><small className="minimax-prompt-syntax"><code>@图片1~3</code> <code>@视频1~3</code> <code>@音频1~3</code> · <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? " " : ""}《计数》` })}>《计数》</button> <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? " " : ""}《总数》` })}>《总数》</button> <button type="button" onClick={() => patchSelected({ prompt: `${String(selected?.prompt || "")}${selected?.prompt ? " " : ""}《进度》` })}>《进度》</button></small></label><div className="minimax-clip-parameters"><div className="minimax-section-label"><H3Icon name="sliders" /> <span>Clip settings</span></div><div className="minimax-settings"><label className="minimax-wide-setting"><span>Engine</span><select value={String(metadata.minimaxEngine || "comfyui")} onChange={(event) => ctx.updateMetadata({ minimaxEngine: event.target.value })}><option value="comfyui">ComfyUI</option><option value="runninghub">RunningHub</option></select></label><label><span>Duration</span><input type="number" value={Number(selected?.duration || 5)} onChange={(event) => patchSelected({ duration: Number(event.target.value) })} /><b>s</b></label><label><span>Megapixels</span><input type="number" step="0.1" value={Number(selected?.megapixels || metadata.megapixels || 0.4)} onChange={(event) => patchSelected({ megapixels: Number(event.target.value) })} /><b>MP</b></label><label className="minimax-wide-setting"><span>Aspect ratio</span><select value={String(selected?.aspectRatio || "16:9")} onChange={(event) => patchSelected({ aspectRatio: event.target.value })}><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option></select></label><ClipSettings ctx={ctx} metadata={metadata} segment={selected} patch={patchSelected} /><button type="button" className="minimax-run" onClick={() => { ctx.openPanel(); setTimeout(() => ctx.emit("minimax-h3:run", { nodeId: ctx.node.id }), 0); }}><H3Icon name="sparkles" /> Generate clip</button></div></div></section>
             </main>
         </div>
     </div>;
@@ -774,7 +791,7 @@ function Toggle({ ctx, label, value, onChange }: { ctx: CanvasNodeContext; label
 function H3AdvancedSettings({ ctx, metadata, segment }: { ctx: CanvasNodeContext; metadata: Record<string, unknown>; segment: H3Segment }) {
     const field = { width: "100%", boxSizing: "border-box", border: `1px solid ${ctx.theme.node.stroke}`, borderRadius: 5, padding: "4px 6px", background: ctx.theme.node.panel, color: ctx.theme.node.text, fontSize: 10 } as const;
     const patch = (next: Partial<H3Segment>) => patchSelectedSegment(ctx, metadata, next);
-    return <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, padding: "5px 0" }}><label style={{ fontSize: 10 }}>Steps<input type="number" min="1" max="60" value={Number(segment.videoSteps || metadata.videoSteps || 8)} onChange={(event) => patch({ videoSteps: Number(event.target.value) })} style={field} /></label><label style={{ fontSize: 10 }}>Denoise<input type="number" min="0" max="1" step="0.05" value={Number(segment.denoise ?? metadata.denoise ?? 1)} onChange={(event) => patch({ denoise: Number(event.target.value) })} style={field} /></label><label style={{ fontSize: 10 }}>Seed<input type="number" min="0" max="4294967295" value={String(segment.seed ?? "")} onChange={(event) => patch({ seed: event.target.value })} placeholder="random" style={field} /></label><Toggle ctx={ctx} label="Motion Context" value={segment.motionContextEnabled !== false} onChange={(value) => patch({ motionContextEnabled: value, tailFrameEnabled: value })} />{segment.motionContextEnabled !== false ? <><label style={{ fontSize: 10 }}>Noise start<input type="number" min="0" max="1" step="0.01" value={Number(segment.motionContextNoiseAlpha ?? metadata.motionContextNoiseAlpha ?? 0.45)} onChange={(event) => patch({ motionContextNoiseAlpha: Number(event.target.value) })} style={field} /></label><label style={{ fontSize: 10 }}>Noise end<input type="number" min="0" max="1" step="0.01" value={Number(segment.motionContextNoiseAlphaEnd ?? metadata.motionContextNoiseAlphaEnd ?? 0.1)} onChange={(event) => patch({ motionContextNoiseAlphaEnd: Number(event.target.value) })} style={field} /></label><label style={{ fontSize: 10 }}>Ramp frames<input type="number" min="0" max="22" value={Number(segment.motionContextNoiseRampFrames ?? metadata.motionContextNoiseRampFrames ?? 3)} onChange={(event) => patch({ motionContextNoiseRampFrames: Number(event.target.value) })} style={field} /></label><Toggle ctx={ctx} label="递进增噪" value={segment.motionContextNoiseEnabled !== false} onChange={(value) => patch({ motionContextNoiseEnabled: value })} /></> : null}{segment.taskMode === "rv2v" ? <><label style={{ fontSize: 10 }}>Audio mode<select value={String(segment.audioMode || "native")} onChange={(event) => patch({ audioMode: event.target.value })} style={field}><option value="native">Native</option><option value="lock_source">Lock source</option><option value="remix_source">Remix source</option><option value="reference_only">Reference only</option></select></label><Toggle ctx={ctx} label="源视频作参考" value={segment.addSourceAsReference === true} onChange={(value) => patch({ addSourceAsReference: value })} /></> : null}</div>;
+    return <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, padding: "5px 0" }}><label style={{ fontSize: 10 }}>Steps<input type="number" min="1" max="60" value={Number(segment.videoSteps || metadata.videoSteps || 20)} onChange={(event) => patch({ videoSteps: Number(event.target.value) })} style={field} /></label><label style={{ fontSize: 10 }}>Denoise<input type="number" min="0" max="1" step="0.05" value={Number(segment.denoise ?? metadata.denoise ?? 1)} onChange={(event) => patch({ denoise: Number(event.target.value) })} style={field} /></label><label style={{ fontSize: 10 }}>Seed mode<select value={segment.noiseSeedMode === "fixed" ? "fixed" : "random"} onChange={(event) => patch({ noiseSeedMode: event.target.value as "random" | "fixed", noiseSeed: event.target.value === "fixed" ? (segment.noiseSeed ?? segment.seed ?? Math.floor(Math.random() * 4294967296)) : undefined })} style={field}><option value="random">Random</option><option value="fixed">Fixed</option></select></label>{segment.noiseSeedMode === "fixed" ? <label style={{ fontSize: 10 }}>Seed<input type="number" min="0" max="4294967295" value={String(segment.noiseSeed ?? segment.seed ?? "")} onChange={(event) => patch({ noiseSeed: event.target.value, seed: event.target.value })} style={field} /></label> : null}<Toggle ctx={ctx} label="Motion Context" value={segment.motionContextEnabled !== false} onChange={(value) => patch({ motionContextEnabled: value, tailFrameEnabled: value })} />{segment.motionContextEnabled !== false ? <><label style={{ fontSize: 10 }}>Noise start<input type="number" min="0" max="1" step="0.01" value={Number(segment.motionContextNoiseAlpha ?? metadata.motionContextNoiseAlpha ?? 0.45)} onChange={(event) => patch({ motionContextNoiseAlpha: Number(event.target.value) })} style={field} /></label><label style={{ fontSize: 10 }}>Noise end<input type="number" min="0" max="1" step="0.01" value={Number(segment.motionContextNoiseAlphaEnd ?? metadata.motionContextNoiseAlphaEnd ?? 0.1)} onChange={(event) => patch({ motionContextNoiseAlphaEnd: Number(event.target.value) })} style={field} /></label><label style={{ fontSize: 10 }}>Ramp frames<input type="number" min="0" max="22" value={Number(segment.motionContextNoiseRampFrames ?? metadata.motionContextNoiseRampFrames ?? 3)} onChange={(event) => patch({ motionContextNoiseRampFrames: Number(event.target.value) })} style={field} /></label><Toggle ctx={ctx} label="递进增噪" value={segment.motionContextNoiseEnabled !== false} onChange={(value) => patch({ motionContextNoiseEnabled: value })} /></> : null}{segment.taskMode === "rv2v" || segment.taskMode === "v2v" ? <><label style={{ fontSize: 10 }}>Audio mode<select value={String(segment.audioMode || "native")} onChange={(event) => patch({ audioMode: event.target.value })} style={field}><option value="native">Native</option><option value="lock_source">Lock source</option><option value="remix_source">Remix source</option><option value="reference_only">Reference only</option></select></label><Toggle ctx={ctx} label="源视频作参考" value={segment.addSourceAsReference === true} onChange={(value) => patch({ addSourceAsReference: value })} /></> : null}</div>;
 }
 
 function H3Panel({ ctx }: CanvasNodePanelProps) {
@@ -815,17 +832,18 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
         const currentSegments = segmentsFor(ctx.node.metadata || {});
         const current = currentSegments.find((segment) => segment.id === String((ctx.node.metadata || {}).selectedSegmentId || "")) || currentSegments[0];
         const currentMetadata = ctx.node.metadata || {};
-        setPrompt(String(current?.prompt || currentMetadata.prompt || defaultPrompt));
+        setSelectedSegmentId(String(current?.id || ""));
+        setPrompt(current?.prompt !== undefined ? String(current.prompt) : currentMetadata.prompt !== undefined ? String(currentMetadata.prompt) : defaultPrompt);
         setDuration(String(current?.duration || currentMetadata.duration || "8"));
         setRatio(String(current?.aspectRatio || currentMetadata.aspectRatio || "16:9 (Widescreen)"));
         setMegapixels(String(current?.megapixels || currentMetadata.megapixels || currentMetadata.minimaxGlobalMegapixels || "0.4"));
-        setModelName(normalizeH3Model(currentMetadata.minimaxBaseModel || currentMetadata.modelName));
-        setLoraName(String(currentMetadata.loraName || currentMetadata.minimaxLoraName || ""));
+        setModelName(normalizeH3Model(current?.modelName || currentMetadata.minimaxBaseModel || currentMetadata.modelName));
+        setLoraName(String(current?.loraName ?? currentMetadata.loraName ?? currentMetadata.minimaxLoraName ?? ""));
         setCombatLoraWeight(String(current?.combatLoraWeight ?? currentMetadata.combatLoraWeight ?? currentMetadata.minimaxCombatLoraWeight ?? "0"));
         setCinematicLoraWeight(String(current?.cinematicLoraWeight ?? currentMetadata.cinematicLoraWeight ?? currentMetadata.minimaxCinematicLoraWeight ?? "0"));
         setSteps(String(current?.videoSteps || currentMetadata.videoSteps || currentMetadata.minimaxGlobalVideoSteps || "8"));
         setDenoise(String(current?.denoise ?? currentMetadata.denoise ?? "0.65"));
-        setSeed(String(current?.seed ?? currentMetadata.seed ?? currentMetadata.noiseSeed ?? ""));
+        setSeed(String(current?.noiseSeed ?? current?.seed ?? currentMetadata.seed ?? currentMetadata.noiseSeed ?? ""));
         setMotion(current?.motionContextEnabled !== false && currentMetadata.motionContextEnabled !== false);
         setMotionNoise(current?.motionContextNoiseEnabled === true || currentMetadata.motionContextNoiseEnabled === true);
     }, [ctx.node.id, ctx.node.metadata]);
@@ -839,8 +857,8 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
             try {
                 const task = String(metadata.minimaxEngine || "").toLowerCase() === "runninghub" ? await ctx.ai.getRunningHubH3Task(taskId) : await ctx.ai.getLocalH3Task(taskId);
                 if (cancelled) return;
-                if (task.status === "succeeded" && task.result?.url) update({ content: task.result.url, mimeType: task.result.mimeType, segments: task.result.segments, status: "success", errorDetails: "" });
-                else if (["failed", "cancelled"].includes(task.status)) update({ status: "error", errorDetails: task.error || "H3 任务失败" });
+                if (task.status === "succeeded" && task.result?.url) { update({ content: task.result.url, mimeType: task.result.mimeType, ...(task.result.segments?.length ? { segments: task.result.segments } : {}), materials: appendVideoMaterials(metadata.materials, [{ url: task.result.url, type: "video", name: "H3 输出" }]), status: "success", errorDetails: "" }); void finishH3Log(ctx, taskId, "success", { finishedAt: new Date().toISOString(), durationMs: Date.now() - Number(metadata.runStartedAt || Date.now()), outputs: [{ url: task.result.url, type: "video", mimeType: task.result.mimeType }] }); }
+                else if (["failed", "cancelled"].includes(task.status)) { update({ status: task.status === "cancelled" ? "cancelled" : "error", errorDetails: task.error || "H3 任务失败" }); void finishH3Log(ctx, taskId, task.status === "cancelled" ? "cancelled" : "failed", { finishedAt: new Date().toISOString(), durationMs: Date.now() - Number(metadata.runStartedAt || Date.now()), error: task.error || "H3 任务失败" }); }
                 else timer = setTimeout(() => void poll(), 1500);
             } catch (error) {
                 if (!cancelled) timer = setTimeout(() => void poll(), 2500);
@@ -871,28 +889,40 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
         const url = String(parsed.url || parsed.dataUrl || parsed.localUrl || parsed.originalLocalUrl || parsed.sourceUrl || parsed.path || "").trim();
         if (!url) return;
         const kind = String(parsed.kind || parsed.type || "image").startsWith("video") ? "video" : String(parsed.kind || parsed.type || "image").startsWith("audio") ? "audio" : "image";
+        const storageKey = String(parsed.storageKey || "").trim();
         const current = metadata.h3Refs && typeof metadata.h3Refs === "object" ? metadata.h3Refs as Record<string, unknown> : {};
         const bucket = Array.isArray(current[kind]) ? current[kind] as unknown[] : [];
-        if (bucket.some((item) => item && typeof item === "object" && String((item as Record<string, unknown>).url || "") === url)) return;
-        const item = { url, name: String(parsed.name || `${kind}-ref`), type: kind as H3Ref["type"] };
+        if (bucket.some((item) => item && typeof item === "object" && sameRef(item as H3Ref, { url, name: "", type: kind as H3Ref["type"], storageKey: storageKey || undefined }))) return;
+        const item = { url, name: String(parsed.name || `${kind}-ref`), type: kind as H3Ref["type"], ...(storageKey ? { storageKey } : {}) };
         const nextSegments = selectedSegment ? segmentList.map((segment) => segment.id === selectedSegment.id ? { ...segment, refItems: [...(segment.refItems || []), item] } : segment) : segmentList;
         update({ h3Refs: { ...current, [kind]: [...bucket, item] }, segments: nextSegments, selectedSegmentId: selectedSegment?.id || selectedSegmentId });
     };
     const run = async (runAll = false) => {
         // The visible workbench is the source of truth. This hidden component
         // only consumes run events and must not submit stale local form state.
-        const liveMetadata = ctx.node.metadata || {};
+        // The panel can remain mounted while the visible workbench adds or
+        // selects Clips. ctx.node is the render-time snapshot, so always read
+        // the latest node before preparing a run; otherwise a Clip2 run could
+        // write back an old one-Clip snapshot and erase the other Clips.
+        const liveMetadata = ctx.getNode(ctx.node.id)?.metadata || ctx.node.metadata || {};
         const liveSegments = segmentsFor(liveMetadata);
         const liveSelected = liveSegments.find((segment) => segment.id === String(liveMetadata.selectedSegmentId || "")) || liveSegments[0];
-        const livePrompt = String(liveSelected?.prompt || liveMetadata.prompt || defaultPrompt);
+        // 从 DOM 读取当前 textarea 的 prompt 值（H3Panel 和 H3ContentExact）
+        // H3Panel 有 placeholder，H3ContentExact 没有，所以分开选择
+        const panelTextarea = document.querySelector<HTMLTextAreaElement>(`textarea[placeholder="描述动作、镜头与角色替换要求"]`);
+        const workbenchTextarea = document.querySelector<HTMLTextAreaElement>(`.minimax-canvas-workbench .minimax-current-panel textarea`);
+        const domPrompt = panelTextarea?.value?.trim() || workbenchTextarea?.value?.trim() || "";
+        // 优先级：segment.prompt > DOM textarea > metadata.prompt > defaultPrompt
+        const livePrompt = String(liveSelected?.prompt || domPrompt || liveMetadata.prompt || defaultPrompt);
         const liveDuration = String(liveSelected?.duration || liveMetadata.duration || "8");
         const liveRatio = String(liveSelected?.aspectRatio || liveMetadata.aspectRatio || "16:9");
         const liveMegapixels = Number(liveSelected?.megapixels || liveMetadata.megapixels || liveMetadata.minimaxGlobalMegapixels || 0.4);
-        const liveSteps = Number(liveSelected?.videoSteps || liveMetadata.videoSteps || liveMetadata.minimaxGlobalVideoSteps || 8);
+        const liveSettings = liveSelected ? compatibleH3Settings(liveSelected, String(liveMetadata.minimaxBaseModel || liveMetadata.modelName || defaultH3Model), String(liveMetadata.minimaxLoraName || liveMetadata.loraName || ""), upstream) : { modelName: defaultH3Model, loraName: "", defaultSteps: 20 };
+        const liveSteps = Number(liveSelected?.videoSteps || liveMetadata.videoSteps || liveMetadata.minimaxGlobalVideoSteps || liveSettings.defaultSteps);
         const liveDenoise = Number(liveSelected?.denoise ?? liveMetadata.denoise ?? 0.65);
         const liveSeed = liveSelected?.seed ?? liveMetadata.seed ?? liveMetadata.noiseSeed ?? "";
-        const liveModelName = normalizeH3Model(liveMetadata.minimaxBaseModel || liveMetadata.modelName);
-        const liveLoraName = String(liveMetadata.loraName || liveMetadata.minimaxLoraName || "");
+        const liveModelName = liveSettings.modelName;
+        const liveLoraName = liveSettings.loraName;
         const liveMotion = liveSelected?.motionContextEnabled !== false && liveMetadata.motionContextEnabled !== false;
         const prompt = livePrompt;
         const duration = liveDuration;
@@ -910,12 +940,19 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
         const video = upstream.find((ref) => ref.type === "video");
         const images = upstream.filter((ref) => ref.type === "image");
         const audios = upstream.filter((ref) => ref.type === "audio");
-        if (!video && !images.length) {
+        // 读取所有 segment 的 taskMode，t2v 不需要校验素材连接
+        const hasT2vSegment = liveSegments.some((seg) => String(seg.taskMode || "r2v") === "t2v");
+        const needsMaterialValidation = !hasT2vSegment && !video && !images.length;
+        if (needsMaterialValidation) {
             update({ status: "error", errorDetails: "请先连接源视频或角色参考图。" });
             return;
         }
         setRunning(true);
+        const logRefs = [...images, ...(video ? [video] : []), ...audios] as H3Ref[];
+        const generationLog = await createH3Log(ctx, liveSelected, livePrompt, logRefs, { engine: liveMetadata.minimaxEngine || "comfyui", workflow: "MiniMax H3", modelName: liveModelName, taskMode: liveSelected?.taskMode || "r2v", duration: liveDuration, aspectRatio: liveRatio, megapixels: liveMegapixels, videoSteps: liveSteps, denoise: liveDenoise, seed: liveSeed });
+        const generationLogId = generationLog?.id || "";
         update({ prompt: livePrompt, duration: liveDuration, aspectRatio: liveRatio, megapixels: liveMegapixels, videoSteps: liveSteps, denoise: liveDenoise, seed: String(liveSeed).trim() ? Number(liveSeed) : undefined, modelName: liveModelName, minimaxBaseModel: liveModelName, loraName: liveLoraName, combatLoraWeight: Number(liveSelected?.combatLoraWeight ?? liveMetadata.minimaxCombatLoraWeight ?? combatLoraWeight), cinematicLoraWeight: Number(liveSelected?.cinematicLoraWeight ?? liveMetadata.minimaxCinematicLoraWeight ?? cinematicLoraWeight), teAccel: liveMetadata.minimaxGlobalTeAccel === true || teAccel, promptEnhance, promptEnhanceLanguage, motionContextEnabled: liveMotion, motionContextNoiseEnabled: liveSelected?.motionContextNoiseEnabled === true || liveMetadata.motionContextNoiseEnabled === true || motionNoise, motionContextNoiseAlpha: Number(liveSelected?.motionContextNoiseAlpha ?? liveMetadata.motionContextNoiseAlpha ?? noiseAlpha), motionContextNoiseAlphaEnd: Number(liveSelected?.motionContextNoiseAlphaEnd ?? liveMetadata.motionContextNoiseAlphaEnd ?? noiseAlphaEnd), motionContextNoiseRampFrames: Number(liveSelected?.motionContextNoiseRampFrames ?? liveMetadata.motionContextNoiseRampFrames ?? noiseRampFrames), model: selectedModel, status: "loading", errorDetails: "", runStartedAt: Date.now() });
+        const lastSubmitted = { taskMode: "", video: 0, images: 0, audios: 0, model: "" };
         try {
             let effectivePrompt = livePrompt;
             if (promptEnhance) {
@@ -923,38 +960,85 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
                 if (enhanced.text.trim()) effectivePrompt = enhanced.text.trim();
             }
             const allSegments: H3Segment[] = liveSegments.length ? liveSegments : [{ id: "segment-1", prompt: livePrompt, duration: Number(liveDuration) }];
-            const activeId = String(selectedSegmentId || allSegments[0]?.id || "");
+            // The visible workbench writes the selected id into metadata. The
+            // local panel state can lag behind when the user clicks another
+            // Clip, so metadata is the source of truth for execution.
+            const activeId = String(liveMetadata.selectedSegmentId || selectedSegmentId || allSegments[0]?.id || "");
             const storedSegments = runAll ? allSegments : allSegments.filter((segment) => String(segment.id) === activeId);
+            const requestedIds = new Set(storedSegments.map((segment) => segment.id));
+            const markRequestedSegments = (patch: Partial<H3Segment>) => {
+                const current = segmentsFor(ctx.getNode(ctx.node.id)?.metadata || liveMetadata);
+                update({ segments: current.map((segment) => requestedIds.has(segment.id) ? { ...segment, ...patch } : segment) });
+            };
+            markRequestedSegments({ status: "loading", progress: 0 });
             let previousVideo: { name: string; url: string } | undefined;
             let lastResult: Awaited<ReturnType<typeof ctx.ai.runLocalH3>> | undefined;
             const nextSegments: H3Segment[] = [];
+            // 用于错误日志记录最后一次提交的信息
             for (const [index, segment] of storedSegments.entries()) {
                 const segmentRefs = refsForSegment(segment);
-                const segmentVideo = segmentRefs.find((ref) => ref.type === "video") || (index === 0 ? video : undefined);
-                const segmentImages = segmentRefs.filter((ref) => ref.type === "image");
-                const segmentAudios = segmentRefs.filter((ref) => ref.type === "audio");
                 const requestedTaskMode = String(segment.taskMode || "r2v");
-                const taskMode = requestedTaskMode === "rv2v" && !segmentVideo ? "r2v" : requestedTaskMode;
-                const h3Runner = String(metadata.minimaxEngine || "").toLowerCase() === "runninghub" ? ctx.ai.runRunningHubH3 : ctx.ai.runLocalH3;
-                const segmentResult = await h3Runner(String(promptEnhance ? effectivePrompt : (segment.prompt || effectivePrompt)), {
-                    video: segmentVideo ? { name: `${segmentVideo.name}.mp4`, url: segmentVideo.url } : undefined,
-                    references: (segmentImages.length ? segmentImages : images).map((ref) => ({ name: `${ref.name}.png`, url: ref.url })),
-                    audios: (segmentAudios.length ? segmentAudios : audios).map((ref) => ({ name: `${ref.name}.mp3`, url: ref.url })),
+                // t2v：只使用纯提示词，忽略所有素材
+                // i2v/fl2v：只使用图片
+                // v2v：只使用视频
+                // rv2v/r2v：使用视频+图片+音频
+                const isT2v = requestedTaskMode === "t2v";
+                const isV2v = requestedTaskMode === "v2v";
+                const isI2vFl2v = requestedTaskMode === "i2v" || requestedTaskMode === "fl2v";
+                const isR2vOrRv2v = !isT2v && !isV2v && !isI2vFl2v;
+                const effectiveTaskMode = isR2vOrRv2v && requestedTaskMode === "rv2v" && !segmentRefs.some((ref) => ref.type === "video") && !video ? "r2v" : requestedTaskMode;
+                const segmentVideo = !isT2v && !isI2vFl2v ? (segmentRefs.find((ref) => ref.type === "video") || (index === 0 ? video : undefined)) : undefined;
+                const segmentImages = isT2v || isV2v ? [] : segmentRefs.filter((ref) => ref.type === "image");
+                const segmentAudios = isT2v || isV2v || isI2vFl2v ? [] : segmentRefs.filter((ref) => ref.type === "audio");
+                // t2v 模式下不传递任何图片给 compatibleH3Settings，避免影响模型选择
+                const upstreamForSettings = isT2v ? [] : [...images, ...(video ? [video] : [])];
+                const segmentSettings = compatibleH3Settings({ ...segment, taskMode: effectiveTaskMode }, liveModelName, liveLoraName, upstreamForSettings);
+                const segmentSteps = Number(segment.videoSteps || liveMetadata.minimaxGlobalVideoSteps || segmentSettings.defaultSteps);
+                const h3Runner = String(liveMetadata.minimaxEngine || "").toLowerCase() === "runninghub" ? ctx.ai.runRunningHubH3 : ctx.ai.runLocalH3;
+                const segmentPrompt = promptEnhance ? effectivePrompt : segment.prompt !== undefined ? String(segment.prompt) : effectivePrompt;
+                const promptFlags = `${segment.noDub !== false ? "\nNo dialogue, narration, voiceover, or singing." : ""}${segment.noCaption !== false ? "\nNo subtitles, captions, on-screen text, or text overlays." : ""}`;
+                // 根据任务模式决定提交哪些 refs
+                const finalReferences = isT2v || isV2v ? [] : (segmentImages.length ? segmentImages : isI2vFl2v ? [] : images).map((ref) => ({ name: `${ref.name}.png`, url: ref.url }));
+                const finalVideo = !isT2v && !isI2vFl2v ? (segmentVideo ? { name: `${segmentVideo.name}.mp4`, url: segmentVideo.url } : undefined) : undefined;
+                const finalAudios = isR2vOrRv2v ? (segmentAudios.length ? segmentAudios : audios).map((ref) => ({ name: `${ref.name}.mp3`, url: ref.url })) : [];
+                // 记录提交信息用于错误日志
+                lastSubmitted.taskMode = effectiveTaskMode;
+                lastSubmitted.video = finalVideo ? 1 : 0;
+                lastSubmitted.images = finalReferences.length;
+                lastSubmitted.audios = finalAudios.length;
+                lastSubmitted.model = segmentSettings.modelName;
+                const segmentResult = await h3Runner(`${segmentPrompt}${promptFlags}`, {
+                    video: finalVideo,
+                    references: finalReferences,
+                    audios: finalAudios,
                     previousVideo,
-                }, { duration: Number(segment.duration || duration), aspectRatio: String(segment.aspectRatio || ratio), megapixels: Number(segment.megapixels || megapixels), videoSteps: Number(segment.videoSteps || steps), denoise: Number(segment.denoise ?? denoise), ...(segment.seed !== undefined && String(segment.seed).trim() ? { seed: Number(segment.seed) } : {}), modelName, loraName, combatLoraWeight: Number(segment.combatLoraWeight ?? combatLoraWeight), cinematicLoraWeight: Number(segment.cinematicLoraWeight ?? cinematicLoraWeight), teAccel, taskMode, audioMode: String(segment.audioMode || "native"), audioDenoiseStrength: Number(segment.audioDenoiseStrength ?? 1), addSourceAsReference: segment.addSourceAsReference === true, promptPrimaryAudioOrdinal: Number(segment.promptPrimaryAudioOrdinal || 0), strictPromptTags: segment.strictPromptTags !== false, referenceVideoPolicy: String(segment.referenceVideoPolicy || "official_2_to_15s"), refImageSize: String(segment.refImageSize || "match"), motionContext: (autoSplit || index > 0) && segment.motionContextEnabled !== false && motion, motionContextNoise: (autoSplit || index > 0) && segment.motionContextNoiseEnabled !== false && motionNoise, motionContextNoiseAlpha: Number(segment.motionContextNoiseAlpha ?? noiseAlpha), motionContextNoiseAlphaEnd: Number(segment.motionContextNoiseAlphaEnd ?? noiseAlphaEnd), motionContextNoiseRampFrames: Number(segment.motionContextNoiseRampFrames ?? noiseRampFrames), runninghubMode: metadata.minimaxRunningHubMode, runninghubWorkflowId: metadata.minimaxRunningHubWorkflowId, runninghubAppId: metadata.minimaxRunningHubAppId, runninghubFields: metadata.minimaxRunningHubFields, runninghubParams: metadata.minimaxRunningHubParams, runninghubWorkflowJson: metadata.minimaxRunningHubWorkflowJson, useWallet: metadata.minimaxRunningHubUseWallet === true, ...(autoSplit && storedSegments.length === 1 ? { autoSplit: true, segmentDuration: Number(segmentDuration), maxSegments: Number(maxSegments) } : {}) }, { onTaskId: (taskId) => update({ runtimeTaskId: taskId }) });
+                }, { duration: Number(segment.duration || duration), aspectRatio: String(segment.aspectRatio || ratio), megapixels: Number(segment.megapixels || megapixels), videoSteps: segmentSteps, denoise: Number(segment.denoise ?? denoise), ...(segment.noiseSeedMode === "fixed" && String(segment.noiseSeed ?? segment.seed ?? "").trim() ? { seed: Number(segment.noiseSeed ?? segment.seed) } : {}), modelName: segmentSettings.modelName, loraName: segmentSettings.loraName, combatLoraWeight: Number(segment.combatLoraWeight ?? 0), cinematicLoraWeight: Number(segment.cinematicLoraWeight ?? 0), teAccel: segment.teAccel ?? teAccel, taskMode: effectiveTaskMode, audioMode: String(segment.audioMode || "native"), audioDenoiseStrength: Number(segment.audioDenoiseStrength ?? 1), addSourceAsReference: segment.addSourceAsReference === true, promptPrimaryAudioOrdinal: Number(segment.promptPrimaryAudioOrdinal || 0), strictPromptTags: segment.strictPromptTags !== false, referenceVideoPolicy: String(segment.referenceVideoPolicy || "official_2_to_15s"), refImageSize: String(segment.refImageSize || "match"), motionContext: (autoSplit || index > 0) && segment.motionContextEnabled !== false && motion, motionContextNoise: (autoSplit || index > 0) && segment.motionContextNoiseEnabled !== false && motionNoise, motionContextNoiseAlpha: Number(segment.motionContextNoiseAlpha ?? noiseAlpha), motionContextNoiseAlphaEnd: Number(segment.motionContextNoiseAlphaEnd ?? noiseAlphaEnd), motionContextNoiseRampFrames: Number(segment.motionContextNoiseRampFrames ?? noiseRampFrames), runninghubMode: metadata.minimaxRunningHubMode, runninghubWorkflowId: metadata.minimaxRunningHubWorkflowId, runninghubAppId: metadata.minimaxRunningHubAppId, runninghubFields: metadata.minimaxRunningHubFields, runninghubParams: metadata.minimaxRunningHubParams, runninghubWorkflowJson: metadata.minimaxRunningHubWorkflowJson, useWallet: metadata.minimaxRunningHubUseWallet === true, ...(autoSplit && storedSegments.length === 1 ? { autoSplit: true, segmentDuration: Number(segmentDuration), maxSegments: Number(maxSegments) } : {}) }, { onTaskId: (taskId) => { update({ runtimeTaskId: taskId, runProgress: 0.1 }); markRequestedSegments({ runtimeTaskId: taskId, progress: 0.1 }); if (generationLogId) void ctx.generationLogs.update(generationLogId, { status: "running", runtimeTaskId: taskId }); } });
                 lastResult = segmentResult;
                 if (autoSplit && segmentResult.segments?.length) {
-                    nextSegments.push(...segmentResult.segments.map((item, itemIndex) => { const resultUrl = item.media?.find((media) => media.mimeType.startsWith("video/"))?.url || ""; return { id: `${segment.id}-${itemIndex + 1}`, prompt: String(segment.prompt || prompt), duration: Number(segmentDuration), result: resultUrl, results: resultUrl ? [{ url: resultUrl, type: "video" as const, name: `Clip ${itemIndex + 1}` }] : [], status: "success" }; }));
+                    nextSegments.push(...segmentResult.segments.map((item, itemIndex) => { const resultUrl = item.media?.find((media) => media.mimeType.startsWith("video/"))?.url || ""; return { ...segment, id: `${segment.id}-${itemIndex + 1}`, prompt: String(segment.prompt || prompt), duration: Number(segmentDuration), start: 0, result: resultUrl, results: resultUrl ? [{ url: resultUrl, type: "video" as const, name: `Clip ${itemIndex + 1}` }] : [], status: "success" }; }));
                     break;
                 }
                 previousVideo = { name: `h3-segment-${index + 1}.mp4`, url: segmentResult.url };
-                nextSegments.push({ ...segment, prompt: String(segment.prompt || prompt), duration: Number(segment.duration || duration), result: segmentResult.url, results: [{ url: segmentResult.url, type: "video", name: `Clip ${index + 1}` }], status: "success" });
+                nextSegments.push({ ...segment, prompt: String(segment.prompt || prompt), duration: Number(segment.duration || duration), result: segmentResult.url, results: [{ url: segmentResult.url, type: "video", name: `Clip ${index + 1}` }], status: "success", progress: 1 });
             }
             if (!lastResult) throw new Error("没有可运行的 H3 分段");
-            const mergedSegments = runAll ? nextSegments : allSegments.map((segment) => nextSegments.find((item) => item.id === segment.id) || segment);
-            update({ content: lastResult.url, mimeType: lastResult.mimeType, naturalWidth: lastResult.width, naturalHeight: lastResult.height, durationMs: lastResult.durationMs, segments: mergedSegments, runtimeTaskId: lastResult.taskId, status: "success", errorDetails: "", runFinishedAt: Date.now() });
+            const mergedSegments = runAll
+                ? compactSegmentStarts(nextSegments)
+                : autoSplit && storedSegments.length === 1 && nextSegments.length
+                    ? compactSegmentStarts([...allSegments.slice(0, Math.max(0, allSegments.findIndex((item) => item.id === activeId))), ...nextSegments, ...allSegments.slice(Math.max(0, allSegments.findIndex((item) => item.id === activeId)) + 1)])
+                    : allSegments.map((segment) => nextSegments.find((item) => item.id === segment.id) || segment);
+            const generatedMaterials = mergedSegments.flatMap((segment, index) => (segment.results || []).filter((item) => item.type === "video").map((item) => ({ ...item, name: item.name || `Clip ${index + 1}` })));
+              update({ content: lastResult.url, mimeType: lastResult.mimeType, naturalWidth: lastResult.width, naturalHeight: lastResult.height, durationMs: lastResult.durationMs, segments: mergedSegments, materials: appendVideoMaterials(liveMetadata.materials, [...generatedMaterials, { url: lastResult.url, type: "video", name: `Clip ${selectedSegmentId || "输出"}` }]), runtimeTaskId: lastResult.taskId, status: "success", errorDetails: "", runFinishedAt: Date.now() });
+              if (generationLogId) void ctx.generationLogs.update(generationLogId, { status: "success", runtimeTaskId: lastResult.taskId, finishedAt: new Date().toISOString(), durationMs: Date.now() - Number(liveMetadata.runStartedAt || Date.now()), outputs: [{ url: lastResult.url, type: "video", mimeType: lastResult.mimeType }] });
         } catch (error) {
-            update({ status: "error", errorDetails: error instanceof Error ? error.message : String(error), runFinishedAt: Date.now() });
+            // 增强错误日志：包含实际提交信息
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const debugInfo = `[h3-run] taskMode=${lastSubmitted.taskMode}, video=${lastSubmitted.video}, images=${lastSubmitted.images}, audios=${lastSubmitted.audios}, model=${lastSubmitted.model}`;
+            const enhancedError = errorMessage.includes(debugInfo) ? errorMessage : `${errorMessage}\n${debugInfo}`;
+            const current = segmentsFor(ctx.getNode(ctx.node.id)?.metadata || liveMetadata);
+            const errorIds = new Set((runAll ? current : current.filter((segment) => segment.id === selectedSegmentId)).map((segment) => segment.id));
+              update({ segments: current.map((segment) => errorIds.has(segment.id) ? { ...segment, status: "error", progress: 0 } : segment), status: "error", errorDetails: enhancedError, runFinishedAt: Date.now() });
+              if (generationLogId) void ctx.generationLogs.update(generationLogId, { status: "failed", finishedAt: new Date().toISOString(), durationMs: Date.now() - Number(liveMetadata.runStartedAt || Date.now()), error: enhancedError, params: { ...lastSubmitted } });
         } finally {
             setRunning(false);
         }
@@ -962,12 +1046,21 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
 
     useEffect(() => ctx.on("minimax-h3:run", (payload) => {
         if (!payload || typeof payload !== "object" || String((payload as Record<string, unknown>).nodeId || "") !== ctx.node.id) return;
+        const requestId = String((payload as Record<string, unknown>).requestId || "");
+        if (requestId) update({ runRequestConsumedId: requestId, status: "loading", errorDetails: "", runProgress: 0 });
         void run(Boolean((payload as Record<string, unknown>).all));
     }), [ctx.node.id, run]);
     useEffect(() => ctx.on("minimax-h3:run-all", (payload) => {
         if (!payload || typeof payload !== "object" || String((payload as Record<string, unknown>).nodeId || "") !== ctx.node.id) return;
         void run(true);
     }), [ctx.node.id, run]);
+    useEffect(() => {
+        const current = ctx.getNode(ctx.node.id)?.metadata || {};
+        const requestId = String(current.runRequestId || "");
+        if (!requestId || requestId === String(current.runRequestConsumedId || "")) return;
+        update({ runRequestConsumedId: requestId, status: "loading", errorDetails: "", runProgress: 0 });
+        void run(current.runRequestAll === true);
+    }, [ctx.node.id, ctx.node.metadata?.runRequestId, ctx.node.metadata?.runRequestConsumedId, ctx.node.metadata?.runRequestAll, run]);
 
     // The migrated workbench contains the complete H3 editor. Keep this
     // component mounted as the event-driven runner, but avoid rendering a
@@ -978,7 +1071,7 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
     return (
         <div data-canvas-no-zoom onMouseDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()} onDragOver={(event) => event.preventDefault()} onDrop={dropRef} style={{ width: "100%", display: "flex", flexDirection: "column", gap: 9, padding: 12, boxSizing: "border-box", color: ctx.theme.node.text }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 800, fontSize: 13 }}><span>MiniMax H3 参数</span><span style={{ color: ctx.theme.node.muted, fontSize: 10 }}>{upstream.length} refs</span></div>
-            <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); update({ prompt: event.target.value }); }} placeholder="描述动作、镜头与角色替换要求" rows={4} style={{ ...field, resize: "vertical", lineHeight: 1.45 }} />
+            <textarea value={prompt} onChange={(event) => { const value = event.target.value; setPrompt(value); update({ prompt: value, segments: segmentList.map((segment) => segment.id === selectedSegment?.id ? { ...segment, prompt: value } : segment) }); }} placeholder="描述动作、镜头与角色替换要求" rows={4} style={{ ...field, resize: "vertical", lineHeight: 1.45 }} />
             <div style={{ border: `1px dashed ${ctx.theme.node.stroke}`, borderRadius: 8, padding: 7, display: "flex", flexWrap: "wrap", gap: 5, minHeight: 28 }}><span style={{ width: "100%", color: ctx.theme.node.muted, fontSize: 10 }}>Refs（可从 Assets 拖入）</span>{upstream.length ? upstream.map((ref) => { const removable = Boolean(metadata.h3Refs && typeof metadata.h3Refs === "object" && Object.values(metadata.h3Refs as Record<string, unknown>).some((values) => Array.isArray(values) && values.some((item) => item && typeof item === "object" && String((item as Record<string, unknown>).url || (item as Record<string, unknown>).dataUrl || "") === ref.url))); return <span key={ref.url} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, padding: "3px 6px", borderRadius: 5, background: ctx.theme.toolbar.panel }}><span>{ref.name}</span>{removable ? <button type="button" aria-label="移除引用" onClick={() => removeStoredRef(ref.url)} style={{ border: 0, background: "transparent", color: ctx.theme.node.muted, cursor: "pointer", padding: 0 }}>×</button> : null}</span>; }) : <span style={{ color: ctx.theme.node.placeholder, fontSize: 10 }}>拖入角色图、源视频或音频</span>}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 7 }}>
                 <label style={{ fontSize: 10 }}>时长<input value={duration} onChange={(event) => setDuration(event.target.value)} style={field} /></label>
@@ -987,14 +1080,18 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
                     <label style={{ fontSize: 10 }}>百万像素<input type="number" min="0.1" max="2" step="0.1" value={megapixels} onChange={(event) => setMegapixels(event.target.value)} style={field} /></label>
             </div>
             <label style={{ fontSize: 10 }}>随机种子（留空为随机）<input value={seed} onChange={(event) => setSeed(event.target.value)} placeholder="可选，0-4294967295" type="number" min="0" max="4294967295" step="1" style={field} /></label>
-            <label style={{ fontSize: 10 }}>基础模型<input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="ComfyUI models/unet 下的文件名" style={field} /></label>
+            <label style={{ fontSize: 10 }}>基础模型<select value={modelName} onChange={(event) => { setModelName(event.target.value); update({ modelName: event.target.value, minimaxBaseModel: event.target.value }); }} style={field}>{h3ModelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 7, alignItems: "end" }}><label style={{ fontSize: 10 }}>LoRA 名称<input value={loraName} onChange={(event) => setLoraName(event.target.value)} placeholder="可选" style={field} /></label><label style={{ fontSize: 10 }}>战斗 LoRA<input type="number" min="0" max="1" step="0.05" value={combatLoraWeight} onChange={(event) => setCombatLoraWeight(event.target.value)} style={field} /></label><label style={{ fontSize: 10 }}>电影 LoRA<input type="number" min="0" max="1" step="0.05" value={cinematicLoraWeight} onChange={(event) => setCinematicLoraWeight(event.target.value)} style={field} /></label><Toggle ctx={ctx} label="TE 加速" value={teAccel} onChange={setTeAccel} /></div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}><Toggle ctx={ctx} label="提示词增强" value={promptEnhance} onChange={setPromptEnhance} />{promptEnhance ? <select value={promptEnhanceLanguage} onChange={(event) => setPromptEnhanceLanguage(event.target.value)} style={{ ...field, width: 90 }}><option value="zh">中文</option><option value="en">English</option></select> : null}</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}><span style={{ fontSize: 10, fontWeight: 800 }}>Clip 分段（{segmentsFor(metadata).length}）</span><button type="button" onClick={() => { const current = segmentsFor(metadata); const next = [...current, { id: `segment-${current.length + 1}`, prompt, duration: Number(duration), status: "idle" }]; update({ segments: next }); }} style={buttonStyle(ctx)}>＋分段</button></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 150, overflow: "auto" }}>{segmentList.map((segment, index) => <div key={segment.id} onClick={() => { setSelectedSegmentId(segment.id); update({ selectedSegmentId: segment.id }); }} style={{ display: "grid", gridTemplateColumns: "48px 1fr 58px 24px", gap: 5, alignItems: "center", padding: 3, borderRadius: 7, outline: segment.id === selectedSegment?.id ? `1px solid ${ctx.theme.toolbar.activeText}` : "1px solid transparent" }}><span style={{ fontSize: 10, color: ctx.theme.node.muted }}>Clip {index + 1}</span><input value={String(segment.prompt || "")} onClick={(event) => event.stopPropagation()} onChange={(event) => updateSegment(ctx, metadata, index, { prompt: event.target.value })} style={field} /><input type="number" min="0.5" max="60" step="0.5" value={Number(segment.duration || duration)} onClick={(event) => event.stopPropagation()} onChange={(event) => updateSegment(ctx, metadata, index, { duration: Number(event.target.value) })} style={field} /><button type="button" disabled={segmentList.length <= 1} onClick={(event) => { event.stopPropagation(); update({ segments: segmentList.filter((_, itemIndex) => itemIndex !== index) }); }} style={{ ...buttonStyle(ctx), padding: "4px 6px" }}>×</button></div>)}</div>
             {selectedSegment ? <div style={{ borderTop: `1px solid ${ctx.theme.node.stroke}`, paddingTop: 8, display: "flex", flexDirection: "column", gap: 7 }}>
                 <div style={{ fontSize: 11, fontWeight: 800 }}>Clip {segmentList.findIndex((segment) => segment.id === selectedSegment.id) + 1} 设置</div>
-                <label style={{ fontSize: 10 }}>任务模式<select value={String(selectedSegment.taskMode || "r2v")} onChange={(event) => updateSelected({ taskMode: event.target.value })} style={field}><option value="t2v">文生视频</option><option value="i2v">图生视频</option><option value="fl2v">首尾帧生视频</option><option value="r2v">参考主体生视频</option><option value="rv2v">视频编辑</option></select></label>
+                <label style={{ fontSize: 10 }}>任务模式<select value={String(selectedSegment.taskMode || "r2v")} onChange={(event) => updateSelected({ taskMode: event.target.value })} style={field}><option value="t2v">文生视频</option><option value="i2v">图生视频</option><option value="fl2v">首尾帧生视频</option><option value="r2v">参考主体生视频</option><option value="v2v">视频编辑</option><option value="rv2v">参考素材改视频</option></select></label>
+                <label style={{ fontSize: 10 }}>Base model<select value={normalizeH3Model(selectedSegment.modelName || modelName)} onChange={(event) => { setModelName(event.target.value); updateSelected({ modelName: event.target.value }); }} style={field}>{h3ModelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                <label style={{ fontSize: 10 }}>LoRA<select value={String(selectedSegment.loraName ?? loraName)} onChange={(event) => { setLoraName(event.target.value); updateSelected({ loraName: event.target.value }); }} style={field}>{h3LoraOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}><label style={{ fontSize: 10 }}>Combat LoRA<input type="number" min="0" max="1" step="0.05" value={Number(selectedSegment.combatLoraWeight ?? combatLoraWeight)} onChange={(event) => { setCombatLoraWeight(event.target.value); updateSelected({ combatLoraWeight: Number(event.target.value) }); }} style={field} /></label><label style={{ fontSize: 10 }}>MysticXXX LoRA<input type="number" min="0" max="1" step="0.05" value={Number(selectedSegment.cinematicLoraWeight ?? cinematicLoraWeight)} onChange={(event) => { setCinematicLoraWeight(event.target.value); updateSelected({ cinematicLoraWeight: Number(event.target.value) }); }} style={field} /></label></div>
+                <Toggle ctx={ctx} label="TE Speed" value={selectedSegment.teAccel ?? teAccel} onChange={(value) => { setTeAccel(value); updateSelected({ teAccel: value }); }} />
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                     <label style={{ fontSize: 10 }}>比例<select value={String(selectedSegment.aspectRatio || ratio)} onChange={(event) => updateSelected({ aspectRatio: event.target.value })} style={field}><option>16:9 (Widescreen)</option><option>9:16 (Portrait Widescreen)</option><option>1:1 (Square)</option><option>4:3 (Standard)</option><option>3:4 (Portrait Standard)</option><option>21:9 (Ultrawide)</option></select></label>
                     <label style={{ fontSize: 10 }}>步数<input type="number" min="1" max="60" value={Number(selectedSegment.videoSteps || steps)} onChange={(event) => updateSelected({ videoSteps: Number(event.target.value) })} style={field} /></label>
@@ -1017,7 +1114,8 @@ function H3Panel({ ctx }: CanvasNodePanelProps) {
 function refsForSegment(segment: H3Segment) {
     const buckets = segment.refs;
     const items = segment.refItems || [ ...(buckets?.image || []), ...(buckets?.video || []), ...(buckets?.audio || []) ];
-    return items.filter((item) => item?.url).map((item) => ({ ...item, type: item.type || (item as H3Ref & { kind?: H3Ref["type"] }).kind || "image" as const }));
+    const refs = items.filter((item) => item?.url).map((item) => ({ ...item, type: item.type || (item as H3Ref & { kind?: H3Ref["type"] }).kind || "image" as const }));
+    return refs.filter((item, index, all) => all.findIndex((other) => sameRef(other, item)) === index);
 }
 
 function resultUrl(value: unknown) {
@@ -1027,21 +1125,50 @@ function resultUrl(value: unknown) {
     return String(item.url || item.video_url || item.content || item.localUrl || "");
 }
 
-function segmentsFor(metadata: Record<string, unknown>) {
+function appendVideoMaterials(existing: unknown, additions: Array<{ url: string; type: string; name: string }>) {
+    const current = Array.isArray(existing) ? existing.filter((item) => item && typeof item === "object") as Array<Record<string, unknown>> : [];
+    const next = [...current, ...additions].filter((item, index, all) => {
+        const url = String(item.url || "");
+        return Boolean(url) && all.findIndex((candidate) => String(candidate.url || "") === url) === index;
+    });
+    return next;
+}
+
+function segmentsFor(metadata: Record<string, unknown>): H3Segment[] {
     const value = metadata.segments;
-    const raw = Array.isArray(value) && value.length ? value as H3Segment[] : [{ id: "segment-1", prompt: String(metadata.prompt || defaultPrompt), duration: Number(metadata.duration || 8), status: "idle" }];
+    const raw: H3Segment[] = Array.isArray(value) && value.length ? value as H3Segment[] : [{ id: "segment-1", prompt: String(metadata.prompt || defaultPrompt), duration: Number(metadata.duration || 8), status: "idle" }];
     let start = 0;
     return raw.map((segment, index) => {
         const duration = Math.max(0.5, Math.min(60, Number(segment.duration || metadata.duration || 5)));
-        const normalized = {
+        const normalized: H3Segment = {
             ...segment,
             id: String(segment.id || `segment-${index + 1}`),
             start,
             duration,
-            prompt: String(segment.prompt || metadata.prompt || defaultPrompt),
+            // An empty string is an intentional user value (for example when
+            // clearing the prompt), not a missing value. Only undefined uses
+            // the legacy/default prompt.
+            prompt: segment.prompt !== undefined ? String(segment.prompt) : metadata.prompt !== undefined ? String(metadata.prompt) : defaultPrompt,
             result: resultUrl(segment.result),
-            taskMode: segment.taskMode === "v2v" ? "rv2v" : String(segment.taskMode || (metadata.videoSource ? "rv2v" : "r2v")),
+            // Preserve the old clip mode verbatim.  `v2v` and `rv2v` are
+            // different workflows: the former edits a source video, while
+            // the latter uses a source video together with reference media.
+            // Converting v2v here made existing clips silently display and
+            // submit as rv2v after every reload.
+            taskMode: ["t2v", "i2v", "fl2v", "r2v", "v2v", "rv2v"].includes(String(segment.taskMode))
+                ? String(segment.taskMode)
+                : String(metadata.videoSource ? "rv2v" : "r2v"),
             seed: segment.seed ?? (typeof metadata.seed === "string" || typeof metadata.seed === "number" ? metadata.seed : typeof metadata.noiseSeed === "string" || typeof metadata.noiseSeed === "number" ? metadata.noiseSeed : ""),
+            noiseSeedMode: segment.noiseSeedMode === "fixed" || segment.noiseSeed !== undefined || segment.seed !== undefined ? "fixed" : "random",
+            noiseSeed: typeof (segment.noiseSeed ?? segment.seed ?? metadata.noiseSeed) === "string" || typeof (segment.noiseSeed ?? segment.seed ?? metadata.noiseSeed) === "number" ? segment.noiseSeed ?? segment.seed ?? metadata.noiseSeed as string | number : undefined,
+            modelName: String(segment.modelName || metadata.modelName || metadata.minimaxBaseModel || defaultH3Model),
+            loraName: String(segment.loraName || metadata.loraName || ""),
+            loraStrength: Number(segment.loraStrength ?? metadata.loraStrength ?? 1),
+            combatLoraWeight: Number(segment.combatLoraWeight ?? metadata.combatLoraWeight ?? 0),
+            cinematicLoraWeight: Number(segment.cinematicLoraWeight ?? metadata.cinematicLoraWeight ?? 0),
+            teAccel: segment.teAccel ?? (metadata.teAccel === true || metadata.minimaxGlobalTeAccel === true),
+            noDub: segment.noDub ?? (metadata.noDub !== false),
+            noCaption: segment.noCaption ?? (metadata.noCaption !== false),
             aspectRatio: String(segment.aspectRatio || metadata.aspectRatio || "16:9").replace(" (Widescreen)", ""),
             megapixels: Number(segment.megapixels || metadata.megapixels || metadata.minimaxGlobalMegapixels || 0.4),
             videoSteps: Number(segment.videoSteps || metadata.videoSteps || metadata.minimaxGlobalVideoSteps || 20),
@@ -1089,4 +1216,20 @@ export default definePlugin({
             { id: "h3-clear", title: "清空 H3 输出", label: "清空", icon: "×", onClick: () => ctx.updateMetadata({ content: "", status: "idle", errorDetails: "" }) },
         ],
     }],
+    // 声明插件在 Agent(canvas-agent)侧暴露的 MCP 工具。
+    // 浏览器只声明元信息(供启用时同步给 Agent);真正的执行逻辑由 Agent 侧
+    // 打包的 MCP 模块(canvas-agent/src/plugins/minimax-h3/mcp.ts)提供,经白名单加载。
+    mcp: {
+        id: "minimax-h3",
+        version: "1.2.0",
+        tools: [
+            { id: "h3_list_models", version: "1.2.0", name: "H3 列出模型", description: "列出 MiniMax H3 可用的模型(unet)与 LoRA 清单。", inputJsonSchema: { type: "object", properties: {} }, annotations: { title: "H3 列出模型", readOnlyHint: true } },
+            { id: "h3_get_node", version: "1.2.0", name: "H3 读取画布节点", description: "按节点 id 读取画布上的 MiniMax H3 节点及其片段/参考图配置。", inputJsonSchema: { type: "object", properties: { nodeId: { type: "string", description: "画布节点 id" } }, required: ["nodeId"] }, annotations: { title: "H3 读取画布节点", readOnlyHint: true } },
+            { id: "h3_run_clip", version: "1.2.0", name: "H3 运行单段", description: "读取指定画布 H3 节点的某个片段,解析参考图/视频/音频后提交 ComfyUI 生成任务。", inputJsonSchema: { type: "object", properties: { nodeId: { type: "string", description: "画布节点 id" }, segmentIndex: { type: "integer", description: "片段下标;省略则运行首个未完成的片段" }, params: { type: "object", description: "覆盖片段自带参数的生成参数" } }, required: ["nodeId"] }, annotations: { title: "H3 运行单段" } },
+            { id: "h3_get_task", version: "1.2.0", name: "H3 查询任务", description: "按任务 id 查询 MiniMax H3 生成任务的状态、进度与结果。", inputJsonSchema: { type: "object", properties: { taskId: { type: "string", description: "任务 id" } }, required: ["taskId"] }, annotations: { title: "H3 查询任务", readOnlyHint: true } },
+            { id: "h3_cancel_task", version: "1.2.0", name: "H3 取消任务", description: "取消正在运行的 MiniMax H3 生成任务。", inputJsonSchema: { type: "object", properties: { taskId: { type: "string", description: "任务 id" } }, required: ["taskId"] }, annotations: { title: "H3 取消任务", destructiveHint: true } },
+            { id: "h3_update_clip", version: "1.2.0", name: "H3 更新片段", description: "更新画布 H3 节点某个片段的部分字段,写回节点 metadata。", inputJsonSchema: { type: "object", properties: { nodeId: { type: "string", description: "画布节点 id" }, segmentIndex: { type: "integer", description: "片段下标" }, patch: { type: "object", description: "要合并进该片段的字段" } }, required: ["nodeId", "segmentIndex", "patch"] }, annotations: { title: "H3 更新片段" } },
+            { id: "h3_run_all_clips", version: "1.2.0", name: "H3 运行全部片段", description: "对画布上所有(或指定的)MiniMax H3 节点,提交其未完成片段的生成任务。", inputJsonSchema: { type: "object", properties: { nodeIds: { type: "array", items: { type: "string" }, description: "限定运行的节点 id;省略则运行全部 H3 节点" }, params: { type: "object", description: "覆盖片段自带参数的生成参数" } } }, annotations: { title: "H3 运行全部片段" } },
+        ],
+    },
 });

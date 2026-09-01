@@ -157,6 +157,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         }
         localStorage.setItem("canvas-agent-url", endpoint);
         localStorage.setItem("canvas-agent-token", token);
+        window.dispatchEvent(new Event("canvas-agent-connected"));
         // Only set enabled here; LocalAgentPanel's effect owns SSE initialization.
         set({ url: endpoint, token, enabled: true, silentConnect: silent, fragmentBootstrap: false, activity: i18n.t("agent.status.connecting"), connectError: "" });
     },

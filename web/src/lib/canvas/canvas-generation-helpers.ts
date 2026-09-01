@@ -48,15 +48,24 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
             const metadata = node.metadata;
             const content = metadata?.content;
             const hydrateH3Ref = async <T extends { url?: string; dataUrl?: string; storageKey?: string; type?: string }>(ref: T) => {
-                if (!ref.storageKey) return ref;
                 const fallback = ref.url || ref.dataUrl || "";
+                if (!ref.storageKey) {
+                    if (!/^blob:|^data:/i.test(fallback)) return ref;
+                    try {
+                        const stored = await uploadImage(fallback);
+                        return { ...ref, url: stored.url, ...(ref.dataUrl !== undefined ? { dataUrl: stored.url } : {}), storageKey: stored.storageKey };
+                    } catch {
+                        return ref;
+                    }
+                }
                 const url = ref.type?.startsWith("image") || ref.dataUrl !== undefined
                     ? await resolveImageUrl(ref.storageKey, fallback)
                     : await resolveMediaUrl(ref.storageKey, fallback);
                 return { ...ref, url, ...(ref.dataUrl !== undefined ? { dataUrl: url } : {}) };
             };
-            if (node.type === CanvasNodeType.Video && metadata) {
-                const extendedMetadata = metadata as CanvasNodeMetadata & Record<string, unknown>;
+            const extendedMetadata = metadata as (CanvasNodeMetadata & Record<string, unknown>) | undefined;
+            const isH3Node = Boolean(extendedMetadata && (node.type === CanvasNodeType.Video || node.type === "minimax-h3:video" || Array.isArray(extendedMetadata.segments) || (extendedMetadata.h3Refs && typeof extendedMetadata.h3Refs === "object")));
+            if (isH3Node && extendedMetadata) {
                 const segments = Array.isArray(extendedMetadata.segments) ? await Promise.all(extendedMetadata.segments.map(async (segment: unknown) => {
                     if (!segment || typeof segment !== "object") return segment;
                     const value = segment as Record<string, unknown>;
@@ -65,7 +74,14 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
                     return { ...value, ...(Array.isArray(refs) ? { refItems: refs } : {}), ...(grouped ? { refs: grouped } : {}) };
                 })) : extendedMetadata.segments;
                 const h3Refs = extendedMetadata.h3Refs && typeof extendedMetadata.h3Refs === "object" ? Object.fromEntries(await Promise.all(Object.entries(extendedMetadata.h3Refs as Record<string, unknown>).map(async ([kind, list]) => [kind, Array.isArray(list) ? await Promise.all(list.map((ref) => ref && typeof ref === "object" ? hydrateH3Ref({ ...(ref as Record<string, unknown>), type: kind } as { url?: string; dataUrl?: string; storageKey?: string; type?: string }) : ref)) : list]))) : extendedMetadata.h3Refs;
-                return { ...node, metadata: { ...metadata, ...(Array.isArray(segments) ? { segments } : {}), ...(h3Refs ? { h3Refs } : {}) } };
+                const h3CharacterAssets = Array.isArray(extendedMetadata.h3CharacterAssets) ? await Promise.all(extendedMetadata.h3CharacterAssets.map(async (asset: unknown) => {
+                    if (!asset || typeof asset !== "object") return asset;
+                    const value = asset as Record<string, unknown>;
+                    if (!Array.isArray(value.images)) return asset;
+                    const images = await Promise.all(value.images.map((image) => image && typeof image === "object" ? hydrateH3Ref({ ...(image as Record<string, unknown>), type: "image" } as { url?: string; dataUrl?: string; storageKey?: string; type?: string }) : image));
+                    return { ...value, images };
+                })) : extendedMetadata.h3CharacterAssets;
+                return { ...node, metadata: { ...metadata, ...(Array.isArray(segments) ? { segments } : {}), ...(h3Refs ? { h3Refs } : {}), ...(Array.isArray(h3CharacterAssets) ? { h3CharacterAssets } : {}) } };
             }
             if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && metadata?.storageKey) return { ...node, metadata: { ...metadata, content: await resolveMediaUrl(metadata.storageKey, content) } };
             if (node.type !== CanvasNodeType.Image || !metadata || !content) return node;

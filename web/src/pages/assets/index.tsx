@@ -1,6 +1,6 @@
-import { Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Card, Drawer, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
+import { Check, Copy, Download, FolderPlus, PencilLine, Search, Trash2, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
+import { App, Button, Card, Drawer, Dropdown, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -38,11 +38,18 @@ export default function AssetsPage() {
     const audioInputRef = useRef<HTMLInputElement>(null);
     const assetInputRef = useRef<HTMLInputElement>(null);
     const assets = useAssetStore((state) => state.assets);
+    const folders = useAssetStore((state) => state.folders);
     const addAsset = useAssetStore((state) => state.addAsset);
     const updateAsset = useAssetStore((state) => state.updateAsset);
     const removeAsset = useAssetStore((state) => state.removeAsset);
+    const removeAssets = useAssetStore((state) => state.removeAssets);
+    const addFolder = useAssetStore((state) => state.addFolder);
+    const renameFolder = useAssetStore((state) => state.renameFolder);
+    const removeFolder = useAssetStore((state) => state.removeFolder);
     const [keyword, setKeyword] = useState("");
     const [kindFilter, setKindFilter] = useState<AssetKind | "all">("all");
+    const [folderFilter, setFolderFilter] = useState<string | null>(null);
+    const [selection, setSelection] = useState<string[]>([]);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
     const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
@@ -64,15 +71,133 @@ export default function AssetsPage() {
         const query = keyword.trim().toLowerCase();
         return validAssets.filter((asset) => {
             if (kindFilter !== "all" && asset.kind !== kindFilter) return false;
+            if (folderFilter) {
+                if (folderFilter.startsWith("tag:")) {
+                    if (!(asset.tags || []).includes(folderFilter.slice(4))) return false;
+                } else if ((asset.folderId ?? null) !== folderFilter) return false;
+            }
             if (!query) return true;
             return assetSearchText(asset).includes(query);
         });
-    }, [validAssets, keyword, kindFilter]);
+    }, [validAssets, keyword, kindFilter, folderFilter]);
 
     const visibleAssets = useMemo(() => {
         const start = (page - 1) * pageSize;
         return filteredAssets.slice(start, start + pageSize);
     }, [filteredAssets, page, pageSize]);
+
+    const rootFolders = useMemo(() => folders.filter((folder) => !folder.parentId), [folders]);
+    const childFoldersOf = (id: string) => folders.filter((folder) => folder.parentId === id);
+    const legacyTagFolders = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const asset of assets) for (const tag of asset.tags || []) counts.set(tag, (counts.get(tag) || 0) + 1);
+        return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0], "zh-Hans-CN"));
+    }, [assets]);
+    const currentFolderName = useMemo(() => {
+        if (!folderFilter) return t("assets.allAssets");
+        if (folderFilter.startsWith("tag:")) return folderFilter.slice(4);
+        const folder = folders.find((item) => item.id === folderFilter);
+        return folder ? folder.name : t("assets.allAssets");
+    }, [folderFilter, folders, t]);
+    const folderCounts = (id: string | null) => {
+        if (id === null) return assets.filter((asset) => !asset.folderId).length;
+        return assets.filter((asset) => asset.folderId === id).length;
+    };
+
+    useEffect(() => {
+        setSelection((prev) => prev.filter((id) => filteredAssets.some((asset) => asset.id === id)));
+    }, [filteredAssets]);
+    const toggleSelect = (id: string) => setSelection((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    const selectAllFiltered = () => setSelection(filteredAssets.map((asset) => asset.id));
+    const selectNone = () => setSelection([]);
+    const confirmBulkDelete = () => {
+        if (!selection.length) return;
+        removeAssets(selection);
+        setSelection([]);
+        message.success(t("assets.deletedBulk", { count: selection.length }));
+    };
+    const bulkMoveToFolder = (folderId: string | null) => {
+        const now = new Date().toISOString();
+        selection.forEach((id) => {
+            const asset = useAssetStore.getState().assets.find((a) => a.id === id);
+            if (asset) updateAsset(id, { folderId, updatedAt: now });
+        });
+        setSelection([]);
+        message.success(t("assets.movedToFolder", { count: selection.length }));
+    };
+    const bulkAddTag = (tag: string) => {
+        selection.forEach((id) => {
+            const asset = useAssetStore.getState().assets.find((a) => a.id === id);
+            if (asset && !(asset.tags || []).includes(tag)) updateAsset(id, { tags: [...(asset.tags || []), tag] });
+        });
+        message.success(t("assets.tagged", { count: selection.length, tag }));
+    };
+
+    const [isDragging, setIsDragging] = useState(false);
+    const dragDepth = useRef(0);
+    const dropFolderId = folderFilter && !folderFilter.startsWith("tag:") ? folderFilter : null;
+    const addDroppedFiles = useCallback(async (files: File[]) => {
+        const importable = files.filter((file) => file.type.startsWith("image/") || file.type.startsWith("audio/") || file.type.startsWith("video/"));
+        if (!importable.length) {
+            if (files.length) message.warning(t("assets.dropUnsupported"));
+            return;
+        }
+        let added = 0;
+        let failed = 0;
+        for (const file of importable) {
+            const title = file.name.replace(/\.[^.]+$/, "") || file.name;
+            const base = { title, coverUrl: "", tags: [], source: t("assets.droppedSource"), note: "", folderId: dropFolderId };
+            try {
+                if (file.type.startsWith("image/")) {
+                    const image = await uploadImage(file);
+                    addAsset({ ...base, kind: "image", data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType } });
+                } else if (file.type.startsWith("audio/")) {
+                    const result = await uploadMediaFile(file, "audio");
+                    addAsset({ ...base, kind: "audio", data: { url: result.url, storageKey: result.storageKey, bytes: result.bytes, mimeType: result.mimeType, durationMs: result.durationMs } });
+                } else {
+                    const result = await uploadMediaFile(file, "video");
+                    addAsset({ ...base, kind: "video", data: { url: result.url, storageKey: result.storageKey, width: result.width, height: result.height, bytes: result.bytes, mimeType: result.mimeType } });
+                }
+                added += 1;
+            } catch {
+                failed += 1;
+            }
+        }
+        if (added) message.success(t("assets.filesImported", { count: added }));
+        const skipped = files.length - importable.length + failed;
+        if (skipped > 0) message.warning(t("assets.filesSkipped", { count: skipped }));
+    }, [addAsset, dropFolderId, message, t]);
+
+    useEffect(() => {
+        const onPaste = (event: ClipboardEvent) => {
+            const files = event.clipboardData?.files;
+            if (files?.length) {
+                event.preventDefault();
+                void addDroppedFiles(Array.from(files));
+            }
+        };
+        window.addEventListener("paste", onPaste);
+        return () => window.removeEventListener("paste", onPaste);
+    }, [addDroppedFiles]);
+
+    const onDragEnter = (event: ReactDragEvent) => {
+        event.preventDefault();
+        if (!event.dataTransfer.types.includes("Files")) return;
+        dragDepth.current += 1;
+        setIsDragging(true);
+    };
+    const onDragOver = (event: ReactDragEvent) => { event.preventDefault(); };
+    const onDragLeave = (event: ReactDragEvent) => {
+        event.preventDefault();
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setIsDragging(false);
+    };
+    const onDrop = (event: ReactDragEvent) => {
+        event.preventDefault();
+        dragDepth.current = 0;
+        setIsDragging(false);
+        void addDroppedFiles(Array.from(event.dataTransfer.files));
+    };
 
     useEffect(() => {
         const maxPage = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
@@ -207,8 +332,72 @@ export default function AssetsPage() {
         setDeletingAsset(null);
     };
 
+    const renderFolderItem = (folderId: string, depth: number) => {
+        const folder = folders.find((item) => item.id === folderId);
+        if (!folder) return null;
+        const active = folderFilter === folderId;
+        return (
+            <div key={folderId}>
+                <button
+                    type="button"
+                    style={{ paddingLeft: 12 + depth * 14 }}
+                    className={cn("flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1.5 text-left text-sm transition-colors hover:bg-stone-100 dark:hover:bg-stone-900", active && "bg-stone-100 font-medium text-stone-950 dark:bg-stone-900 dark:text-stone-100")}
+                    onClick={() => { setFolderFilter(folderId); setPage(1); }}
+                >
+                    <span className="min-w-0 truncate">{folder.name}</span>
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-stone-400">
+                        <span>{folderCounts(folderId)}</span>
+                        <Dropdown trigger={["click"]} menu={{
+                            items: [
+                                { key: "new", label: t("assets.folder.newFolder"), onClick: () => addFolder("新文件夹", folderId) },
+                                { key: "rename", label: t("common.edit"), onClick: () => { const name = window.prompt(t("assets.folder.rename"), folder.name); if (name?.trim()) renameFolder(folder.id, name); } },
+                                { key: "delete", label: t("common.delete"), danger: true, onClick: () => { removeFolder(folder.id); if (folderFilter === folderId) setFolderFilter(null); } },
+                            ],
+                        }}>
+                            <span className="px-1 text-stone-400 hover:text-stone-600">⋯</span>
+                        </Dropdown>
+                    </span>
+                </button>
+                {childFoldersOf(folderId).map((child) => renderFolderItem(child.id, depth + 1))}
+            </div>
+        );
+    };
+
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-background text-stone-900 dark:text-stone-100">
+        <div className="relative flex h-full overflow-hidden bg-background text-stone-900 dark:text-stone-100" onDragEnter={onDragEnter} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+            {isDragging ? (
+                <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-stone-900/40 p-8 dark:bg-stone-950/60">
+                    <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-white/70 bg-white/10 px-12 py-10 text-white backdrop-blur-sm">
+                        <Upload className="size-8" />
+                        <div className="text-lg font-medium">{t("assets.dropHere")}</div>
+                        <div className="text-sm opacity-80">{t("assets.dropHint")}</div>
+                    </div>
+                </div>
+            ) : null}
+            <aside className="hidden w-56 shrink-0 flex-col border-r border-stone-200 p-3 md:flex dark:border-stone-800">
+                <div className="mb-2 text-xs font-medium text-stone-400">{t("assets.foldersTitle")}</div>
+                <button
+                    type="button"
+                    className={cn("mb-1 flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-stone-100 dark:hover:bg-stone-900", !folderFilter && "bg-stone-100 font-medium text-stone-950 dark:bg-stone-900 dark:text-stone-100")}
+                    onClick={() => { setFolderFilter(null); setPage(1); }}
+                >
+                    <span>{t("assets.allAssets")}</span>
+                    <span className="text-xs text-stone-400">{assets.length}</span>
+                </button>
+                <div className="flex-1 space-y-0.5 overflow-y-auto">
+                    <div>
+                        {rootFolders.map((folder) => renderFolderItem(folder.id, 0))}
+                        <button
+                            type="button"
+                            className="mt-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 dark:text-stone-400 dark:hover:bg-stone-900 dark:hover:text-stone-200"
+                            onClick={() => { const id = addFolder("新文件夹", null); setFolderFilter(id); setPage(1); }}
+                        >
+                            <FolderPlus className="size-3.5" />
+                            {t("assets.folder.newFolder")}
+                        </button>
+                    </div>
+                </div>
+            </aside>
             <main className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.14)_1px,transparent_1px)]">
                 <div className="pb-8">
                     <div className="mx-auto max-w-5xl text-center">
@@ -236,6 +425,56 @@ export default function AssetsPage() {
                     </div>
 
                     <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">
+                        {selection.length > 0 ? (
+                            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-300 bg-white p-3 dark:border-stone-700 dark:bg-stone-950">
+                                <span className="text-sm text-stone-700 dark:text-stone-200">{t("assets.selectedCount", { count: selection.length })}</span>
+                                <Button size="small" type={selection.length === filteredAssets.length ? "primary" : "default"} onClick={selection.length === filteredAssets.length ? selectNone : selectAllFiltered}>
+                                    {selection.length === filteredAssets.length ? t("common.deselectAll") : t("common.selectAll")}
+                                </Button>
+                                <Dropdown
+                                    trigger={["click"]}
+                                    menu={{
+                                        items: [
+                                            ...(folders.length
+                                                ? [
+                                                    { key: "root", label: t("assets.folder.moveRoot"), onClick: () => bulkMoveToFolder(null) },
+                                                    ...rootFolders.map((f) => ({ key: f.id, label: f.name, onClick: () => bulkMoveToFolder(f.id) })),
+                                                ]
+                                                : []),
+                                            { type: "divider" as const },
+                                            { key: "new", label: t("assets.folder.newFolder"), onClick: () => bulkMoveToFolder(addFolder("新文件夹", null)) },
+                                        ],
+                                    }}
+                                >
+                                    <Button size="small" icon={<FolderPlus className="size-3.5" />}>{t("assets.move")}</Button>
+                                </Dropdown>
+                                <Dropdown
+                                    trigger={["click"]}
+                                    menu={{
+                                        items: [
+                                            { type: "divider" as const },
+                                            ...legacyTagFolders.slice(0, 20).map(([tag]) => ({ key: tag, label: tag, onClick: () => bulkAddTag(tag) })),
+                                        ],
+                                    }}
+                                >
+                                    <Button size="small">{t("assets.addTag")}</Button>
+                                </Dropdown>
+                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={confirmBulkDelete}>
+                                    {t("assets.deleteBulk")}
+                                </Button>
+                            </div>
+                        ) : null}
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="text-xs font-medium text-stone-500 dark:text-stone-400">{currentFolderName}</div>
+                                <div className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-500 dark:bg-stone-900 dark:text-stone-400">{filteredAssets.length}</div>
+                                {folderFilter ? (
+                                    <button type="button" className="cursor-pointer text-xs text-stone-500 underline-offset-2 hover:underline dark:text-stone-400" onClick={() => { setFolderFilter(null); setPage(1); }}>
+                                        {t("assets.allAssets")}
+                                    </button>
+                                ) : null}
+                            </div>
+                        </div>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-center">
                                 <div className="text-xs font-medium text-stone-500 dark:text-stone-400">{t("assets.type")}</div>
@@ -256,6 +495,14 @@ export default function AssetsPage() {
                                 </div>
                             </div>
                             <div className="flex flex-wrap gap-4">
+                                <button
+                                    type="button"
+                                    className="flex items-center gap-1 cursor-pointer text-sm font-medium text-stone-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-stone-300"
+                                    onClick={() => { const id = addFolder("新文件夹", folderFilter && !folderFilter.startsWith("tag:") ? folderFilter : null); setFolderFilter(id); setPage(1); }}
+                                >
+                                    <FolderPlus className="size-4" />
+                                    {t("assets.folder.newFolder")}
+                                </button>
                                 <button
                                     type="button"
                                     className="cursor-pointer text-sm font-medium text-stone-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-stone-300"
@@ -285,7 +532,17 @@ export default function AssetsPage() {
                 <div className="mx-auto flex max-w-7xl flex-col gap-5">
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {visibleAssets.map((asset) => (
-                            <AssetCard key={asset.id} asset={asset} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
+                            <AssetCard
+                                key={asset.id}
+                                asset={asset}
+                                selected={selection.includes(asset.id)}
+                                onSelect={() => toggleSelect(asset.id)}
+                                onOpen={() => setPreviewAsset(asset)}
+                                onEdit={() => openEdit(asset)}
+                                onCopy={copyAssetText}
+                                onDownload={downloadImage}
+                                onDelete={() => setDeletingAsset(asset)}
+                            />
                         ))}
                     </div>
 
@@ -455,17 +712,69 @@ export default function AssetsPage() {
     );
 }
 
-function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
+function useResolvedCoverUrl(asset: Asset | null) {
+    const [url, setUrl] = useState("");
+    useEffect(() => {
+        setUrl(asset?.coverUrl || "");
+        if (!asset || asset.coverUrl) return;
+        const lookups: Promise<string | undefined>[] = [];
+        if (asset.kind === "image") {
+            if (asset.data.dataUrl) lookups.push(Promise.resolve(asset.data.dataUrl));
+            if (asset.data.storageKey) lookups.push(resolveImageUrl(asset.data.storageKey));
+        } else if (asset.kind === "composite") {
+            for (const item of asset.data.items) {
+                if (item.itemType === "image" && item.storageKey) lookups.push(resolveImageUrl(item.storageKey));
+                if (lookups.length >= 4) break;
+            }
+        }
+        if (!lookups.length) return;
+        let cancelled = false;
+        Promise.all(lookups).then((found) => {
+            const first = found.find(Boolean);
+            if (!cancelled && first) setUrl(first);
+        });
+        return () => { cancelled = true; };
+    }, [asset?.id, asset?.kind, asset?.coverUrl]);
+    return url;
+}
+
+function AudioPlayer({ asset }: { asset: AudioAsset }) {
+    const [src, setSrc] = useState("");
+    useEffect(() => {
+        let cancelled = false;
+        if (asset.data.url && !asset.data.storageKey) { setSrc(asset.data.url); return; }
+        if (asset.data.storageKey) {
+            resolveMediaUrl(asset.data.storageKey).then((u) => { if (!cancelled && u) setSrc(u); });
+        }
+        return () => { cancelled = true; };
+    }, [asset.id]);
+    if (!src) return null;
+    return <audio src={src} controls className="!mt-2 h-9 w-full" />;
+}
+
+function AssetCard({ asset, selected, onSelect, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; selected: boolean; onSelect: () => void; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
     const { t } = useTranslation();
-    const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
+    const cover = useResolvedCoverUrl(asset);
     const summary = assetSummary(asset);
     return (
         <Card
             hoverable
-            className="overflow-hidden"
+            className={cn("group overflow-hidden transition-shadow", selected && "ring-2 ring-stone-500 dark:ring-stone-400")}
             styles={{ body: { padding: 0 } }}
             cover={
-                <button type="button" className="block w-full text-left" onClick={onOpen}>
+                <button type="button" className="relative block w-full text-left" onClick={onOpen}>
+                    {selected ? (
+                        <span className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-stone-900/80 text-white shadow backdrop-blur" onClick={(e) => { e.stopPropagation(); onSelect(); }}>
+                            <Check className="size-4" />
+                        </span>
+                    ) : (
+                        <span
+                            className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-stone-300 bg-white/70 text-stone-400 opacity-0 shadow backdrop-blur transition-opacity hover:opacity-100 group-hover:opacity-100 dark:border-stone-600 dark:bg-stone-900/70"
+                            onClick={(e) => { e.stopPropagation(); onSelect(); }}
+                        >
+                            <Check className="size-4" />
+                        </span>
+                    )}
                     {cover ? (
                         <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" />
                     ) : (
@@ -525,7 +834,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
 
 function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | null; onClose: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void }) {
     const { t } = useTranslation();
-    const cover = asset ? asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "") : "";
+    const cover = useResolvedCoverUrl(asset);
     return (
         <Drawer title={t("assets.details")} open={Boolean(asset)} size="large" onClose={onClose}>
             {asset ? (
@@ -555,9 +864,12 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                         ) : asset.kind === "video" ? (
                             <video src={asset.data.url} controls className="mt-2 aspect-video w-full rounded-lg bg-black" />
                         ) : asset.kind === "audio" ? (
-                            <Typography.Text type="secondary" className="mt-2 block">
-                                {formatBytes(asset.data.bytes)}{asset.data.durationMs ? ` · ${Math.round(asset.data.durationMs / 1000)}s` : ""}
-                            </Typography.Text>
+                            <div>
+                                <AudioPlayer asset={asset as AudioAsset} />
+                                <Typography.Text type="secondary" className="mt-1 block">
+                                    {formatBytes(asset.data.bytes)}{asset.data.durationMs ? ` · ${Math.round(asset.data.durationMs / 1000)}s` : ""}
+                                </Typography.Text>
+                            </div>
                         ) : asset.kind === "composite" ? (
                             <Typography.Text type="secondary" className="mt-2 block">
                                 {asset.data.items.length} items

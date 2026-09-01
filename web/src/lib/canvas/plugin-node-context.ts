@@ -9,6 +9,7 @@ export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, t
     const storage = createPluginStorage(getNodePluginId(node.type));
     return {
         node,
+        projectId: host.projectId,
         theme,
         scale,
         isSelected,
@@ -26,5 +27,6 @@ export function buildNodeContext(host: CanvasPluginHost, node: CanvasNodeData, t
         openPanel: () => host.openPanel(node.id),
         closePanel: () => host.closePanel(),
         storage,
+        generationLogs: host.generationLogs,
     };
 }

@@ -14,6 +14,7 @@ export type InstalledPlugin = {
     local?: boolean; // Local plugin discovered in web/public/plugins; disabled by default and refetched from its URL when enabled.
     official?: boolean; // Installed from the official registry and grouped accordingly in the manager.
     installedAt: string;
+    mcp?: { enabled: boolean; toolCount: number }; // Summary of any MCP capability the plugin declares.
 };
 
 type PluginStore = {

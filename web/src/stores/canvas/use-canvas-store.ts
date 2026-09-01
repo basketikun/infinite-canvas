@@ -6,6 +6,7 @@ import i18n from "@/i18n";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import { createGenerationLog, fetchAgentJson } from "@/services/api/canvas-agent";
 
 export type CanvasProject = {
     id: string;
@@ -39,6 +40,33 @@ const CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
 type PersistedCanvasState = Pick<CanvasStore, "projects">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
+let serverHydrated = false;
+
+function agentConnection() {
+    if (typeof window === "undefined") return null;
+    const endpoint = localStorage.getItem("canvas-agent-url") || "http://127.0.0.1:17371";
+    const token = localStorage.getItem("canvas-agent-token") || "";
+    return token ? { endpoint, token } : null;
+}
+
+async function syncCanvasProjects(projects: CanvasProject[], force = false) {
+    const connection = agentConnection();
+    if (!connection || (!force && !serverHydrated)) return;
+    try { await fetchAgentJson(connection.endpoint, connection.token, "/canvas/projects", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ projects }) }); } catch { /* local cache remains available while Agent is offline */ }
+}
+
+async function hydrateCanvasProjectsFromAgent() {
+    const connection = agentConnection();
+    if (!connection) { serverHydrated = true; return; }
+    try {
+        const response = await fetchAgentJson<{ ok?: boolean; projects?: CanvasProject[] }>(connection.endpoint, connection.token, "/canvas/projects");
+        const remoteProjects = Array.isArray(response.projects) ? response.projects : [];
+        const localProjects = useCanvasStore.getState().projects;
+        if (remoteProjects.length) useCanvasStore.setState({ projects: remoteProjects });
+        else if (localProjects.length) await syncCanvasProjects(localProjects, true);
+    } catch { /* keep the cached projects if Agent is unavailable */ }
+    serverHydrated = true;
+}
 
 const canvasStorage: PersistStorage<CanvasStore> = {
     getItem: async (name) => {
@@ -56,6 +84,7 @@ const canvasStorage: PersistStorage<CanvasStore> = {
         saveTimer = setTimeout(() => {
             saveTimer = null;
             void localForageStorage.setItem(name, JSON.stringify(value));
+            void syncCanvasProjects(nextState.projects as CanvasProject[]);
         }, 400);
     },
     removeItem: (name) => localForageStorage.removeItem(name),
@@ -103,6 +132,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     viewport: source.viewport || initialViewport,
                 };
                 set((state) => ({ projects: [project, ...state.projects] }));
+                void importLegacyGenerationLogs(project.id, (source as Partial<CanvasProject> & { logs?: unknown[] }).logs);
                 return project.id;
             },
             openProject: (id) => {
@@ -132,7 +162,37 @@ export const useCanvasStore = create<CanvasStore>()(
                 }) as StorageValue<CanvasStore>["state"],
             onRehydrateStorage: () => () => {
                 useCanvasStore.setState({ hydrated: true });
+                void hydrateCanvasProjectsFromAgent();
             },
         },
     ),
 );
+
+if (typeof window !== "undefined") {
+    window.addEventListener("canvas-agent-connected", () => { void hydrateCanvasProjectsFromAgent(); });
+}
+
+async function importLegacyGenerationLogs(projectId: string, value: unknown) {
+    const connection = agentConnection();
+    if (!connection || !Array.isArray(value)) return;
+    for (const item of value.slice(0, 500)) {
+        if (!item || typeof item !== "object") continue;
+        const log = item as Record<string, unknown>;
+        const request = log.request && typeof log.request === "object" ? log.request as Record<string, unknown> : {};
+        const media = (input: unknown) => Array.isArray(input) ? input.filter((entry) => entry && typeof entry === "object").map((entry) => {
+            const copy = { ...(entry as Record<string, unknown>) };
+            if (typeof copy.dataUrl === "string" && copy.dataUrl.startsWith("data:")) delete copy.dataUrl;
+            return copy;
+        }) : [];
+        try {
+            await createGenerationLog(connection.endpoint, connection.token, {
+                projectId, nodeId: typeof log.nodeId === "string" ? log.nodeId : undefined, status: log.status === "failed" ? "failed" : "success",
+                platform: String(log.platform || "Generate"), workflow: typeof request.workflow_json === "string" ? request.workflow_json : undefined,
+                model: typeof log.model === "string" ? log.model : undefined, prompt: typeof log.prompt === "string" ? log.prompt : "",
+                references: media(log.refs), inputCounts: {}, runtimeTaskId: String(request.task_id || request.taskId || "") || undefined,
+                startedAt: new Date(Number(log.createdAt) || Date.now()).toISOString(), durationMs: Number(log.runMs || 0), outputs: media(log.outputs),
+                error: typeof log.error === "string" ? log.error : undefined, params: { ...request, legacyLogId: typeof log.id === "string" ? log.id : undefined },
+            });
+        } catch { /* imported logs are best-effort and must not block project import */ }
+    }
+}

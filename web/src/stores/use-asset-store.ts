@@ -28,6 +28,7 @@ type AssetBase<T extends AssetKind> = {
     title: string;
     coverUrl: string;
     tags: string[];
+    folderId?: string | null;
     source?: string;
     note?: string;
     createdAt: string;
@@ -35,13 +36,20 @@ type AssetBase<T extends AssetKind> = {
     metadata?: Record<string, unknown>;
 };
 
+export type AssetFolder = { id: string; name: string; parentId: string | null; createdAt: string };
+
 type AssetStore = {
     hydrated: boolean;
     assets: Asset[];
+    folders: AssetFolder[];
     addAsset: (asset: Omit<Asset, "id" | "createdAt" | "updatedAt">) => string;
     updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
     removeAsset: (id: string) => void;
+    removeAssets: (ids: string[]) => void;
     replaceAssets: (assets: Asset[]) => void;
+    addFolder: (name: string, parentId?: string | null) => string;
+    renameFolder: (id: string, name: string) => void;
+    removeFolder: (id: string) => void;
     cleanupImages: (extra?: unknown) => void;
 };
 
@@ -52,6 +60,7 @@ const assetStorage: PersistStorage<AssetStore> = {
         const value = await localForageStorage.getItem(name);
         if (!value) return null;
         const parsed = JSON.parse(value) as StorageValue<AssetStore>;
+        parsed.state.folders = parsed.state.folders || [];
         parsed.state.assets = await Promise.all(
             parsed.state.assets.map(async (asset) => {
                 if (asset.kind === "video" && asset.data.storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
@@ -91,6 +100,7 @@ export const useAssetStore = create<AssetStore>()(
         (set, get) => ({
             hydrated: false,
             assets: [],
+            folders: [],
             addAsset: (asset) => {
                 const now = new Date().toISOString();
                 const id = nanoid();
@@ -107,7 +117,28 @@ export const useAssetStore = create<AssetStore>()(
                     get().cleanupImages({ assets });
                     return { assets };
                 }),
+            removeAssets: (ids) =>
+                set((state) => {
+                    const idSet = new Set(ids);
+                    const assets = state.assets.filter((asset) => !idSet.has(asset.id));
+                    get().cleanupImages({ assets });
+                    return { assets };
+                }),
             replaceAssets: (assets) => set({ assets }),
+            addFolder: (name, parentId = null) => {
+                const id = nanoid();
+                set((state) => ({ folders: [...state.folders, { id, name: name.trim() || "新文件夹", parentId, createdAt: new Date().toISOString() }] }));
+                return id;
+            },
+            renameFolder: (id, name) =>
+                set((state) => ({ folders: state.folders.map((folder) => (folder.id === id ? { ...folder, name: name.trim() || folder.name } : folder)) })),
+            removeFolder: (id) =>
+                set((state) => {
+                    const folders = state.folders.filter(folder => folder.id !== id && folder.parentId !== id);
+                    const remaining = new Set(folders.map(folder => folder.id));
+                    const assets = state.assets.map((asset) => (asset.folderId && asset.folderId !== id && remaining.has(asset.folderId) ? asset : { ...asset, folderId: null }));
+                    return { folders, assets };
+                }),
             cleanupImages: (extra) => {
                 window.setTimeout(async () => {
                     const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
@@ -119,7 +150,7 @@ export const useAssetStore = create<AssetStore>()(
         {
             name: ASSET_STORE_KEY,
             storage: assetStorage,
-            partialize: (state) => ({ assets: state.assets }) as StorageValue<AssetStore>["state"],
+            partialize: (state) => ({ assets: state.assets, folders: state.folders }) as StorageValue<AssetStore>["state"],
             onRehydrateStorage: () => () => {
                 useAssetStore.setState({ hydrated: true });
             },

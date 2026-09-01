@@ -10,6 +10,7 @@ import { splitVideo } from "./video-segment.js";
 import { MEDIA_DIR } from "./media.js";
 
 export type ComfyPreset = { id: string; name: string; kind: "image" | "video"; inputs: string[]; params: string[] };
+export type ComfyModelCatalog = { models: string[]; loras: string[]; refreshedAt: string; error?: string };
 const PRESETS: ComfyPreset[] = [
     { id: "z-image", name: "Z-Image 文生图", kind: "image", inputs: ["prompt"], params: ["width", "height", "seed"] },
     { id: "flux2-klein", name: "Flux2-Klein 多图编辑", kind: "image", inputs: ["prompt", "references"], params: ["seed"] },
@@ -26,6 +27,32 @@ export class ComfyUiBridge {
     getUrl() { return this.url; }
     setUrl(url: string) { this.url = normalizeUrl(url); this.db.setSetting("comfyui.url", this.url); return this.url; }
     presets() { return PRESETS; }
+
+    /**
+     * ComfyUI exposes model-folder choices through object_info. Reading these
+     * choices instead of maintaining a hard-coded list preserves the exact
+     * relative paths (including subfolders) that the loaders accept.
+     */
+    async models(signal?: AbortSignal): Promise<ComfyModelCatalog> {
+        const errors: string[] = [];
+        const readChoices = async (node: string, input: string) => {
+            try {
+                const response = await fetch(`${this.url}/object_info/${node}`, { signal });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const body = await response.json() as Record<string, any>;
+                const choices = body[node]?.input?.required?.[input]?.[0];
+                return Array.isArray(choices) ? choices.map(String).filter(Boolean) : [];
+            } catch (error) {
+                errors.push(`${node}: ${error instanceof Error ? error.message : String(error)}`);
+                return [];
+            }
+        };
+        const [models, loras] = await Promise.all([
+            readChoices("UNETLoader", "unet_name"),
+            readChoices("LoraLoader", "lora_name"),
+        ]);
+        return { models: [...new Set(models)].sort((a, b) => a.localeCompare(b)), loras: [...new Set(loras)].sort((a, b) => a.localeCompare(b)), refreshedAt: new Date().toISOString(), ...(errors.length ? { error: errors.join("; ") } : {}) };
+    }
 
     async status() {
         try {
@@ -238,10 +265,10 @@ export async function buildWorkflow(preset: string, input: Record<string, unknow
             source["126"].inputs.model = ["9072", 0];
         }
         const requestedMode = String(params.taskMode || (typeof input.video === "string" ? "rv2v" : "r2v"));
-        const taskMode = ["t2v", "i2v", "fl2v", "r2v", "rv2v"].includes(requestedMode) ? requestedMode : "rv2v";
+        const taskMode = ["t2v", "i2v", "fl2v", "r2v", "v2v", "rv2v"].includes(requestedMode) ? requestedMode : "rv2v";
         if (source["136"]?.inputs && ["t2v", "i2v", "fl2v"].includes(taskMode)) {
             source["136"] = { class_type: "MiniMaxH3ImageToVideo", inputs: { clip: ["128", 0], vae: ["119", 0], prompt: ["138", 0], width: ["115", 0], height: ["115", 1], length: ["131", 1], first_frame: null, last_frame: null }, _meta: { title: `MiniMax H3 ${taskMode.toUpperCase()}` } };
-        } else if (source["136"]?.inputs && taskMode === "rv2v") {
+        } else if (source["136"]?.inputs && (taskMode === "rv2v" || taskMode === "v2v")) {
             source["136"] = { class_type: "MiniMaxH3AudioConditioningT8", inputs: { clip: ["128", 0], video_vae: ["119", 0], audio_vae: ["120", 0], prompt: ["138", 0], width: ["115", 0], height: ["115", 1], length: ["131", 1], task_type: "Ref2VA", audio_mode: String(params.audioMode || "native"), audio_denoise_strength: Number(params.audioDenoiseStrength ?? 1), add_source_as_reference: params.addSourceAsReference === true, prompt_primary_audio_ordinal: Number(params.promptPrimaryAudioOrdinal || 0), strict_prompt_tags: params.strictPromptTags !== false, ref_image_size: String(params.refImageSize || "match"), reference_video_policy: String(params.referenceVideoPolicy || "official_2_to_15s") }, _meta: { title: "MiniMax H3 Video Edit (Ref2VA/T8)" } };
         } else if (source["136"]?.inputs && taskMode === "r2v") {
             source["136"] = { class_type: "JZL_MiniMaxH3ReferenceToVideo2", inputs: { clip: ["128", 0], vae: ["119", 0], audio_vae: ["120", 0], prompt: ["138", 0], width: ["115", 0], height: ["115", 1], length: ["131", 1], ref_image_size: String(params.refImageSize || "match"), ref_scale: 1 }, _meta: { title: "MiniMax H3 Reference to Video" } };
@@ -272,8 +299,9 @@ export async function buildWorkflow(preset: string, input: Record<string, unknow
             if (taskMode === "i2v" && uploadedRefs.length !== 1) throw new Error("i2v 需要且只接受 1 张图片作为首帧");
             if (taskMode === "fl2v" && uploadedRefs.length !== 2) throw new Error("fl2v 需要且只接受 2 张图片，依次作为首帧和尾帧");
             if (taskMode === "t2v" && uploadedRefs.length) throw new Error("t2v 不接受图片参考，请清空图片 refs");
-            if (taskMode === "rv2v" && typeof input.video !== "string") throw new Error("rv2v 需要至少 1 段视频参考");
+            if ((taskMode === "rv2v" || taskMode === "v2v") && typeof input.video !== "string") throw new Error(`${taskMode} 需要至少 1 段视频参考`);
             if (taskMode === "r2v" && typeof input.video === "string") throw new Error("r2v 不接受视频参考，请切换到 rv2v");
+            if (taskMode === "v2v" && uploadedRefs.length) throw new Error("v2v 只接受视频参考，不接受图片 refs，请切换到 rv2v");
             if (uploadedRefs[0] && source["137"]?.inputs) source["137"].inputs.image = uploadedRefs[0];
             const refNode = source["136"]?.inputs;
             if (refNode) {
@@ -348,6 +376,12 @@ async function resolveH3ModelParams(comfyUrl: string, params: Record<string, unk
         const requestedKey = normalizedRequested.toLowerCase().replace(/[\\/_\s-]/g, "");
         const exact = available.find((name) => name.toLowerCase().replace(/[\\/_\s-]/g, "") === requestedKey);
         if (exact) return { ...params, modelName: exact };
+        const requestedFile = normalizedRequested.replace(/^.*[\\/]/, "").toLowerCase();
+        const suffixMatches = available.filter((name) => {
+            const candidateFile = name.replace(/^.*[\\/]/, "").toLowerCase();
+            return requestedFile.length >= 12 && candidateFile.endsWith(requestedFile);
+        });
+        if (suffixMatches.length === 1) return { ...params, modelName: suffixMatches[0] };
         const tokens = normalizedRequested.toLowerCase().split(/[\\/_\s-]+/).filter((token) => token.length >= 3 && token !== "max");
         const ranked = available.map((name) => {
             const candidate = name.toLowerCase();
@@ -355,7 +389,11 @@ async function resolveH3ModelParams(comfyUrl: string, params: Record<string, unk
             return { name, score };
         }).sort((a, b) => b.score - a.score);
         if (ranked[0] && ranked[0].score >= Math.max(3, Math.ceil(tokens.length * 0.55))) return { ...params, modelName: ranked[0].name };
-    } catch { /* model discovery is optional; the static alias is still safe */ }
+        throw new Error(`ComfyUI 未找到 H3 模型 “${requested}”。可用模型：${available.filter((name) => /h3|minimax/i.test(name)).slice(0, 20).join("、") || available.slice(0, 20).join("、")}`);
+    } catch (error) {
+        if (error instanceof Error && /未找到 H3 模型/.test(error.message)) throw error;
+        /* model discovery is optional when ComfyUI cannot expose object_info */
+    }
     return { ...params, modelName: normalizedRequested };
 }
 

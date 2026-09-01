@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { toolDescriptions, toolInputSchemas, toolNames, type ToolName } from "../canvas/schemas.js";
 import { AGENT_PROMPT, loadConfig, type CanvasAgentConfig, VERSION } from "../config.js";
+import { startPluginMcp } from "./plugin-mcp.js";
 
 type CanvasAgentToolResponse = { ok?: boolean; result?: unknown; error?: string };
 
@@ -11,6 +12,7 @@ export async function startMcpServer() {
     const config = loadConfig(true);
     const server = new McpServer({ name: "canvas-agent", version: VERSION }, { instructions: AGENT_PROMPT });
     toolNames.forEach((name) => registerCanvasTool(server, config, name));
+    await startPluginMcp(server); // 插件 MCP 动态注册(冷启动加载 + 轮询浏览器启用态)
     await server.connect(new StdioServerTransport());
 }
 

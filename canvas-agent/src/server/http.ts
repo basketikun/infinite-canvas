@@ -14,6 +14,7 @@ import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 import { RuntimeDatabase } from "../runtime/database.js";
+import { loadPluginMcpDeclarations, savePluginMcpDeclarations, type PluginMcpDeclaration } from "./plugin-mcp.js";
 import { ComfyUiBridge } from "../runtime/comfyui.js";
 import { RunningHubBridge } from "../runtime/runninghub.js";
 import { VideoConcatService } from "../runtime/video-concat.js";
@@ -151,7 +152,30 @@ export function startHttpServer() {
         res.status(ok ? 200 : 409).json({ ok });
     });
     app.get("/runtime/status", route(async (_req, res) => res.json({ ok: true, sqlite: true, node: process.version, comfyui: await comfyUi.status(), ffmpeg: await videoConcat.status() })));
+    app.get("/canvas/projects", route(async (_req, res) => res.json({ ok: true, projects: runtimeDb.listCanvasProjects() })));
+    app.put("/canvas/projects", route(async (req, res) => {
+        const projects = Array.isArray(req.body?.projects) ? req.body.projects.filter((item: unknown): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item))) : [];
+        res.json({ ok: true, projects: runtimeDb.replaceCanvasProjects(projects) });
+    }));
     app.get("/runtime/tasks/:id", (req, res) => runtimeTaskResponse(req, res, runtimeDb));
+    app.get("/runtime/generation-logs", route(async (req, res) => {
+        const status = ["queued", "running", "success", "failed", "cancelled"].includes(String(req.query.status)) ? String(req.query.status) as any : undefined;
+        res.json({ ok: true, logs: runtimeDb.listGenerationLogs({ projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId), status, limit: Number(req.query.limit || 500) }) });
+    }));
+    app.post("/runtime/generation-logs", route(async (req, res) => {
+        const body = generationLogBody(req.body);
+        if (!body.projectId || !body.platform || !body.startedAt) return void res.status(400).json({ ok: false, error: "projectId、platform、startedAt 为必填项" });
+        res.status(201).json({ ok: true, log: runtimeDb.createGenerationLog(body as any) });
+    }));
+    app.patch("/runtime/generation-logs/:id", route(async (req, res) => {
+        const body = generationLogPatch(req.body);
+        res.json({ ok: true, log: runtimeDb.updateGenerationLog(routeParam(req.params.id), body as any) });
+    }));
+    app.delete("/runtime/generation-logs", route(async (req, res) => {
+        const id = stringQuery(req.query.id);
+        if (!id && !stringQuery(req.query.projectId) && !stringQuery(req.query.nodeId)) return void res.status(400).json({ ok: false, error: "删除日志必须指定范围" });
+        res.json({ ok: true, deleted: runtimeDb.deleteGenerationLogs({ id, projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId) }) });
+    }));
     app.post("/runtime/media", route(async (req, res) => res.status(201).json({ ok: true, media: await storeRuntimeMedia(String(req.body?.name || "media.bin"), String(req.body?.dataUrl || "")) })));
     app.get("/runtime/media-file", route(async (req, res) => {
         const file = runtimeMediaFile(String(req.query.file || ""));
@@ -159,6 +183,7 @@ export function startHttpServer() {
         res.type(path.extname(file)).send(await readFile(file));
     }));
     app.get("/comfy/status", route(async (_req, res) => res.json({ ok: true, ...(await comfyUi.status()) })));
+    app.get("/comfy/models", route(async (_req, res) => res.json({ ok: true, data: await comfyUi.models() })));
     app.get("/comfy/media", route(async (req, res) => {
         const filename = String(req.query.filename || "");
         if (!filename || filename.includes("..") || filename.includes("\\")) return void res.status(400).json({ ok: false, error: "媒体文件名无效" });
@@ -226,6 +251,14 @@ export function startHttpServer() {
         if (name === "comfyui_get_task") return void res.json({ ok: true, result: runtimeDb.getTask(String(input.taskId || "")) });
         if (name === "comfyui_cancel_task") return void res.json({ ok: true, result: comfyUi.cancel(String(input.taskId || "")) });
         return void res.json({ ok: true, result: await session.callTool(name, input) });
+    }));
+    app.post("/api/plugins/mcp", route(async (req, res) => {
+        const declarations = Array.isArray(req.body?.plugins) ? (req.body.plugins as PluginMcpDeclaration[]) : [];
+        savePluginMcpDeclarations(runtimeDb, declarations);
+        res.json({ ok: true, plugins: declarations.map((declaration) => ({ id: declaration.id, enabled: declaration.mcp?.enabled ?? false })) });
+    }));
+    app.get("/api/plugins/mcp", route(async (_req, res) => {
+        res.json({ ok: true, plugins: loadPluginMcpDeclarations(runtimeDb) });
     }));
     app.get("/agent/codex/workspace", (_req, res) => {
         const workspace = ensureSiteWorkspace(config);
@@ -534,6 +567,44 @@ function runtimeTaskResponse(req: Request, res: Response, database: RuntimeDatab
     res.json({ ok: true, task, events: database.listEvents(task.id, Number(req.query.after || 0)) });
 }
 
+function stringQuery(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : undefined; }
+
+function generationLogBody(value: unknown) {
+    const body = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    return {
+        projectId: String(body.projectId || "").trim(), nodeId: stringQuery(body.nodeId), segmentId: stringQuery(body.segmentId),
+        status: ["queued", "running", "success", "failed", "cancelled"].includes(String(body.status)) ? String(body.status) : "queued",
+        platform: String(body.platform || "Generate"), workflow: stringQuery(body.workflow), model: stringQuery(body.model), taskMode: stringQuery(body.taskMode),
+        prompt: typeof body.prompt === "string" ? body.prompt : "", references: sanitizeLogMedia(body.references),
+        inputCounts: objectNumberMap(body.inputCounts), runtimeTaskId: stringQuery(body.runtimeTaskId), promptId: stringQuery(body.promptId),
+        startedAt: String(body.startedAt || new Date().toISOString()), finishedAt: stringQuery(body.finishedAt), durationMs: Math.max(0, Number(body.durationMs || 0)),
+        outputs: sanitizeLogMedia(body.outputs), error: stringQuery(body.error), params: objectRecord(body.params),
+    };
+}
+
+function generationLogPatch(value: unknown) {
+    const body = generationLogBody({ ...(value && typeof value === "object" ? value : {}), projectId: "x", platform: "x", startedAt: new Date().toISOString() });
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const result: Record<string, unknown> = {};
+    for (const key of ["nodeId", "segmentId", "status", "platform", "workflow", "model", "taskMode", "prompt", "runtimeTaskId", "promptId", "startedAt", "finishedAt", "durationMs", "error"]) if (key in source) result[key] = (body as any)[key];
+    if ("references" in source) result.references = body.references;
+    if ("inputCounts" in source) result.inputCounts = body.inputCounts;
+    if ("outputs" in source) result.outputs = body.outputs;
+    if ("params" in source) result.params = body.params;
+    return result;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+function objectNumberMap(value: unknown): Record<string, number> { return Object.fromEntries(Object.entries(objectRecord(value)).map(([key, item]) => [key, Number(item) || 0])); }
+function sanitizeLogMedia(value: unknown): Array<Record<string, unknown>> {
+    if (!Array.isArray(value)) return [];
+    return value.filter((item) => item && typeof item === "object").map((item) => {
+        const copy = { ...(item as Record<string, unknown>) };
+        for (const key of ["dataUrl", "base64"]) if (typeof copy[key] === "string" && String(copy[key]).startsWith("data:")) delete copy[key];
+        return copy;
+    });
+}
+
 function permissionMode(value: unknown): AgentPermissionMode {
     return value === "automatic" || value === "full" ? value : "request";
 }
@@ -593,7 +664,7 @@ function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfi
     const origin = req.headers.origin;
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Access-Control-Allow-Headers", "content-type,x-canvas-agent-token");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Private-Network", "true");
     if (!origin || req.method === "OPTIONS" || url.pathname === "/health" || url.pathname === "/config") return true;
     config.origins ||= [];

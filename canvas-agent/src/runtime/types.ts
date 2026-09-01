@@ -20,3 +20,30 @@ export type RuntimeTaskEvent = {
     payload: Record<string, unknown>;
     createdAt: string;
 };
+
+export type GenerationLogStatus = "queued" | "running" | "success" | "failed" | "cancelled";
+
+export type GenerationLog = {
+    id: string;
+    projectId: string;
+    nodeId?: string;
+    segmentId?: string;
+    status: GenerationLogStatus;
+    platform: string;
+    workflow?: string;
+    model?: string;
+    taskMode?: string;
+    prompt?: string;
+    references: Array<Record<string, unknown>>;
+    inputCounts: Record<string, number>;
+    runtimeTaskId?: string;
+    promptId?: string;
+    startedAt: string;
+    finishedAt?: string;
+    durationMs: number;
+    outputs: Array<Record<string, unknown>>;
+    error?: string;
+    params: Record<string, unknown>;
+    createdAt: string;
+    updatedAt: string;
+};

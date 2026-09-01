@@ -11,6 +11,7 @@ test("MiniMax H3 selects the workflow node for each task mode", async () => {
         ["i2v", "MiniMaxH3ImageToVideo", { references: ["first.png"] }],
         ["fl2v", "MiniMaxH3ImageToVideo", { references: ["first.png", "last.png"] }],
         ["r2v", "JZL_MiniMaxH3ReferenceToVideo2", { references: ["character.png"] }],
+        ["v2v", "MiniMaxH3AudioConditioningT8", { video: "source.mp4", references: [], audios: [] }],
         ["rv2v", "MiniMaxH3AudioConditioningT8", { video: "source.mp4", references: ["character.png"], audios: [] }],
     ] as const;
 

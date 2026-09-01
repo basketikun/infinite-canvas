@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, Layers, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dialog";
 import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
-import { uploadImage } from "@/services/image-storage";
+import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
@@ -467,6 +467,28 @@ function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: 
     );
 }
 
+function CompositeCover({ asset }: { asset: Extract<Asset, { kind: "composite" }> }) {
+    const { t } = useTranslation();
+    const [cover, setCover] = useState("");
+    useEffect(() => {
+        let cancelled = false;
+        const firstImage = asset.data.items.find((item) => item.itemType === "image" && item.storageKey);
+        if (!firstImage) return;
+        const imageItem = firstImage as Extract<(typeof asset.data.items)[number], { itemType: "image" }>;
+        if (imageItem.url) { setCover(imageItem.url); return; }
+        resolveImageUrl(imageItem.storageKey).then((url) => { if (!cancelled && url) setCover(url); });
+        return () => { cancelled = true; };
+    }, [asset.id, asset.data]);
+    const count = asset.data.items.length;
+    if (cover) return <img src={cover} alt="" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
+    return (
+        <div className="size-full flex flex-col items-center justify-center gap-1 bg-stone-100 dark:bg-stone-800">
+            <div className="text-[11px] font-medium text-stone-500 dark:text-stone-400">{t("assets.kinds.composite")}</div>
+            <div className="text-[10px] text-stone-400 dark:text-stone-500">{count} {count === 1 ? "item" : "items"}</div>
+        </div>
+    );
+}
+
 function AssetCover({ asset }: { asset: Asset }) {
     const { t } = useTranslation();
     if (asset.kind === "text") return <div className="size-full overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{asset.data.content}</div>;
@@ -474,15 +496,7 @@ function AssetCover({ asset }: { asset: Asset }) {
         if (asset.coverUrl) return <img src={asset.coverUrl} alt="" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
         return <video src={`${asset.data.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
     }
-    if (asset.kind === "composite") {
-        const count = asset.data.items.length;
-        return (
-            <div className="size-full flex flex-col items-center justify-center gap-1 bg-stone-100 dark:bg-stone-800">
-                <div className="text-[11px] font-medium text-stone-500 dark:text-stone-400">{t("assets.kinds.composite")}</div>
-                <div className="text-[10px] text-stone-400 dark:text-stone-500">{count} {count === 1 ? "item" : "items"}</div>
-            </div>
-        );
-    }
+    if (asset.kind === "composite") return <CompositeCover asset={asset} />;
     if (asset.kind === "audio") {
         return (
             <div className="size-full flex flex-col items-center justify-center gap-1 bg-stone-100 dark:bg-stone-800">

@@ -5,6 +5,7 @@ import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessag
 import { imageToDataUrl } from "@/services/image-storage";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { runLocalH3Task, getLocalH3Task, runRunningHubH3Task, getRunningHubH3Task } from "@/services/api/comfyui";
+import { createGenerationLog, deleteGenerationLogs, fetchComfyModels, fetchGenerationLogs, updateGenerationLog } from "@/services/api/canvas-agent";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { decodeChannelModel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-generation-helpers";
@@ -12,7 +13,7 @@ import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { ensurePluginsLoaded } from "@/lib/canvas/plugin-loader";
 import { canvasThemes } from "@/lib/canvas-theme";
-import type { CanvasNodeToolbarItem, CanvasPluginAi, CanvasPluginHost } from "@/types/canvas-plugin";
+import type { CanvasGenerationLogs, CanvasNodeToolbarItem, CanvasPluginAi, CanvasPluginHost } from "@/types/canvas-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
@@ -20,6 +21,7 @@ import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/type
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
 
 type PluginHostParams = {
+    projectId: string;
     effectiveConfig: AiConfig;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (open: boolean) => void;
@@ -38,7 +40,16 @@ type PluginHostParams = {
  */
 export function usePluginHost(params: PluginHostParams) {
     const { t } = useTranslation();
-    const { effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
+    const { projectId, effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
+    const generationLogs = useMemo<CanvasGenerationLogs>(() => {
+        const unavailable = () => { throw new Error("Canvas Agent 未连接，无法访问生成日志"); };
+        return {
+            list: async (options: Parameters<CanvasGenerationLogs["list"]>[0] = {}) => { const current = useAgentStore.getState(); if (!current.connected || !current.url || !current.token) return []; const result = await fetchGenerationLogs(current.url, current.token, { ...options, projectId: options.projectId || projectId }); return result.logs || []; },
+            create: async (input: any) => { const current = useAgentStore.getState(); if (!current.connected || !current.url || !current.token) return unavailable(); const result = await createGenerationLog(current.url, current.token, { ...input, projectId: input.projectId || projectId }); if (!result.log) throw new Error("Agent 未返回生成日志"); return result.log; },
+            update: async (id: string, patch: any) => { const current = useAgentStore.getState(); if (!current.connected || !current.url || !current.token) return unavailable(); const result = await updateGenerationLog(current.url, current.token, id, patch); if (!result.log) throw new Error("Agent 未返回生成日志"); return result.log; },
+            remove: async (options: any) => { const current = useAgentStore.getState(); if (!current.connected || !current.url || !current.token) return unavailable(); const result = await deleteGenerationLogs(current.url, current.token, options); return Number(result.deleted || 0); },
+        };
+    }, [projectId]);
 
     // Host capabilities available to plugin nodes; methods receive nodeId and are not bound to a specific node.
     const pluginAi = useMemo<CanvasPluginAi>(() => {
@@ -100,6 +111,12 @@ export function usePluginHost(params: PluginHostParams) {
                 if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法查询 H3 任务");
                 return await getLocalH3Task(agent.url, agent.token, taskId) as Awaited<ReturnType<typeof getLocalH3Task>>;
             },
+            listLocalH3Models: async () => {
+                const agent = useAgentStore.getState();
+                if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法读取 ComfyUI 模型");
+                const result = await fetchComfyModels(agent.url, agent.token);
+                return { models: result.data?.models || [], loras: result.data?.loras || [] };
+            },
             runRunningHubH3: async (prompt, input, params, options) => {
                 const agent = useAgentStore.getState();
                 if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法运行 RunningHub MiniMax H3");
@@ -118,6 +135,7 @@ export function usePluginHost(params: PluginHostParams) {
 
     const pluginHost = useMemo<CanvasPluginHost>(
         () => ({
+            projectId,
             getNode: (id) => nodesRef.current.find((node) => node.id === id) || null,
             getNodes: () => nodesRef.current,
             getConnections: () => connectionsRef.current,
@@ -137,8 +155,9 @@ export function usePluginHost(params: PluginHostParams) {
             ai: pluginAi,
             openPanel: (nodeId) => setDialogNodeId(nodeId),
             closePanel: () => setDialogNodeId(null),
+            generationLogs,
         }),
-        [applyAgentOps, pluginAi],
+        [applyAgentOps, generationLogs, pluginAi, projectId],
     );
 
     const renderPluginPanel = useCallback(

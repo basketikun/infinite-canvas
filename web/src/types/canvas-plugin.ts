@@ -22,6 +22,21 @@ export type LocalH3Options = { signal?: AbortSignal; onTaskId?: (taskId: string)
 export type LocalH3Task = { id: string; status: "queued" | "running" | "succeeded" | "failed" | "cancelled"; progress: number; result?: LocalH3Result | null; error?: string | null };
 export type PluginModelCapability = "image" | "video" | "text" | "audio";
 export type ModelOption = { value: string; label: string };
+export type CanvasGenerationLogStatus = "queued" | "running" | "success" | "failed" | "cancelled";
+export type CanvasGenerationLog = {
+    id: string; projectId: string; nodeId?: string; segmentId?: string; status: CanvasGenerationLogStatus;
+    platform: string; workflow?: string; model?: string; taskMode?: string; prompt?: string;
+    references: Array<Record<string, unknown>>; inputCounts: Record<string, number>; runtimeTaskId?: string; promptId?: string;
+    startedAt: string; finishedAt?: string; durationMs: number; outputs: Array<Record<string, unknown>>;
+    error?: string; params: Record<string, unknown>; createdAt: string; updatedAt: string;
+};
+export type CanvasGenerationLogInput = Omit<CanvasGenerationLog, "id" | "createdAt" | "updatedAt">;
+export type CanvasGenerationLogs = {
+    list: (options?: { projectId?: string; nodeId?: string; status?: CanvasGenerationLogStatus; limit?: number }) => Promise<CanvasGenerationLog[]>;
+    create: (input: CanvasGenerationLogInput) => Promise<CanvasGenerationLog>;
+    update: (id: string, patch: Partial<CanvasGenerationLogInput>) => Promise<CanvasGenerationLog>;
+    remove: (options: { id?: string; projectId?: string; nodeId?: string }) => Promise<number>;
+};
 
 export type CanvasPluginAi = {
     generateImage: (prompt: string, options?: GenerateImageOptions) => Promise<GenerateImageResult>;
@@ -29,6 +44,7 @@ export type CanvasPluginAi = {
     generateText: (prompt: string, options?: GenerateTextOptions) => Promise<GenerateTextResult>;
     runLocalH3: (prompt: string, input: LocalH3Input, params: Record<string, unknown>, options?: LocalH3Options) => Promise<LocalH3Result>;
     getLocalH3Task: (taskId: string) => Promise<LocalH3Task>;
+    listLocalH3Models: () => Promise<{ models: string[]; loras: string[] }>;
     runRunningHubH3: (prompt: string, input: LocalH3Input, params: Record<string, unknown>, options?: LocalH3Options) => Promise<LocalH3Result>;
     getRunningHubH3Task: (taskId: string) => Promise<LocalH3Task>;
     listModels: (capability?: PluginModelCapability) => ModelOption[];
@@ -48,6 +64,7 @@ export type CanvasNodeToolbarItem = {
 
 // Context injected while rendering each node; the primary interface between plugins and the canvas.
 export type CanvasNodeContext = {
+    projectId: string;
     node: CanvasNodeData;
     theme: CanvasTheme;
     scale: number;
@@ -73,6 +90,7 @@ export type CanvasNodeContext = {
     closePanel: () => void;
     // Plugin-private persistence isolated by namespace.
     storage: PluginStorage;
+    generationLogs: CanvasGenerationLogs;
 };
 
 export type PluginStorage = {
@@ -83,6 +101,7 @@ export type PluginStorage = {
 
 // Node-independent host capabilities constructed by the canvas page and injected into the render chain.
 export type CanvasPluginHost = {
+    projectId: string;
     getNode: (id: string) => CanvasNodeData | null;
     getNodes: () => CanvasNodeData[];
     getConnections: () => CanvasConnection[];
@@ -96,6 +115,7 @@ export type CanvasPluginHost = {
     // Opens or closes the custom panel below a specified node.
     openPanel: (nodeId: string) => void;
     closePanel: () => void;
+    generationLogs: CanvasGenerationLogs;
 };
 
 // Configuration for reusing the host's built-in generation panel; see SDK CanvasBuiltinPanelConfig.
@@ -153,4 +173,59 @@ export type CanvasPlugin = {
     css?: string; // Injected when enabled and removed when uninstalled or disabled.
     nodes: CanvasNodeDefinition[];
     setup?: (app: CanvasPluginApp) => void | (() => void);
+    // 可选声明的 MCP 模块:让插件在 Agent(canvas-agent)侧动态暴露 MCP 工具。
+    // 浏览器插件包只声明 tools 元信息(供启用时同步给 Agent);真正的执行逻辑
+    // 由 Agent 侧的 MCP 模块提供(createHandler 由 Agent 打包,浏览器可省略)。
+    mcp?: CanvasPluginMcp;
+};
+
+// ---------------------------------------------------------------------------
+// 插件 MCP 能力:让插件在 Agent(canvas-agent)侧动态暴露 MCP 工具
+//
+// 安全边界:MCP 不能运行在浏览器插件代码里,它由 Node.js stdio 服务(Agent)执行。
+// 第三方远程插件的 MCP 执行需经用户显式安装 + Agent 授权;官方/本地插件自动加载。
+// Agent 侧从本地已安装包或受信插件目录加载 MCP 模块,绝不执行任意网页脚本。
+// ---------------------------------------------------------------------------
+
+// 单个 MCP 工具的声明(纯描述,供 Agent 校验与动态注册)
+export type McpToolDefinition = {
+    id: string; // 工具名(全局唯一,建议 "<pluginId>:<tool>")
+    version: string; // 同插件 version,用于兼容校验
+    name: string; // 展示名
+    description: string;
+    inputJsonSchema: Record<string, unknown>; // JSON Schema,Agent 端转换为 zod
+    annotations?: {
+        title?: string;
+        readOnlyHint?: boolean;
+        destructiveHint?: boolean;
+        idempotentHint?: boolean;
+        openWorldHint?: boolean;
+    };
+};
+
+// 插件 MCP handler 运行上下文(Agent 注入)
+export type PluginMcpContext = {
+    // Agent 端点与令牌(用于回调 canvas-agent 自身接口)
+    endpoint: string;
+    token: string;
+    // 读取/更新画布节点(数据来自 Agent 持久化的 SQLite,页面态未同步时回退)
+    getCanvasNodes: () => Promise<CanvasNodeData[]>;
+    getCanvasNode: (id: string) => Promise<CanvasNodeData | null>;
+    updateCanvasNode: (id: string, patch: Partial<CanvasNodeData>, metadataPatch?: Record<string, unknown>) => Promise<void>;
+    // 宿主运行时(具体类型由 Agent 提供,此处仅作契约占位)
+    runtimeDb: unknown;
+    comfyUi: unknown;
+};
+
+// 单个工具的处理函数
+export type McpToolHandler = (input: Record<string, unknown>, context: PluginMcpContext) => Promise<unknown>;
+
+// 插件可选声明的 MCP 模块
+export type CanvasPluginMcp = {
+    id: string; // 应等于插件 id
+    version: string;
+    tools: McpToolDefinition[];
+    // 返回「工具 id -> 处理函数」映射,Agent 据此为每个工具调用 registerTool。
+    // 官方/本地插件由 Agent 侧打包的 MCP 模块提供,浏览器声明可省略。
+    createHandler?: (context: PluginMcpContext) => Record<string, McpToolHandler>;
 };

@@ -42,6 +42,33 @@ export type AgentSkillResponse = { ok?: boolean; data?: AgentSkillDetail };
 export type AgentSkillDraftResponse = { ok?: boolean; data?: AgentSkillDraft };
 export type ComfyPreset = { id: string; name: string; kind: "image" | "video"; inputs: string[]; params: string[] };
 export type ComfyPresetsResponse = { ok?: boolean; data?: ComfyPreset[] };
+export type GenerationLogStatus = "queued" | "running" | "success" | "failed" | "cancelled";
+export type GenerationLog = {
+    id: string; projectId: string; nodeId?: string; segmentId?: string; status: GenerationLogStatus;
+    platform: string; workflow?: string; model?: string; taskMode?: string; prompt?: string;
+    references: Array<Record<string, unknown>>; inputCounts: Record<string, number>; runtimeTaskId?: string; promptId?: string;
+    startedAt: string; finishedAt?: string; durationMs: number; outputs: Array<Record<string, unknown>>;
+    error?: string; params: Record<string, unknown>; createdAt: string; updatedAt: string;
+};
+export type GenerationLogInput = Omit<GenerationLog, "id" | "createdAt" | "updatedAt">;
+
+export function fetchGenerationLogs(endpoint: string, token: string, options: { projectId?: string; nodeId?: string; status?: GenerationLogStatus; limit?: number } = {}) {
+    const query = new URLSearchParams(Object.entries(options).filter(([, value]) => value !== undefined && value !== "") as Array<[string, string]>);
+    return fetchAgentJson<{ ok?: boolean; logs?: GenerationLog[] }>(endpoint, token, `/runtime/generation-logs${query.toString() ? `?${query}` : ""}`);
+}
+
+export function createGenerationLog(endpoint: string, token: string, input: GenerationLogInput) {
+    return fetchAgentJson<{ ok?: boolean; log?: GenerationLog }>(endpoint, token, "/runtime/generation-logs", jsonPost(input));
+}
+
+export function updateGenerationLog(endpoint: string, token: string, id: string, patch: Partial<GenerationLogInput>) {
+    return fetchAgentJson<{ ok?: boolean; log?: GenerationLog }>(endpoint, token, `/runtime/generation-logs/${encodeURIComponent(id)}`, jsonRequest(patch, "PATCH"));
+}
+
+export function deleteGenerationLogs(endpoint: string, token: string, options: { id?: string; projectId?: string; nodeId?: string }) {
+    const query = new URLSearchParams(Object.entries(options).filter(([, value]) => value !== undefined && value !== "") as Array<[string, string]>);
+    return fetchAgentJson<{ ok?: boolean; deleted?: number }>(endpoint, token, `/runtime/generation-logs${query.toString() ? `?${query}` : ""}`, { method: "DELETE" });
+}
 
 export async function postState(endpoint: string, token: string, clientId: string, snapshot: CanvasAgentSnapshot | null) {
     try {
@@ -62,6 +89,10 @@ export function fetchComfyPresets(endpoint: string, token: string) {
 
 export function fetchComfyStatus(endpoint: string, token: string) {
     return fetchAgentJson<{ ok?: boolean; connected?: boolean; url?: string; error?: string }>(endpoint, token, "/comfy/status");
+}
+
+export function fetchComfyModels(endpoint: string, token: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: { models?: string[]; loras?: string[]; refreshedAt?: string; error?: string } }>(endpoint, token, "/comfy/models");
 }
 
 export function syncRuntimeMedia(endpoint: string, token: string, name: string, dataUrl: string) {
@@ -99,6 +130,24 @@ export function resolveAgentMessageAssetUrl(endpoint: string, token: string, val
     if (!match) return value.startsWith("agent-asset:") ? "" : value;
     const baseUrl = endpoint.trim().replace(/\/$/, "");
     return baseUrl && token ? `${baseUrl}/agent/message-assets/${match[1]}/${match[2]}?token=${encodeURIComponent(token)}` : "";
+}
+
+// 插件声明的 MCP 工具(浏览器 -> Agent 的声明线)
+export type AgentPluginMcpTool = { id: string; version: string; name: string; description: string; inputJsonSchema: Record<string, unknown> };
+export type AgentPluginMcpDeclaration = {
+    id: string;
+    name: string;
+    version: string;
+    mcp: { tools: AgentPluginMcpTool[]; enabled: boolean };
+};
+
+/** 通知 Agent 当前已启用插件的 MCP 声明,驱动 Agent 动态注册/注销 MCP 工具。 */
+export async function notifyAgentPluginMcp(endpoint: string, token: string, plugins: AgentPluginMcpDeclaration[]) {
+    try {
+        await fetchAgentJson<{ ok?: boolean }>(endpoint, token, "/api/plugins/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ plugins }) });
+    } catch (error) {
+        console.warn("[plugin] 通知 Agent 插件 MCP 状态失败", error);
+    }
 }
 
 export function fetchCodexSkills(endpoint: string, token: string, forceReload = false) {
@@ -150,4 +199,8 @@ export async function discoverAgentConfig(endpoint: string) {
 
 function jsonPost(body: unknown): RequestInit {
     return { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+}
+
+function jsonRequest(body: unknown, method: "POST" | "PATCH"): RequestInit {
+    return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
 }
