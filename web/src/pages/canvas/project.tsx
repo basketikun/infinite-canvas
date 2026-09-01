@@ -46,7 +46,7 @@ import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
-import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
+import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildCompositeGroupNodes, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import { findContainingGroupId, findGroupDropTarget, getConnectionTargetAnchor, normalizeConnection, snapNodesIntoGroup } from "@/lib/canvas/canvas-node-geometry";
 import {
     audioExtension,
@@ -218,6 +218,7 @@ function InfiniteCanvasPage() {
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
     const [showImageInfo, setShowImageInfo] = useState(false);
+    const [globalPrompt, setGlobalPrompt] = useState("");
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [projectLoaded, setProjectLoaded] = useState(false);
@@ -339,7 +340,7 @@ function InfiniteCanvasPage() {
         }
 
         const restore = async () => {
-            const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
+            const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes.map(migrateLegacyH3Node)));
             const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
             setNodes(restoredNodes);
             setConnections(project.connections);
@@ -2813,6 +2814,30 @@ function InfiniteCanvasPage() {
                     },
                 ]);
                 setSelectedNodeIds(new Set([id]));
+            } else if (payload.kind === "audio") {
+                const spec = { width: 320, height: 80 };
+                const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+                const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                setNodes((prev) => [
+                    ...prev,
+                    {
+                        id,
+                        type: CanvasNodeType.Audio,
+                        title: payload.title,
+                        position: { x: center.x - spec.width / 2, y: center.y - spec.height / 2 },
+                        width: spec.width,
+                        height: spec.height,
+                        metadata: { content: payload.url, storageKey: payload.storageKey, status: NODE_STATUS_SUCCESS, durationMs: payload.durationMs },
+                    },
+                ]);
+                setSelectedNodeIds(new Set([id]));
+            } else if (payload.kind === "composite") {
+                const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+                const draft = buildCompositeGroupNodes(payload.title, payload.items, { x: 0, y: 0 });
+                const group = draft[0];
+                const shifted = draft.map((node) => ({ ...node, position: { x: node.position.x + center.x - group.width / 2, y: node.position.y + center.y - group.height / 2 } }));
+                setNodes((prev) => [...prev, ...shifted]);
+                setSelectedNodeIds(new Set([group.id]));
             } else {
                 insertAssistantImage({ id: `asset-${Date.now()}`, prompt: payload.title, dataUrl: payload.dataUrl, storageKey: payload.storageKey });
             }
@@ -2937,6 +2962,8 @@ function InfiniteCanvasPage() {
                     agentOpen={agentPanelOpen}
                     compactAgentStatus={{ connected: localAgentConnected, enabled: localAgentEnabled, activity: localAgentActivity }}
                     onToggleAgent={toggleAgentPanel}
+                    globalPrompt={globalPrompt}
+                    onGlobalPromptChange={setGlobalPrompt}
                 />
 
                 <InfiniteCanvas
@@ -3198,4 +3225,45 @@ function InfiniteCanvasPage() {
             </section>
         </main>
     );
+}
+
+/** Convert the old smart-canvas H3 record into the plugin node's metadata contract. */
+function migrateLegacyH3Node(node: CanvasNodeData): CanvasNodeData {
+    if (node.type !== "smart-minimax" && node.type !== "minimax") return node;
+    const legacy = node as CanvasNodeData & Record<string, unknown>;
+    const metadata = { ...(node.metadata || {}) } as Record<string, unknown>;
+    const copy = (target: string, ...sources: string[]) => {
+        if (metadata[target] !== undefined) return;
+        const source = sources.find((key) => legacy[key] !== undefined);
+        if (source) metadata[target] = legacy[source];
+    };
+    copy("prompt", "promptDraftText", "prompt");
+    copy("duration", "duration");
+    copy("aspectRatio", "aspectRatio");
+    copy("megapixels", "megapixels", "minimaxGlobalMegapixels");
+    copy("videoSteps", "videoSteps", "minimaxVideoSteps");
+    copy("segments", "segments");
+    copy("selectedSegmentId", "selectedSegmentId");
+    copy("seed", "seed", "noiseSeed");
+    copy("videoSource", "minimaxSourceVideoUrl", "videoSource");
+    copy("h3CharacterAssets", "characterAssets");
+    copy("h3Refs", "refs");
+    copy("assetRefs", "assetRefs");
+    copy("materials", "materials");
+    copy("motionContextEnabled", "motionContextEnabled");
+    copy("motionContextNoiseEnabled", "motionContextNoiseEnabled", "minimaxMotionContextNoiseEnabled");
+    copy("minimaxEngine", "minimaxEngine");
+    copy("minimaxRunningHubWorkflowId", "minimaxRunningHubWorkflowId");
+    copy("minimaxRunningHubAppId", "minimaxRunningHubAppId");
+    copy("minimaxRunningHubParams", "minimaxRunningHubParams");
+    copy("minimaxRunningHubMode", "minimaxRunningHubMode");
+    copy("loraName", "minimaxLoraName");
+    copy("teAccel", "minimaxTeAccel");
+    copy("modelName", "minimaxBaseModel");
+    copy("combatLoraWeight", "minimaxCombatLoraWeight");
+    copy("cinematicLoraWeight", "minimaxCinematicLoraWeight");
+    copy("promptEnhance", "minimaxPromptEnhance");
+    copy("promptEnhanceLanguage", "minimaxPromptEnhanceLanguage");
+    copy("minimaxLlmModel", "minimaxLlmModel");
+    return { ...node, type: "minimax-h3:video", metadata };
 }

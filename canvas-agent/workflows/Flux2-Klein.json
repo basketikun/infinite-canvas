@@ -1,0 +1,525 @@
+{
+  "151": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "152": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "157",
+        1
+      ],
+      "height": [
+        "157",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2Scheduler"
+    }
+  },
+  "153": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "296",
+        0
+      ],
+      "positive": [
+        "307",
+        0
+      ],
+      "negative": [
+        "308",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG引导"
+    }
+  },
+  "154": {
+    "inputs": {
+      "noise": [
+        "158",
+        0
+      ],
+      "guider": [
+        "153",
+        0
+      ],
+      "sampler": [
+        "151",
+        0
+      ],
+      "sigmas": [
+        "152",
+        0
+      ],
+      "latent_image": [
+        "156",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "自定义采样器(高级)"
+    }
+  },
+  "155": {
+    "inputs": {
+      "samples": [
+        "154",
+        0
+      ],
+      "vae": [
+        "174",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "156": {
+    "inputs": {
+      "width": [
+        "157",
+        0
+      ],
+      "height": [
+        "157",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "157": {
+    "inputs": {
+      "image": [
+        "291",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "158": {
+    "inputs": {
+      "noise_seed": 1046852288816614
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "随机噪波"
+    }
+  },
+  "159": {
+    "inputs": {
+      "conditioning": [
+        "168",
+        0
+      ],
+      "latent": [
+        "162",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "160": {
+    "inputs": {
+      "conditioning": [
+        "167",
+        0
+      ],
+      "latent": [
+        "162",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "162": {
+    "inputs": {
+      "pixels": [
+        "291",
+        0
+      ],
+      "vae": [
+        "174",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "164": {
+    "inputs": {
+      "pixels": [
+        "271",
+        0
+      ],
+      "vae": [
+        "174",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "165": {
+    "inputs": {
+      "conditioning": [
+        "159",
+        0
+      ],
+      "latent": [
+        "164",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "166": {
+    "inputs": {
+      "conditioning": [
+        "160",
+        0
+      ],
+      "latent": [
+        "164",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "167": {
+    "inputs": {
+      "conditioning": [
+        "168",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "168": {
+    "inputs": {
+      "text": "改为夜晚",
+      "speak_and_recognation": {
+        "__value__": [
+          false,
+          true
+        ]
+      },
+      "clip": [
+        "295",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码器"
+    }
+  },
+  "174": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAE加载器"
+    }
+  },
+  "178": {
+    "inputs": {
+      "pixels": [
+        "294",
+        0
+      ],
+      "vae": [
+        "174",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "179": {
+    "inputs": {
+      "conditioning": [
+        "165",
+        0
+      ],
+      "latent": [
+        "178",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "180": {
+    "inputs": {
+      "conditioning": [
+        "166",
+        0
+      ],
+      "latent": [
+        "178",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "270": {
+    "inputs": {
+      "image": "05-1.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "271": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "270",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "图像按像素缩放"
+    }
+  },
+  "278": {
+    "inputs": {
+      "image": "1 (4).jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "291": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "278",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "图像按像素缩放"
+    }
+  },
+  "292": {
+    "inputs": {
+      "image": "05-1.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "294": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "292",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "图像按像素缩放"
+    }
+  },
+  "295": {
+    "inputs": {
+      "model_name1": "qwen_3_8b_fp8mixed.safetensors",
+      "model_name2": "None",
+      "model_name3": "None",
+      "type": "stable_diffusion",
+      "key_opt": "",
+      "mode": "Auto",
+      "device": "default"
+    },
+    "class_type": "LoadTextEncoderShared //Inspire",
+    "_meta": {
+      "title": "Shared Text Encoder Loader (Inspire)"
+    }
+  },
+  "296": {
+    "inputs": {
+      "model_name": "flux-2-klein-9b-fp8.safetensors",
+      "weight_dtype": "default",
+      "key_opt": "",
+      "mode": "Auto"
+    },
+    "class_type": "LoadDiffusionModelShared //Inspire",
+    "_meta": {
+      "title": "Shared Diffusion Model Loader (Inspire)"
+    }
+  },
+  "305": {
+    "inputs": {
+      "switch": [
+        "313",
+        0
+      ],
+      "on_false": [
+        "160",
+        0
+      ],
+      "on_true": [
+        "166",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "306": {
+    "inputs": {
+      "switch": [
+        "313",
+        0
+      ],
+      "on_false": [
+        "159",
+        0
+      ],
+      "on_true": [
+        "165",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "307": {
+    "inputs": {
+      "switch": [
+        "314",
+        0
+      ],
+      "on_false": [
+        "306",
+        0
+      ],
+      "on_true": [
+        "179",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "308": {
+    "inputs": {
+      "switch": [
+        "314",
+        0
+      ],
+      "on_false": [
+        "305",
+        0
+      ],
+      "on_true": [
+        "180",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "313": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "布尔值2"
+    }
+  },
+  "314": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "布尔值3"
+    }
+  },
+  "315": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "155",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  }
+}

@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
 import { imageToDataUrl } from "@/services/image-storage";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { runLocalH3Task, getLocalH3Task, runRunningHubH3Task, getRunningHubH3Task } from "@/services/api/comfyui";
+import { useAgentStore } from "@/stores/use-agent-store";
 import { decodeChannelModel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-generation-helpers";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
@@ -82,6 +84,31 @@ export function usePluginHost(params: PluginHostParams) {
                 const messages: AiTextMessage[] = [...(options?.system ? [{ role: "system" as const, content: options.system }] : []), { role: "user" as const, content: prompt }];
                 const text = await requestImageQuestion(config, messages, (delta) => options?.onDelta?.(delta), { signal: options?.signal });
                 return { text };
+            },
+            runLocalH3: async (prompt, input, params, options) => {
+                const agent = useAgentStore.getState();
+                if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法运行本地 MiniMax H3");
+                const comfy = await fetch(`${agent.url}/comfy/config?token=${encodeURIComponent(agent.token)}`).then(async (response) => {
+                    if (!response.ok) throw new Error(`读取 ComfyUI 配置失败（HTTP ${response.status}）`);
+                    return await response.json() as { url?: string };
+                });
+                if (!comfy.url) throw new Error("尚未配置本地 ComfyUI 地址");
+                return runLocalH3Task(agent.url, agent.token, comfy.url, prompt, input, params, options?.signal, options?.onTaskId);
+            },
+            getLocalH3Task: async (taskId) => {
+                const agent = useAgentStore.getState();
+                if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法查询 H3 任务");
+                return await getLocalH3Task(agent.url, agent.token, taskId) as Awaited<ReturnType<typeof getLocalH3Task>>;
+            },
+            runRunningHubH3: async (prompt, input, params, options) => {
+                const agent = useAgentStore.getState();
+                if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法运行 RunningHub MiniMax H3");
+                return runRunningHubH3Task(agent.url, agent.token, prompt, input, params, options?.signal, options?.onTaskId);
+            },
+            getRunningHubH3Task: async (taskId) => {
+                const agent = useAgentStore.getState();
+                if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法查询 RunningHub H3 任务");
+                return await getRunningHubH3Task(agent.url, agent.token, taskId) as Awaited<ReturnType<typeof getRunningHubH3Task>>;
             },
             // List configured models for a capability; labels use the model name without the channel prefix.
             listModels: (capability) => selectableModelsByCapability(effectiveConfig, capability as ModelCapability | undefined).map((value) => ({ value, label: decodeChannelModel(value)?.model || value })),

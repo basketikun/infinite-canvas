@@ -34,6 +34,10 @@ Connect token: xxxxxx
 
 在画布右上角点击 `Agent`，填入地址和 token 后连接。
 
+### 本地 ComfyUI 与 MiniMax H3
+
+Canvas Agent 的本地 ComfyUI 地址在 `GET/PUT /comfy/config` 配置，H3 插件通过 Agent 的 `/comfy/tasks` 调用内置 `minimax-h3` 预设。开启 Motion Context 递进增噪时，Agent 会调用 `workers/motion_context.py` 生成上一段的尾帧上下文视频；需要本机安装 `ffmpeg`、`ffprobe` 和 Python Pillow（可通过 `PYTHON_PATH` 指定 Python）。Python 依赖可执行 `python -m pip install -r workers/requirements.txt`。
+
 Codex app 插件会读取启动输出里的 Local URL 和 Connect token，并直接打开画布网页地址；Canvas Agent 不负责生成画布打开 URL。
 
 Canvas Agent 默认只监听 `127.0.0.1`。网页第一次带正确 token 连接后，Canvas Agent 会记录该网页 Origin；之后其他 Origin 不能复用这个本地 Agent，除非用户清理 `~/.infinite-canvas/canvas-agent.json` 里的 `origins`。

@@ -22,6 +22,7 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
+    kind?: "api" | "comfyui";
 };
 
 export type AiConfig = {
@@ -186,6 +187,7 @@ export function resolveModelScript(config: AiConfig, value: string) {
 
 function isAiConfigReady(config: AiConfig, model: string) {
     const channel = resolveModelChannel(config, model);
+    if (channel.kind === "comfyui") return Boolean(model.trim() && channel.baseUrl.trim());
     return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
 }
 
@@ -286,6 +288,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         models: normalizeChannelModels(channel?.models),
+        kind: channel?.kind || "api",
     };
 }
 
@@ -350,14 +353,19 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
 
 function normalizeChannels(config: AiConfig) {
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
-    const channels = persistedChannels.map((channel, index) =>
-        createModelChannel({
+    const channels = persistedChannels.map((channel, index) => {
+        const normalized = createModelChannel({
             ...channel,
             id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
             name: channel.name || (index === 0 ? i18n.t("config.channels.defaultName") : i18n.t("config.channels.indexedName", { index: index + 1 })),
             models: normalizeChannelModels(channel.models),
-        }),
-    );
+        });
+        // 17372 was briefly used as the Agent gateway in the first local-channel build.
+        // Migrate that exact generated default; custom ComfyUI ports remain untouched.
+        return normalized.kind === "comfyui" && normalized.baseUrl.replace(/\/$/, "") === "http://127.0.0.1:17372"
+            ? { ...normalized, baseUrl: "http://127.0.0.1:8188" }
+            : normalized;
+    });
     if (!channels.length) {
         channels.push(
             createModelChannel({

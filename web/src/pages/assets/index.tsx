@@ -1,14 +1,15 @@
 import { Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Card, Drawer, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { useCopyText } from "@/hooks/use-copy-text";
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
-import { uploadImage } from "@/services/image-storage";
+import { resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { cn } from "@/lib/utils";
-import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
+import { useAssetStore, type Asset, type AssetKind, type ImageAsset, type VideoAsset, type AudioAsset, type CompositeItem } from "@/stores/use-asset-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 
 type AssetFormValues = {
@@ -22,8 +23,9 @@ type AssetFormValues = {
 };
 
 type ImageDraft = ImageAsset["data"] | null;
+type VideoDraft = VideoAsset["data"] | null;
 
-const kindOptions = ["all", "text", "image", "video"] as const;
+const kindOptions = ["all", "text", "image", "video", "audio", "composite"] as const;
 
 export default function AssetsPage() {
     const { message } = App.useApp();
@@ -32,6 +34,8 @@ export default function AssetsPage() {
     const [form] = Form.useForm<AssetFormValues>();
     const coverInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+    const videoInputRef = useRef<HTMLInputElement>(null);
+    const audioInputRef = useRef<HTMLInputElement>(null);
     const assetInputRef = useRef<HTMLInputElement>(null);
     const assets = useAssetStore((state) => state.assets);
     const addAsset = useAssetStore((state) => state.addAsset);
@@ -47,11 +51,14 @@ export default function AssetsPage() {
     const [deletingAsset, setDeletingAsset] = useState<Asset | null>(null);
     const [formKind, setFormKind] = useState<AssetKind>("text");
     const [imageDraft, setImageDraft] = useState<ImageDraft>(null);
+    const [videoDraft, setVideoDraft] = useState<VideoDraft>(null);
+    const [audioDraft, setAudioDraft] = useState<AudioAsset["data"] | null>(null);
+    const [compositeItems, setCompositeItems] = useState<CompositeItem[]>([]);
     const coverUrl = Form.useWatch("coverUrl", form) || "";
     const title = Form.useWatch("title", form) || "";
     const tags = Form.useWatch("tags", form) || [];
     const content = Form.useWatch("content", form) || "";
-    const validAssets = useMemo(() => assets.filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video"), [assets]);
+    const validAssets = useMemo(() => assets.filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" || asset.kind === "composite"), [assets]);
 
     const filteredAssets = useMemo(() => {
         const query = keyword.trim().toLowerCase();
@@ -73,17 +80,22 @@ export default function AssetsPage() {
     }, [filteredAssets.length, pageSize]);
 
     const openCreate = () => {
-        setEditingAsset(null);
-        setImageDraft(null);
-        setFormKind("text");
-        form.setFieldsValue({ kind: "text", title: "", coverUrl: "", tags: [], source: t("assets.manual"), note: "", content: "" });
+            setEditingAsset(null);
+            setImageDraft(null);
+            setVideoDraft(null);
+            setAudioDraft(null);
+            setCompositeItems([]);
+            setFormKind("text");
+            form.setFieldsValue({ kind: "text", title: "", coverUrl: "", tags: [], source: t("assets.manual"), note: "", content: "" });
         setIsAssetOpen(true);
     };
 
     const openEdit = (asset: Asset) => {
         setEditingAsset(asset);
         setFormKind(asset.kind);
-        setImageDraft(asset.kind === "image" ? asset.data : null);
+        setImageDraft(asset.kind === "image" ? asset.data as ImageAsset["data"] : null);
+        setAudioDraft(asset.kind === "audio" ? asset.data as AudioAsset["data"] : null);
+        setCompositeItems(asset.kind === "composite" ? asset.data.items : []);
         form.setFieldsValue({
             kind: asset.kind,
             title: asset.title,
@@ -110,11 +122,16 @@ export default function AssetsPage() {
         if (values.kind === "text") {
             const asset = { ...base, kind: "text" as const, data: { content: (values.content || "").trim() } };
             editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
+        } else if (values.kind === "audio") {
+            if (!audioDraft) { message.error(t("assets.selectAudio")); return; }
+            const asset = { ...base, kind: "audio" as const, data: audioDraft };
+            editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
+        } else if (values.kind === "composite") {
+            if (!compositeItems.length) { message.error(t("assets.compositeRequireOne")); return; }
+            const asset = { ...base, kind: "composite" as const, data: { items: compositeItems } };
+            editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
         } else {
-            if (!imageDraft) {
-                message.error(t("assets.selectImage"));
-                return;
-            }
+            if (!imageDraft) { message.error(t("assets.selectImage")); return; }
             const asset = { ...base, kind: "image" as const, data: imageDraft };
             editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
         }
@@ -138,14 +155,22 @@ export default function AssetsPage() {
         if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
     };
 
+    const readAudioFile = async (file?: File) => {
+        if (!file || !file.type.startsWith("audio/")) return;
+        const result = await uploadMediaFile(file, "audio");
+        setAudioDraft({ url: result.url, storageKey: result.storageKey, bytes: result.bytes, mimeType: result.mimeType, durationMs: result.durationMs });
+        if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
+    };
+
     const copyAssetText = async (asset: Asset) => {
         if (asset.kind !== "text") return;
         copyText(asset.data.content, t("assets.textCopied"));
     };
 
     const downloadImage = (asset: Asset) => {
-        if (asset.kind !== "image" && asset.kind !== "video") return;
-        saveAs(asset.kind === "video" ? asset.data.url : asset.data.dataUrl, `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "png"}`);
+        if (asset.kind === "image") { saveAs(asset.data.dataUrl, `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "png"}`); return; }
+        if (asset.kind === "video") { saveAs(asset.data.url, `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "mp4"}`); return; }
+        if (asset.kind === "audio") { saveAs(asset.data.url, `${asset.title || "audio"}.${asset.data.mimeType.split("/")[1] || "mp3"}`); return; }
     };
 
     const exportAllAssets = async () => {
@@ -290,6 +315,9 @@ export default function AssetsPage() {
                                 options={[
                                     { label: t("assets.kinds.text"), value: "text" },
                                     { label: t("assets.kinds.image"), value: "image" },
+                                    { label: t("assets.kinds.video"), value: "video" },
+                                    { label: t("assets.kinds.audio"), value: "audio" },
+                                    { label: t("assets.kinds.composite"), value: "composite" },
                                 ]}
                                 onChange={(value) => setFormKind(value)}
                             />
@@ -319,6 +347,27 @@ export default function AssetsPage() {
                         {formKind === "text" ? (
                             <Form.Item name="content" label={t("assets.fields.textContent")} rules={[{ required: true, message: t("assets.fields.textRequired") }]}>
                                 <Input.TextArea rows={8} placeholder={t("assets.fields.textPlaceholder")} />
+                            </Form.Item>
+                        ) : formKind === "audio" ? (
+                            <Form.Item label={t("assets.fields.audioContent")} required>
+                                <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
+                                    <Button icon={<Upload className="size-4" />} onClick={() => audioInputRef.current?.click()}>
+                                        {t("assets.selectAudioFile")}
+                                    </Button>
+                                    {audioDraft ? (
+                                        <Typography.Text type="secondary" className="ml-3 text-xs">
+                                            {formatBytes(audioDraft.bytes)} {audioDraft.durationMs ? ` · ${Math.round(audioDraft.durationMs / 1000)}s` : ""}
+                                        </Typography.Text>
+                                    ) : (
+                                        <Typography.Text type="secondary" className="ml-3 text-xs">
+                                            {t("assets.noAudioSelected")}
+                                        </Typography.Text>
+                                    )}
+                                </div>
+                            </Form.Item>
+                        ) : formKind === "composite" ? (
+                            <Form.Item label={t("assets.fields.compositeContent")} required>
+                                <CompositeEditor items={compositeItems} onChange={setCompositeItems} assets={assets} />
                             </Form.Item>
                         ) : (
                             <Form.Item label={t("assets.fields.imageContent")} required>
@@ -386,6 +435,13 @@ export default function AssetsPage() {
                         event.target.value = "";
                     }}
                 />
+                <input
+                    ref={audioInputRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={(event) => { void readAudioFile(event.target.files?.[0]); event.target.value = ""; }}
+                />
             </Modal>
 
             <AssetDrawer asset={previewAsset} onClose={() => setPreviewAsset(null)} onCopy={copyAssetText} onDownload={downloadImage} />
@@ -446,17 +502,15 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                 <Button size="small" onClick={onOpen}>
                     {t("common.view")}
                 </Button>
-                {asset.kind !== "video" ? (
-                    <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>
-                        {t("common.edit")}
-                    </Button>
-                ) : null}
+                <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>
+                    {t("common.edit")}
+                </Button>
                 {asset.kind === "text" ? (
                     <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void onCopy(asset)}>
                         {t("common.copy")}
                     </Button>
                 ) : null}
-                {asset.kind === "image" || asset.kind === "video" ? (
+                {asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" ? (
                     <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(asset)}>
                         {t("common.download")}
                     </Button>
@@ -500,6 +554,14 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                             <Typography.Paragraph className="mt-2 whitespace-pre-wrap">{asset.data.content}</Typography.Paragraph>
                         ) : asset.kind === "video" ? (
                             <video src={asset.data.url} controls className="mt-2 aspect-video w-full rounded-lg bg-black" />
+                        ) : asset.kind === "audio" ? (
+                            <Typography.Text type="secondary" className="mt-2 block">
+                                {formatBytes(asset.data.bytes)}{asset.data.durationMs ? ` · ${Math.round(asset.data.durationMs / 1000)}s` : ""}
+                            </Typography.Text>
+                        ) : asset.kind === "composite" ? (
+                            <Typography.Text type="secondary" className="mt-2 block">
+                                {asset.data.items.length} items
+                            </Typography.Text>
                         ) : (
                             <Typography.Text className="mt-2 block">
                                 {asset.data.width}x{asset.data.height} · {formatBytes(asset.data.bytes)} · {asset.data.mimeType}
@@ -518,9 +580,9 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                                 {t("assets.copyText")}
                             </Button>
                         ) : null}
-                        {asset.kind === "image" || asset.kind === "video" ? (
+                        {asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" ? (
                             <Button type="primary" icon={<Download className="size-4" />} onClick={() => onDownload(asset)}>
-                                {asset.kind === "video" ? t("assets.downloadVideo") : t("assets.downloadImage")}
+                                {asset.kind === "video" ? t("assets.downloadVideo") : asset.kind === "audio" ? t("assets.downloadAudio") : t("assets.downloadImage")}
                             </Button>
                         ) : null}
                     </Space>
@@ -532,9 +594,185 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
 
 function assetSummary(asset: Asset) {
     if (asset.kind === "text") return asset.data.content;
+    if (asset.kind === "audio") return `${formatBytes(asset.data.bytes)}${asset.data.durationMs ? ` · ${Math.round(asset.data.durationMs / 1000)}s` : ""}`;
+    if (asset.kind === "composite") return `${asset.data.items.length} items`;
     return `${asset.data.width}x${asset.data.height} · ${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}`;
 }
 
 function assetSearchText(asset: Asset) {
-    return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), asset.kind === "text" ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
+    const extra = asset.kind === "text" ? asset.data.content : asset.kind === "composite" ? `${asset.data.items.length} items` : asset.data.mimeType;
+    return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), extra].join(" ").toLowerCase();
+}
+
+function CompositeEditor({ items, onChange, assets }: { items: CompositeItem[]; onChange: (items: CompositeItem[]) => void; assets: Asset[] }) {
+    const { t } = useTranslation();
+    const imgInputRef = useRef<HTMLInputElement>(null);
+    const mediaInputRef = useRef<HTMLInputElement>(null);
+    const [mediaKind, setMediaKind] = useState<"video" | "audio">("video");
+    const [pendingIdx, setPendingIdx] = useState<number | null>(null);
+    // Resolved blob: URLs for preview, keyed by item index
+    const [previews, setPreviews] = useState<Record<number, string>>({});
+
+    // Cache of resolved blob: URLs keyed by storageKey — cleaned up on unmount
+    const urlCache = useRef<Record<string, string>>({});
+    const resolveUrl = useCallback(async (item: CompositeItem) => {
+        if (item.itemType === "image" && item.storageKey) {
+            if (!urlCache.current[item.storageKey]) urlCache.current[item.storageKey] = await resolveImageUrl(item.storageKey, item.url);
+            return urlCache.current[item.storageKey];
+        }
+        if ((item.itemType === "video" || item.itemType === "audio") && item.storageKey) {
+            if (!urlCache.current[item.storageKey]) urlCache.current[item.storageKey] = await resolveMediaUrl(item.storageKey, item.url);
+            return urlCache.current[item.storageKey];
+        }
+        const imgItem = item as Extract<CompositeItem, { itemType: "image" }>;
+        return imgItem.url ?? "";
+    }, []);
+
+    // Resolve previews when items change
+    useEffect(() => {
+        let cancelled = false;
+        items.forEach(async (item, idx) => {
+            const mediaItem = item as Extract<CompositeItem, { itemType: "image" | "video" | "audio" }>;
+            if (mediaItem.storageKey) {
+                const url = await resolveUrl(mediaItem);
+                if (!cancelled) setPreviews(prev => ({ ...prev, [idx]: url }));
+            }
+        });
+        return () => { cancelled = true; };
+    }, [items, resolveUrl]);
+
+    // Revoke blob: URLs on unmount
+    useEffect(() => {
+        return () => { Object.values(urlCache.current).forEach(url => URL.revokeObjectURL(url)); };
+    }, []);
+
+    const handleImgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]; if (!file || pendingIdx === null) return;
+        const result = await uploadImage(file);
+        updateItem(pendingIdx, { url: result.url, storageKey: result.storageKey, width: result.width, height: result.height, bytes: result.bytes, mimeType: result.mimeType });
+        setPendingIdx(null); e.target.value = "";
+    };
+    const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]; if (!file || pendingIdx === null) return;
+        const result = await uploadMediaFile(file, mediaKind);
+        updateItem(pendingIdx, { url: result.url, storageKey: result.storageKey, bytes: result.bytes, mimeType: result.mimeType, durationMs: result.durationMs });
+        setPendingIdx(null); e.target.value = "";
+    };
+    const openImgUpload = (idx: number) => { setPendingIdx(idx); imgInputRef.current?.click(); };
+    const openMediaUpload = (idx: number, kind: "video" | "audio") => { setMediaKind(kind); setPendingIdx(idx); mediaInputRef.current?.click(); };
+    const addItem = (itemType: CompositeItem["itemType"]) => {
+        const base: CompositeItem =
+            itemType === "text" ? { itemType: "text", content: "" }
+            : itemType === "image" ? { itemType: "image", url: "", width: 0, height: 0, bytes: 0, mimeType: "" }
+            : itemType === "video" ? { itemType: "video", url: "", width: 0, height: 0, bytes: 0, mimeType: "" }
+            : itemType === "audio" ? { itemType: "audio", url: "", bytes: 0, mimeType: "" }
+            : { itemType: "assetRef", refId: "", refKind: "text" };
+        onChange([...items, base]);
+    };
+    const updateItem = (index: number, patch: Partial<CompositeItem>) => {
+        const next = [...items];
+        next[index] = { ...next[index], ...patch } as CompositeItem;
+        onChange(next);
+    };
+    const removeItem = (index: number) => onChange(items.filter((_, i) => i !== index));
+    const refOptions = assets.filter(a => a.kind !== "composite").map(a => ({ label: `${a.kind}: ${a.title || a.id}`, value: a.id, kind: a.kind }));
+    return (
+        <div className="space-y-3">
+            {items.map((item, idx) => (
+                <div key={idx} className="rounded-lg border border-stone-200 p-3 dark:border-stone-700">
+                    <div className="mb-2 flex items-center gap-2">
+                        <Select size="small" value={item.itemType}
+                            options={[
+                                { label: t("assets.composite.itemType.text"), value: "text" },
+                                { label: t("assets.composite.itemType.image"), value: "image" },
+                                { label: t("assets.composite.itemType.video"), value: "video" },
+                                { label: t("assets.composite.itemType.audio"), value: "audio" },
+                                { label: t("assets.composite.itemType.assetRef"), value: "assetRef" },
+                            ]}
+                            onChange={(val) => {
+                                const next = [...items];
+                                next[idx] = item.itemType === val ? item : (
+                                    val === "text" ? { itemType: "text", content: "" }
+                                    : val === "image" ? { itemType: "image", url: "", width: 0, height: 0, bytes: 0, mimeType: "" }
+                                    : val === "video" ? { itemType: "video", url: "", width: 0, height: 0, bytes: 0, mimeType: "" }
+                                    : val === "audio" ? { itemType: "audio", url: "", bytes: 0, mimeType: "" }
+                                    : { itemType: "assetRef", refId: "", refKind: "text" }
+                                ) as CompositeItem;
+                                onChange(next);
+                            }}
+                        />
+                        <Button size="small" danger onClick={() => removeItem(idx)}>{t("common.delete")}</Button>
+                    </div>
+                    {item.itemType === "text" && (
+                        <Input.TextArea rows={3} value={item.content} onChange={e => updateItem(idx, { content: e.target.value })} placeholder={t("assets.composite.textPlaceholder")} />
+                    )}
+                    {item.itemType === "assetRef" && (
+                        <div className="flex gap-2">
+                            <Select className="flex-1" showSearch optionFilterProp="label" placeholder={t("assets.composite.selectAsset")} value={item.refId || undefined}
+                                options={refOptions}
+                                onChange={(val) => {
+                                    const refAsset = assets.find(a => a.id === val);
+                                    const refItem = item as { itemType: "assetRef"; refId: string; refKind: "text" | "image" | "video" | "audio" };
+                                    updateItem(idx, { refId: val, refKind: (refAsset?.kind ?? refItem.refKind) as "text" | "image" | "video" | "audio" });
+                                }}
+                            />
+                            <Tag>{(item as { itemType: "assetRef"; refId: string; refKind: string }).refKind}</Tag>
+                        </div>
+                    )}
+                    {item.itemType === "image" && (
+                        <div className="space-y-2">
+                            <div className="flex gap-2">
+                                <Input placeholder={t("assets.composite.mediaUrlPlaceholder")} value={item.url} onChange={e => updateItem(idx, { url: e.target.value, width: 0, height: 0, bytes: 0, mimeType: "" })} />
+                                <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => openImgUpload(idx)} />
+                            </div>
+                            {previews[idx] && (
+                                <div className="rounded border border-stone-200 dark:border-stone-700 overflow-hidden">
+                                    <img src={previews[idx]} alt="" className="max-h-24 object-contain" />
+                                </div>
+                            )}
+                            {item.width && item.height ? <Typography.Text type="secondary" className="text-xs">{item.width}x{item.height} · {formatBytes(item.bytes)} · {item.mimeType}</Typography.Text> : null}
+                        </div>
+                    )}
+                    {item.itemType === "video" && (
+                        <div className="space-y-2">
+                            <div className="flex gap-2">
+                                <Input placeholder={t("assets.composite.mediaUrlPlaceholder")} value={item.url} onChange={e => updateItem(idx, { url: e.target.value, bytes: 0, mimeType: "" })} />
+                                <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => openMediaUpload(idx, "video")} />
+                            </div>
+                            {previews[idx] && (
+                                <div className="rounded border border-stone-200 dark:border-stone-700 overflow-hidden">
+                                    <video src={previews[idx]} className="max-h-24 w-full object-contain" controls preload="metadata" />
+                                </div>
+                            )}
+                            {item.bytes ? <Typography.Text type="secondary" className="text-xs">{formatBytes(item.bytes)} · {item.mimeType}</Typography.Text> : null}
+                        </div>
+                    )}
+                    {item.itemType === "audio" && (
+                        <div className="space-y-2">
+                            <div className="flex gap-2">
+                                <Input placeholder={t("assets.composite.mediaUrlPlaceholder")} value={item.url} onChange={e => updateItem(idx, { url: e.target.value, bytes: 0, mimeType: "" })} />
+                                <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => openMediaUpload(idx, "audio")} />
+                            </div>
+                            {previews[idx] && (
+                                <div className="rounded border border-stone-200 dark:border-stone-700">
+                                    <audio src={previews[idx]} controls preload="metadata" className="w-full" />
+                                </div>
+                            )}
+                            <div className="flex gap-2 items-center">
+                                {item.bytes ? <Typography.Text type="secondary" className="text-xs">{formatBytes(item.bytes)}</Typography.Text> : null}
+                                {item.durationMs ? <Typography.Text type="secondary" className="text-xs">{Math.round(item.durationMs / 1000)}s</Typography.Text> : null}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ))}
+            <div className="flex flex-wrap gap-2">
+                {(["text", "image", "video", "audio", "assetRef"] as const).map(type => (
+                    <Button key={type} size="small" onClick={() => addItem(type)}>+ {type}</Button>
+                ))}
+            </div>
+            <input ref={imgInputRef} type="file" accept="image/*" className="hidden" onChange={handleImgUpload} />
+            <input ref={mediaInputRef} type="file" accept={mediaKind === "video" ? "video/*" : "audio/*"} className="hidden" onChange={handleMediaUpload} />
+        </div>
+    );
 }

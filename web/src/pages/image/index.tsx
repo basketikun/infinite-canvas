@@ -11,7 +11,7 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
-import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionLabel, modelOptionName, resolveModelChannel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
@@ -19,6 +19,8 @@ import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
+import { useAgentStore } from "@/stores/use-agent-store";
+import { resolveComfyImageSize, runComfyTask } from "@/services/api/comfyui";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
 
@@ -321,11 +323,31 @@ export default function ImagePage() {
     const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
         const itemStartedAt = performance.now();
         try {
-            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
-            const image = result[0];
-            if (!image) throw new Error(t("imageWorkbench.missingResult"));
-            const stored = await uploadImage(image.dataUrl);
-            const nextImage: GeneratedImage = { id: image.id, dataUrl: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), durationMs: performance.now() - itemStartedAt, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+            const channel = resolveModelChannel(snapshot.config, snapshot.config.model);
+            const local = channel.kind === "comfyui";
+            const selectedModel = modelOptionName(snapshot.config.model).trim().toLowerCase();
+            if (local && !useAgentStore.getState().token.trim()) throw new Error("请先连接本地 Agent，再运行本地 ComfyUI 模型");
+            const localPreset = selectedModel === "z-image" ? "z-image" : selectedModel === "flux2-klein" ? "flux2-klein" : "";
+            if (local && !localPreset) throw new Error(`本地 ComfyUI 尚未支持工作台模型：${modelOptionName(snapshot.config.model)}`);
+            const result = local
+                ? await runComfyTask(
+                      useAgentStore.getState().url,
+                      useAgentStore.getState().token,
+                      channel.baseUrl,
+                      localPreset,
+                      snapshot.text,
+                      snapshot.references,
+                      resolveComfyImageSize(snapshot.config.size),
+                  )
+                : snapshot.references.length
+                  ? await requestEdit(snapshot.config, snapshot.text, snapshot.references).then((items) => items[0])
+                  : await requestGeneration(snapshot.config, snapshot.text).then((items) => items[0]);
+            if (!result) throw new Error(t("imageWorkbench.missingResult"));
+            const source = local
+                ? await fetch((result as { url: string }).url).then((response) => response.blob())
+                : (result as { dataUrl: string }).dataUrl;
+            const stored = await uploadImage(source);
+            const nextImage: GeneratedImage = { id: nanoid(), dataUrl: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), durationMs: performance.now() - itemStartedAt, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
             setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
             return nextImage;
         } catch (error) {

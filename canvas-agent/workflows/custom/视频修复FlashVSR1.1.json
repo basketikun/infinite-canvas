@@ -1,0 +1,170 @@
+{
+  "2": {
+    "inputs": {
+      "value": 4
+    },
+    "class_type": "INTConstant",
+    "_meta": {
+      "title": "INT Constant"
+    }
+  },
+  "4": {
+    "inputs": {
+      "offload_model": true,
+      "offload_cache": true,
+      "anything": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "VRAMCleanup",
+    "_meta": {
+      "title": "🎈VRAM-Cleanup"
+    }
+  },
+  "5": {
+    "inputs": {
+      "clean_file_cache": true,
+      "clean_processes": true,
+      "clean_dlls": true,
+      "retry_times": 3,
+      "anything": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "RAMCleanup",
+    "_meta": {
+      "title": "🎈RAM-Cleanup"
+    }
+  },
+  "8": {
+    "inputs": {
+      "frame_rate": [
+        "24",
+        5
+      ],
+      "loop_count": 0,
+      "filename_prefix": "FlashVSR 修复",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "5",
+        0
+      ],
+      "audio": [
+        "10",
+        2
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "10": {
+    "inputs": {
+      "video": "seg10_720p.mp4",
+      "force_rate": 0,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    },
+    "class_type": "VHS_LoadVideo",
+    "_meta": {
+      "title": "Load Video (Upload) 🎥🅥🅗🅢"
+    }
+  },
+  "24": {
+    "inputs": {
+      "video_info": [
+        "10",
+        3
+      ]
+    },
+    "class_type": "VHS_VideoInfo",
+    "_meta": {
+      "title": "Video Info 🎥🅥🅗🅢"
+    }
+  },
+  "33": {
+    "inputs": {
+      "model": "FlashVSR-v1.1",
+      "mode": "full",
+      "alt_vae": "none",
+      "force_offload": true,
+      "precision": "bf16",
+      "device": "auto",
+      "attention_mode": "sparse_sage_attention"
+    },
+    "class_type": "FlashVSRInitPipe",
+    "_meta": {
+      "title": "FlashVSR Init Pipeline"
+    }
+  },
+  "35": {
+    "inputs": {
+      "scale": [
+        "2",
+        0
+      ],
+      "color_fix": true,
+      "tiled_vae": true,
+      "tiled_dit": true,
+      "tile_size": 256,
+      "tile_overlap": 24,
+      "unload_dit": false,
+      "sparse_ratio": 2,
+      "kv_ratio": 3,
+      "local_range": 11,
+      "seed": 372750570927737,
+      "pipe": [
+        "33",
+        0
+      ],
+      "frames": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "FlashVSRNodeAdv",
+    "_meta": {
+      "title": "FlashVSR Ultra-Fast (Advanced)"
+    }
+  },
+  "39": {
+    "inputs": {
+      "upscale_method": "area",
+      "scale_by": 0.75,
+      "image": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ImageScaleBy",
+    "_meta": {
+      "title": "缩放图像（比例）"
+    }
+  },
+  "40": {
+    "inputs": {
+      "longer_edge": 960,
+      "images": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ResizeImagesByLongerEdge",
+    "_meta": {
+      "title": "缩放图像（长边）"
+    }
+  }
+}

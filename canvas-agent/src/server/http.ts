@@ -13,6 +13,11 @@ import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWo
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { RuntimeDatabase } from "../runtime/database.js";
+import { ComfyUiBridge } from "../runtime/comfyui.js";
+import { RunningHubBridge } from "../runtime/runninghub.js";
+import { VideoConcatService } from "../runtime/video-concat.js";
+import { runtimeMediaFile, storeRuntimeMedia } from "../runtime/media.js";
 
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
 export function startHttpServer() {
@@ -24,6 +29,10 @@ export function startHttpServer() {
     const initialWorkspace = ensureSiteWorkspace(config);
     const session = new CanvasSession(initialWorkspace.activeThreadId || "");
     const skillStore = new SkillStore(initialWorkspace.workspacePath);
+    const runtimeDb = new RuntimeDatabase();
+    const comfyUi = new ComfyUiBridge(runtimeDb);
+    const runningHub = new RunningHubBridge(runtimeDb);
+    const videoConcat = new VideoConcatService(runtimeDb);
     /** 将 Agent 事件广播到所属线程或全部网页。 */
     const emit = (type: string, payload: unknown) => {
         const value = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : { value: payload };
@@ -141,6 +150,45 @@ export function startHttpServer() {
         const ok = session.resolveResult(String(req.query.clientId || ""), req.body);
         res.status(ok ? 200 : 409).json({ ok });
     });
+    app.get("/runtime/status", route(async (_req, res) => res.json({ ok: true, sqlite: true, node: process.version, comfyui: await comfyUi.status(), ffmpeg: await videoConcat.status() })));
+    app.get("/runtime/tasks/:id", (req, res) => runtimeTaskResponse(req, res, runtimeDb));
+    app.post("/runtime/media", route(async (req, res) => res.status(201).json({ ok: true, media: await storeRuntimeMedia(String(req.body?.name || "media.bin"), String(req.body?.dataUrl || "")) })));
+    app.get("/runtime/media-file", route(async (req, res) => {
+        const file = runtimeMediaFile(String(req.query.file || ""));
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        res.type(path.extname(file)).send(await readFile(file));
+    }));
+    app.get("/comfy/status", route(async (_req, res) => res.json({ ok: true, ...(await comfyUi.status()) })));
+    app.get("/comfy/media", route(async (req, res) => {
+        const filename = String(req.query.filename || "");
+        if (!filename || filename.includes("..") || filename.includes("\\")) return void res.status(400).json({ ok: false, error: "媒体文件名无效" });
+        const query = new URLSearchParams({ filename, subfolder: String(req.query.subfolder || ""), type: String(req.query.type || "output") });
+        const response = await fetch(`${comfyUi.getUrl()}/view?${query.toString()}`);
+        if (!response.ok) return void res.status(response.status).end();
+        res.type(response.headers.get("content-type") || "application/octet-stream").send(Buffer.from(await response.arrayBuffer()));
+    }));
+    app.get("/comfy/config", (_req, res) => res.json({ ok: true, url: comfyUi.getUrl() }));
+    app.put("/comfy/config", (req, res) => res.json({ ok: true, url: comfyUi.setUrl(String(req.body?.url || "")) }));
+    app.get("/comfy/presets", (_req, res) => res.json({ ok: true, data: comfyUi.presets() }));
+    app.post("/comfy/tasks", route(async (req, res) => res.status(202).json({ ok: true, task: await comfyUi.run(String(req.body?.preset || ""), objectBody(req.body?.input), objectBody(req.body?.params), typeof req.body?.comfyUrl === "string" ? req.body.comfyUrl : undefined) })));
+    app.get("/comfy/tasks/:id", (req, res) => runtimeTaskResponse(req, res, runtimeDb, "comfyui:"));
+    app.post("/comfy/tasks/:id/cancel", (req, res) => res.json({ ok: true, task: comfyUi.cancel(routeParam(req.params.id)) }));
+    app.get("/runninghub/status", (_req, res) => res.json({ ok: true, ...runningHub.status() }));
+    app.get("/runninghub/config", (_req, res) => {
+        const value = runningHub.getConfig();
+        res.json({ ok: true, config: maskRunningHubConfig(value) });
+    });
+    app.put("/runninghub/config", (req, res) => {
+        const body = objectBody(req.body);
+        const current = runningHub.getConfig();
+        const patch = { ...body, ...(body.apiKey === "********" ? { apiKey: current.apiKey } : {}), ...(body.walletApiKey === "********" ? { walletApiKey: current.walletApiKey } : {}) };
+        res.json({ ok: true, config: maskRunningHubConfig(runningHub.setConfig(patch)) });
+    });
+    app.post("/runninghub/tasks", route(async (req, res) => res.status(202).json({ ok: true, task: await runningHub.run(objectBody(req.body?.input), objectBody(req.body?.params)) })));
+    app.get("/runninghub/tasks/:id", (req, res) => runtimeTaskResponse(req, res, runtimeDb, "runninghub:"));
+    app.post("/runninghub/tasks/:id/cancel", (req, res) => res.json({ ok: true, task: runningHub.cancel(routeParam(req.params.id)) }));
+    app.get("/ffmpeg/status", route(async (_req, res) => res.json({ ok: true, ...(await videoConcat.status()) })));
+    app.post("/video-concat/tasks", route(async (req, res) => res.status(202).json({ ok: true, task: await videoConcat.run(Array.isArray(req.body?.videos) ? req.body.videos.map(String) : [], String(req.body?.output || ""), req.body?.longEdge === "auto" || req.body?.longEdge === undefined ? "auto" : Number(req.body.longEdge)) })));
     app.get("/agent/attachments/:attachmentId", route(async (req, res) => {
         const attachment = session.getTurnAttachment(String(req.query.clientId || ""), routeParam(req.params.attachmentId));
         const data = attachment.dataUrl.split(",", 2)[1];
@@ -169,7 +217,16 @@ export function startHttpServer() {
         res.setHeader("Cache-Control", "no-store");
         res.type(path.extname(filePath)).send(await readFile(filePath));
     }));
-    app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
+    app.post("/api/tools", route(async (req, res) => {
+        const name = String(req.body?.name || "");
+        const input = objectBody(req.body?.input);
+        if (name === "comfyui_status") return void res.json({ ok: true, result: await comfyUi.status() });
+        if (name === "comfyui_list_presets") return void res.json({ ok: true, result: comfyUi.presets() });
+        if (name === "comfyui_run") return void res.json({ ok: true, result: await comfyUi.run(String(input.preset || ""), objectBody(input.input), objectBody(input.params)) });
+        if (name === "comfyui_get_task") return void res.json({ ok: true, result: runtimeDb.getTask(String(input.taskId || "")) });
+        if (name === "comfyui_cancel_task") return void res.json({ ok: true, result: comfyUi.cancel(String(input.taskId || "")) });
+        return void res.json({ ok: true, result: await session.callTool(name, input) });
+    }));
     app.get("/agent/codex/workspace", (_req, res) => {
         const workspace = ensureSiteWorkspace(config);
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot });
@@ -461,6 +518,20 @@ function route(handler: (req: Request, res: Response) => Promise<unknown>) {
 /** 从 Express 路由参数中读取单个字符串。 */
 function routeParam(value: string | string[]) {
     return Array.isArray(value) ? value[0] || "" : value;
+}
+
+function objectBody(value: unknown): Record<string, unknown> {
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function maskRunningHubConfig(value: { apiKey?: string; walletApiKey?: string } & object) {
+    return { ...value, apiKey: value.apiKey ? "********" : "", walletApiKey: value.walletApiKey ? "********" : "" };
+}
+
+function runtimeTaskResponse(req: Request, res: Response, database: RuntimeDatabase, kindPrefix = "") {
+    const task = database.getTask(routeParam(req.params.id));
+    if (!task || (kindPrefix && !task.kind.startsWith(kindPrefix))) return void res.status(404).json({ ok: false, error: "task not found" });
+    res.json({ ok: true, task, events: database.listEvents(task.id, Number(req.query.after || 0)) });
 }
 
 function permissionMode(value: unknown): AgentPermissionMode {

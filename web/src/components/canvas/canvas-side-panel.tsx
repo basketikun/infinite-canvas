@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, Layers, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -13,12 +13,13 @@ import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dia
 import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
-import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
+import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
+import { resolveCompositeItems } from "./asset-picker-modal";
 import type { InsertAssetPayload } from "./asset-picker-modal";
 
 const PANEL_MOTION_SECONDS = CANVAS_SIDE_PANEL_MOTION_MS / 1000;
@@ -299,13 +300,17 @@ function CheckMark({ checked, theme }: { checked: boolean; theme: CanvasTheme })
 const ASSET_GROUPS: { kind: AssetKind; icon: typeof Square }[] = [
     { kind: "image", icon: ImageIcon },
     { kind: "video", icon: Video },
+    { kind: "audio", icon: Music2 },
     { kind: "text", icon: FileText },
+    { kind: "composite", icon: Layers },
 ];
 
 function buildInsertPayload(asset: Asset): InsertAssetPayload {
     if (asset.kind === "text") return { kind: "text", content: asset.data.content, title: asset.title };
     if (asset.kind === "video") return { kind: "video", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, width: asset.data.width, height: asset.data.height };
-    return { kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title };
+    if (asset.kind === "audio") return { kind: "audio", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, bytes: asset.data.bytes, mimeType: asset.data.mimeType, durationMs: asset.data.durationMs };
+    if (asset.kind === "composite") return { kind: "composite", title: asset.title, items: resolveCompositeItems(asset.data.items, useAssetStore.getState().assets) };
+    return { kind: "image", dataUrl: (asset as ImageAsset).data.dataUrl, storageKey: (asset as ImageAsset).data.storageKey, title: asset.title };
 }
 
 const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onInsert: (payload: InsertAssetPayload) => void; theme: CanvasTheme }) {
@@ -425,8 +430,19 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
 
 function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: CanvasTheme; onInsert: () => void; onRemove: () => void }) {
     const { t } = useTranslation();
+    const handleDragStart = (event: React.DragEvent<HTMLDivElement>) => {
+        if (asset.kind === "text" || asset.kind === "composite") return;
+        const ref = asset.kind === "image"
+            ? { url: asset.data.dataUrl, dataUrl: asset.data.dataUrl, type: "image", kind: "image", name: asset.title, storageKey: asset.data.storageKey }
+            : { url: asset.data.url, type: asset.kind, kind: asset.kind, name: asset.title, storageKey: asset.data.storageKey };
+        const payload = JSON.stringify(ref);
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData("application/x-infinite-canvas-ref", payload);
+        event.dataTransfer.setData("application/json", payload);
+        event.dataTransfer.setData("text/plain", payload);
+    };
     return (
-        <div className="group relative aspect-square overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:shadow-lg" style={{ borderColor: theme.node.stroke, background: theme.node.panel }}>
+        <div draggable={asset.kind !== "text" && asset.kind !== "composite"} onDragStart={handleDragStart} className="group relative aspect-square overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:shadow-lg" style={{ borderColor: theme.node.stroke, background: theme.node.panel, cursor: asset.kind === "text" || asset.kind === "composite" ? undefined : "grab" }}>
             <AssetCover asset={asset} />
             <div className="absolute inset-0 flex items-center justify-center gap-2.5 opacity-0 transition duration-200 group-hover:opacity-100">
                 <button
@@ -452,12 +468,30 @@ function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: 
 }
 
 function AssetCover({ asset }: { asset: Asset }) {
+    const { t } = useTranslation();
     if (asset.kind === "text") return <div className="size-full overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{asset.data.content}</div>;
     if (asset.kind === "video") {
         if (asset.coverUrl) return <img src={asset.coverUrl} alt="" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
         return <video src={`${asset.data.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
     }
-    return <img src={asset.coverUrl || asset.data.dataUrl} alt="" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
+    if (asset.kind === "composite") {
+        const count = asset.data.items.length;
+        return (
+            <div className="size-full flex flex-col items-center justify-center gap-1 bg-stone-100 dark:bg-stone-800">
+                <div className="text-[11px] font-medium text-stone-500 dark:text-stone-400">{t("assets.kinds.composite")}</div>
+                <div className="text-[10px] text-stone-400 dark:text-stone-500">{count} {count === 1 ? "item" : "items"}</div>
+            </div>
+        );
+    }
+    if (asset.kind === "audio") {
+        return (
+            <div className="size-full flex flex-col items-center justify-center gap-1 bg-stone-100 dark:bg-stone-800">
+                <div className="text-[11px] font-medium text-stone-500 dark:text-stone-400">{t("assets.kinds.audio")}</div>
+                {asset.data.durationMs ? <div className="text-[10px] text-stone-400 dark:text-stone-500">{Math.round(asset.data.durationMs / 1000)}s</div> : null}
+            </div>
+        );
+    }
+    return <img src={asset.coverUrl || (asset as ImageAsset).data.dataUrl} alt="" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
 }
 
 // ---------------------------------------------------------------------------

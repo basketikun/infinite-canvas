@@ -33,6 +33,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
         const baseUrl = !draft.baseUrl.trim() || draft.baseUrl.trim() === defaultBaseUrlForApiFormat(draft.apiFormat) ? defaultBaseUrlForApiFormat(apiFormat) : draft.baseUrl;
         patch({ apiFormat, baseUrl });
     };
+    const isComfy = draft.kind === "comfyui";
 
     const applySelection = (names: string[]) => {
         const map = new Map(draft.models.map((model) => [model.name, model]));
@@ -71,15 +72,19 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                 </label>
                 <label className="block">
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.protocol")}</span>
-                    <Select className="w-full" value={draft.apiFormat} options={apiFormatOptions} onChange={changeApiFormat} />
+                    <Select disabled={isComfy} className="w-full" value={draft.apiFormat} options={apiFormatOptions} onChange={changeApiFormat} />
+                </label>
+                <label className="block">
+                    <span className="mb-1 block text-sm font-medium">渠道类型</span>
+                    <Select className="w-full" value={draft.kind || "api"} options={[{ label: "云端 API", value: "api" }, { label: "本地 ComfyUI", value: "comfyui" }]} onChange={(kind) => patch({ kind })} />
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.baseUrl")}</span>
-                    <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder="https://api.example.com" />
+                    <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder={isComfy ? "http://127.0.0.1:8188" : "https://api.example.com"} />
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">API Key</span>
-                    <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
+                    <Input.Password disabled={isComfy} value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder={isComfy ? "无需 API Key" : "sk-..."} />
                 </label>
             </div>
 

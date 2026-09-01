@@ -8,6 +8,9 @@ data/
 *.tsbuildinfo
 .DS_Store
 .idea
+.codegraph/
+.hermes/
+.learnings/
 web/dist
 
 **/dist

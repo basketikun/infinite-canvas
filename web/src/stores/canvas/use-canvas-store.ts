@@ -18,6 +18,7 @@ export type CanvasProject = {
     activeChatId: string | null;
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
+    globalPrompt: string;
     viewport: ViewportTransform;
 };
 
@@ -30,7 +31,7 @@ type CanvasStore = {
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
     replaceProjects: (projects: CanvasProject[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
+    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "globalPrompt" | "viewport">>) => void;
 };
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
@@ -79,6 +80,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     activeChatId: null,
                     backgroundMode: "lines",
                     showImageInfo: false,
+                    globalPrompt: "",
                     viewport: initialViewport,
                 };
                 set((state) => ({ projects: [project, ...state.projects] }));
@@ -97,6 +99,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     activeChatId: source.activeChatId || null,
                     backgroundMode: source.backgroundMode || "lines",
                     showImageInfo: source.showImageInfo || false,
+                    globalPrompt: source.globalPrompt || "",
                     viewport: source.viewport || initialViewport,
                 };
                 set((state) => ({ projects: [project, ...state.projects] }));

@@ -40,6 +40,8 @@ export type AgentSkillDraftInput = { source: "conversation" | "canvas"; threadId
 export type AgentSkillsResponse = { ok?: boolean; data?: AgentSkillSummary[]; errors?: unknown[] };
 export type AgentSkillResponse = { ok?: boolean; data?: AgentSkillDetail };
 export type AgentSkillDraftResponse = { ok?: boolean; data?: AgentSkillDraft };
+export type ComfyPreset = { id: string; name: string; kind: "image" | "video"; inputs: string[]; params: string[] };
+export type ComfyPresetsResponse = { ok?: boolean; data?: ComfyPreset[] };
 
 export async function postState(endpoint: string, token: string, clientId: string, snapshot: CanvasAgentSnapshot | null) {
     try {
@@ -52,6 +54,18 @@ export async function postState(endpoint: string, token: string, clientId: strin
     } catch {
         return false;
     }
+}
+
+export function fetchComfyPresets(endpoint: string, token: string) {
+    return fetchAgentJson<ComfyPresetsResponse>(endpoint, token, "/comfy/presets");
+}
+
+export function fetchComfyStatus(endpoint: string, token: string) {
+    return fetchAgentJson<{ ok?: boolean; connected?: boolean; url?: string; error?: string }>(endpoint, token, "/comfy/status");
+}
+
+export function syncRuntimeMedia(endpoint: string, token: string, name: string, dataUrl: string) {
+    return fetchAgentJson<{ ok?: boolean; media?: { id: string; path: string; name: string; mimeType: string; bytes: number } }>(endpoint, token, "/runtime/media", jsonPost({ name, dataUrl }));
 }
 
 export async function activateAgentClient(endpoint: string, token: string, clientId: string) {

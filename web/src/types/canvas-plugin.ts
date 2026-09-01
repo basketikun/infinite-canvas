@@ -16,6 +16,10 @@ export type GenerateVideoOptions = GenerateOptions & { size?: string; seconds?: 
 export type GenerateVideoResult = { url: string; mimeType: string; width?: number; height?: number; durationMs?: number };
 export type GenerateTextOptions = { signal?: AbortSignal; model?: string; system?: string; onDelta?: (text: string) => void };
 export type GenerateTextResult = { text: string };
+export type LocalH3Input = { video?: { name: string; dataUrl?: string; url?: string }; references?: Array<{ name: string; dataUrl?: string; url?: string }>; audios?: Array<{ name: string; dataUrl?: string; url?: string }>; previousVideo?: { name: string; dataUrl?: string; url?: string } };
+export type LocalH3Result = { url: string; mimeType: string; taskId?: string; width?: number; height?: number; durationMs?: number; segments?: Array<{ media?: Array<{ url: string; mimeType: string }> }> };
+export type LocalH3Options = { signal?: AbortSignal; onTaskId?: (taskId: string) => void };
+export type LocalH3Task = { id: string; status: "queued" | "running" | "succeeded" | "failed" | "cancelled"; progress: number; result?: LocalH3Result | null; error?: string | null };
 export type PluginModelCapability = "image" | "video" | "text" | "audio";
 export type ModelOption = { value: string; label: string };
 
@@ -23,6 +27,10 @@ export type CanvasPluginAi = {
     generateImage: (prompt: string, options?: GenerateImageOptions) => Promise<GenerateImageResult>;
     generateVideo: (prompt: string, options?: GenerateVideoOptions) => Promise<GenerateVideoResult>;
     generateText: (prompt: string, options?: GenerateTextOptions) => Promise<GenerateTextResult>;
+    runLocalH3: (prompt: string, input: LocalH3Input, params: Record<string, unknown>, options?: LocalH3Options) => Promise<LocalH3Result>;
+    getLocalH3Task: (taskId: string) => Promise<LocalH3Task>;
+    runRunningHubH3: (prompt: string, input: LocalH3Input, params: Record<string, unknown>, options?: LocalH3Options) => Promise<LocalH3Result>;
+    getRunningHubH3Task: (taskId: string) => Promise<LocalH3Task>;
     listModels: (capability?: PluginModelCapability) => ModelOption[];
     defaultModel: (capability: PluginModelCapability) => string;
 };
@@ -100,6 +108,7 @@ export type CanvasBuiltinPanelConfig = {
 // Shared node definition used by both built-in and plugin nodes.
 export type CanvasNodeDefinition = {
     type: string; // Built-ins use values such as "image"; plugins should use "<pluginId>:<name>".
+    legacyTypes?: string[]; // Older canvas node types migrated by this plugin, e.g. smart-minimax.
     title: string;
     icon: ReactNode;
     description?: string;

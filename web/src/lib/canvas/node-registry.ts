@@ -18,6 +18,10 @@ export function registerNodeDefinitions(defs: CanvasNodeDefinition[], pluginId =
     defs.forEach((def) => {
         definitions.set(def.type, def);
         ownerByType.set(def.type, pluginId);
+        for (const legacyType of def.legacyTypes || []) {
+            definitions.set(legacyType, def);
+            ownerByType.set(legacyType, pluginId);
+        }
     });
     bump();
 }
@@ -40,7 +44,10 @@ export function getNodePluginId(type: string) {
 }
 
 export function listNodeDefinitions() {
-    return Array.from(definitions.values());
+    // Legacy aliases point to the same plugin definition and are only for
+    // loading old canvas data. They must not create duplicate entries in the
+    // node creation menu (e.g. H3 + smart-minimax + minimax).
+    return Array.from(new Set(definitions.values()));
 }
 
 export function isRegisteredNodeType(type: string) {

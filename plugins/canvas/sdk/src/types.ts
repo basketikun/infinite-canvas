@@ -183,6 +183,10 @@ export type GenerateTextOptions = {
 export type GenerateTextResult = {
     text: string;
 };
+export type LocalH3Input = { video?: { name: string; dataUrl?: string; url?: string }; references?: Array<{ name: string; dataUrl?: string; url?: string }>; audios?: Array<{ name: string; dataUrl?: string; url?: string }>; previousVideo?: { name: string; dataUrl?: string; url?: string } };
+export type LocalH3Result = { url: string; mimeType: string; taskId?: string; width?: number; height?: number; durationMs?: number; segments?: Array<{ media?: Array<{ url: string; mimeType: string }> }> };
+export type LocalH3Options = { signal?: AbortSignal; onTaskId?: (taskId: string) => void };
+export type LocalH3Task = { id: string; status: "queued" | "running" | "succeeded" | "failed" | "cancelled"; progress: number; result?: LocalH3Result | null; error?: string | null };
 
 // 一个可选模型:value 传回给 generateXxx({ model }),label 用于展示
 export type ModelCapability = "image" | "video" | "text" | "audio";
@@ -193,6 +197,10 @@ export type CanvasPluginAi = {
     generateImage: (prompt: string, options?: GenerateImageOptions) => Promise<GenerateImageResult>;
     generateVideo: (prompt: string, options?: GenerateVideoOptions) => Promise<GenerateVideoResult>;
     generateText: (prompt: string, options?: GenerateTextOptions) => Promise<GenerateTextResult>;
+    runLocalH3: (prompt: string, input: LocalH3Input, params: Record<string, unknown>, options?: LocalH3Options) => Promise<LocalH3Result>;
+    getLocalH3Task: (taskId: string) => Promise<LocalH3Task>;
+    runRunningHubH3: (prompt: string, input: LocalH3Input, params: Record<string, unknown>, options?: LocalH3Options) => Promise<LocalH3Result>;
+    getRunningHubH3Task: (taskId: string) => Promise<LocalH3Task>;
     // 列出某能力下用户已配置的可选模型;不传能力则返回全部
     listModels: (capability?: ModelCapability) => ModelOption[];
     // 该能力当前默认选中的模型 value(可作为下拉框初始值)
@@ -266,6 +274,7 @@ export type CanvasBuiltinPanelConfig = {
 
 export type CanvasNodeDefinition = {
     type: string; // 建议 "<pluginId>:<name>",全局唯一
+    legacyTypes?: string[]; // 旧画布类型别名,用于导入时兼容
     title: string;
     icon: ReactNode; // emoji 字符串或任意 ReactNode
     description?: string;

@@ -73,7 +73,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     const finishConfig = () => {
-        const ready = config.channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
+        const ready = config.channels.some((channel) => channel.baseUrl.trim() && channel.models.length && (channel.kind === "comfyui" || channel.apiKey.trim()));
         setConfigDialogOpen(false);
         if (!ready) return;
         message.success(t(shouldPromptContinue ? "config.savedContinue" : "config.saved"));
@@ -95,6 +95,15 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const addChannel = () => {
         const channel = createModelChannel({ name: t("config.channels.numberedName", { count: config.channels.length + 1 }) });
+        updateChannels([...config.channels, channel]);
+        setEditingChannelId(channel.id);
+    };
+    const addComfyChannel = () => {
+        const channel = createModelChannel({ name: "本地 ComfyUI", kind: "comfyui", baseUrl: "http://127.0.0.1:8188", models: [
+            { name: "z-image", capability: "image" },
+            { name: "flux2-klein", capability: "image" },
+            { name: "flashvsr-1.1", capability: "video" },
+        ] });
         updateChannels([...config.channels, channel]);
         setEditingChannelId(channel.id);
     };
@@ -189,6 +198,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                     <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
                                         {t("config.channels.add")}
                                     </Button>
+                                    <Button icon={<Wifi className="size-4" />} onClick={addComfyChannel}>添加本地 ComfyUI</Button>
                                 </div>
                                 <div className="space-y-2">
                                     {config.channels.map((channel) => (
@@ -196,7 +206,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             <div className="min-w-0">
                                                 <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
                                                 <div className="mt-1 truncate text-xs text-stone-500">
-                                                    {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
+                                                    {(channel.kind === "comfyui" ? "本地 ComfyUI" : apiFormatLabel(channel.apiFormat))} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
                                                 </div>
                                             </div>
                                             <div className="flex shrink-0 gap-2">
