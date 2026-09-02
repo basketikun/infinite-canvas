@@ -43,6 +43,14 @@ export type Asset = {
     createdAt: string; updatedAt: string;
 };
 export type CanvasProject = Record<string, unknown> & { id: string };
+export type PluginDeclaration = {
+    id: string;
+    name: string;
+    version: string;
+    enabled: boolean;
+    tools: Array<Record<string, unknown>>;
+    updatedAt: string;
+};
 
 // ── Database ──────────────────────────────────────────────────────────────────
 
@@ -154,6 +162,14 @@ export class BackendDatabase {
                 value_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS plugin_declarations (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                version TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                tools_json TEXT NOT NULL DEFAULT '[]',
+                updated_at TEXT NOT NULL
+            );
         `);
         const version = this.db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version?: number } | undefined;
         if (!version?.version) {
@@ -207,6 +223,33 @@ export class BackendDatabase {
         const row = this.db.prepare("SELECT data_json FROM canvas_projects WHERE id = ?").get(id) as { data_json?: string } | undefined;
         if (!row?.data_json) return null;
         try { return JSON.parse(row.data_json) as CanvasProject; } catch { return null; }
+    }
+
+    listPluginDeclarations(): PluginDeclaration[] {
+        const rows = this.db.prepare("SELECT * FROM plugin_declarations ORDER BY id").all() as Array<Record<string, unknown>>;
+        return rows.flatMap((row) => {
+            try {
+                const tools = JSON.parse(String(row.tools_json || "[]"));
+                return [{ id: String(row.id), name: String(row.name), version: String(row.version), enabled: Boolean(row.enabled), tools: Array.isArray(tools) ? tools : [], updatedAt: String(row.updated_at) }];
+            } catch { return []; }
+        });
+    }
+
+    replacePluginDeclarations(declarations: PluginDeclaration[]): PluginDeclaration[] {
+        const now = new Date().toISOString();
+        this.db.exec("BEGIN IMMEDIATE");
+        try {
+            const upsert = this.db.prepare("INSERT INTO plugin_declarations (id, name, version, enabled, tools_json, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, version=excluded.version, enabled=excluded.enabled, tools_json=excluded.tools_json, updated_at=excluded.updated_at");
+            for (const declaration of declarations) {
+                if (!declaration?.id) continue;
+                upsert.run(declaration.id, declaration.name || declaration.id, declaration.version || "0.0.0", declaration.enabled ? 1 : 0, JSON.stringify(declaration.tools || []), declaration.updatedAt || now);
+            }
+            this.db.exec("COMMIT");
+        } catch (error) {
+            this.db.exec("ROLLBACK");
+            throw error;
+        }
+        return this.listPluginDeclarations();
     }
 
     // ── assets ────────────────────────────────────────────────────────────

@@ -84,6 +84,16 @@ export class BackendClient {
         return this.put<{ ok: boolean }>("/canvas/assets", { assets, folders });
     }
 
+    async listPluginDeclarations() {
+        const data = await this.get<{ ok: boolean; declarations?: unknown[] }>("/plugins/mcp");
+        return data.declarations || [];
+    }
+
+    async replacePluginDeclarations(declarations: unknown[]) {
+        const data = await this.put<{ ok: boolean; declarations?: unknown[] }>("/plugins/mcp", { declarations });
+        return data.declarations || [];
+    }
+
     // ── Media ────────────────────────────────────────────────────────────
 
     async uploadMedia(options: { name: string; dataUrl?: string; mimeType?: string; width?: number; height?: number; durationMs?: number }): Promise<{ storageKey: string; url: string; mimeType: string; bytes: number; width: number | null; height: number | null; durationMs: number | null }> {

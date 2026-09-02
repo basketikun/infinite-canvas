@@ -2,8 +2,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z, type ZodRawShape, type ZodTypeAny } from "zod";
 
 import { RuntimeDatabase } from "../runtime/database.js";
-import { createBackendClient, proxyComfyUi, type ComfyUiClient } from "../runtime/comfy-client.js";
-import { ComfyUiBridge } from "../runtime/comfyui.js";
+import { BackendClient } from "../runtime/backend-client.js";
+import { backendComfyUi, createBackendClient, type ComfyUiClient } from "../runtime/comfy-client.js";
 import { loadConfig, type CanvasAgentConfig } from "../config.js";
 import { logger } from "../utils/logger.js";
 
@@ -79,6 +79,26 @@ export function savePluginMcpDeclarations(db: RuntimeDatabase, declarations: Plu
     db.setSetting(SETTING_KEY, declarations);
 }
 
+export async function loadPluginMcpDeclarationsFromBackend(backend: BackendClient): Promise<PluginMcpDeclaration[]> {
+    const declarations = await backend.listPluginDeclarations();
+    return declarations.flatMap((value) => {
+        if (!value || typeof value !== "object") return [];
+        const item = value as { id?: string; name?: string; version?: string; enabled?: boolean; tools?: PluginMcpToolWire[] };
+        return item.id ? [{ id: item.id, name: item.name || item.id, version: item.version || "0.0.0", mcp: { enabled: Boolean(item.enabled), tools: Array.isArray(item.tools) ? item.tools : [] } }] : [];
+    });
+}
+
+export async function savePluginMcpDeclarationsToBackend(backend: BackendClient, declarations: PluginMcpDeclaration[]) {
+    await backend.replacePluginDeclarations(declarations.map((declaration) => ({
+        id: declaration.id,
+        name: declaration.name,
+        version: declaration.version,
+        enabled: Boolean(declaration.mcp?.enabled),
+        tools: declaration.mcp?.tools || [],
+        updatedAt: new Date().toISOString(),
+    })));
+}
+
 // 构造插件 MCP 运行上下文(Agent 侧)
 export function buildPluginMcpContext(config: CanvasAgentConfig, runtimeDb: RuntimeDatabase, backend: BackendClient, comfyUi: ComfyUiClient): PluginMcpContext {
     const readNodes = async (): Promise<AgentCanvasNode[]> => {
@@ -136,7 +156,7 @@ export class PluginMcpRegistry {
 
     /** 浏览器启用/禁用时调用:持久化声明并在当前进程立即应用。 */
     async syncFromBrowser(declarations: PluginMcpDeclaration[]) {
-        savePluginMcpDeclarations(this.context.runtimeDb, declarations);
+        await savePluginMcpDeclarationsToBackend(this.context.backend, declarations);
         await this.apply(declarations);
     }
 
@@ -275,14 +295,14 @@ export async function startPluginMcp(server: McpServer): Promise<PluginMcpRegist
     const runtimeDb = new RuntimeDatabase();
     const backend = createBackendClient(config.backendUrl || `http://127.0.0.1:17370`);
     /** ComfyUI 走 backend(总后台权威),MCP 侧不再直连本地 ComfyUI 实例。 */
-    const comfyUi = proxyComfyUi(backend, new ComfyUiBridge(runtimeDb));
+    const comfyUi = backendComfyUi(backend, () => []);
     const context = buildPluginMcpContext(config, runtimeDb, backend, comfyUi);
     const registry = new PluginMcpRegistry(server, context);
     // 冷启动:从 SQLite 读取已启用插件
-    await registry.apply(loadPluginMcpDeclarations(runtimeDb));
-    // 轮询:捕获浏览器(HTTP 进程)对插件启用态的变更(两个进程共享同一 SQLite)
+    await registry.apply(await loadPluginMcpDeclarationsFromBackend(backend));
+    // 轮询仅用于兼容旧版浏览器通知；声明本身由 Backend 持久化。
     const timer = setInterval(() => {
-        registry.apply(loadPluginMcpDeclarations(runtimeDb)).catch((error) => logger.warn("plugin mcp sync failed", error));
+        loadPluginMcpDeclarationsFromBackend(backend).then((declarations) => registry.apply(declarations)).catch((error) => logger.warn("plugin mcp sync failed", error));
     }, 3000);
     process.on("beforeExit", () => clearInterval(timer));
     return registry;

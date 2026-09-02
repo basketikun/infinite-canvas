@@ -9,6 +9,8 @@ import { createLogger } from "./logger.js";
 import { createStores } from "./stores/index.js";
 import { ComfyUiBackend } from "./comfyui/bridge.js";
 import { registerComfyRoutes } from "./server/comfy-routes.js";
+import { BackendEventBus } from "./events.js";
+import { createBackendRuntimeContext } from "./runtime/context.js";
 
 const logger = createLogger("main");
 
@@ -19,9 +21,11 @@ ensureDataDirs();
 const db = new BackendDatabase();
 const stores = createStores(db);
 const comfy = new ComfyUiBackend({ tasks: stores.tasks, settings: stores.settings });
+const events = new BackendEventBus();
+const runtime = createBackendRuntimeContext({ db, stores, comfy, events });
 
-const { app } = startServer(db, config, { comfy });
-registerComfyRoutes({ app, stores, config }, comfy);
+const { app } = startServer(runtime.db, config, { comfy: runtime.comfy, events: runtime.events });
+registerComfyRoutes({ app, stores: runtime.stores, config, events: runtime.events }, runtime.comfy);
 
 const server = app.listen(config.port, "127.0.0.1", () => {
     logger.info(`总后台已启动 http://127.0.0.1:${config.port}`, { pid: process.pid, version: readVersion() });

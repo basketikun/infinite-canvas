@@ -17,14 +17,16 @@ import { SkillStore, SkillStoreError } from "../skills/store.js";
 import { RuntimeDatabase } from "../runtime/database.js";
 import { BackendClient } from "../runtime/backend-client.js";
 import { createBackendClient, proxyComfyUi, resolveComfyTask, type ComfyUiClient } from "../runtime/comfy-client.js";
-import { loadPluginMcpDeclarations, savePluginMcpDeclarations, type PluginMcpDeclaration } from "./plugin-mcp.js";
+import { loadPluginMcpDeclarationsFromBackend, savePluginMcpDeclarationsToBackend, type PluginMcpDeclaration } from "./plugin-mcp.js";
 import { ComfyUiBridge } from "../runtime/comfyui.js";
 import { RunningHubBridge } from "../runtime/runninghub.js";
 import { VideoConcatService } from "../runtime/video-concat.js";
 import { runtimeMediaFile } from "../runtime/media.js";
 
-/** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
-export function startHttpServer() {
+export type AgentHttpOptions = { listen?: boolean };
+
+/** 创建 Agent Express 应用；嵌入 Backend 时不监听端口。 */
+export function createAgentApp(options: AgentHttpOptions = {}) {
     const config = loadConfig(true);
     const port = Number(process.env.PORT) || Number(new URL(config.url).port) || DEFAULT_PORT;
     config.url = `http://127.0.0.1:${port}`;
@@ -289,11 +291,11 @@ export function startHttpServer() {
     }));
     app.post("/api/plugins/mcp", route(async (req, res) => {
         const declarations = Array.isArray(req.body?.plugins) ? (req.body.plugins as PluginMcpDeclaration[]) : [];
-        savePluginMcpDeclarations(runtimeDb, declarations);
+        await savePluginMcpDeclarationsToBackend(backend, declarations);
         res.json({ ok: true, plugins: declarations.map((declaration) => ({ id: declaration.id, enabled: declaration.mcp?.enabled ?? false })) });
     }));
     app.get("/api/plugins/mcp", route(async (_req, res) => {
-        res.json({ ok: true, plugins: loadPluginMcpDeclarations(runtimeDb) });
+        res.json({ ok: true, plugins: await loadPluginMcpDeclarationsFromBackend(backend) });
     }));
     app.get("/agent/codex/workspace", (_req, res) => {
         const workspace = ensureSiteWorkspace(config);
@@ -556,7 +558,7 @@ export function startHttpServer() {
         res.status(500).json({ ok: false, error: error.message });
     });
 
-    app.listen(port, "127.0.0.1", () => {
+    if (options.listen !== false) app.listen(port, "127.0.0.1", () => {
         console.log("Infinite Canvas Agent");
         checkVersions();
         console.log(`Local URL: ${config.url}`);
@@ -576,6 +578,12 @@ export function startHttpServer() {
             }).finally(() => session.endCodexMutation()).catch(() => undefined);
         }
     });
+    return { app, config, session, skillStore, runtimeDb, backend, comfyUi };
+}
+
+/** standalone 兼容入口；新架构由 Backend 持有唯一 HTTP listener。 */
+export function startHttpServer() {
+    return createAgentApp({ listen: true });
 }
 
 /** 将异步 Express 路由异常交给统一错误处理中间件。 */

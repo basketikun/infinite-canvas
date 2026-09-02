@@ -4,9 +4,10 @@ import type { Request, Response } from "express";
 import { type ResolvedConfig } from "../config.js";
 import type { ComfyUiBackend } from "../comfyui/bridge.js";
 import type { Stores } from "../stores/types.js";
+import type { BackendEventBus } from "../events.js";
 
 /** ComfyUI Bridge 路由（总后台权威，Agent 变纯代理）。 */
-export function registerComfyRoutes(ctx: { app: import("express").Express; stores: Stores; config: ResolvedConfig }, bridge: ComfyUiBackend) {
+export function registerComfyRoutes(ctx: { app: import("express").Express; stores: Stores; config: ResolvedConfig; events?: BackendEventBus }, bridge: ComfyUiBackend) {
     const { app, stores, config } = ctx;
 
     app.get("/comfy/status", async (_req, res) => {
@@ -33,14 +34,14 @@ export function registerComfyRoutes(ctx: { app: import("express").Express; store
     app.get("/comfy/presets", (_req, res) => res.json({ ok: true, data: bridge.presets() }));
 
     app.post("/comfy/tasks", async (req, res) => {
+        const task = await bridge.run(
+            String(req.body?.preset || ""), objectBody(req.body?.input), objectBody(req.body?.params),
+            typeof req.body?.comfyUrl === "string" ? req.body.comfyUrl : undefined,
+        );
+        ctx.events?.publish({ type: "task.created", entityId: task.id, payload: task });
         res.status(202).json({
             ok: true,
-            task: await bridge.run(
-                String(req.body?.preset || ""),
-                objectBody(req.body?.input),
-                objectBody(req.body?.params),
-                typeof req.body?.comfyUrl === "string" ? req.body.comfyUrl : undefined,
-            ),
+            task,
         });
     });
 
@@ -51,7 +52,9 @@ export function registerComfyRoutes(ctx: { app: import("express").Express; store
     });
 
     app.post("/comfy/tasks/:id/cancel", (req, res) => {
-        res.json({ ok: true, task: bridge.cancel(req.params.id) });
+        const task = bridge.cancel(req.params.id);
+        ctx.events?.publish({ type: "task.updated", entityId: task.id, payload: task });
+        res.json({ ok: true, task });
     });
 
     /** ComfyUI 输出媒体落地到总后台 runtime-media（H3 分段合并结果等）。 */

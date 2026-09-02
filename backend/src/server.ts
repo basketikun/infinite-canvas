@@ -10,17 +10,20 @@ import type { ComfyUiBackend } from "./comfyui/bridge.js";
 import { createLogger } from "./logger.js";
 import { createStores } from "./stores/index.js";
 import type { GenerationLogInput, LogDeleteScope, Stores } from "./stores/types.js";
+import { BackendEventBus } from "./events.js";
 
 const logger = createLogger("backend");
 
 /** startServer 的可选依赖（comfy 路由由 index.ts 单独挂载）。 */
 export type ServerDeps = {
     comfy?: ComfyUiBackend;
+    events?: BackendEventBus;
 };
 
 /** 启动总后台 HTTP 服务，返回 Express app（listen 由 index.ts 负责）。 */
 export function startServer(db: Parameters<typeof createStores>[0], config: ResolvedConfig, deps: ServerDeps = {}) {
     const stores: Stores = createStores(db);
+    const events = deps.events ?? new BackendEventBus();
     const app = express();
     app.disable("x-powered-by");
     app.use(express.json({ limit: "50mb" }));
@@ -82,6 +85,17 @@ export function startServer(db: Parameters<typeof createStores>[0], config: Reso
         if (deps.comfy) extra.comfyui = await deps.comfy.status();
         res.json({ ok: true, ...extra });
     });
+    app.get("/events", (req, res) => {
+        res.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+        res.flushHeaders();
+        const write = (event: import("./events.js").BackendEvent) => {
+            res.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+        };
+        for (const event of events.since(req.headers["last-event-id"] as string | undefined)) write(event);
+        const unsubscribe = events.subscribe(write);
+        const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15_000);
+        req.on("close", () => { clearInterval(heartbeat); unsubscribe(); });
+    });
 
     // ── Canvas projects ──────────────────────────────────────────────────
     app.get("/canvas/projects", (_req, res) => {
@@ -92,15 +106,21 @@ export function startServer(db: Parameters<typeof createStores>[0], config: Reso
         const projects = Array.isArray(body.projects)
             ? body.projects.filter((p): p is CanvasProject => p && typeof p === "object" && !Array.isArray(p) && !!p.id)
             : [];
-        res.json({ ok: true, projects: stores.projects.replaceAll(projects) });
+        const result = stores.projects.replaceAll(projects);
+        events.publish({ type: "canvas.updated", payload: { projects: result } });
+        res.json({ ok: true, projects: result });
     });
     app.post("/canvas/projects", (req, res) => {
         const project = req.body as CanvasProject;
         if (!project?.id) return void res.status(400).json({ ok: false, error: "project.id 必填" });
-        res.status(201).json({ ok: true, project: stores.projects.upsert(project) });
+        const result = stores.projects.upsert(project);
+        events.publish({ type: "canvas.updated", entityId: result.id, payload: result });
+        res.status(201).json({ ok: true, project: result });
     });
     app.delete("/canvas/projects/:id", (req, res) => {
-        res.json({ ok: true, deleted: stores.projects.delete(req.params.id) });
+        const deleted = stores.projects.delete(req.params.id);
+        events.publish({ type: "canvas.updated", entityId: req.params.id, payload: { deleted } });
+        res.json({ ok: true, deleted });
     });
 
     // ── Assets ───────────────────────────────────────────────────────────
@@ -218,6 +238,16 @@ export function startServer(db: Parameters<typeof createStores>[0], config: Reso
     });
 
     // ── Generation logs ──────────────────────────────────────────────────
+    app.get("/plugins/mcp", (_req, res) => {
+        res.json({ ok: true, declarations: db.listPluginDeclarations() });
+    });
+    app.put("/plugins/mcp", (req, res) => {
+        const declarations = Array.isArray(req.body?.declarations) ? req.body.declarations : [];
+        const result = db.replacePluginDeclarations(declarations);
+        events.publish({ type: "plugin.updated", payload: { declarations: result } });
+        res.json({ ok: true, declarations: result });
+    });
+
     app.get("/generation-logs", (req, res) => {
         const projectId = req.query.projectId as string | undefined;
         const nodeId = req.query.nodeId as string | undefined;
@@ -231,11 +261,15 @@ export function startServer(db: Parameters<typeof createStores>[0], config: Reso
         if (!body.projectId || !body.platform || !body.startedAt) {
             return void res.status(400).json({ ok: false, error: "projectId、platform、startedAt 为必填项" });
         }
-        res.status(201).json({ ok: true, log: stores.logs.create(body) });
+        const log = stores.logs.create(body);
+        events.publish({ type: "generation-log.updated", entityId: log.id, payload: log });
+        res.status(201).json({ ok: true, log });
     });
     app.patch("/generation-logs/:id", (req, res) => {
         try {
-            res.json({ ok: true, log: stores.logs.update(req.params.id, req.body) });
+            const log = stores.logs.update(req.params.id, req.body);
+            events.publish({ type: "generation-log.updated", entityId: log.id, payload: log });
+            res.json({ ok: true, log });
         } catch (error) {
             res.status(404).json({ ok: false, error: (error as Error).message });
         }
@@ -263,23 +297,29 @@ export function startServer(db: Parameters<typeof createStores>[0], config: Reso
     app.post("/tasks", (req, res) => {
         const body = req.body as { kind?: string; input?: Record<string, unknown>; params?: Record<string, unknown> };
         if (!body.kind) return void res.status(400).json({ ok: false, error: "kind 必填" });
-        res.status(201).json({ ok: true, task: stores.tasks.create(body.kind, body.input || {}, body.params || {}) });
+        const task = stores.tasks.create(body.kind, body.input || {}, body.params || {});
+        events.publish({ type: "task.created", entityId: task.id, payload: task });
+        res.status(201).json({ ok: true, task });
     });
     app.patch("/tasks/:id", (req, res) => {
         const patch = req.body as { status?: RuntimeTaskStatus; progress?: number; result?: Record<string, unknown> | null; error?: string | null };
         try {
-            res.json({ ok: true, task: stores.tasks.update(req.params.id, patch) });
+            const task = stores.tasks.update(req.params.id, patch);
+            events.publish({ type: task.status === "succeeded" ? "task.completed" : task.status === "failed" ? "task.failed" : "task.updated", entityId: task.id, payload: task });
+            res.json({ ok: true, task });
         } catch (error) {
             res.status(404).json({ ok: false, error: (error as Error).message });
         }
     });
     app.post("/tasks/:id/cancel", (req, res) => {
         try {
-            res.json({ ok: true, task: stores.tasks.cancel(req.params.id) });
+            const task = stores.tasks.cancel(req.params.id);
+            events.publish({ type: "task.updated", entityId: task.id, payload: task });
+            res.json({ ok: true, task });
         } catch (error) {
             res.status(409).json({ ok: false, error: (error as Error).message });
         }
     });
 
-    return { app: app as Express, stores };
+    return { app: app as Express, stores, events };
 }
