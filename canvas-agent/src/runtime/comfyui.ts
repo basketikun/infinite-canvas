@@ -420,6 +420,7 @@ function collectOutputMedia(outputs: Record<string, any>, baseUrl: string) {
     return Object.values(outputs).flatMap((output) => [ ...(output?.images || []), ...(output?.gifs || []), ...(output?.videos || []) ]).flatMap((item) => {
         if (!item?.filename) return [];
         const query = new URLSearchParams({ filename: String(item.filename), subfolder: String(item.subfolder || ""), type: String(item.type || "output") });
-        return [{ url: `${baseUrl}/view?${query.toString()}`, mimeType: String(item.type || "image").includes("video") ? "video/mp4" : "image/png", filename: String(item.filename) }];
+        const mimeType = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(String(item.filename)) ? "video/mp4" : "image/png";
+        return [{ url: `${baseUrl}/view?${query.toString()}`, mimeType, filename: String(item.filename) }];
     });
 }
