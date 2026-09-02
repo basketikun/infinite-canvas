@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Button, Input, Modal, Slider, Tooltip } from "antd";
-import { Brush, Eraser, Redo2, RotateCcw, Undo2, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Brush, Eraser, ImagePlus, Redo2, RotateCcw, Undo2, WandSparkles, ZoomIn, ZoomOut } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { readImageMeta } from "@/lib/image-utils";
@@ -10,6 +10,7 @@ import { useImageEditorViewport } from "@/components/canvas/use-image-editor-vie
 export type CanvasImageMaskEditPayload = {
     prompt: string;
     maskDataUrl: string;
+    generate: boolean;
 };
 
 type DrawMode = "paint" | "erase";
@@ -18,12 +19,14 @@ type MaskStroke = { mode: DrawMode; size: number; points: Point[] };
 type BrushPreview = { x: number; y: number; size: number; adjusting: boolean };
 
 const defaultBrushSize = 100;
-const maskFillColor = "rgba(37, 99, 235, .38)";
+const maskOverlayColor = "#2563eb";
+const maskOverlayAlpha = 0.4;
 
 export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (payload: CanvasImageMaskEditPayload) => void }) {
     const { t } = useTranslation();
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
     const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+    const imageRef = useRef<HTMLImageElement>(null);
     const drawingRef = useRef<{ active: boolean; stroke: MaskStroke | null }>({ active: false, stroke: null });
     const brushAdjustRef = useRef<{ active: boolean; pointerId: number; startX: number; startSize: number; previewX: number; previewY: number } | null>(null);
     const historyRef = useRef<MaskStroke[]>([]);
@@ -200,13 +203,14 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         return () => window.removeEventListener("keydown", handleKeyDown, true);
     }, [open, redoMask, undoMask]);
 
-    const submit = () => {
+    const submit = (generate: boolean) => {
         const nextPrompt = prompt.trim();
         const canvas = maskCanvasRef.current;
+        const element = imageRef.current;
         if (!nextPrompt) return setError(t("canvas.editors.maskPromptRequired"));
-        if (!canvas) return;
+        if (!canvas || !element) return;
         if (!canvasHasPaint(canvas)) return setError(t("canvas.editors.maskRequired"));
-        onConfirm({ prompt: nextPrompt, maskDataUrl: buildEditMask(canvas) });
+        onConfirm({ prompt: nextPrompt, maskDataUrl: buildMaskOverlay(element, canvas), generate });
     };
 
     return (
@@ -223,12 +227,13 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                                 <>
                                     <canvas ref={maskCanvasRef} width={image.width} height={image.height} className="hidden" />
                                     <div className="absolute left-0 top-0 [backface-visibility:hidden]" style={viewport.mediaStyle}>
-                                        <img src={dataUrl} alt="" className="absolute inset-0 block h-full w-full bg-transparent object-contain" draggable={false} />
+                                        <img ref={imageRef} src={dataUrl} alt="" className="absolute inset-0 block h-full w-full bg-transparent object-contain" draggable={false} />
                                         <canvas
                                             ref={previewCanvasRef}
                                             width={image.width}
                                             height={image.height}
                                             className="absolute inset-0 h-full w-full cursor-none touch-none"
+                                            style={{ opacity: maskOverlayAlpha }}
                                             onPointerDown={startDraw}
                                             onPointerMove={moveDraw}
                                             onPointerUp={stopDraw}
@@ -321,11 +326,11 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                             {t("canvas.editors.reset")}
                         </Button>
                         <div className="flex items-center gap-2">
-                            <Button icon={<X className="size-4" />} onClick={onClose}>
-                                {t("canvas.editors.cancel")}
+                            <Button icon={<ImagePlus className="size-4" />} onClick={() => submit(false)}>
+                                {t("canvas.editors.maskExport")}
                             </Button>
-                            <Button type="primary" icon={<WandSparkles className="size-4" />} onClick={submit}>
-                                {t("canvas.editors.aiEdit")}
+                            <Button type="primary" icon={<WandSparkles className="size-4" />} onClick={() => submit(true)}>
+                                {t("canvas.editors.maskGenerate")}
                             </Button>
                         </div>
                     </div>
@@ -380,8 +385,8 @@ function configurePreviewStrokeContext(context: CanvasRenderingContext2D, stroke
     context.lineJoin = "round";
     context.lineWidth = stroke.size;
     context.globalCompositeOperation = stroke.mode === "paint" ? "source-over" : "destination-out";
-    context.strokeStyle = maskFillColor;
-    context.fillStyle = maskFillColor;
+    context.strokeStyle = maskOverlayColor;
+    context.fillStyle = maskOverlayColor;
 }
 
 function replayMask(strokes: MaskStroke[], maskCanvas: HTMLCanvasElement | null, previewCanvas: HTMLCanvasElement | null) {
@@ -411,21 +416,23 @@ function canvasHasPaint(canvas: HTMLCanvasElement) {
     return false;
 }
 
-function buildEditMask(selectionCanvas: HTMLCanvasElement) {
+function buildMaskOverlay(image: HTMLImageElement, selectionCanvas: HTMLCanvasElement) {
     const canvas = document.createElement("canvas");
     canvas.width = selectionCanvas.width;
     canvas.height = selectionCanvas.height;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const context = canvas.getContext("2d");
     if (!context) return selectionCanvas.toDataURL("image/png");
-    const selectionContext = selectionCanvas.getContext("2d", { willReadFrequently: true });
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    if (!selectionContext) return canvas.toDataURL("image/png");
-    const selection = selectionContext.getImageData(0, 0, canvas.width, canvas.height);
-    const mask = context.getImageData(0, 0, canvas.width, canvas.height);
-    for (let index = 3; index < mask.data.length; index += 4) {
-        if (selection.data[index] > 0) mask.data[index] = 0;
-    }
-    context.putImageData(mask, 0, 0);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const overlay = document.createElement("canvas");
+    overlay.width = canvas.width;
+    overlay.height = canvas.height;
+    const overlayContext = overlay.getContext("2d");
+    if (!overlayContext) return canvas.toDataURL("image/png");
+    overlayContext.drawImage(selectionCanvas, 0, 0);
+    overlayContext.globalCompositeOperation = "source-in";
+    overlayContext.fillStyle = maskOverlayColor;
+    overlayContext.fillRect(0, 0, overlay.width, overlay.height);
+    context.globalAlpha = maskOverlayAlpha;
+    context.drawImage(overlay, 0, 0);
     return canvas.toDataURL("image/png");
 }
