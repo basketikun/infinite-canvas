@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 
+import { createBackendClient, resolveComfyTask } from "../../runtime/comfy-client.js";
 import { storeRuntimeMedia } from "../../runtime/media.js";
+import { loadConfig } from "../../config.js";
 import type { AgentCanvasNode, McpToolHandler, PluginMcpContext, PluginMcpModule, PluginMcpToolWire } from "../../server/plugin-mcp.js";
 
 // 一个 H3 参考图/视频/音频条目(与浏览器插件 H3Ref 对齐,此处防御式解析)
@@ -180,6 +182,20 @@ async function runSegment(context: PluginMcpContext, node: AgentCanvasNode, inde
     return context.comfyUi.run("minimax-h3", input, params);
 }
 
+let h3Backend: ReturnType<typeof createBackendClient> | null = null;
+function h3ResolveTask(context: PluginMcpContext, taskId: string) {
+    if (!h3Backend) {
+        const config = loadConfig(true);
+        h3Backend = createBackendClient(config.backendUrl || `http://127.0.0.1:17370`);
+    }
+    return resolveComfyTask(h3Backend, context.runtimeDb, taskId).catch(async (error) => {
+        // backend 未启动时直接读本地（context.runtimeDb 就是 MCP 进程的 RuntimeDatabase）
+        const task = context.runtimeDb.getTask(taskId);
+        if (!task) throw error;
+        return { task, events: context.runtimeDb.listEvents(taskId) };
+    });
+}
+
 export const pluginMcp: PluginMcpModule = {
     id: "minimax-h3",
     version: "1.2.0",
@@ -206,8 +222,7 @@ export const pluginMcp: PluginMcpModule = {
             },
             h3_get_task: async (input) => {
                 const taskId = String(input.taskId || "");
-                const task = context.runtimeDb.getTask(taskId);
-                if (!task) throw new Error(`找不到任务:${taskId}`);
+                const { task } = await h3ResolveTask(context, taskId);
                 return task;
             },
             h3_cancel_task: async (input) => {

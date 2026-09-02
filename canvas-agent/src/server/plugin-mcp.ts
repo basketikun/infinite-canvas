@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z, type ZodRawShape, type ZodTypeAny } from "zod";
 
 import { RuntimeDatabase } from "../runtime/database.js";
+import { createBackendClient, proxyComfyUi, type ComfyUiClient } from "../runtime/comfy-client.js";
 import { ComfyUiBridge } from "../runtime/comfyui.js";
 import { loadConfig, type CanvasAgentConfig } from "../config.js";
 import { logger } from "../utils/logger.js";
@@ -39,7 +40,8 @@ export type PluginMcpContext = {
     endpoint: string;
     token: string;
     runtimeDb: RuntimeDatabase;
-    comfyUi: ComfyUiBridge;
+    /** ComfyUI 能力（backend 权威 + 本地兜底；见 comfy-client.ts）。 */
+    comfyUi: ComfyUiClient;
     getCanvasNodes: () => Promise<AgentCanvasNode[]>;
     getCanvasNode: (id: string) => Promise<AgentCanvasNode | null>;
     updateCanvasNode: (id: string, patch: Partial<AgentCanvasNode>, metadataPatch?: Record<string, unknown>) => Promise<void>;
@@ -76,7 +78,7 @@ export function savePluginMcpDeclarations(db: RuntimeDatabase, declarations: Plu
 }
 
 // 构造插件 MCP 运行上下文(Agent 侧)
-export function buildPluginMcpContext(config: CanvasAgentConfig, runtimeDb: RuntimeDatabase, comfyUi: ComfyUiBridge): PluginMcpContext {
+export function buildPluginMcpContext(config: CanvasAgentConfig, runtimeDb: RuntimeDatabase, comfyUi: ComfyUiClient): PluginMcpContext {
     const readNodes = async (): Promise<AgentCanvasNode[]> => {
         const projects = runtimeDb.listCanvasProjects<{ nodes?: AgentCanvasNode[] }>();
         return projects.flatMap((project) => (Array.isArray(project.nodes) ? project.nodes : []) as AgentCanvasNode[]);
@@ -269,7 +271,9 @@ function jsonTypeToZod(node: unknown): ZodTypeAny {
 export async function startPluginMcp(server: McpServer): Promise<PluginMcpRegistry> {
     const config = loadConfig(true);
     const runtimeDb = new RuntimeDatabase();
-    const comfyUi = new ComfyUiBridge(runtimeDb);
+    const backend = createBackendClient(config.backendUrl || `http://127.0.0.1:17370`);
+    /** ComfyUI 走 backend(总后台权威),MCP 侧不再直连本地 ComfyUI 实例。 */
+    const comfyUi = proxyComfyUi(backend, new ComfyUiBridge(runtimeDb));
     const context = buildPluginMcpContext(config, runtimeDb, comfyUi);
     const registry = new PluginMcpRegistry(server, context);
     // 冷启动:从 SQLite 读取已启用插件

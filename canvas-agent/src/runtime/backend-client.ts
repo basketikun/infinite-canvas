@@ -1,6 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 
+import type { RuntimeTask, RuntimeTaskEvent } from "./types.js";
+
 /** 总后台 API 客户端（canvas-agent 作为调用方）。 */
 export class BackendClient {
     backendUrl: string;
@@ -19,22 +21,22 @@ export class BackendClient {
         );
     }
 
-    private async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+    private async request<T = unknown>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
         const url = `${this.backendUrl}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(this.backendToken)}`;
         const res = await fetch(url, {
             method,
             headers: body ? { "content-type": "application/json" } : {},
             body: body ? JSON.stringify(body) : undefined,
-            signal: AbortSignal.timeout(15_000),
+            signal: signal ?? AbortSignal.timeout(15_000),
         });
         const data = (await res.json().catch(() => ({}))) as T & { ok?: boolean; error?: string };
         if (!res.ok) throw new Error(`Backend ${method} ${path} failed: HTTP ${res.status} ${data.error || ""}`);
         return data;
     }
 
-    get<T = unknown>(path: string) { return this.request<T>("GET", path); }
-    post<T = unknown>(path: string, body?: unknown) { return this.request<T>("POST", path, body); }
-    put<T = unknown>(path: string, body?: unknown) { return this.request<T>("PUT", path, body); }
+    get<T = unknown>(path: string, signal?: AbortSignal) { return this.request<T>("GET", path, undefined, signal); }
+    post<T = unknown>(path: string, body?: unknown, signal?: AbortSignal) { return this.request<T>("POST", path, body, signal); }
+    put<T = unknown>(path: string, body?: unknown, signal?: AbortSignal) { return this.request<T>("PUT", path, body, signal); }
     patch<T = unknown>(path: string, body?: unknown) { return this.request<T>("PATCH", path, body); }
     delete<T = unknown>(path: string, body?: unknown) { return this.request<T>("DELETE", path, body); }
 
@@ -137,6 +139,60 @@ export class BackendClient {
     async cancelTask(id: string) {
         const data = await this.post<{ ok: boolean; task?: unknown }>(`/tasks/${encodeURIComponent(id)}/cancel`);
         return data.task;
+    }
+
+    // ── runtime media（H3 ref 落地，总后台 media store 权威） ─────────────
+
+    async runtimeMediaStore(name: string, dataUrl: string): Promise<{ id: string; path: string; name: string; mimeType: string; bytes: number; url: string }> {
+        const data = await this.post<{ ok: boolean; media: { id: string; path: string; name: string; mimeType: string; bytes: number; url: string } }>("/runtime/media", { name, dataUrl });
+        return data.media;
+    }
+
+    async runtimeMediaRead(name: string): Promise<ArrayBuffer> {
+        const res = await fetch(`${this.backendUrl}/runtime/media-file?name=${encodeURIComponent(name)}&token=${encodeURIComponent(this.backendToken)}`, { signal: AbortSignal.timeout(30_000) });
+        if (!res.ok) throw new Error(`Backend runtime media-file failed: HTTP ${res.status}`);
+        return res.arrayBuffer();
+    }
+
+    // ── ComfyUI Bridge（总后台权威 /comfy/*） ─────────────────────────────
+
+    async comfyStatus(): Promise<Record<string, unknown>> {
+        const data = await this.get<{ ok: boolean; connected?: boolean; url?: string; error?: string | null; [k: string]: unknown }>("/comfy/status");
+        return data as Record<string, unknown>;
+    }
+
+    async comfyModels(signal?: AbortSignal): Promise<{ models: string[]; loras: string[]; refreshedAt: string; error?: string }> {
+        const data = await this.get<{ ok: boolean; data?: { models: string[]; loras: string[]; refreshedAt: string; error?: string } }>("/comfy/models", signal);
+        if (!data.data) throw new Error("backend comfy models missing data");
+        return data.data;
+    }
+
+    async comfyRun(preset: string, input: Record<string, unknown>, params: Record<string, unknown>, baseUrl?: string) {
+        const data = await this.post<{ ok: boolean; task?: RuntimeTask }>("/comfy/tasks", { preset, input, params, ...(baseUrl ? { comfyUrl: baseUrl } : {}) });
+        if (!data.task) throw new Error("backend comfy run missing task");
+        return data.task;
+    }
+
+    async comfyGetTask(id: string, after = 0): Promise<{ task: RuntimeTask; events: RuntimeTaskEvent[] }> {
+        const data = await this.get<{ ok: boolean; task?: RuntimeTask; events?: RuntimeTaskEvent[] }>(`/comfy/tasks/${encodeURIComponent(id)}${after ? `?after=${after}` : ""}`);
+        if (!data.task) throw new Error(`backend comfy task not found: ${id}`);
+        return { task: data.task, events: data.events || [] };
+    }
+
+    async comfyCancel(id: string): Promise<RuntimeTask> {
+        const data = await this.post<{ ok: boolean; task?: RuntimeTask }>(`/comfy/tasks/${encodeURIComponent(id)}/cancel`);
+        if (!data.task) throw new Error("backend comfy cancel missing task");
+        return data.task;
+    }
+
+    async comfyConfig(): Promise<{ url: string }> {
+        const data = await this.get<{ ok: boolean; url: string }>("/comfy/config");
+        return { url: data.url };
+    }
+
+    async comfySetConfig(url: string): Promise<{ url: string }> {
+        const data = await this.put<{ ok: boolean; url: string }>("/comfy/config", { url });
+        return { url: data.url };
     }
 
     // ── Proxy to runtime bridge (Agent stays) ────────────────────────────

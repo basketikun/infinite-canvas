@@ -16,6 +16,7 @@ import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 import { RuntimeDatabase } from "../runtime/database.js";
 import { BackendClient } from "../runtime/backend-client.js";
+import { createBackendClient, proxyComfyUi, resolveComfyTask, type ComfyUiClient } from "../runtime/comfy-client.js";
 import { loadPluginMcpDeclarations, savePluginMcpDeclarations, type PluginMcpDeclaration } from "./plugin-mcp.js";
 import { ComfyUiBridge } from "../runtime/comfyui.js";
 import { RunningHubBridge } from "../runtime/runninghub.js";
@@ -33,16 +34,10 @@ export function startHttpServer() {
     const session = new CanvasSession(initialWorkspace.activeThreadId || "");
     const skillStore = new SkillStore(initialWorkspace.workspacePath);
     const runtimeDb = new RuntimeDatabase();
-    const backendUrl = config.backendUrl || `http://127.0.0.1:17370`;
-    const backendToken = process.env.INFINITE_CANVAS_BACKEND_TOKEN
-        || (() => {
-            try {
-                const cfg = JSON.parse(fs.readFileSync(path.join(CONFIG_DIR, "backend.json"), "utf8"));
-                return String(cfg.token || "");
-            } catch { return ""; }
-        })();
-    const backend = new BackendClient(backendUrl, backendToken);
-    const comfyUi = new ComfyUiBridge(runtimeDb);
+    const backend = createBackendClient(config.backendUrl || `http://127.0.0.1:17370`);
+    const localComfy = new ComfyUiBridge(runtimeDb);
+    /** ComfyUI：backend 权威，Agent 本地 bridge 做离线兜底（见 comfy-client.ts）。 */
+    const comfyUi: ComfyUiClient = proxyComfyUi(backend, localComfy);
     const runningHub = new RunningHubBridge(runtimeDb);
     const videoConcat = new VideoConcatService(runtimeDb);
     /** 将 Agent 事件广播到所属线程或全部网页。 */
@@ -213,11 +208,28 @@ export function startHttpServer() {
             res.json({ ok: true, deleted: runtimeDb.deleteGenerationLogs({ id, projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId) }) });
         }
     }));
-    app.post("/runtime/media", route(async (req, res) => res.status(201).json({ ok: true, media: await storeRuntimeMedia(String(req.body?.name || "media.bin"), String(req.body?.dataUrl || "")) })));
+    app.post("/runtime/media", route(async (req, res) => {
+        const name = String(req.body?.name || "media.bin");
+        const dataUrl = String(req.body?.dataUrl || "");
+        try {
+            res.status(201).json({ ok: true, media: await backend.runtimeMediaStore(name, dataUrl) });
+        } catch {
+            // backend 未启动时回退 Agent 本地 media store
+            res.status(201).json({ ok: true, media: await storeRuntimeMedia(name, dataUrl) });
+        }
+    }));
     app.get("/runtime/media-file", route(async (req, res) => {
-        const file = runtimeMediaFile(String(req.query.file || ""));
-        res.setHeader("Cache-Control", "private, max-age=3600");
-        res.type(path.extname(file)).send(await readFile(file));
+        const file = String(req.query.file || req.query.name || "");
+        try {
+            // backend media store 按「真实文件名」读（旧 Agent 语义），参数兼容 file/name
+            const buffer = Buffer.from(await backend.runtimeMediaRead(file));
+            res.setHeader("Cache-Control", "private, max-age=3600");
+            res.type(path.extname(file)).send(buffer);
+        } catch {
+            const localFile = runtimeMediaFile(file);
+            res.setHeader("Cache-Control", "private, max-age=3600");
+            res.type(path.extname(localFile)).send(await readFile(localFile));
+        }
     }));
     app.get("/comfy/status", route(async (_req, res) => res.json({ ok: true, ...(await comfyUi.status()) })));
     app.get("/comfy/models", route(async (_req, res) => res.json({ ok: true, data: await comfyUi.models() })));
@@ -225,16 +237,23 @@ export function startHttpServer() {
         const filename = String(req.query.filename || "");
         if (!filename || filename.includes("..") || filename.includes("\\")) return void res.status(400).json({ ok: false, error: "媒体文件名无效" });
         const query = new URLSearchParams({ filename, subfolder: String(req.query.subfolder || ""), type: String(req.query.type || "output") });
-        const response = await fetch(`${comfyUi.getUrl()}/view?${query.toString()}`);
+        const response = await fetch(`${await comfyUi.getUrl()}/view?${query.toString()}`);
         if (!response.ok) return void res.status(response.status).end();
         res.type(response.headers.get("content-type") || "application/octet-stream").send(Buffer.from(await response.arrayBuffer()));
     }));
-    app.get("/comfy/config", (_req, res) => res.json({ ok: true, url: comfyUi.getUrl() }));
-    app.put("/comfy/config", (req, res) => res.json({ ok: true, url: comfyUi.setUrl(String(req.body?.url || "")) }));
+    app.get("/comfy/config", route(async (_req, res) => res.json({ ok: true, url: await comfyUi.getUrl() })));
+    app.put("/comfy/config", route(async (req, res) => res.json({ ok: true, url: await comfyUi.setUrl(String(req.body?.url || "")) })));
     app.get("/comfy/presets", (_req, res) => res.json({ ok: true, data: comfyUi.presets() }));
     app.post("/comfy/tasks", route(async (req, res) => res.status(202).json({ ok: true, task: await comfyUi.run(String(req.body?.preset || ""), objectBody(req.body?.input), objectBody(req.body?.params), typeof req.body?.comfyUrl === "string" ? req.body.comfyUrl : undefined) })));
-    app.get("/comfy/tasks/:id", (req, res) => runtimeTaskResponse(req, res, runtimeDb, "comfyui:"));
-    app.post("/comfy/tasks/:id/cancel", (req, res) => res.json({ ok: true, task: comfyUi.cancel(routeParam(req.params.id)) }));
+    app.get("/comfy/tasks/:id", route(async (req, res) => {
+        try {
+            const { task, events } = await resolveComfyTask(backend, runtimeDb, routeParam(req.params.id), Number(req.query.after || 0));
+            res.json({ ok: true, task, events });
+        } catch {
+            res.status(404).json({ ok: false, error: "task not found" });
+        }
+    }));
+    app.post("/comfy/tasks/:id/cancel", route(async (req, res) => res.json({ ok: true, task: await comfyUi.cancel(routeParam(req.params.id)) })));
     app.get("/runninghub/status", (_req, res) => res.json({ ok: true, ...runningHub.status() }));
     app.get("/runninghub/config", (_req, res) => {
         const value = runningHub.getConfig();
@@ -285,8 +304,15 @@ export function startHttpServer() {
         if (name === "comfyui_status") return void res.json({ ok: true, result: await comfyUi.status() });
         if (name === "comfyui_list_presets") return void res.json({ ok: true, result: comfyUi.presets() });
         if (name === "comfyui_run") return void res.json({ ok: true, result: await comfyUi.run(String(input.preset || ""), objectBody(input.input), objectBody(input.params)) });
-        if (name === "comfyui_get_task") return void res.json({ ok: true, result: runtimeDb.getTask(String(input.taskId || "")) });
-        if (name === "comfyui_cancel_task") return void res.json({ ok: true, result: comfyUi.cancel(String(input.taskId || "")) });
+        if (name === "comfyui_get_task") {
+            try {
+                const { task } = await resolveComfyTask(backend, runtimeDb, String(input.taskId || ""));
+                return void res.json({ ok: true, result: task });
+            } catch {
+                return void res.json({ ok: true, result: null });
+            }
+        }
+        if (name === "comfyui_cancel_task") return void res.json({ ok: true, result: await comfyUi.cancel(String(input.taskId || "")) });
         return void res.json({ ok: true, result: await session.callTool(name, input) });
     }));
     app.post("/api/plugins/mcp", route(async (req, res) => {

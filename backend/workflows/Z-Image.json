@@ -1,0 +1,170 @@
+{
+  "20": {
+    "inputs": {
+      "samples": [
+        "22",
+        0
+      ],
+      "vae": [
+        "27",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "22": {
+    "inputs": {
+      "seed": 1104391495230198,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "33",
+        0
+      ],
+      "positive": [
+        "23",
+        0
+      ],
+      "negative": [
+        "24",
+        0
+      ],
+      "latent_image": [
+        "144",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "23": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "34",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码器"
+    }
+  },
+  "24": {
+    "inputs": {
+      "conditioning": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "27": {
+    "inputs": {
+      "vae_name": "flux ultra vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAE加载器"
+    }
+  },
+  "33": {
+    "inputs": {
+      "model_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default",
+      "key_opt": "",
+      "mode": "Auto"
+    },
+    "class_type": "LoadDiffusionModelShared //Inspire",
+    "_meta": {
+      "title": "Shared Diffusion Model Loader (Inspire)"
+    }
+  },
+  "34": {
+    "inputs": {
+      "model_name1": "qwen_3_4b.safetensors",
+      "model_name2": "None",
+      "model_name3": "None",
+      "type": "stable_diffusion",
+      "key_opt": "",
+      "mode": "Auto",
+      "device": "default"
+    },
+    "class_type": "LoadTextEncoderShared //Inspire",
+    "_meta": {
+      "title": "Shared Text Encoder Loader (Inspire)"
+    }
+  },
+  "89": {
+    "inputs": {
+      "rgthree_comparer": {
+        "images": [
+          {
+            "name": "A",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_gmjxy_00001_.png&type=temp&subfolder=&rand=0.7230996201608886"
+          },
+          {
+            "name": "B",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_gmjxy_00002_.png&type=temp&subfolder=&rand=0.6218111120009978"
+          }
+        ]
+      },
+      "image_a": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "Image Comparer (rgthree)",
+    "_meta": {
+      "title": "图像对比"
+    }
+  },
+  "137": {
+    "inputs": {
+      "images": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "142": {
+    "inputs": {
+      "vae": [
+        "27",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "144": {
+    "inputs": {
+      "width": 512,
+      "height": 512,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent"
+    }
+  }
+}

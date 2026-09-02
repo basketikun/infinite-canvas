@@ -1,8 +1,8 @@
 import path from "node:path";
 import type {
-    Asset, type AssetFolder, type CanvasProject,
-    type GenerationLog, type GenerationLogStatus, type MediaFile,
-    type RuntimeTask, type RuntimeTaskEvent, type RuntimeTaskStatus,
+    Asset, AssetFolder, CanvasProject,
+    GenerationLog, GenerationLogStatus, MediaFile,
+    RuntimeTask, RuntimeTaskEvent, RuntimeTaskStatus,
 } from "../db.js";
 
 /** 各 store 的筛选条件。 */
@@ -42,14 +42,21 @@ export type AssetStore = {
     deleteFolder(id: string): number;
 };
 
-/** 媒体 store：media_files 表 + runtime-media/ 文件系统。 */
+export type NamedMedia = RuntimeMedia & { id: string; mimeType: string; url: string };
+
+/** 媒体 store：media_files 表 + runtime-media/ 文件系统统一入口。 */
 export type MediaStore = {
+    /** 入库媒体（web 双写 / 生成结果落地），storageKey 由后台生成。 */
     store(data: Buffer, options: { name?: string; mimeType?: string } & MediaStats): MediaFile;
-    /** 按 name 落地 runtime 媒体（幂等），对应旧 Agent 的 storeRuntimeMedia。 */
-    storeNamed(name: string, data: Buffer, mimeType?: string): RuntimeMedia;
+    /** 按 base64 dataUrl 落地（兼容旧 Agent /runtime/media 与 H3 ref），返回带本地路径的完整记录。 */
+    storeDataUrl(dataUrl: string, name: string, extra?: MediaStats): MediaFile & { path: string; url: string };
+    /** 按 name 幂等读写 runtime 媒体（H3 ref 落地），对应旧 Agent 的 storeRuntimeMedia。 */
+    storeNamed(name: string, data: Buffer, mimeType?: string): NamedMedia;
     meta(storageKey: string): MediaFile | null;
     list(): MediaFile[];
     read(storageKey: string): Promise<Buffer>;
+    /** runtime 媒体按文件名读（对应旧 Agent /runtime/media-file）。 */
+    readNamed(name: string): Buffer;
     /** 代理 URL（相对总后台根路径）。 */
     url(m: MediaFile): string;
     delete(storageKey: string): number;
@@ -62,6 +69,8 @@ export type TaskStore = {
     update(id: string, patch: TaskPatch): RuntimeTask;
     cancel(id: string): RuntimeTask;
     events(id: string, after?: number): RuntimeTaskEvent[];
+    /** 追加一条任务事件（bridge 执行过程上报用）。 */
+    addEvent(id: string, type: string, payload: Record<string, unknown>): RuntimeTaskEvent;
 };
 
 /** 生成日志 store。 */

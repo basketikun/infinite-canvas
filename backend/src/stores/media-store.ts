@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import type { BackendDatabase, MediaFile } from "../db.js";
 import { MEDIA_DIR } from "../config.js";
-import { extensionForMime, mediaKindForMime, type LogFilter, type LogDeleteScope, type MediaStore, type MediaStats, type RuntimeMedia } from "./types.js";
+import { extensionForMime, mediaKindForMime, type MediaStore, type MediaStats, type NamedMedia } from "./types.js";
 
 const MAX_MEDIA_BYTES = 200 * 1024 * 1024;
 
@@ -48,9 +48,9 @@ export function createMediaStore(db: BackendDatabase): MediaStore {
         },
 
         /** 按 name 幂等读写 runtime 媒体（H3 ref 落地）。 */
-        storeNamed(name, data, mimeType = "application/octet-stream"): RuntimeMedia & { id: string; url: string } {
+        storeNamed(name, data, mimeType = "application/octet-stream"): NamedMedia {
             const safeName = path.basename(name);
-            if (!safeName) throw new Error("运行时媒体文件名无效");
+            if (!safeName || safeName.includes("..")) throw new Error("运行时媒体文件名无效");
             const id = cryptoStableId(`runtime-media:${safeName}`);
             const filePath = path.join(MEDIA_DIR, safeName);
             if (fs.existsSync(filePath) && fs.statSync(filePath).size === data.length) {
@@ -95,20 +95,9 @@ export function createMediaStore(db: BackendDatabase): MediaStore {
 
 /** 稳定 id：同名同一 id，改名换 id。 */
 function cryptoStableId(source: string): string {
-    // 简单稳定 hash（非加密场景够用）
-    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
-    for (let i = 0; i < source.length; i++) {
-        const ch = source.charCodeAt(i);
-        h1 = Math.imul(h1 ^ ch, 2654435761);
-        h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-    h1 = Math.imul(h1 ^ h1 >>> 16, 2246822507) ^ Math.imul(h2 ^ h2 >>> 13, 3266489909);
-    h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
-    return (h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0");
+    return createHash("sha256").update(source).digest("hex").slice(0, 16);
 }
 
 function runtimeMediaUrl(name: string) {
     return `/media-file?name=${encodeURIComponent(name)}`;
 }
-
-export type { LogFilter, LogDeleteScope };

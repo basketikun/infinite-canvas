@@ -20,5 +20,6 @@ export function createTaskStore(db: BackendDatabase): TaskStore {
             return updated;
         },
         events: (id, after = 0) => db.listTaskEvents(id, after),
+        addEvent: (id, type, payload) => db.addTaskEvent(id, type, payload),
     };
 }
