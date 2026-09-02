@@ -76,6 +76,12 @@ type ImageApiResponse = {
     code?: number;
     msg?: string;
 };
+type ImageTaskResponse = ImageApiResponse & {
+    id?: string;
+    object?: string;
+    status?: string;
+    result?: { data?: Array<Record<string, unknown>> };
+};
 type GeminiPart = {
     text?: string;
     inlineData?: { mimeType?: string; data?: string };
@@ -268,6 +274,21 @@ function parseImagePayload(payload: ImageApiResponse) {
     return images;
 }
 
+function imageTaskId(payload: ImageTaskResponse) {
+    return payload.object === "generation.task" && typeof payload.id === "string" ? payload.id : undefined;
+}
+
+async function waitForImageTask(config: AiConfig, taskId: string, options?: RequestOptions) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+        if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const { data } = await axios.get<ImageTaskResponse>(aiApiUrl(config, `/images/generations/${taskId}`), { headers: aiHeaders(config), signal: options?.signal });
+        if (data.status === "completed") return parseImagePayload({ ...data, data: data.result?.data });
+        if (data.status === "failed") throw new Error(readApiErrorMessage(data.error) || apiText("requestFailed"));
+        if (attempt < 59) await delay(3000, options?.signal);
+    }
+    throw new Error(apiText("imageTaskTimeout"));
+}
+
 function readApiErrorMessage(value: unknown): string {
     if (!value) return "";
     if (typeof value === "string") {
@@ -325,6 +346,17 @@ function readStatusError(status: number | undefined, fallback: string) {
     if (status === 502) return apiText("badGateway");
     if (status === 503) return apiText("serviceBusy");
     return status ? apiText("httpFailed", { status }) : fallback;
+}
+
+function delay(ms: number, signal?: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
+        const timer = setTimeout(resolve, ms);
+        signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+    });
 }
 
 function withSystemPrompt(config: AiConfig, prompt: string) {
@@ -747,7 +779,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
     try {
-        const response = await axios.post<ImageApiResponse>(
+        const response = await axios.post<ImageTaskResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
             {
                 model: requestConfig.model,
@@ -765,8 +797,9 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 signal: options?.signal,
             },
         );
-        const images = await parseImagePayload(response.data);
-        return images;
+        const taskId = imageTaskId(response.data);
+        if (taskId) return waitForImageTask(requestConfig, taskId, options);
+        return parseImagePayload(response.data);
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     }
