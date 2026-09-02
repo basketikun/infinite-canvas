@@ -19,7 +19,7 @@ export function createMediaStore(db: BackendDatabase): MediaStore {
             if (data.length > MAX_MEDIA_BYTES) throw new Error("媒体超过 200 MB 限制");
             const mimeType = options.mimeType || "application/octet-stream";
             const name = path.basename(options.name || "media.bin");
-            const storageKey = `${kindFor(mimeType, name)}:${randomUUID()}`;
+            const storageKey = options.storageKey || `${kindFor(mimeType, name)}:${randomUUID()}`;
             const extension = path.extname(name).replace(/[^a-z0-9.]/gi, "").slice(0, 12) || extensionForMime(mimeType);
             const filePath = path.join(MEDIA_DIR, `${randomUUID()}${extension}`);
             fs.mkdirSync(MEDIA_DIR, { recursive: true, mode: 0o700 });
@@ -39,7 +39,7 @@ export function createMediaStore(db: BackendDatabase): MediaStore {
         },
 
         /** 按 base64 dataUrl 落地（兼容旧 Agent /runtime/media 与 H3 ref 落地），返回稳定可读路径。 */
-        storeDataUrl(dataUrl: string, name: string, extra: MediaStats = {}): MediaFile & { path: string; url: string } {
+        storeDataUrl(dataUrl: string, name: string, extra: MediaStats & { storageKey?: string } = {}): MediaFile & { path: string; url: string } {
             const match = /^data:([^;,]+);base64,(.+)$/s.exec(String(dataUrl).trim());
             if (!match) throw new Error("媒体必须是 base64 data URL");
             const [, mimeType, b64] = match;

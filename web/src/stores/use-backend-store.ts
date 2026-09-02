@@ -39,6 +39,16 @@ export const useBackendStore = create<BackendStore>((set, get) => ({
         }
         const health = await backendHealth();
         if (health.ok) {
+            if (!wasConnected) {
+                const { migrateIndexDBToBackend } = await import("@/lib/backend-migration");
+                const migration = await migrateIndexDBToBackend();
+                if (!migration.success) {
+                    const error = `Backend 数据迁移失败：${migration.error || "未知错误"}`;
+                    console.warn("[backend-migration]", error);
+                    set({ connected: false, checking: false, error });
+                    return;
+                }
+            }
             set({ connected: true, checking: false, error: "" });
             if (!wasConnected) window.dispatchEvent(new Event("backend-connected"));
         } else {
@@ -49,7 +59,7 @@ export const useBackendStore = create<BackendStore>((set, get) => ({
     reset: () => set({ connected: false, checking: false, error: "" }),
 }));
 
-/** 启动时自动检测总后台连接。连接成功后触发 IndexedDB 迁移。 */
+/** 启动时自动检测总后台连接。首次连接时先完成一次性 IndexedDB 迁移。 */
 export function initBackendConnection() {
     if (typeof window === "undefined") return;
     void useBackendStore.getState().checkConnection();
@@ -59,18 +69,4 @@ export function initBackendConnection() {
             void useBackendStore.getState().checkConnection();
         }
     }, 10_000);
-    // 连接成功后触发一次性 IndexedDB 迁移
-    useBackendStore.subscribe((state, prev) => {
-        if (state.connected && !prev.connected) {
-            import("@/lib/backend-migration").then(({ migrateIndexDBToBackend }) => {
-                void migrateIndexDBToBackend().then((result) => {
-                    if (result.success) {
-                        console.info("[backend-migration] 迁移完成", result);
-                    } else {
-                        console.warn("[backend-migration] 迁移失败", result.error);
-                    }
-                });
-            });
-        }
-    });
 }

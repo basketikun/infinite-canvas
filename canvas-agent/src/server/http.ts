@@ -21,7 +21,7 @@ import { loadPluginMcpDeclarations, savePluginMcpDeclarations, type PluginMcpDec
 import { ComfyUiBridge } from "../runtime/comfyui.js";
 import { RunningHubBridge } from "../runtime/runninghub.js";
 import { VideoConcatService } from "../runtime/video-concat.js";
-import { runtimeMediaFile, storeRuntimeMedia } from "../runtime/media.js";
+import { runtimeMediaFile } from "../runtime/media.js";
 
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
 export function startHttpServer() {
@@ -159,68 +159,36 @@ export function startHttpServer() {
     });
     app.get("/runtime/status", route(async (_req, res) => res.json({ ok: true, sqlite: true, node: process.version, comfyui: await comfyUi.status(), ffmpeg: await videoConcat.status(), backend: await backend.health() })));
     app.get("/canvas/projects", route(async (_req, res) => {
-        try {
-            res.json({ ok: true, projects: await backend.listCanvasProjects() });
-        } catch {
-            res.json({ ok: true, projects: runtimeDb.listCanvasProjects() });
-        }
+        res.json({ ok: true, projects: await backend.listCanvasProjects() });
     }));
     app.put("/canvas/projects", route(async (req, res) => {
         const projects = Array.isArray(req.body?.projects) ? req.body.projects.filter((item: unknown): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item))) : [];
-        try {
-            res.json({ ok: true, projects: await backend.replaceCanvasProjects(projects) });
-        } catch {
-            res.json({ ok: true, projects: runtimeDb.replaceCanvasProjects(projects) });
-        }
+        res.json({ ok: true, projects: await backend.replaceCanvasProjects(projects) });
     }));
     app.get("/runtime/tasks/:id", (req, res) => runtimeTaskResponse(req, res, runtimeDb));
     app.get("/runtime/generation-logs", route(async (req, res) => {
         const status = ["queued", "running", "success", "failed", "cancelled"].includes(String(req.query.status)) ? String(req.query.status) as any : undefined;
         const options = { projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId), status, limit: Number(req.query.limit || 500) };
-        const localLogs = runtimeDb.listGenerationLogs(options);
-        try {
-            const remoteLogs = await backend.listGenerationLogs(options);
-            const logs = [...remoteLogs, ...localLogs].filter((log, index, all) => all.findIndex((item) => String(item.id) === String(log.id)) === index).sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))).slice(0, options.limit);
-            res.json({ ok: true, logs });
-        } catch {
-            res.json({ ok: true, logs: localLogs });
-        }
+        res.json({ ok: true, logs: (await backend.listGenerationLogs(options)).slice(0, options.limit) });
     }));
     app.post("/runtime/generation-logs", route(async (req, res) => {
         const body = generationLogBody(req.body);
         if (!body.projectId || !body.platform || !body.startedAt) return void res.status(400).json({ ok: false, error: "projectId、platform、startedAt 为必填项" });
-        try {
-            res.status(201).json({ ok: true, log: await backend.createGenerationLog(body as any) });
-        } catch {
-            res.status(201).json({ ok: true, log: runtimeDb.createGenerationLog(body as any) });
-        }
+        res.status(201).json({ ok: true, log: await backend.createGenerationLog(body as any) });
     }));
     app.patch("/runtime/generation-logs/:id", route(async (req, res) => {
         const body = generationLogPatch(req.body);
-        try {
-            res.json({ ok: true, log: await backend.updateGenerationLog(routeParam(req.params.id), body as any) });
-        } catch {
-            res.json({ ok: true, log: runtimeDb.updateGenerationLog(routeParam(req.params.id), body as any) });
-        }
+        res.json({ ok: true, log: await backend.updateGenerationLog(routeParam(req.params.id), body as any) });
     }));
     app.delete("/runtime/generation-logs", route(async (req, res) => {
         const id = stringQuery(req.query.id);
         if (!id && !stringQuery(req.query.projectId) && !stringQuery(req.query.nodeId)) return void res.status(400).json({ ok: false, error: "删除日志必须指定范围" });
-        try {
-            res.json({ ok: true, deleted: await backend.deleteGenerationLogs({ id, projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId) }) });
-        } catch {
-            res.json({ ok: true, deleted: runtimeDb.deleteGenerationLogs({ id, projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId) }) });
-        }
+        res.json({ ok: true, deleted: await backend.deleteGenerationLogs({ id, projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId) }) });
     }));
     app.post("/runtime/media", route(async (req, res) => {
         const name = String(req.body?.name || "media.bin");
         const dataUrl = String(req.body?.dataUrl || "");
-        try {
-            res.status(201).json({ ok: true, media: await backend.runtimeMediaStore(name, dataUrl) });
-        } catch {
-            // backend 未启动时回退 Agent 本地 media store
-            res.status(201).json({ ok: true, media: await storeRuntimeMedia(name, dataUrl) });
-        }
+        res.status(201).json({ ok: true, media: await backend.runtimeMediaStore(name, dataUrl) });
     }));
     app.get("/runtime/media-file", route(async (req, res) => {
         const file = String(req.query.file || req.query.name || "");

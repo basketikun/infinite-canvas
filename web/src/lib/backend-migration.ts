@@ -24,7 +24,7 @@ import {
 import type { Asset, AssetFolder } from "@/stores/use-asset-store";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 
-const MIGRATION_MARKER_KEY = "infinite-canvas:backend_migration_done_v2";
+const MIGRATION_MARKER_KEY = "infinite-canvas:backend_migration_done_v3";
 
 // ── 去重依据 ──────────────────────────────────────────────────────────────
 const MIGRATION_DEDUP = {
@@ -295,7 +295,15 @@ function rewriteStorageKeys<T>(value: T): T {
 }
 
 async function clearLocalForageBusinessData() {
-    // 保留本地副本，直到远端媒体与所有节点引用都完成校验；清理由后续显式回收流程负责。
+    const appState = localforage.createInstance({ name: "infinite-canvas", storeName: "app_state" });
+    await Promise.all([
+        appState.removeItem(ASSET_STORE_KEY_CANVAS),
+        appState.removeItem(ASSET_STORE_KEY_ASSETS),
+        localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" }).clear(),
+        localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" }).clear(),
+        localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" }).clear(),
+        localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" }).clear(),
+    ]);
 }
 
 async function getImageBlob(storageKey: string) {

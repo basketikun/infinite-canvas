@@ -101,6 +101,7 @@ export function upsertBackendAsset(asset: Record<string, unknown>) {
 export async function uploadBackendMedia(options: {
     name: string;
     blob: Blob;
+    storageKey?: string;
     mimeType?: string;
     width?: number;
     height?: number;
@@ -112,12 +113,13 @@ export async function uploadBackendMedia(options: {
         reader.onerror = () => reject(reader.error || new Error("Failed to read media"));
         reader.readAsDataURL(options.blob);
     });
-    return uploadBackendMediaDataUrl({ name: options.name, dataUrl, mimeType: options.mimeType || options.blob.type || "application/octet-stream", width: options.width, height: options.height, durationMs: options.durationMs });
+    return uploadBackendMediaDataUrl({ name: options.name, storageKey: options.storageKey, dataUrl, mimeType: options.mimeType || options.blob.type || "application/octet-stream", width: options.width, height: options.height, durationMs: options.durationMs });
 }
 
 export async function uploadBackendMediaDataUrl(options: {
     name: string;
     dataUrl: string;
+    storageKey?: string;
     mimeType?: string;
     width?: number;
     height?: number;

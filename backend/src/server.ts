@@ -146,12 +146,13 @@ export function startServer(db: Parameters<typeof createStores>[0], config: Reso
     });
 
     // ── Media ────────────────────────────────────────────────────────────
-    /** 上传媒体（base64 dataUrl，兼容 web 双写与旧 Agent） */
+    /** 上传媒体（base64 dataUrl，Backend media_files 为唯一业务媒体存储） */
     app.post("/media/upload", (req, res) => {
-        const body = req.body as { name?: string; dataUrl?: string; width?: number; height?: number; durationMs?: number };
+        const body = req.body as { name?: string; dataUrl?: string; storageKey?: string; width?: number; height?: number; durationMs?: number };
         if (!body.dataUrl) return void res.status(400).json({ ok: false, error: "需要提供 dataUrl（base64 data URL）" });
         try {
             const media = stores.media.storeDataUrl(String(body.dataUrl), body.name || "media.bin", {
+                storageKey: body.storageKey,
                 width: body.width ?? null, height: body.height ?? null, durationMs: body.durationMs ?? null,
             });
             res.status(201).json({

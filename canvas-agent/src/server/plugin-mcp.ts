@@ -40,6 +40,8 @@ export type PluginMcpContext = {
     endpoint: string;
     token: string;
     runtimeDb: RuntimeDatabase;
+    /** 画布/素材/媒体/日志的唯一业务数据源。 */
+    backend: BackendClient;
     /** ComfyUI 能力（backend 权威 + 本地兜底；见 comfy-client.ts）。 */
     comfyUi: ComfyUiClient;
     getCanvasNodes: () => Promise<AgentCanvasNode[]>;
@@ -78,9 +80,9 @@ export function savePluginMcpDeclarations(db: RuntimeDatabase, declarations: Plu
 }
 
 // 构造插件 MCP 运行上下文(Agent 侧)
-export function buildPluginMcpContext(config: CanvasAgentConfig, runtimeDb: RuntimeDatabase, comfyUi: ComfyUiClient): PluginMcpContext {
+export function buildPluginMcpContext(config: CanvasAgentConfig, runtimeDb: RuntimeDatabase, backend: BackendClient, comfyUi: ComfyUiClient): PluginMcpContext {
     const readNodes = async (): Promise<AgentCanvasNode[]> => {
-        const projects = runtimeDb.listCanvasProjects<{ nodes?: AgentCanvasNode[] }>();
+        const projects = await backend.listCanvasProjects() as Array<{ nodes?: AgentCanvasNode[] }>;
         return projects.flatMap((project) => (Array.isArray(project.nodes) ? project.nodes : []) as AgentCanvasNode[]);
     };
     return {
@@ -91,7 +93,7 @@ export function buildPluginMcpContext(config: CanvasAgentConfig, runtimeDb: Runt
         getCanvasNodes: readNodes,
         getCanvasNode: async (id) => (await readNodes()).find((node) => node.id === id) ?? null,
         updateCanvasNode: async (id, patch, metadataPatch) => {
-            const projects = runtimeDb.listCanvasProjects<{ id?: string; nodes?: AgentCanvasNode[] }>();
+            const projects = await backend.listCanvasProjects() as Array<{ id?: string; nodes?: AgentCanvasNode[] }>;
             const target = projects.find((project) => Array.isArray(project.nodes) && project.nodes.some((node) => node.id === id));
             if (!target) throw new Error(`找不到画布节点：${id}`);
             const nextNodes = (target.nodes || []).map((node) => {
@@ -101,7 +103,7 @@ export function buildPluginMcpContext(config: CanvasAgentConfig, runtimeDb: Runt
                 return merged;
             });
             const nextProjects = projects.map((project) => (project === target ? { ...project, nodes: nextNodes } : project));
-            runtimeDb.replaceCanvasProjects(nextProjects);
+            await backend.replaceCanvasProjects(nextProjects);
         },
     };
 }
@@ -274,7 +276,7 @@ export async function startPluginMcp(server: McpServer): Promise<PluginMcpRegist
     const backend = createBackendClient(config.backendUrl || `http://127.0.0.1:17370`);
     /** ComfyUI 走 backend(总后台权威),MCP 侧不再直连本地 ComfyUI 实例。 */
     const comfyUi = proxyComfyUi(backend, new ComfyUiBridge(runtimeDb));
-    const context = buildPluginMcpContext(config, runtimeDb, comfyUi);
+    const context = buildPluginMcpContext(config, runtimeDb, backend, comfyUi);
     const registry = new PluginMcpRegistry(server, context);
     // 冷启动:从 SQLite 读取已启用插件
     await registry.apply(loadPluginMcpDeclarations(runtimeDb));

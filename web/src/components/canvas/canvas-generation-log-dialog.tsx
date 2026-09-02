@@ -2,26 +2,24 @@ import { useEffect, useState } from "react";
 import { Button, Empty, Modal, Tag, message } from "antd";
 import { Copy, Trash2 } from "lucide-react";
 
-import { deleteGenerationLogs, fetchGenerationLogs, type GenerationLog } from "@/services/api/canvas-agent";
-import { useAgentStore } from "@/stores/use-agent-store";
+import { deleteBackendGenerationLogs, fetchBackendGenerationLogs, type BackendGenerationLog as GenerationLog } from "@/services/backend-api";
+import { useBackendStore } from "@/stores/use-backend-store";
 
 export function CanvasGenerationLogDialog({ open, projectId, onClose }: { open: boolean; projectId: string; onClose: () => void }) {
     // Select primitive fields separately. Returning a fresh object from a
     // Zustand selector makes useSyncExternalStore see a new snapshot forever.
-    const connected = useAgentStore((state) => state.connected);
-    const url = useAgentStore((state) => state.url);
-    const token = useAgentStore((state) => state.token);
+    const connected = useBackendStore((state) => state.connected);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [loading, setLoading] = useState(false);
     const load = async () => {
-        if (!connected || !url || !token || !projectId) return;
+        if (!connected || !projectId) return;
         setLoading(true);
-        try { setLogs((await fetchGenerationLogs(url, token, { projectId })).logs || []); } finally { setLoading(false); }
+        try { setLogs((await fetchBackendGenerationLogs({ projectId })).logs || []); } finally { setLoading(false); }
     };
-    useEffect(() => { if (open) void load(); }, [open, projectId, connected, url, token]);
+    useEffect(() => { if (open) void load(); }, [open, projectId, connected]);
     const remove = async (id?: string) => {
-        if (!url || !token) return;
-        await deleteGenerationLogs(url, token, id ? { id } : { projectId });
+        if (!connected) return;
+        await deleteBackendGenerationLogs(id ? { id } : { projectId });
         await load();
     };
     return <Modal title={`生成日志${logs.length ? ` (${logs.length})` : ""}`} open={open} onCancel={onClose} footer={null} width={860} destroyOnHidden>

@@ -7,7 +7,7 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
-- Store/Backend 数据恢复：旧版 IndexedDB 的画布、素材、媒体、生成日志迁移到总后台后，项目引用的 storageKey 可正常访问；H3 输出视频刷新后仍可播放；Backend 为空或旧数据时不会覆盖本地较新的项目；Agent 旧日志和 Backend 新日志会合并显示。
+- 统一存储层：首次连接总后台时，旧版 IndexedDB 的画布、素材、媒体和生成日志完成一次性迁移；迁移后刷新、重启、导入导出和 H3 MCP 均只从 Backend SQLite/media_files 读取和写入，Backend 不可用时不应静默切换到本地或 Agent 业务副本。
 
 - MiniMax H3 插件模块化重构：启用插件后节点入口、工作台、Clip/Refs 时间线、提示词编辑、参数面板、模型发现、片段 hooks 和独立 CSS 均能正常加载；新建节点默认值、旧 metadata、拖拽素材、单段/全部 Clip 生成、Motion Context、任务状态回写以及 H3 MCP 工具行为保持不变。
 
@@ -35,7 +35,7 @@ The current release needs manual verification in these areas:
 - Canvas Agent startup, MCP status, model and permission controls, approvals, version reporting, diagnostics, streaming responses, history consistency, multi-tab isolation, and local Skill management.
 - Canvas Agent credential redaction: Codex and Claude CLI stderr containing Bearer tokens, `sk-` keys, explicit API key/token/authorization assignments, ANSI formatting, or credentials split across output chunks should reach neither debug logs nor browser diagnostic events in plaintext; ordinary stderr text should remain intact.
 - Image API model parameters: `gpt-image-*` generation and edit requests should omit `response_format`, while `dall-e-*` requests should continue sending `response_format: "b64_json"`.
-- Image URL persistence: canvas and image-workbench generation should download each remote API result only once, validate it as a decodable image, and persist it in IndexedDB; `200` responses containing non-image data should fail, stopping canvas generation during download should not save or apply the result, CORS-blocked but displayable images should keep their original URL without an empty storage key, and plugin calls should still receive Data URLs whenever the remote image is readable.
+- Image URL persistence: canvas and image-workbench generation should download each remote API result only once, validate it as a decodable image, and persist it in Backend media_files; `200` responses containing non-image data should fail, stopping canvas generation during download should not save or apply the result, CORS-blocked but displayable images should keep their original URL without an empty storage key, and plugin calls should still receive Data URLs whenever the remote image is readable.
 - Agent header tabs in English and Chinese at different panel widths; labels should collapse to icons and counts before either edge is clipped.
 - Agent message layout, Markdown, code blocks, attachments, token statistics, progress timelines, command groups, and scroll-follow behavior.
 - Agent inline references: type `/` to select an enabled Skill or `@` to select a canvas asset at the caret; tokens should remain aligned with text, support keyboard navigation and hover previews, and preserve their positions after sending or refreshing.

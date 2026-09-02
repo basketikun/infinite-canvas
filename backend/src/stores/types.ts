@@ -47,9 +47,9 @@ export type NamedMedia = RuntimeMedia & { id: string; mimeType: string; url: str
 /** 媒体 store：media_files 表 + runtime-media/ 文件系统统一入口。 */
 export type MediaStore = {
     /** 入库媒体（web 双写 / 生成结果落地），storageKey 由后台生成。 */
-    store(data: Buffer, options: { name?: string; mimeType?: string } & MediaStats): MediaFile;
+    store(data: Buffer, options: { name?: string; mimeType?: string; storageKey?: string } & MediaStats): MediaFile;
     /** 按 base64 dataUrl 落地（兼容旧 Agent /runtime/media 与 H3 ref），返回带本地路径的完整记录。 */
-    storeDataUrl(dataUrl: string, name: string, extra?: MediaStats): MediaFile & { path: string; url: string };
+    storeDataUrl(dataUrl: string, name: string, extra?: MediaStats & { storageKey?: string }): MediaFile & { path: string; url: string };
     /** 按 name 幂等读写 runtime 媒体（H3 ref 落地），对应旧 Agent 的 storeRuntimeMedia。 */
     storeNamed(name: string, data: Buffer, mimeType?: string): NamedMedia;
     meta(storageKey: string): MediaFile | null;

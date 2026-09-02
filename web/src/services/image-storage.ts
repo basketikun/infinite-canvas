@@ -1,5 +1,3 @@
-import localforage from "localforage";
-
 import { nanoid } from "nanoid";
 import i18n from "@/i18n";
 import { uploadBackendMedia, deleteBackendMedia, backendMediaUrl } from "@/services/backend-api";
@@ -14,10 +12,6 @@ export type UploadedImage = {
     mimeType: string;
 };
 
-const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
-const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
-const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
-const objectUrls = new Map<string, string>();
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 const IMAGE_REMOTE_LOAD_TIMEOUT_MS = 10 * 60_000;
 const IMAGE_DECODE_TIMEOUT_MS = 10_000;
@@ -48,27 +42,12 @@ async function storeImage(blob: Blob, options?: ImageReadOptions): Promise<Uploa
         const meta = await loadImageMeta(url, options);
         if (!meta) throw new Error(i18n.t("common.imageReadFailed"));
         throwIfAborted(options?.signal);
-        // 先写本地 localforage（快速水合回退）
-        await store.setItem(localKey, blob);
+        if (!useBackendStore.getState().connected) throw new Error("总后台未连接，无法上传图片");
         throwIfAborted(options?.signal);
-        // 同步上传到总后台（连接时）
-        if (useBackendStore.getState().connected) {
-            try {
-                const result = await uploadBackendMedia({
-                    name: `${localKey}.png`,
-                    blob,
-                    mimeType: blob.type || "image/png",
-                    width: meta.width,
-                    height: meta.height,
-                });
-                return { url: result.url, storageKey: result.storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: result.mimeType };
-            } catch { /* backend offline — fall through to local-only */ }
-        }
-        objectUrls.set(localKey, url);
-        return { url, storageKey: localKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type.startsWith("image/") ? blob.type : "" };
+        const result = await uploadBackendMedia({ name: `${localKey}.png`, blob, mimeType: blob.type || "image/png", width: meta.width, height: meta.height });
+        return { url: result.url, storageKey: result.storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: result.mimeType };
     } catch (error) {
         URL.revokeObjectURL(url);
-        await store.removeItem(localKey).catch(() => undefined);
         throw error;
     }
 }
@@ -147,32 +126,20 @@ function throwIfAborted(signal?: AbortSignal) {
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
-    const cached = objectUrls.get(storageKey);
-    if (cached) return cached;
-    // 尝试从 total backend 代理地址解析
-    if (useBackendStore.getState().connected) {
-        const remoteUrl = backendMediaUrl(storageKey);
-        try {
-            const response = await fetch(remoteUrl, { method: "HEAD" });
-            if (response.ok) return remoteUrl;
-        } catch { /* use the local copy below */ }
-    }
-    const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return fallback;
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    if (!useBackendStore.getState().connected) return fallback;
+    return backendMediaUrl(storageKey);
 }
 
 export async function getImageBlob(storageKey: string) {
-    return store.getItem<Blob>(storageKey);
+    if (!useBackendStore.getState().connected) return null;
+    const response = await fetch(backendMediaUrl(storageKey));
+    return response.ok ? response.blob() : null;
 }
 
 export async function setImageBlob(storageKey: string, blob: Blob) {
-    await store.setItem(storageKey, blob);
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    if (!useBackendStore.getState().connected) throw new Error("总后台未连接，无法写入图片");
+    const result = await uploadBackendMedia({ name: `${storageKey}.png`, storageKey, blob, mimeType: blob.type || "image/png" });
+    return backendMediaUrl(result.storageKey);
 }
 
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }, options?: ImageReadOptions) {
@@ -184,33 +151,13 @@ export async function imageToDataUrl(image: { url?: string; dataUrl?: string; st
 export async function deleteStoredImages(keys: Iterable<string>) {
     await Promise.all(
         Array.from(new Set(keys)).map(async (key) => {
-            const url = objectUrls.get(key);
-            if (url) URL.revokeObjectURL(url);
-            objectUrls.delete(key);
-            await store.removeItem(key);
-            // 同步删除总后台媒体
-            if (useBackendStore.getState().connected) {
-                await deleteBackendMedia(key).catch(() => undefined);
-            }
+            await deleteBackendMedia(key);
         }),
     );
 }
 
 export async function cleanupUnusedImages(usedData: unknown) {
-    const usedKeys = collectImageStorageKeys(usedData);
-    await Promise.all([
-        imageLogStore.iterate((value) => {
-            collectImageStorageKeys(value, usedKeys);
-        }),
-        videoLogStore.iterate((value) => {
-            collectImageStorageKeys(value, usedKeys);
-        }),
-    ]);
-    const unused: string[] = [];
-    await store.iterate((_value, key) => {
-        if (!usedKeys.has(key)) unused.push(key);
-    });
-    await deleteStoredImages(unused);
+    void usedData;
 }
 
 export function collectImageStorageKeys(value: unknown, keys = new Set<string>()) {

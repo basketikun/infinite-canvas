@@ -5,8 +5,10 @@ import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessag
 import { imageToDataUrl } from "@/services/image-storage";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { runLocalH3Task, getLocalH3Task, runRunningHubH3Task, getRunningHubH3Task } from "@/services/api/comfyui";
-import { createGenerationLog, deleteGenerationLogs, fetchComfyModels, fetchGenerationLogs, updateGenerationLog } from "@/services/api/canvas-agent";
+import { fetchComfyModels } from "@/services/api/canvas-agent";
+import { createBackendGenerationLog, deleteBackendGenerationLogs, fetchBackendGenerationLogs, updateBackendGenerationLog } from "@/services/backend-api";
 import { useAgentStore } from "@/stores/use-agent-store";
+import { useBackendStore } from "@/stores/use-backend-store";
 import { decodeChannelModel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-generation-helpers";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
@@ -57,12 +59,12 @@ export function usePluginHost(params: PluginHostParams) {
     const { t } = useTranslation();
     const { projectId, effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
     const generationLogs = useMemo<CanvasGenerationLogs>(() => {
-        const unavailable = () => { throw new Error("Canvas Agent 未连接，无法访问生成日志"); };
+        const unavailable = () => { throw new Error("总后台未连接，无法访问生成日志"); };
         return {
-            list: async (options: Parameters<CanvasGenerationLogs["list"]>[0] = {}) => { const current = useAgentStore.getState(); if (!current.connected || !current.url || !current.token) return []; const result = await fetchGenerationLogs(current.url, current.token, { ...options, projectId: options.projectId || projectId }); return result.logs || []; },
-            create: async (input: any) => { const current = useAgentStore.getState(); if (!current.connected || !current.url || !current.token) return unavailable(); const result = await createGenerationLog(current.url, current.token, { ...input, projectId: input.projectId || projectId }); if (!result.log) throw new Error("Agent 未返回生成日志"); return result.log; },
-            update: async (id: string, patch: any) => { const current = useAgentStore.getState(); if (!current.connected || !current.url || !current.token) return unavailable(); const result = await updateGenerationLog(current.url, current.token, id, patch); if (!result.log) throw new Error("Agent 未返回生成日志"); return result.log; },
-            remove: async (options: any) => { const current = useAgentStore.getState(); if (!current.connected || !current.url || !current.token) return unavailable(); const result = await deleteGenerationLogs(current.url, current.token, options); return Number(result.deleted || 0); },
+            list: async (options: Parameters<CanvasGenerationLogs["list"]>[0] = {}) => { if (!useBackendStore.getState().connected) return []; const result = await fetchBackendGenerationLogs({ ...options, projectId: options.projectId || projectId }); return result.logs || []; },
+            create: async (input: any) => { if (!useBackendStore.getState().connected) return unavailable(); const result = await createBackendGenerationLog({ ...input, projectId: input.projectId || projectId }); if (!result.log) throw new Error("总后台未返回生成日志"); return result.log; },
+            update: async (id: string, patch: any) => { if (!useBackendStore.getState().connected) return unavailable(); const result = await updateBackendGenerationLog(id, patch); if (!result.log) throw new Error("总后台未返回生成日志"); return result.log; },
+            remove: async (options: any) => { if (!useBackendStore.getState().connected) return unavailable(); const result = await deleteBackendGenerationLogs(options); return Number(result.deleted || 0); },
         };
     }, [projectId]);
 

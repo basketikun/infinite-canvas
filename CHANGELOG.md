@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [优化] 画布、素材、生成日志和媒体统一由总后台 SQLite/media_files 读写，IndexedDB 仅作为一次性迁移来源，Agent 不再提供业务数据回退。
 + [修复] 修复 Store 迁移后的项目、媒体、H3 输出和生成日志恢复链路，避免旧数据被空的 Backend 副本覆盖。
 + [优化] MiniMax H3 插件浏览器端按入口、工作台、类型、常量、服务、hooks 和样式模块拆分，保持现有节点与 Agent MCP 契约不变。
 + [新增] Canvas Agent 支持插件 MCP 能力:启用 MiniMax H3 插件时在 Agent 侧动态注册 h3_* 工具(h3_list_models / h3_get_node / h3_run_clip / h3_get_task / h3_cancel_task / h3_update_clip / h3_run_all_clips),复用 ComfyUiBridge 与任务库,并经官方白名单加载。
