@@ -1,5 +1,9 @@
 export type H3Ref = { url: string; type: "image" | "video" | "audio"; name: string; storageKey?: string };
 
+export type H3TaskStatus = "idle" | "queued" | "loading" | "success" | "error" | "cancelled";
+export type H3TaskState = { id?: string; status: H3TaskStatus; progress: number; error?: string; output?: H3Ref };
+export type H3Pane = "library" | "preview" | "video" | "refs";
+
 export type H3Segment = {
     id: string;
     start?: number;

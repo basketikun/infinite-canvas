@@ -1,0 +1,4 @@
+import type { CanvasNodeContext } from "@infinite-canvas/plugin-sdk";
+import type { H3Ref } from "../types";
+export function readH3Refs(ctx: CanvasNodeContext): H3Ref[] { return ctx.getUpstream().flatMap((node) => { const metadata = node.metadata || {}; const url = String(metadata.content || metadata.url || metadata.localUrl || metadata.sourceUrl || "").trim(); if (!url) return []; const mime = String(metadata.mimeType || ""); const type = mime.startsWith("video/") || node.type === "video" ? "video" : mime.startsWith("audio/") || node.type === "audio" ? "audio" : "image"; return [{ url, type, name: node.title || type } as H3Ref]; }); }
+export function sameH3Ref(left: H3Ref, right: H3Ref) { return left.storageKey && right.storageKey ? left.storageKey === right.storageKey : left.url === right.url; }

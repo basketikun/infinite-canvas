@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { cleanupUnusedImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
+import { fetchBackendAssets, saveBackendAssets, backendMediaUrl } from "@/services/backend-api";
+import { useBackendStore } from "@/stores/use-backend-store";
 
 export type AssetKind = "text" | "image" | "video" | "audio" | "composite";
 export type TextAsset = AssetBase<"text"> & { data: { content: string } };
@@ -54,6 +56,36 @@ type AssetStore = {
 };
 
 const ASSET_STORE_KEY = "infinite-canvas:asset_store";
+
+/** 同步素材到总后台。 */
+async function syncAssetsToBackend(assets: Asset[], folders: AssetFolder[]) {
+    if (!useBackendStore.getState().connected) return;
+    try {
+        await saveBackendAssets(assets as unknown[], folders as unknown[]);
+    } catch { /* fall back to localforage */ }
+}
+
+async function hydrateAssetsFromBackend() {
+    if (!useBackendStore.getState().connected) return false;
+    try {
+        const response = await fetchBackendAssets();
+        const remoteAssets = Array.isArray(response.assets) ? response.assets as unknown as Asset[] : [];
+        const remoteFolders = Array.isArray(response.folders) ? response.folders as unknown as AssetFolder[] : [];
+        if (remoteAssets.length) {
+            useAssetStore.setState({ assets: remoteAssets, folders: remoteFolders });
+            return true;
+        }
+        const state = useAssetStore.getState();
+        if (state.assets.length) await syncAssetsToBackend(state.assets, state.folders);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function hydrateAssets() {
+    await hydrateAssetsFromBackend();
+}
 
 const assetStorage: PersistStorage<AssetStore> = {
     getItem: async (name) => {
@@ -124,7 +156,10 @@ export const useAssetStore = create<AssetStore>()(
                     get().cleanupImages({ assets });
                     return { assets };
                 }),
-            replaceAssets: (assets) => set({ assets }),
+            replaceAssets: (assets) => {
+                set({ assets });
+                void syncAssetsToBackend(assets, get().folders);
+            },
             addFolder: (name, parentId = null) => {
                 const id = nanoid();
                 set((state) => ({ folders: [...state.folders, { id, name: name.trim() || "新文件夹", parentId, createdAt: new Date().toISOString() }] }));
@@ -153,7 +188,19 @@ export const useAssetStore = create<AssetStore>()(
             partialize: (state) => ({ assets: state.assets, folders: state.folders }) as StorageValue<AssetStore>["state"],
             onRehydrateStorage: () => () => {
                 useAssetStore.setState({ hydrated: true });
+                void hydrateAssets();
             },
         },
     ),
 );
+
+if (typeof window !== "undefined") {
+    window.addEventListener("backend-connected", () => {
+        void hydrateAssets();
+        if (useAssetStore.getState().assets.length || useAssetStore.getState().folders.length) {
+            void syncAssetsToBackend(useAssetStore.getState().assets, useAssetStore.getState().folders);
+        }
+    });
+}
+
+export { syncAssetsToBackend, hydrateAssets };

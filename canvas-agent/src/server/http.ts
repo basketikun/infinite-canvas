@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
+import fs from "node:fs";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
@@ -9,11 +10,12 @@ import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-pr
 import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
-import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
+import { CONFIG_DIR, DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 import { RuntimeDatabase } from "../runtime/database.js";
+import { BackendClient } from "../runtime/backend-client.js";
 import { loadPluginMcpDeclarations, savePluginMcpDeclarations, type PluginMcpDeclaration } from "./plugin-mcp.js";
 import { ComfyUiBridge } from "../runtime/comfyui.js";
 import { RunningHubBridge } from "../runtime/runninghub.js";
@@ -31,6 +33,15 @@ export function startHttpServer() {
     const session = new CanvasSession(initialWorkspace.activeThreadId || "");
     const skillStore = new SkillStore(initialWorkspace.workspacePath);
     const runtimeDb = new RuntimeDatabase();
+    const backendUrl = config.backendUrl || `http://127.0.0.1:17370`;
+    const backendToken = process.env.INFINITE_CANVAS_BACKEND_TOKEN
+        || (() => {
+            try {
+                const cfg = JSON.parse(fs.readFileSync(path.join(CONFIG_DIR, "backend.json"), "utf8"));
+                return String(cfg.token || "");
+            } catch { return ""; }
+        })();
+    const backend = new BackendClient(backendUrl, backendToken);
     const comfyUi = new ComfyUiBridge(runtimeDb);
     const runningHub = new RunningHubBridge(runtimeDb);
     const videoConcat = new VideoConcatService(runtimeDb);
@@ -151,30 +162,56 @@ export function startHttpServer() {
         const ok = session.resolveResult(String(req.query.clientId || ""), req.body);
         res.status(ok ? 200 : 409).json({ ok });
     });
-    app.get("/runtime/status", route(async (_req, res) => res.json({ ok: true, sqlite: true, node: process.version, comfyui: await comfyUi.status(), ffmpeg: await videoConcat.status() })));
-    app.get("/canvas/projects", route(async (_req, res) => res.json({ ok: true, projects: runtimeDb.listCanvasProjects() })));
+    app.get("/runtime/status", route(async (_req, res) => res.json({ ok: true, sqlite: true, node: process.version, comfyui: await comfyUi.status(), ffmpeg: await videoConcat.status(), backend: await backend.health() })));
+    app.get("/canvas/projects", route(async (_req, res) => {
+        try {
+            res.json({ ok: true, projects: await backend.listCanvasProjects() });
+        } catch {
+            res.json({ ok: true, projects: runtimeDb.listCanvasProjects() });
+        }
+    }));
     app.put("/canvas/projects", route(async (req, res) => {
         const projects = Array.isArray(req.body?.projects) ? req.body.projects.filter((item: unknown): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item))) : [];
-        res.json({ ok: true, projects: runtimeDb.replaceCanvasProjects(projects) });
+        try {
+            res.json({ ok: true, projects: await backend.replaceCanvasProjects(projects) });
+        } catch {
+            res.json({ ok: true, projects: runtimeDb.replaceCanvasProjects(projects) });
+        }
     }));
     app.get("/runtime/tasks/:id", (req, res) => runtimeTaskResponse(req, res, runtimeDb));
     app.get("/runtime/generation-logs", route(async (req, res) => {
         const status = ["queued", "running", "success", "failed", "cancelled"].includes(String(req.query.status)) ? String(req.query.status) as any : undefined;
-        res.json({ ok: true, logs: runtimeDb.listGenerationLogs({ projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId), status, limit: Number(req.query.limit || 500) }) });
+        try {
+            res.json({ ok: true, logs: await backend.listGenerationLogs({ projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId), status, limit: Number(req.query.limit || 500) }) });
+        } catch {
+            res.json({ ok: true, logs: runtimeDb.listGenerationLogs({ projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId), status, limit: Number(req.query.limit || 500) }) });
+        }
     }));
     app.post("/runtime/generation-logs", route(async (req, res) => {
         const body = generationLogBody(req.body);
         if (!body.projectId || !body.platform || !body.startedAt) return void res.status(400).json({ ok: false, error: "projectId、platform、startedAt 为必填项" });
-        res.status(201).json({ ok: true, log: runtimeDb.createGenerationLog(body as any) });
+        try {
+            res.status(201).json({ ok: true, log: await backend.createGenerationLog(body as any) });
+        } catch {
+            res.status(201).json({ ok: true, log: runtimeDb.createGenerationLog(body as any) });
+        }
     }));
     app.patch("/runtime/generation-logs/:id", route(async (req, res) => {
         const body = generationLogPatch(req.body);
-        res.json({ ok: true, log: runtimeDb.updateGenerationLog(routeParam(req.params.id), body as any) });
+        try {
+            res.json({ ok: true, log: await backend.updateGenerationLog(routeParam(req.params.id), body as any) });
+        } catch {
+            res.json({ ok: true, log: runtimeDb.updateGenerationLog(routeParam(req.params.id), body as any) });
+        }
     }));
     app.delete("/runtime/generation-logs", route(async (req, res) => {
         const id = stringQuery(req.query.id);
         if (!id && !stringQuery(req.query.projectId) && !stringQuery(req.query.nodeId)) return void res.status(400).json({ ok: false, error: "删除日志必须指定范围" });
-        res.json({ ok: true, deleted: runtimeDb.deleteGenerationLogs({ id, projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId) }) });
+        try {
+            res.json({ ok: true, deleted: await backend.deleteGenerationLogs({ id, projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId) }) });
+        } catch {
+            res.json({ ok: true, deleted: runtimeDb.deleteGenerationLogs({ id, projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId) }) });
+        }
     }));
     app.post("/runtime/media", route(async (req, res) => res.status(201).json({ ok: true, media: await storeRuntimeMedia(String(req.body?.name || "media.bin"), String(req.body?.dataUrl || "")) })));
     app.get("/runtime/media-file", route(async (req, res) => {

@@ -160,6 +160,12 @@ export default {
             addAssetRef: "引用资产",
         },
     },
+    backend: {
+        connecting: "正在连接本地总后台…",
+        disconnected: "本地总后台未启动，业务数据暂不可写入。请运行 npm run dev:backend 启动总后台。",
+        connected: "本地总后台已连接",
+        migration: "正在迁移旧数据到总后台…",
+    },
     notFound: {
         title: "页面不存在",
         description: "这个地址没有对应的页面，可能已经移动或被合并到其他入口。",

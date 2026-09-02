@@ -7,6 +7,8 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
+- MiniMax H3 插件模块化重构：启用插件后节点入口、工作台、Clip/Refs 时间线、提示词编辑、参数面板、模型发现、片段 hooks 和独立 CSS 均能正常加载；新建节点默认值、旧 metadata、拖拽素材、单段/全部 Clip 生成、Motion Context、任务状态回写以及 H3 MCP 工具行为保持不变。
+
 - Documentation navigation and page contents: at phone width, opening the documentation sidebar should show the current section and its description at the top. Expanding it should allow switching among Overview, Canvas Guide, Development, Progress, Business, and Support; the selected section and page list should update together while the desktop top tabs remain unchanged. At widths of 960px and above, a table of contents with hierarchical track lines should appear to the right of the article, support heading navigation, and highlight the current heading while scrolling; narrower layouts should keep the top collapsible contents control.
 - Canvas Agent generation-flow references: when a generation prompt contains only `@[node:...]` references already passed through `referenceNodeIds`, the existing text, image, video, audio, or group nodes should connect directly to the generated config node without creating a duplicate prompt text node; prompts containing ordinary prose should continue creating their own prompt text node.
 - Video frame capture: right-clicking a video node with content should show Capture first frame, Capture last frame, and Capture current frame. Each action should create and select a proportional image node to the right, connect the video to the image, use the player's visible position for the current frame, and leave the original playback position unchanged.

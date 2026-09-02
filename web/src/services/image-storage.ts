@@ -2,6 +2,8 @@ import localforage from "localforage";
 
 import { nanoid } from "nanoid";
 import i18n from "@/i18n";
+import { uploadBackendMedia, deleteBackendMedia, backendMediaUrl } from "@/services/backend-api";
+import { useBackendStore } from "@/stores/use-backend-store";
 
 export type UploadedImage = {
     url: string;
@@ -40,19 +42,33 @@ export async function uploadImage(input: string | Blob, options?: ImageReadOptio
 }
 
 async function storeImage(blob: Blob, options?: ImageReadOptions): Promise<UploadedImage> {
-    const storageKey = `image:${nanoid()}`;
+    const localKey = `image:${nanoid()}`;
     const url = URL.createObjectURL(blob);
     try {
         const meta = await loadImageMeta(url, options);
         if (!meta) throw new Error(i18n.t("common.imageReadFailed"));
         throwIfAborted(options?.signal);
-        await store.setItem(storageKey, blob);
+        // 先写本地 localforage（快速水合回退）
+        await store.setItem(localKey, blob);
         throwIfAborted(options?.signal);
-        objectUrls.set(storageKey, url);
-        return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type.startsWith("image/") ? blob.type : "" };
+        // 同步上传到总后台（连接时）
+        if (useBackendStore.getState().connected) {
+            try {
+                const result = await uploadBackendMedia({
+                    name: `${localKey}.png`,
+                    blob,
+                    mimeType: blob.type || "image/png",
+                    width: meta.width,
+                    height: meta.height,
+                });
+                return { url: result.url, storageKey: result.storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: result.mimeType };
+            } catch { /* backend offline — fall through to local-only */ }
+        }
+        objectUrls.set(localKey, url);
+        return { url, storageKey: localKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type.startsWith("image/") ? blob.type : "" };
     } catch (error) {
         URL.revokeObjectURL(url);
-        await store.removeItem(storageKey).catch(() => undefined);
+        await store.removeItem(localKey).catch(() => undefined);
         throw error;
     }
 }
@@ -133,6 +149,10 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
+    // 尝试从 total backend 代理地址解析
+    if (useBackendStore.getState().connected) {
+        return backendMediaUrl(storageKey);
+    }
     const blob = await store.getItem<Blob>(storageKey);
     if (!blob) return fallback;
     const url = URL.createObjectURL(blob);
@@ -164,6 +184,10 @@ export async function deleteStoredImages(keys: Iterable<string>) {
             if (url) URL.revokeObjectURL(url);
             objectUrls.delete(key);
             await store.removeItem(key);
+            // 同步删除总后台媒体
+            if (useBackendStore.getState().connected) {
+                await deleteBackendMedia(key).catch(() => undefined);
+            }
         }),
     );
 }

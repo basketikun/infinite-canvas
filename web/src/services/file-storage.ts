@@ -1,5 +1,7 @@
 import localforage from "localforage";
 import { nanoid } from "nanoid";
+import { uploadBackendMedia, deleteBackendMedia, backendMediaUrl } from "@/services/backend-api";
+import { useBackendStore } from "@/stores/use-backend-store";
 
 export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
 
@@ -8,18 +10,38 @@ const objectUrls = new Map<string, string>();
 
 export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
-    const storageKey = `${prefix}:${nanoid()}`;
-    await store.setItem(storageKey, blob);
+    const localKey = `${prefix}:${nanoid()}`;
+    await store.setItem(localKey, blob);
     const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {};
-    return { url, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta };
+    objectUrls.set(localKey, url);
+    const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {} as { width?: number; height?: number; durationMs?: number };
+    const videoMeta = meta as { width?: number; height?: number; durationMs?: number };
+
+    // 同步上传到总后台（连接时）
+    if (useBackendStore.getState().connected) {
+        try {
+            const result = await uploadBackendMedia({
+                name: `${localKey}`,
+                blob,
+                mimeType: blob.type || "application/octet-stream",
+                width: videoMeta.width,
+                height: videoMeta.height,
+                durationMs: videoMeta.durationMs,
+            });
+            return { url: result.url, storageKey: result.storageKey, bytes: blob.size, mimeType: result.mimeType, ...videoMeta };
+        } catch { /* backend offline — fall through */ }
+    }
+    return { url, storageKey: localKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...videoMeta };
 }
 
 export async function resolveMediaUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
+    // 尝试从总后台代理地址解析
+    if (useBackendStore.getState().connected) {
+        return backendMediaUrl(storageKey);
+    }
     const blob = await store.getItem<Blob>(storageKey);
     if (!blob) return fallback;
     const url = URL.createObjectURL(blob);
@@ -45,6 +67,10 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
             if (url) URL.revokeObjectURL(url);
             objectUrls.delete(key);
             await store.removeItem(key);
+            // 同步删除总后台媒体
+            if (useBackendStore.getState().connected) {
+                await deleteBackendMedia(key).catch(() => undefined);
+            }
         }),
     );
 }

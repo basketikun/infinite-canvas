@@ -7,6 +7,8 @@ import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 import { createGenerationLog, fetchAgentJson } from "@/services/api/canvas-agent";
+import { fetchBackendProjects, saveBackendProjects, upsertBackendProject } from "@/services/backend-api";
+import { useBackendStore } from "@/stores/use-backend-store";
 
 export type CanvasProject = {
     id: string;
@@ -49,10 +51,36 @@ function agentConnection() {
     return token ? { endpoint, token } : null;
 }
 
+/** 优先保存到总后台，回退到 Agent。 */
 async function syncCanvasProjects(projects: CanvasProject[], force = false) {
+    const backendConnected = useBackendStore.getState().connected;
+    if (backendConnected) {
+        try {
+            await saveBackendProjects(projects as unknown as Record<string, unknown>[]);
+            return;
+        } catch { /* fall through to agent */ }
+    }
     const connection = agentConnection();
     if (!connection || (!force && !serverHydrated)) return;
     try { await fetchAgentJson(connection.endpoint, connection.token, "/canvas/projects", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ projects }) }); } catch { /* local cache remains available while Agent is offline */ }
+}
+
+async function hydrateCanvasProjectsFromBackend() {
+    const backendConnected = useBackendStore.getState().connected;
+    if (!backendConnected) return false;
+    try {
+        const response = await fetchBackendProjects();
+        const remoteProjects = Array.isArray(response.projects) ? response.projects as unknown as CanvasProject[] : [];
+        if (remoteProjects.length) {
+            useCanvasStore.setState({ projects: remoteProjects });
+            return true;
+        }
+        const localProjects = useCanvasStore.getState().projects;
+        if (localProjects.length) await saveBackendProjects(localProjects as unknown as Record<string, unknown>[]);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 async function hydrateCanvasProjectsFromAgent() {
@@ -66,6 +94,13 @@ async function hydrateCanvasProjectsFromAgent() {
         else if (localProjects.length) await syncCanvasProjects(localProjects, true);
     } catch { /* keep the cached projects if Agent is unavailable */ }
     serverHydrated = true;
+}
+
+/** 混合 hydrate：总后台优先，回退到 Agent。 */
+async function hydrateCanvasProjects() {
+    const fromBackend = await hydrateCanvasProjectsFromBackend();
+    if (fromBackend) { serverHydrated = true; return; }
+    await hydrateCanvasProjectsFromAgent();
 }
 
 const canvasStorage: PersistStorage<CanvasStore> = {
@@ -162,14 +197,15 @@ export const useCanvasStore = create<CanvasStore>()(
                 }) as StorageValue<CanvasStore>["state"],
             onRehydrateStorage: () => () => {
                 useCanvasStore.setState({ hydrated: true });
-                void hydrateCanvasProjectsFromAgent();
+                void hydrateCanvasProjects();
             },
         },
     ),
 );
 
 if (typeof window !== "undefined") {
-    window.addEventListener("canvas-agent-connected", () => { void hydrateCanvasProjectsFromAgent(); });
+    window.addEventListener("canvas-agent-connected", () => { void hydrateCanvasProjects(); });
+    window.addEventListener("backend-connected", () => { void hydrateCanvasProjects(); });
 }
 
 async function importLegacyGenerationLogs(projectId: string, value: unknown) {

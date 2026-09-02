@@ -2,7 +2,8 @@ import { useEffect, useState } from "@infinite-canvas/plugin-sdk";
 import type { CanvasNodeContext } from "@infinite-canvas/plugin-sdk";
 
 import { h3LoraOptions, h3ModelOptions } from "../constants";
-import { normalizeH3Model } from "../services/h3-models";
+import { discoverH3Models, mergeH3Options } from "../services/model-discovery";
+import { normalizeH3Model } from "../services/h3-compatibility";
 import type { H3Segment } from "../types";
 
 type Props = { ctx: CanvasNodeContext; metadata: Record<string, unknown>; segment?: H3Segment; patch: (value: Partial<H3Segment>) => void };
@@ -11,7 +12,7 @@ export function ClipSettings({ ctx, metadata, segment, patch }: Props) {
     const [comfyModels, setComfyModels] = useState<{ models: string[]; loras: string[] }>({ models: [], loras: [] });
     useEffect(() => {
         let active = true;
-        void ctx.ai.listLocalH3Models().then((value) => { if (active) setComfyModels(value); }).catch(() => undefined);
+        void discoverH3Models(ctx).then((value) => { if (active) setComfyModels(value); });
         return () => { active = false; };
     // CanvasNodeContext is recreated on every canvas render. Depending on
     // ctx.ai here would therefore re-run the effect after setState forever.
@@ -20,8 +21,8 @@ export function ClipSettings({ ctx, metadata, segment, patch }: Props) {
     if (!segment) return null;
     const field = { width: "100%", minWidth: 0, boxSizing: "border-box", border: `1px solid ${ctx.theme.node.stroke}`, borderRadius: 5, padding: "4px 5px", background: ctx.theme.node.panel, color: ctx.theme.node.text, fontSize: 10 } as const;
     const labelFor = (value: string) => value.replace(/^.*[\\/]/, "");
-    const modelOptions = [...h3ModelOptions, ...comfyModels.models.filter((value) => !h3ModelOptions.some((option) => option.value === value)).map((value) => ({ value, label: labelFor(value) }))];
-    const loraOptions = [...h3LoraOptions, ...comfyModels.loras.filter((value) => !h3LoraOptions.some((option) => option.value === value)).map((value) => ({ value, label: labelFor(value) }))];
+    const modelOptions = mergeH3Options(h3ModelOptions, comfyModels.models, labelFor);
+    const loraOptions = mergeH3Options(h3LoraOptions, comfyModels.loras, labelFor);
     return <div className="minimax-settings-extra" style={{ display: "contents" }}>
         <label className="minimax-wide-setting"><span>Task mode</span><select value={String(segment.taskMode || "r2v")} onChange={(event) => patch({ taskMode: event.target.value })} style={field}><option value="t2v">文生视频</option><option value="i2v">图生视频</option><option value="fl2v">首尾帧生视频</option><option value="r2v">参考主体</option><option value="v2v">视频编辑</option><option value="rv2v">参考素材改视频</option></select></label>
         <label className="minimax-wide-setting"><span>Payment</span><select value={String(metadata.rhPayment || "free")} onChange={(event) => ctx.updateMetadata({ rhPayment: event.target.value })} style={field}><option value="free">Free</option><option value="wallet">Wallet</option></select></label>

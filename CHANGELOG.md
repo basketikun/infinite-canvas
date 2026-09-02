@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [优化] MiniMax H3 插件浏览器端按入口、工作台、类型、常量、服务、hooks 和样式模块拆分，保持现有节点与 Agent MCP 契约不变。
 + [新增] Canvas Agent 支持插件 MCP 能力:启用 MiniMax H3 插件时在 Agent 侧动态注册 h3_* 工具(h3_list_models / h3_get_node / h3_run_clip / h3_get_task / h3_cancel_task / h3_update_clip / h3_run_all_clips),复用 ComfyUiBridge 与任务库,并经官方白名单加载。
 + [新增] 插件协议新增可选 `mcp` 声明(CanvasPluginMcp),支持浏览器启用/禁用时经 `POST /api/plugins/mcp` 通知 Agent 动态注册/注销 MCP 工具,声明持久化到 SQLite,重启后仍生效。
 + [修复] 文档站默认英文路径不再因内部语言重写产生重定向循环。

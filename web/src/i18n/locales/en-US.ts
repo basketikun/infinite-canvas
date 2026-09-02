@@ -160,6 +160,12 @@ export default {
             addAssetRef: "Asset reference",
         },
     },
+    backend: {
+        connecting: "Connecting to local backend…",
+        disconnected: "Local backend is not running. Business data is read-only. Start it with npm run dev:backend.",
+        connected: "Local backend connected",
+        migration: "Migrating legacy data to backend…",
+    },
     notFound: {
         title: "Page not found",
         description: "There is no page at this address. It may have moved or been merged into another section.",
