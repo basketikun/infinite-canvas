@@ -161,7 +161,7 @@ function selectSegment(segments: H3Segment[], index?: number): { segment: H3Segm
     return { segment: segments[chosen], index: chosen };
 }
 
-async function runSegment(context: PluginMcpContext, node: AgentCanvasNode, index: number, override: Record<string, unknown>) {
+async function runSegment(context: PluginMcpContext, node: AgentCanvasNode, index: number | undefined, override: Record<string, unknown>) {
     const segments = segmentsOf(node);
     const { segment } = selectSegment(segments, index);
     const { images, videos, audios } = collectRefs(segment);
@@ -201,7 +201,7 @@ export const pluginMcp: PluginMcpModule = {
                 if (!node) throw new Error(`找不到画布节点:${nodeId}`);
                 if (!isH3Node(node)) throw new Error(`节点 ${nodeId} 不是 MiniMax H3 节点`);
                 const index = typeof input.segmentIndex === "number" ? input.segmentIndex : undefined;
-                const task = await runSegment(context, node, index ?? -1, (input.params as Record<string, unknown>) || {});
+                const task = await runSegment(context, node, index, (input.params as Record<string, unknown>) || {});
                 return task;
             },
             h3_get_task: async (input) => {
