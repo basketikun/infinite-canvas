@@ -30,30 +30,31 @@ export const useBackendStore = create<BackendStore>((set, get) => ({
     checkConnection: async () => {
         set({ checking: true });
         const wasConnected = get().connected;
-        if (!get().token) {
-            const discovered = await discoverBackendToken();
-            if (discovered.ok && discovered.token) {
-                setBackendConnection(getBackendUrl(), discovered.token);
-                set({ token: discovered.token });
-            }
-        }
         const health = await backendHealth();
-        if (health.ok) {
-            if (!wasConnected) {
-                const { migrateIndexDBToBackend } = await import("@/lib/backend-migration");
-                const migration = await migrateIndexDBToBackend();
-                if (!migration.success) {
-                    const error = `Backend 数据迁移失败：${migration.error || "未知错误"}`;
-                    console.warn("[backend-migration]", error);
-                    set({ connected: false, checking: false, error });
-                    return;
-                }
-            }
-            set({ connected: true, checking: false, error: "" });
-            if (!wasConnected) window.dispatchEvent(new Event("backend-connected"));
-        } else {
+        if (!health.ok) {
             set({ connected: false, checking: false, error: `无法连接总后台 ${getBackendUrl()}` });
+            return;
         }
+        // 后端 /config 是 token 权威来源，连接时以后端为准刷新，避免缓存旧 token 导致 401。
+        const discovered = await discoverBackendToken();
+        if (discovered.ok && discovered.token && discovered.token !== get().token) {
+            setBackendConnection(getBackendUrl(), discovered.token);
+            set({ token: discovered.token, checking: true });
+            await get().checkConnection();
+            return;
+        }
+        if (!wasConnected) {
+            const { migrateIndexDBToBackend } = await import("@/lib/backend-migration");
+            const migration = await migrateIndexDBToBackend();
+            if (!migration.success) {
+                const error = `Backend 数据迁移失败：${migration.error || "未知错误"}`;
+                console.warn("[backend-migration]", error);
+                set({ connected: false, checking: false, error });
+                return;
+            }
+        }
+        set({ connected: true, checking: false, error: "" });
+        if (!wasConnected) window.dispatchEvent(new Event("backend-connected"));
     },
 
     reset: () => set({ connected: false, checking: false, error: "" }),
