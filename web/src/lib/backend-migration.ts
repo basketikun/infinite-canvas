@@ -24,7 +24,7 @@ import {
 import type { Asset, AssetFolder } from "@/stores/use-asset-store";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 
-const MIGRATION_MARKER_KEY = "infinite-canvas:backend_migration_done";
+const MIGRATION_MARKER_KEY = "infinite-canvas:backend_migration_done_v2";
 
 // ── 去重依据 ──────────────────────────────────────────────────────────────
 const MIGRATION_DEDUP = {
@@ -78,26 +78,21 @@ export async function migrateIndexDBToBackend(): Promise<MigrationResult> {
         await buildDedupSets();
 
         // 1. 从 IndexedDB 读取画布项目
-        const canvasStore = await getLocalForageItem(ASSET_STORE_KEY_CANVAS);
+        const canvasStore = await getLocalForageItem("app_state", ASSET_STORE_KEY_CANVAS);
         let projectsMigrated = 0;
         const canvasProjects = (canvasStore as Record<string, unknown> | null)?.projects;
-        if (Array.isArray(canvasProjects)) {
-            const projects = (canvasProjects as CanvasProject[]).filter((p) => p.id && !MIGRATION_DEDUP.existingProjectIds.has(p.id));
-            if (projects.length) {
-                await saveBackendProjects(projects as unknown as Record<string, unknown>[]);
-                projects.forEach((p) => MIGRATION_DEDUP.existingProjectIds.add(p.id));
-                projectsMigrated = projects.length;
-            }
-        }
+        const projects = Array.isArray(canvasProjects)
+            ? (canvasProjects as CanvasProject[]).filter((p) => p.id)
+            : [];
 
         // 2. 从 IndexedDB 读取素材
-        const assetStore = await getLocalForageItem(ASSET_STORE_KEY_ASSETS);
+        const assetStore = await getLocalForageItem("app_state", ASSET_STORE_KEY_ASSETS);
         let assetsMigrated = 0;
         let mediaUploaded = 0;
         const rawAssets = (assetStore as Record<string, unknown> | null)?.assets;
         const rawFolders = (assetStore as Record<string, unknown> | null)?.folders;
         if (Array.isArray(rawAssets)) {
-            const assets = (rawAssets as Asset[]).filter((a) => a.id && !MIGRATION_DEDUP.existingAssetIds.has(a.id));
+            const assets = (rawAssets as Asset[]).filter((a) => a.id);
             const folders = Array.isArray(rawFolders) ? (rawFolders as AssetFolder[]) : [];
 
             if (assets.length || folders.length) {
@@ -105,16 +100,27 @@ export async function migrateIndexDBToBackend(): Promise<MigrationResult> {
                 for (const asset of assets) {
                     mediaUploaded += await migrateAssetMedia(asset, uploadedMedia);
                 }
-                await saveBackendAssets(assets as unknown[], folders as unknown[]);
+                await saveBackendAssets(assets.map((asset) => rewriteStorageKeys(asset)) as unknown[], folders as unknown[]);
                 assets.forEach((a) => MIGRATION_DEDUP.existingAssetIds.add(a.id));
                 assetsMigrated = assets.length;
             }
         }
 
+        await migrateReferencedMedia([...projects, ...(Array.isArray(rawAssets) ? rawAssets : [])], uploadedMedia);
+
+        if (projects.length) {
+            await saveBackendProjects(projects.map((project) => rewriteStorageKeys(project)) as unknown as Record<string, unknown>[]);
+            projects.forEach((project) => MIGRATION_DEDUP.existingProjectIds.add(project.id));
+            projectsMigrated = projects.length;
+        }
+
         // 3. 迁移生成日志（如果有）
-        const logStore = await getLocalForageItem(ASSET_STORE_KEY_LOGS);
+        const logStores = [
+            await getLocalForageItem("image_generation_logs", "infinite-canvas:image_generation_logs"),
+            await getLocalForageItem("video_generation_logs", "infinite-canvas:video_generation_logs"),
+        ];
         let logsMigrated = 0;
-        if (Array.isArray(logStore)) {
+        for (const logStore of logStores) if (Array.isArray(logStore)) {
             const logs = logStore as Record<string, unknown>[];
             for (const log of logs.slice(0, 500)) {
                 const id = String(log.id || "");
@@ -240,14 +246,35 @@ async function migrateAssetMedia(asset: Asset, uploadedMedia: string[]): Promise
     return count;
 }
 
+async function migrateReferencedMedia(values: unknown[], uploadedMedia: string[]) {
+    const keys = new Set<string>();
+    const collect = (value: unknown) => {
+        if (Array.isArray(value)) return value.forEach(collect);
+        if (!value || typeof value !== "object") return;
+        Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+            if (key === "storageKey" && typeof item === "string") keys.add(item);
+            else collect(item);
+        });
+    };
+    values.forEach(collect);
+    for (const storageKey of keys) {
+        if (MIGRATION_DEDUP.mediaKeyMap.has(storageKey)) continue;
+        const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
+        if (!blob) continue;
+        const dataUrl = await blobToDataUrl(blob);
+        const result = await uploadBackendMediaDataUrl({ name: storageKey, dataUrl, mimeType: blob.type || "application/octet-stream" });
+        MIGRATION_DEDUP.mediaKeyMap.set(storageKey, result.storageKey);
+        uploadedMedia.push(result.storageKey);
+    }
+}
+
 // ── LocalForage helpers ────────────────────────────────────────────────────
 
 const ASSET_STORE_KEY_CANVAS = "infinite-canvas:canvas_store";
 const ASSET_STORE_KEY_ASSETS = "infinite-canvas:asset_store";
-const ASSET_STORE_KEY_LOGS = "infinite-canvas:generation_logs";
 
-async function getLocalForageItem(key: string) {
-    const store = localforage.createInstance({ name: "infinite-canvas", storeName: key });
+async function getLocalForageItem(storeName: string, key: string) {
+    const store = localforage.createInstance({ name: "infinite-canvas", storeName });
     const value = await store.getItem<string>(key);
     if (!value) return null;
     try {
@@ -256,12 +283,19 @@ async function getLocalForageItem(key: string) {
     } catch { return null; }
 }
 
+function rewriteStorageKeys<T>(value: T): T {
+    if (Array.isArray(value)) return value.map((item) => rewriteStorageKeys(item)) as T;
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        key === "storageKey" && typeof item === "string"
+            ? MIGRATION_DEDUP.mediaKeyMap.get(item) || item
+            : rewriteStorageKeys(item),
+    ])) as T;
+}
+
 async function clearLocalForageBusinessData() {
-    const businessKeys = [ASSET_STORE_KEY_CANVAS, ASSET_STORE_KEY_ASSETS, "infinite-canvas:image_files", "infinite-canvas:media_files"];
-    for (const key of businessKeys) {
-        const store = localforage.createInstance({ name: "infinite-canvas", storeName: key });
-        await store.clear();
-    }
+    // 保留本地副本，直到远端媒体与所有节点引用都完成校验；清理由后续显式回收流程负责。
 }
 
 async function getImageBlob(storageKey: string) {

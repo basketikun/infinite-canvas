@@ -71,7 +71,13 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
                     const value = segment as Record<string, unknown>;
                     const refs = Array.isArray(value.refItems) ? await Promise.all(value.refItems.map((ref) => ref && typeof ref === "object" ? hydrateH3Ref(ref as { url?: string; dataUrl?: string; storageKey?: string; type?: string }) : ref)) : value.refItems;
                     const grouped = value.refs && typeof value.refs === "object" ? Object.fromEntries(await Promise.all(Object.entries(value.refs as Record<string, unknown>).map(async ([kind, list]) => [kind, Array.isArray(list) ? await Promise.all(list.map((ref) => ref && typeof ref === "object" ? hydrateH3Ref({ ...(ref as Record<string, unknown>), type: kind } as { url?: string; dataUrl?: string; storageKey?: string; type?: string }) : ref)) : list]))) : value.refs;
-                    return { ...value, ...(Array.isArray(refs) ? { refItems: refs } : {}), ...(grouped ? { refs: grouped } : {}) };
+                    const result = typeof value.result === "string" && value.resultStorageKey
+                        ? await resolveMediaUrl(String(value.resultStorageKey), value.result)
+                        : value.result;
+                    const results = Array.isArray(value.results)
+                        ? await Promise.all(value.results.map((item) => item && typeof item === "object" ? hydrateH3Ref({ ...(item as Record<string, unknown>), type: "video" } as { url?: string; dataUrl?: string; storageKey?: string; type?: string }) : item))
+                        : value.results;
+                    return { ...value, ...(Array.isArray(refs) ? { refItems: refs } : {}), ...(grouped ? { refs: grouped } : {}), ...(result !== undefined ? { result } : {}), ...(Array.isArray(results) ? { results } : {}) };
                 })) : extendedMetadata.segments;
                 const h3Refs = extendedMetadata.h3Refs && typeof extendedMetadata.h3Refs === "object" ? Object.fromEntries(await Promise.all(Object.entries(extendedMetadata.h3Refs as Record<string, unknown>).map(async ([kind, list]) => [kind, Array.isArray(list) ? await Promise.all(list.map((ref) => ref && typeof ref === "object" ? hydrateH3Ref({ ...(ref as Record<string, unknown>), type: kind } as { url?: string; dataUrl?: string; storageKey?: string; type?: string }) : ref)) : list]))) : extendedMetadata.h3Refs;
                 const h3CharacterAssets = Array.isArray(extendedMetadata.h3CharacterAssets) ? await Promise.all(extendedMetadata.h3CharacterAssets.map(async (asset: unknown) => {
@@ -81,7 +87,13 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
                     const images = await Promise.all(value.images.map((image) => image && typeof image === "object" ? hydrateH3Ref({ ...(image as Record<string, unknown>), type: "image" } as { url?: string; dataUrl?: string; storageKey?: string; type?: string }) : image));
                     return { ...value, images };
                 })) : extendedMetadata.h3CharacterAssets;
-                return { ...node, metadata: { ...metadata, ...(Array.isArray(segments) ? { segments } : {}), ...(h3Refs ? { h3Refs } : {}), ...(Array.isArray(h3CharacterAssets) ? { h3CharacterAssets } : {}) } };
+                const materials = Array.isArray(extendedMetadata.materials)
+                    ? await Promise.all(extendedMetadata.materials.map((item) => item && typeof item === "object" ? hydrateH3Ref({ ...(item as Record<string, unknown>), type: "video" } as { url?: string; dataUrl?: string; storageKey?: string; type?: string }) : item))
+                    : extendedMetadata.materials;
+                const outputContent = extendedMetadata.storageKey
+                    ? await resolveMediaUrl(String(extendedMetadata.storageKey), content || "")
+                    : content;
+                return { ...node, metadata: { ...metadata, ...(outputContent !== undefined ? { content: outputContent } : {}), ...(Array.isArray(segments) ? { segments } : {}), ...(h3Refs ? { h3Refs } : {}), ...(Array.isArray(h3CharacterAssets) ? { h3CharacterAssets } : {}), ...(Array.isArray(materials) ? { materials } : {}) } };
             }
             if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && metadata?.storageKey) return { ...node, metadata: { ...metadata, content: await resolveMediaUrl(metadata.storageKey, content) } };
             if (node.type !== CanvasNodeType.Image || !metadata || !content) return node;

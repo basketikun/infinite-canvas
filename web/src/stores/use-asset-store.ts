@@ -72,7 +72,11 @@ async function hydrateAssetsFromBackend() {
         const remoteAssets = Array.isArray(response.assets) ? response.assets as unknown as Asset[] : [];
         const remoteFolders = Array.isArray(response.folders) ? response.folders as unknown as AssetFolder[] : [];
         if (remoteAssets.length) {
-            useAssetStore.setState({ assets: remoteAssets, folders: remoteFolders });
+            const local = useAssetStore.getState();
+            const assets = mergeByUpdatedAt(local.assets, remoteAssets);
+            const folders = mergeById(local.folders, remoteFolders);
+            useAssetStore.setState({ assets, folders });
+            if (assets.length !== remoteAssets.length || folders.length !== remoteFolders.length) await syncAssetsToBackend(assets, folders);
             return true;
         }
         const state = useAssetStore.getState();
@@ -81,6 +85,21 @@ async function hydrateAssetsFromBackend() {
     } catch {
         return false;
     }
+}
+
+function mergeByUpdatedAt<T extends { id: string; updatedAt?: string }>(local: T[], remote: T[]) {
+    const byId = new Map<string, T>();
+    [...remote, ...local].forEach((item) => {
+        const current = byId.get(item.id);
+        if (!current || String(item.updatedAt || "") > String(current.updatedAt || "")) byId.set(item.id, item);
+    });
+    return [...byId.values()];
+}
+
+function mergeById<T extends { id: string }>(local: T[], remote: T[]) {
+    const byId = new Map(remote.map((item) => [item.id, item]));
+    local.forEach((item) => { if (!byId.has(item.id)) byId.set(item.id, item); });
+    return [...byId.values()];
 }
 
 async function hydrateAssets() {

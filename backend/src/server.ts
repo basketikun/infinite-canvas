@@ -75,7 +75,7 @@ export function startServer(db: Parameters<typeof createStores>[0], config: Reso
         res.json({ ok: true, protocolVersion: 1, node: process.version, pid: process.pid });
     });
     app.get("/config", (_req, res) => {
-        res.json({ ok: true, protocolVersion: 1, url: config.url, hasToken: true });
+        res.json({ ok: true, protocolVersion: 1, url: config.url, token: config.token, hasToken: true });
     });
     app.get("/runtime/status", async (_req, res) => {
         const extra: Record<string, unknown> = { sqlite: true, node: process.version };

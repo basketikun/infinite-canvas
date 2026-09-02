@@ -72,7 +72,10 @@ async function hydrateCanvasProjectsFromBackend() {
         const response = await fetchBackendProjects();
         const remoteProjects = Array.isArray(response.projects) ? response.projects as unknown as CanvasProject[] : [];
         if (remoteProjects.length) {
-            useCanvasStore.setState({ projects: remoteProjects });
+            const localProjects = useCanvasStore.getState().projects;
+            const merged = mergeProjects(localProjects, remoteProjects);
+            useCanvasStore.setState({ projects: merged });
+            if (JSON.stringify(merged) !== JSON.stringify(remoteProjects)) await saveBackendProjects(merged as unknown as Record<string, unknown>[]);
             return true;
         }
         const localProjects = useCanvasStore.getState().projects;
@@ -90,10 +93,19 @@ async function hydrateCanvasProjectsFromAgent() {
         const response = await fetchAgentJson<{ ok?: boolean; projects?: CanvasProject[] }>(connection.endpoint, connection.token, "/canvas/projects");
         const remoteProjects = Array.isArray(response.projects) ? response.projects : [];
         const localProjects = useCanvasStore.getState().projects;
-        if (remoteProjects.length) useCanvasStore.setState({ projects: remoteProjects });
+        if (remoteProjects.length) useCanvasStore.setState({ projects: mergeProjects(localProjects, remoteProjects) });
         else if (localProjects.length) await syncCanvasProjects(localProjects, true);
     } catch { /* keep the cached projects if Agent is unavailable */ }
     serverHydrated = true;
+}
+
+function mergeProjects(local: CanvasProject[], remote: CanvasProject[]) {
+    const byId = new Map<string, CanvasProject>();
+    [...remote, ...local].forEach((project) => {
+        const current = byId.get(project.id);
+        if (!current || String(project.updatedAt || "") > String(current.updatedAt || "")) byId.set(project.id, project);
+    });
+    return [...byId.values()].sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
 }
 
 /** 混合 hydrate：总后台优先，回退到 Agent。 */

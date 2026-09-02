@@ -106,18 +106,13 @@ export async function uploadBackendMedia(options: {
     height?: number;
     durationMs?: number;
 }): Promise<BackendMediaResult> {
-    const formData = new FormData();
-    formData.append("file", options.blob, options.name);
-    formData.append("name", options.name);
-    formData.append("mimeType", options.mimeType || options.blob.type || "application/octet-stream");
-    if (options.width) formData.append("width", String(options.width));
-    if (options.height) formData.append("height", String(options.height));
-    if (options.durationMs) formData.append("durationMs", String(options.durationMs));
-    const url = `${getBackendUrl().replace(/\/$/, "")}/media/upload?token=${encodeURIComponent(getBackendToken())}`;
-    const res = await fetch(url, { method: "POST", body: formData });
-    const data = (await res.json()) as { ok: boolean; media?: BackendMediaResult; error?: string };
-    if (!res.ok) throw new Error(`Media upload failed: HTTP ${res.status} ${data.error || ""}`);
-    return data.media!;
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("Failed to read media"));
+        reader.readAsDataURL(options.blob);
+    });
+    return uploadBackendMediaDataUrl({ name: options.name, dataUrl, mimeType: options.mimeType || options.blob.type || "application/octet-stream", width: options.width, height: options.height, durationMs: options.durationMs });
 }
 
 export async function uploadBackendMediaDataUrl(options: {

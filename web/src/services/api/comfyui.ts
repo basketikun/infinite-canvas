@@ -1,7 +1,7 @@
 import { fetchAgentJson, syncRuntimeMedia } from "./canvas-agent";
 
 type LocalReference = { name: string; dataUrl?: string; url?: string };
-type ComfyMedia = { url: string; mimeType: string };
+type ComfyMedia = { url: string; mimeType: string; storageKey?: string };
 type ComfyTask = { id: string; status: "queued" | "running" | "succeeded" | "failed" | "cancelled"; progress: number; result?: { media?: ComfyMedia[]; segments?: Array<{ media?: ComfyMedia[] }> } | null; error?: string | null };
 
 export function resolveComfyImageSize(value: string) {

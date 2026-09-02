@@ -34,6 +34,21 @@ type PluginHostParams = {
     applyAgentOps: (ops?: CanvasAgentOp[]) => unknown;
 };
 
+async function persistH3Result(result: Awaited<ReturnType<typeof runLocalH3Task>>) {
+    const stored = await storeGeneratedVideo({ url: result.url, mimeType: result.mimeType, width: result.width, height: result.height, durationMs: result.durationMs });
+    const segments = result.segments
+        ? await Promise.all(result.segments.map(async (segment) => ({
+            ...segment,
+            media: segment.media ? await Promise.all(segment.media.map(async (media) => {
+                if (!media.mimeType.startsWith("video/") || media.storageKey) return media;
+                const item = await storeGeneratedVideo({ url: media.url, mimeType: media.mimeType });
+                return { ...media, url: item.url, storageKey: item.storageKey };
+            })) : segment.media,
+        })))
+        : result.segments;
+    return { ...result, url: stored.url, storageKey: stored.storageKey, segments };
+}
+
 /**
  * Plugin node host capabilities: expose host-side AI generation, canvas access, and panel controls
  * through plugin-callable host/ai objects. Loads installed remote plugins on mount and returns renderers for plugin panels and toolbars.
@@ -104,12 +119,17 @@ export function usePluginHost(params: PluginHostParams) {
                     return await response.json() as { url?: string };
                 });
                 if (!comfy.url) throw new Error("尚未配置本地 ComfyUI 地址");
-                return runLocalH3Task(agent.url, agent.token, comfy.url, prompt, input, params, options?.signal, options?.onTaskId);
+                const result = await runLocalH3Task(agent.url, agent.token, comfy.url, prompt, input, params, options?.signal, options?.onTaskId);
+                return persistH3Result(result);
             },
             getLocalH3Task: async (taskId) => {
                 const agent = useAgentStore.getState();
                 if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法查询 H3 任务");
-                return await getLocalH3Task(agent.url, agent.token, taskId) as Awaited<ReturnType<typeof getLocalH3Task>>;
+                const task = await getLocalH3Task(agent.url, agent.token, taskId) as Awaited<ReturnType<typeof getLocalH3Task>>;
+                if (task.status === "succeeded" && task.result?.url && !task.result.storageKey) {
+                    return { ...task, result: await persistH3Result(task.result) };
+                }
+                return task;
             },
             listLocalH3Models: async () => {
                 const agent = useAgentStore.getState();
@@ -120,12 +140,17 @@ export function usePluginHost(params: PluginHostParams) {
             runRunningHubH3: async (prompt, input, params, options) => {
                 const agent = useAgentStore.getState();
                 if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法运行 RunningHub MiniMax H3");
-                return runRunningHubH3Task(agent.url, agent.token, prompt, input, params, options?.signal, options?.onTaskId);
+                const result = await runRunningHubH3Task(agent.url, agent.token, prompt, input, params, options?.signal, options?.onTaskId);
+                return persistH3Result(result);
             },
             getRunningHubH3Task: async (taskId) => {
                 const agent = useAgentStore.getState();
                 if (!agent.connected || !agent.url || !agent.token) throw new Error("Canvas Agent 未连接，无法查询 RunningHub H3 任务");
-                return await getRunningHubH3Task(agent.url, agent.token, taskId) as Awaited<ReturnType<typeof getRunningHubH3Task>>;
+                const task = await getRunningHubH3Task(agent.url, agent.token, taskId) as Awaited<ReturnType<typeof getRunningHubH3Task>>;
+                if (task.status === "succeeded" && task.result?.url && !task.result.storageKey) {
+                    return { ...task, result: await persistH3Result(task.result) };
+                }
+                return task;
             },
             // List configured models for a capability; labels use the model name without the channel prefix.
             listModels: (capability) => selectableModelsByCapability(effectiveConfig, capability as ModelCapability | undefined).map((value) => ({ value, label: decodeChannelModel(value)?.model || value })),

@@ -10,6 +10,7 @@ export type H3Segment = {
     prompt?: string;
     duration?: number;
     result?: string;
+    resultStorageKey?: string;
     results?: H3Ref[];
     status?: string;
     progress?: number;

@@ -176,10 +176,14 @@ export function startHttpServer() {
     app.get("/runtime/tasks/:id", (req, res) => runtimeTaskResponse(req, res, runtimeDb));
     app.get("/runtime/generation-logs", route(async (req, res) => {
         const status = ["queued", "running", "success", "failed", "cancelled"].includes(String(req.query.status)) ? String(req.query.status) as any : undefined;
+        const options = { projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId), status, limit: Number(req.query.limit || 500) };
+        const localLogs = runtimeDb.listGenerationLogs(options);
         try {
-            res.json({ ok: true, logs: await backend.listGenerationLogs({ projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId), status, limit: Number(req.query.limit || 500) }) });
+            const remoteLogs = await backend.listGenerationLogs(options);
+            const logs = [...remoteLogs, ...localLogs].filter((log, index, all) => all.findIndex((item) => String(item.id) === String(log.id)) === index).sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))).slice(0, options.limit);
+            res.json({ ok: true, logs });
         } catch {
-            res.json({ ok: true, logs: runtimeDb.listGenerationLogs({ projectId: stringQuery(req.query.projectId), nodeId: stringQuery(req.query.nodeId), status, limit: Number(req.query.limit || 500) }) });
+            res.json({ ok: true, logs: localLogs });
         }
     }));
     app.post("/runtime/generation-logs", route(async (req, res) => {

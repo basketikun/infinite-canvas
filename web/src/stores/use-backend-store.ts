@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { backendHealth, getBackendToken, getBackendUrl, setBackendConnection } from "@/services/backend-api";
+import { backendHealth, discoverBackendToken, getBackendToken, getBackendUrl, setBackendConnection } from "@/services/backend-api";
 
 type BackendStore = {
     url: string;
@@ -30,6 +30,13 @@ export const useBackendStore = create<BackendStore>((set, get) => ({
     checkConnection: async () => {
         set({ checking: true });
         const wasConnected = get().connected;
+        if (!get().token) {
+            const discovered = await discoverBackendToken();
+            if (discovered.ok && discovered.token) {
+                setBackendConnection(getBackendUrl(), discovered.token);
+                set({ token: discovered.token });
+            }
+        }
         const health = await backendHealth();
         if (health.ok) {
             set({ connected: true, checking: false, error: "" });

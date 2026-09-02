@@ -151,7 +151,11 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
     if (cached) return cached;
     // 尝试从 total backend 代理地址解析
     if (useBackendStore.getState().connected) {
-        return backendMediaUrl(storageKey);
+        const remoteUrl = backendMediaUrl(storageKey);
+        try {
+            const response = await fetch(remoteUrl, { method: "HEAD" });
+            if (response.ok) return remoteUrl;
+        } catch { /* use the local copy below */ }
     }
     const blob = await store.getItem<Blob>(storageKey);
     if (!blob) return fallback;
