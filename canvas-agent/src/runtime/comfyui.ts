@@ -231,6 +231,17 @@ export async function buildWorkflow(preset: string, input: Record<string, unknow
     if (preset === "flashvsr-1.1" && source["40"]?.inputs && params.longEdge !== undefined && params.longEdge !== "auto") source["40"].inputs.longer_edge = Number(params.longEdge);
     if (preset === "minimax-h3") {
         if (typeof params.modelName === "string" && params.modelName.trim() && source["127"]?.inputs) source["127"].inputs.unet_name = normalizeH3WorkflowModel(params.modelName);
+        // 注入真实提示词到 H3 文本节点。否则会用 MiniMax_H3.json 里写死的默认 prompt
+        // (节点 136 的 prompt 输入所引用的文本节点)，导致生成内容与用户 prompt 完全无关。
+        if (promptText) {
+            const h3PromptRef = source["136"]?.inputs?.prompt;
+            const h3PromptNodeId = Array.isArray(h3PromptRef) ? h3PromptRef[0] : null;
+            const h3PromptNode = h3PromptNodeId ? source[h3PromptNodeId] : null;
+            if (h3PromptNode?.inputs) {
+                if ("value" in h3PromptNode.inputs) h3PromptNode.inputs.value = promptText;
+                else if ("text" in h3PromptNode.inputs) h3PromptNode.inputs.text = promptText;
+            }
+        }
         const duration = Math.max(0.5, Math.min(60, Number(params.duration || 8)));
         const width = Number(params.width || 0);
         const height = Number(params.height || 0);
