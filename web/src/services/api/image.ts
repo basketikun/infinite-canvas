@@ -76,6 +76,12 @@ type ImageApiResponse = {
     code?: number;
     msg?: string;
 };
+type ImageTaskResponse = ImageApiResponse & {
+    id?: string;
+    object?: string;
+    status?: string;
+    result?: { data?: Array<Record<string, unknown>> };
+};
 type GeminiPart = {
     text?: string;
     inlineData?: { mimeType?: string; data?: string };
@@ -118,6 +124,7 @@ const IMAGE_OUTPUT_FORMAT = "png";
 
 const GEMINI_SUPPORTED_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"];
 const GEMINI_IMAGE_SIZE_BY_QUALITY: Record<string, string> = { low: "1K", medium: "2K", high: "4K", standard: "1K", hd: "2K" };
+const TOAPIS_IMAGE_RESOLUTION_BY_QUALITY: Record<string, string> = { low: "1k", medium: "2k", high: "4k", standard: "1k", hd: "2k" };
 
 function normalizeQuality(quality: string) {
     const value = quality.trim().toLowerCase();
@@ -197,6 +204,28 @@ function resolveRequestSize(quality: string | undefined, size: string) {
     throw new Error(apiText("invalidImageSizeFormat"));
 }
 
+function isToApis(config: Pick<AiConfig, "baseUrl">) {
+    try {
+        const { hostname } = new URL(config.baseUrl);
+        return hostname === "toapis.com" || hostname === "toapis.xyz";
+    } catch {
+        return false;
+    }
+}
+
+function toApisImageSize(size: string, requestSize: string | undefined) {
+    const value = size.trim();
+    if (value.includes(":")) return value;
+    const dimensions = parseImageDimensions(value) || (requestSize && parseImageDimensions(requestSize));
+    if (!dimensions) return undefined;
+    const divisor = greatestCommonDivisor(dimensions.width, dimensions.height);
+    return `${dimensions.width / divisor}:${dimensions.height / divisor}`;
+}
+
+function greatestCommonDivisor(left: number, right: number): number {
+    return right ? greatestCommonDivisor(right, left % right) : left;
+}
+
 function resolveGeminiImageConfig(config: AiConfig) {
     const value = config.size.trim();
     const dimensions = parseImageDimensions(value);
@@ -268,6 +297,21 @@ function parseImagePayload(payload: ImageApiResponse) {
     return images;
 }
 
+function imageTaskId(payload: ImageTaskResponse) {
+    return payload.object === "generation.task" && typeof payload.id === "string" ? payload.id : undefined;
+}
+
+async function waitForImageTask(config: AiConfig, taskId: string, options?: RequestOptions) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+        if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const { data } = await axios.get<ImageTaskResponse>(aiApiUrl(config, `/images/generations/${taskId}`), { headers: aiHeaders(config), signal: options?.signal });
+        if (data.status === "completed") return parseImagePayload({ ...data, data: data.result?.data });
+        if (data.status === "failed") throw new Error(readApiErrorMessage(data.error) || apiText("requestFailed"));
+        if (attempt < 59) await delay(3000, options?.signal);
+    }
+    throw new Error(apiText("imageTaskTimeout"));
+}
+
 function readApiErrorMessage(value: unknown): string {
     if (!value) return "";
     if (typeof value === "string") {
@@ -325,6 +369,17 @@ function readStatusError(status: number | undefined, fallback: string) {
     if (status === 502) return apiText("badGateway");
     if (status === 503) return apiText("serviceBusy");
     return status ? apiText("httpFailed", { status }) : fallback;
+}
+
+function delay(ms: number, signal?: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
+        const timer = setTimeout(resolve, ms);
+        signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+    });
 }
 
 function withSystemPrompt(config: AiConfig, prompt: string) {
@@ -746,27 +801,39 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
+    const usesToApis = isToApis(requestConfig);
+    const toApisSize = usesToApis ? toApisImageSize(config.size, requestSize) : undefined;
+    const body = usesToApis
+        ? {
+            model: requestConfig.model,
+            prompt: withSystemPrompt(requestConfig, prompt),
+            n,
+            ...(toApisSize ? { size: toApisSize } : {}),
+            ...(quality ? { resolution: TOAPIS_IMAGE_RESOLUTION_BY_QUALITY[quality] } : {}),
+        }
+        : {
+            model: requestConfig.model,
+            prompt: withSystemPrompt(requestConfig, prompt),
+            n,
+            ...(quality ? { quality } : {}),
+            ...(requestSize ? { size: requestSize } : {}),
+            ...(background ? { background } : {}),
+            // gpt-image models reject response_format; they always return b64.
+            ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
+            output_format: IMAGE_OUTPUT_FORMAT,
+        };
     try {
-        const response = await axios.post<ImageApiResponse>(
+        const response = await axios.post<ImageTaskResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
-            {
-                model: requestConfig.model,
-                prompt: withSystemPrompt(requestConfig, prompt),
-                n,
-                ...(quality ? { quality } : {}),
-                ...(requestSize ? { size: requestSize } : {}),
-                ...(background ? { background } : {}),
-                // gpt-image models reject response_format; they always return b64.
-                ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
-                output_format: IMAGE_OUTPUT_FORMAT,
-            },
+            body,
             {
                 headers: aiHeaders(requestConfig, "application/json"),
                 signal: options?.signal,
             },
         );
-        const images = await parseImagePayload(response.data);
-        return images;
+        const taskId = imageTaskId(response.data);
+        if (taskId) return waitForImageTask(requestConfig, taskId, options);
+        return parseImagePayload(response.data);
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     }
