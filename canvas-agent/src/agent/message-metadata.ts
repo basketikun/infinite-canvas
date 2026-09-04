@@ -9,7 +9,7 @@ type MessageMetadataRecord = { version: 1; clientMessageId: string; threadId?: s
 type MetadataMessage = { role: string; threadId: string; turnId: string; clientMessageId?: string };
 
 const STORAGE_VERSION = 1;
-const MAX_PREVIEW_LENGTH = 500_000;
+const MAX_IMAGE_DATA_URL_LENGTH = 28 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 20_000;
 const MANIFEST_FILE = "manifest.json";
 const MESSAGE_ASSET_PREFIX = "agent-asset:";
@@ -94,6 +94,18 @@ export class MessageMetadataStore {
                 fs.rm(this.threadDirectory(threadId), { recursive: true, force: true }),
                 ...records.map((record) => fs.rm(this.assetDirectory(record.clientMessageId), { recursive: true, force: true })),
             ]);
+        });
+    }
+
+    removeTurn(threadId: string, turnId: string) {
+        return this.run(async () => {
+            if (!threadId || !turnId) return;
+            await this.ensureReady();
+            const records = (await readRecords(this.threadDirectory(threadId))).filter((record) => record.threadId === threadId && record.turnId === turnId);
+            await Promise.all(records.flatMap((record) => [
+                removeFile(this.threadFile(threadId, record.clientMessageId)),
+                fs.rm(this.assetDirectory(record.clientMessageId), { recursive: true, force: true }),
+            ]));
         });
     }
 
@@ -264,7 +276,7 @@ function imagePreview(value: unknown, allowAsset = false) {
     const url = value.trim();
     if (allowAsset && new RegExp(`^${MESSAGE_ASSET_PREFIX}[a-f0-9]{64}/[a-f0-9]{64}\\.(?:gif|jpe?g|png|webp)$`).test(url)) return url;
     if (/^https?:\/\//i.test(url)) return url.length <= 5000 ? url : "";
-    return url.length <= MAX_PREVIEW_LENGTH && /^data:image\/[a-z0-9.+-]+;base64,/i.test(url) ? url : "";
+    return url.length <= MAX_IMAGE_DATA_URL_LENGTH && /^data:image\/[a-z0-9.+-]+;base64,/i.test(url) ? url : "";
 }
 
 function remotePreview(value: unknown) {

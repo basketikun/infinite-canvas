@@ -10,6 +10,7 @@ export const REASONING_PLACEHOLDER = i18n.t("agent.events.analyzing");
 
 export type AgentEventPayload = {
     agent?: string;
+    projectId?: string;
     type?: string;
     threadId?: string;
     thread_id?: string;

@@ -221,11 +221,12 @@ test("new clients receive the current Codex state and later updates", (t) => {
     t.after(() => client.close());
 
     const hello = client.event("hello");
-    assert.equal(field(hello, "protocolVersion"), 6);
+    assert.equal(field(hello, "protocolVersion"), 10);
     assert.deepEqual(field(hello, "workspace"), { activeThreadId: "thread-2" });
-    assert.deepEqual(field(hello, "conversation"), { revision: 1, conversationId: "thread-2", threadId: "thread-2", status: "ready", mcpStatuses: {} });
-    assert.deepEqual(field(hello, "codex"), { busy: true, threadId: "thread-2", turnId: "turn-1" });
+    assert.deepEqual(field(hello, "conversation"), { revision: 1, projectId: "default", conversationId: "thread-2", threadId: "thread-2", status: "ready", mcpStatuses: {} });
+    assert.deepEqual(field(hello, "codex"), { busy: true, threadId: "thread-2", turnId: "turn-1", projectId: "default" });
     assert.deepEqual(field(hello, "pendingApprovals"), [{ requestId: "approval-1", threadId: "thread-2" }]);
+    assert.deepEqual(field(hello, "pendingClarifications"), []);
 
     session.trackCodexEvent("codex_approval_resolved", { requestId: "approval-1" });
     assert.deepEqual(session.codexPendingApprovals, []);
@@ -235,6 +236,34 @@ test("new clients receive the current Codex state and later updates", (t) => {
     session.trackCodexEvent("agent_error", { message: "app-server exited" });
     assert.deepEqual(session.codexPendingApprovals, []);
     assert.deepEqual(client.event("codex_state"), { busy: false, threadId: "thread-2", turnId: "turn-1" });
+});
+
+test("new clients restore pending Codex clarifications and resolution clears them", (t) => {
+    const session = new CanvasSession("thread-1");
+    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.trackCodexEvent("agent_clarification", { requestId: "question-1", threadId: "thread-1", turnId: "turn-1", message: "请选择", questions: [{ id: "style", label: "形式", kind: "single", options: [{ value: "brand", label: "品牌宣传片" }], required: true }] });
+    const client = connect(session, "first", "thread-1");
+    t.after(() => client.close());
+
+    assert.deepEqual(field(client.event("hello"), "pendingClarifications"), [{ requestId: "question-1", threadId: "thread-1", turnId: "turn-1", message: "请选择", questions: [{ id: "style", label: "形式", kind: "single", options: [{ value: "brand", label: "品牌宣传片" }], required: true }] }]);
+    session.trackCodexEvent("agent_clarification_resolved", { requestId: "question-1" });
+    assert.deepEqual(session.codexPendingClarifications, []);
+});
+
+test("重复澄清事件只保留同一个 requestId", () => {
+    const session = new CanvasSession("thread-1");
+    session.trackCodexEvent("agent_clarification", { requestId: "question-1", threadId: "thread-1", message: "第一次", questions: [] });
+    session.trackCodexEvent("agent_clarification", { requestId: "question-1", threadId: "thread-1", message: "重复事件", questions: [] });
+
+    assert.deepEqual(session.codexPendingClarifications, [{ requestId: "question-1", threadId: "thread-1", message: "重复事件", questions: [] }]);
+});
+
+test("turn 终态会清理未回答的澄清卡片", () => {
+    const session = new CanvasSession("thread-1");
+    session.trackCodexEvent("agent_clarification", { requestId: "question-1", threadId: "thread-1", turnId: "turn-1", questions: [] });
+    session.trackCodexEvent("agent_event", { type: "turn.completed", thread_id: "thread-1", turn_id: "turn-1" });
+
+    assert.deepEqual(session.codexPendingClarifications, []);
 });
 
 test("对话 revision 单调递增且 MCP 全部进入终态前保持 preparing", () => {
@@ -483,6 +512,23 @@ test("turn 结束后保留实时快照，直到网页确认权威历史", (t) =>
     const next = connect(session, "second", "thread-1");
     t.after(() => next.close());
     assert.deepEqual(next.events("agent_event"), []);
+});
+
+test("回退 turn 会清理其重放事件和待处理交互", (t) => {
+    const session = new CanvasSession();
+    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "" });
+    session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", text: "first" } });
+    session.emitThread("agent_event", "thread-1", { turnId: "turn-2", type: "item.updated", item: { id: "assistant-2", type: "agent_message", text: "second" } });
+    session.trackCodexEvent("codex_approval", { requestId: "approval-1", threadId: "thread-1", turnId: "turn-1" });
+    session.trackCodexEvent("agent_clarification", { requestId: "clarification-1", threadId: "thread-1", turnId: "turn-1" });
+
+    session.discardCodexTurn("thread-1", "turn-1");
+    const client = connect(session, "first", "thread-1");
+    t.after(() => client.close());
+
+    assert.deepEqual(session.codexPendingApprovals, []);
+    assert.deepEqual(session.codexPendingClarifications, []);
+    assert.deepEqual(client.events("agent_event"), [{ threadId: "thread-1", turnId: "turn-2", type: "item.updated", item: { id: "assistant-2", type: "agent_message", text: "second" }, replayed: true }]);
 });
 
 test("开始下一 turn 时只回放当前 turn 的事件", (t) => {

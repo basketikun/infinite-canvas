@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createAgentLogWriter } from "../utils/agent-runtime.js";
-import { VERSION } from "../config.js";
+import { CLARIFICATION_TIMEOUT_MS, CLARIFICATION_TOOL_TIMEOUT_SEC, VERSION } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { field, type JsonRecord } from "../utils/value.js";
 import { codexEventHistory, type CodexEventHistory } from "./codex-event-history.js";
@@ -17,7 +17,11 @@ type ActiveTurn = PendingRequest & { threadId: string; turnId: string; prompt: s
 type ItemDeltaParams = { threadId: string; turnId: string; itemId: string; delta: string; summaryIndex?: number };
 type PendingDelta = { delta: string; itemType: string; params: ItemDeltaParams; timer: ReturnType<typeof setTimeout> };
 type ApprovalRequest = { id: number; method: string; params: JsonRecord; decision?: string };
+export type ClarificationState = "pending" | "accepted" | "cancelled" | "expired";
+export type ClarificationResolution = { ok: boolean; state: ClarificationState | "missing" };
+type ClarificationRequest = { id: number; method: string; params: JsonRecord; state: ClarificationState; result?: JsonRecord; timer?: ReturnType<typeof setTimeout> };
 type PendingTurnStart = { threadId: string; prompt: string; messageText?: string; turnId?: string; onTurn?: (turnId: string) => void };
+type McpServiceStatus = { name: string; authStatus?: string };
 
 const canvasAgentMcp = canvasAgentMcpCommand();
 const require = createRequire(import.meta.url);
@@ -51,6 +55,8 @@ export class CodexAppClient {
     private nextItemSequences = new Map<string, number>();
     private plansByTurn = new Map<string, CodexPlanUpdate>();
     private approvalRequests = new Map<string, ApprovalRequest>();
+    private clarificationRequests = new Map<string, ClarificationRequest>();
+    private completedClarifications = new Map<string, ClarificationResolution>();
     private finalizingTurns = new Map<string, Promise<void>>();
     private skillReloads = new Map<string, Promise<CodexRequestResult<"skills/list">>>();
     private silentThreadIds = new Set<string>();
@@ -59,6 +65,7 @@ export class CodexAppClient {
     private pendingThreadStartedNotifications: JsonRecord[] = [];
     private pendingPreheatThreadStarts = 0;
     private preheatingThreadIds = new Set<string>();
+    private preheatedMcpServices = new Map<string, McpServiceStatus[]>();
     private failing = false;
     private failureMessage = "";
 
@@ -114,7 +121,7 @@ export class CodexAppClient {
             threadId = thread.id;
             if (preheat) {
                 this.preheatingThreadIds.add(threadId);
-                await this.completeMcpPreheat(threadId);
+                await this.completeMcpPreheat(threadId, cwd);
             }
             return thread;
         } finally {
@@ -140,7 +147,7 @@ export class CodexAppClient {
             if (preheat) this.preheatingThreadIds.add(threadId);
             const { thread } = await this.request("thread/resume", { threadId, ...threadSettings(permissionMode), ...(cwd ? { cwd } : {}) });
             if (!thread.id) throw new Error("Codex app-server 没有返回 thread id");
-            if (preheat) await this.completeMcpPreheat(thread.id);
+            if (preheat) await this.completeMcpPreheat(thread.id, cwd);
             return thread;
         } finally {
             if (preheat) this.pendingPreheatThreadStarts -= 1;
@@ -149,9 +156,15 @@ export class CodexAppClient {
     }
 
     /** 以 app-server 的权威 MCP 清单响应作为预热完成边界。 */
-    private async completeMcpPreheat(threadId: string) {
-        const result = await this.request("mcpServerStatus/list", { threadId, limit: 100, detail: "toolsAndAuthOnly" });
-        this.emit("agent_bootstrap", { type: "mcp.complete", phase: "preheat", threadId, services: result.data.map(({ name, authStatus }) => ({ name, authStatus })) });
+    private async completeMcpPreheat(threadId: string, cwd?: string) {
+        const cacheKey = mcpCacheKey(cwd);
+        let services = this.preheatedMcpServices.get(cacheKey);
+        if (!services) {
+            const result = await this.request("mcpServerStatus/list", { threadId, limit: 100, detail: "toolsAndAuthOnly" });
+            services = result.data.map(({ name, authStatus }) => ({ name, authStatus }));
+            this.preheatedMcpServices.set(cacheKey, services);
+        }
+        this.emit("agent_bootstrap", { type: "mcp.complete", phase: "preheat", threadId, services });
     }
 
     /** 查询 Codex 线程列表。 */
@@ -167,6 +180,13 @@ export class CodexAppClient {
     /** 归档指定 Codex 线程。 */
     archiveThread(threadId: string) {
         return this.request("thread/archive", { threadId });
+    }
+
+    /** 回退当前线程末尾已完成的 turn，线程 ID 保持不变。 */
+    async rollbackThread(threadId: string, numTurns = 1) {
+        const { thread } = await this.request("thread/rollback", { threadId, numTurns });
+        if (!thread.id) throw new Error("Codex app-server 没有返回 thread id");
+        return thread;
     }
 
     /** 释放临时草稿线程的 App Server 订阅和进程内缓存。 */
@@ -215,6 +235,11 @@ export class CodexAppClient {
         this.plansByTurn.forEach((item, key) => {
             if (item.threadId === threadId) this.plansByTurn.delete(key);
         });
+    }
+
+    /** 回退单个 turn 时保留同一线程其余轮次的计划缓存。 */
+    clearPlanUpdate(threadId: string, turnId: string) {
+        this.plansByTurn.delete(turnCacheKey(threadId, turnId));
     }
 
     /** 启动一个 Codex turn 并等待完成通知。 */
@@ -268,6 +293,7 @@ export class CodexAppClient {
         const turnId = this.currentTurnId;
         if (!threadId || !turnId || (requestedThreadId && requestedThreadId !== threadId)) return false;
         try {
+            this.cancelClarifications(threadId);
             logger.warn("Interrupting active Codex turn", { threadId, turnId });
             await this.request("turn/interrupt", { threadId, turnId });
             return true;
@@ -290,6 +316,24 @@ export class CodexAppClient {
             : { decision };
         this.write({ id: request.id, result });
         return true;
+    }
+
+    /** 回复网页端已经完成或取消的业务澄清请求。 */
+    resolveClarification(requestId: string, answers: JsonRecord | null): ClarificationResolution {
+        const request = this.clarificationRequests.get(requestId);
+        if (!request) return this.completedClarifications.get(requestId) || { ok: false, state: "missing" };
+        if (request.state !== "pending") return { ok: false, state: request.state };
+        const state = answers === null ? "cancelled" : "accepted";
+        const result = answers === null ? { action: "cancel" } : { action: "accept", content: answers };
+        request.state = state;
+        request.result = result;
+        if (request.timer) clearTimeout(request.timer);
+        this.write({ id: request.id, result });
+        this.emit("agent_clarification_resolved", { ...request.params, requestId, action: result.action, state });
+        this.clarificationRequests.delete(requestId);
+        const resolution = { ok: true, state } satisfies ClarificationResolution;
+        this.rememberClarification(requestId, resolution);
+        return resolution;
     }
 
     /** 标记下一次临时线程创建，使早于请求响应到达的通知也不会外泄。 */
@@ -375,6 +419,18 @@ export class CodexAppClient {
             if (request) {
                 this.approvalRequests.delete(requestId);
                 this.emit("codex_approval_resolved", { ...request.params, ...params, requestId, decision: request.decision });
+                return;
+            }
+            const clarification = requestId ? this.clarificationRequests.get(requestId) : undefined;
+            if (clarification) {
+                if (clarification.state === "pending") {
+                    clarification.state = "cancelled";
+                    clarification.result = { action: "cancel" };
+                    if (clarification.timer) clearTimeout(clarification.timer);
+                    this.emit("agent_clarification_resolved", { ...clarification.params, ...params, requestId, action: "cancel", state: "cancelled" });
+                    this.rememberClarification(requestId, { ok: false, state: "cancelled" });
+                }
+                this.clarificationRequests.delete(requestId);
             }
             return;
         }
@@ -569,8 +625,10 @@ export class CodexAppClient {
     private completeTurn(event: AgentEvent, params: JsonRecord, eventScope: ReturnType<typeof codexEventScope>) {
         const turn = (params as unknown as CodexNotificationParams<"turn/completed">).turn;
         const turnId = turn.id;
-        const turnKey = turnCacheKey(String(field(params, "threadId") || field(event, "thread_id") || ""), turnId);
+        const threadId = String(field(params, "threadId") || field(event, "thread_id") || "");
+        const turnKey = turnCacheKey(threadId, turnId);
         this.finalizingTurns.delete(turnKey);
+        if (threadId && turnId) this.cancelClarifications(threadId, turnId);
         this.emit("agent_event", { agent: "codex", ...event });
         const pending = this.activeTurns.get(turnKey);
         const error = turn.error;
@@ -666,7 +724,11 @@ export class CodexAppClient {
         const params = (field(message, "params") as JsonRecord) || {};
         const threadId = String(field(params, "threadId") || this.currentThreadId);
         if (this.silentThreadIds.has(threadId)) {
-            const result = method === "item/permissions/requestApproval" ? { permissions: {}, scope: "turn" } : { decision: "decline" };
+            const result = method === "item/permissions/requestApproval"
+                ? { permissions: {}, scope: "turn" }
+                : method === "mcpServer/elicitation/request"
+                    ? { action: "cancel" }
+                    : { decision: "decline" };
             this.write({ id: message.id, result });
             return;
         }
@@ -676,9 +738,41 @@ export class CodexAppClient {
             this.emit("codex_approval", { requestId, method, ...params });
             return;
         }
-        const result = method === "mcpServer/elicitation/request" ? { action: "accept", content: {}, _meta: null } : { decision: "decline" };
+        if (method === "mcpServer/elicitation/request") {
+            const requestId = String(message.id);
+            const request: ClarificationRequest = { id: Number(message.id), method, params, state: "pending" };
+            this.clarificationRequests.set(requestId, request);
+            this.emit("agent_clarification", normalizeClarificationRequest(requestId, params, this.currentThreadId, this.currentTurnId));
+            request.timer = setTimeout(() => this.expireClarification(requestId), Math.max(1_000, CLARIFICATION_TIMEOUT_MS - 1_000));
+            return;
+        }
+        const result = { decision: "decline" };
         this.write({ id: message.id, result });
         this.emit("agent_event", { agent: "codex", type: "server.request", method, params, result });
+    }
+
+    /** 将指定线程仍在等待的澄清统一取消，避免 turn 中断后永久悬挂。 */
+    cancelClarifications(threadId: string, turnId?: string) {
+        this.clarificationRequests.forEach((request, requestId) => {
+            if (request.state !== "pending") return;
+            if (String(field(request.params, "threadId") || this.currentThreadId) !== threadId) return;
+            if (turnId && String(field(request.params, "turnId") || this.currentTurnId) !== turnId) return;
+            this.resolveClarification(requestId, null);
+        });
+    }
+
+    /** 到期后取消仍未回答的澄清请求，避免前端保留失效卡片。 */
+    private expireClarification(requestId: string) {
+        const request = this.clarificationRequests.get(requestId);
+        if (!request || request.state !== "pending") return;
+        const result = { action: "cancel" };
+        request.state = "expired";
+        request.result = result;
+        if (request.timer) clearTimeout(request.timer);
+        this.write({ id: request.id, result });
+        this.emit("agent_clarification_resolved", { ...request.params, requestId, action: "cancel", state: "expired" });
+        this.clarificationRequests.delete(requestId);
+        this.rememberClarification(requestId, { ok: false, state: "expired" });
     }
 
     /** 完成指定 JSON-RPC 请求。 */
@@ -699,6 +793,15 @@ export class CodexAppClient {
         this.failing = true;
         this.failureMessage = message;
         this.approvalRequests.forEach((request, requestId) => this.emit("codex_approval_resolved", { ...request.params, requestId, decision: request.decision || "cancel" }));
+        this.clarificationRequests.forEach((request, requestId) => {
+            if (request.state !== "pending") return;
+            request.state = "cancelled";
+            request.result = { action: "cancel" };
+            if (request.timer) clearTimeout(request.timer);
+            this.emit("agent_clarification_resolved", { ...request.params, requestId, action: "cancel", state: "cancelled" });
+            this.rememberClarification(requestId, { ok: false, state: "cancelled" });
+        });
+        this.clarificationRequests.clear();
         const failedTurns = new Map<string, { threadId: string; turnId: string; prompt: string; messageText?: string }>();
         this.activeTurns.forEach(({ threadId, turnId, prompt, messageText }, key) => {
             if (this.silentThreadIds.has(threadId)) return;
@@ -726,6 +829,7 @@ export class CodexAppClient {
         this.completedTurns.clear();
         this.completedTurnResults.clear();
         this.approvalRequests.clear();
+        this.clarificationRequests.clear();
         this.silentThreadIds.clear();
         this.pendingSilentThreadStarts.clear();
         this.pendingThreadStartedNotifications.length = 0;
@@ -747,6 +851,11 @@ export class CodexAppClient {
             this.activeTurns.clear();
             this.finalizingTurns.clear();
         });
+    }
+
+    private rememberClarification(requestId: string, resolution: ClarificationResolution) {
+        this.completedClarifications.set(requestId, resolution);
+        while (this.completedClarifications.size > 256) this.completedClarifications.delete(this.completedClarifications.keys().next().value as string);
     }
 }
 
@@ -779,12 +888,13 @@ function canvasAgentMcpCommand() {
     const current = process.argv.find((arg) => /index\.(t|j)s$/.test(arg)) || "";
     const entry = path.resolve(current || fileURLToPath(new URL("../index.js", import.meta.url)));
     const tsx = path.join(path.dirname(entry), "..", "node_modules", "tsx", "dist", "cli.mjs");
+    if (entry.endsWith(".ts") && process.versions.bun) return { command: process.execPath, args: [entry, "mcp"] };
     return entry.endsWith(".ts") ? { command: process.execPath, args: [tsx, entry, "mcp"] } : { command: process.execPath, args: [entry, "mcp"] };
 }
 
 /** 生成 Codex app-server 使用的 MCP 配置。 */
 function codexConfig(permissionMode: AgentPermissionMode) {
-    return { model_reasoning_summary: "auto", ...(permissionMode === "automatic" ? { approvals_reviewer: "auto_review" } : {}), mcp_servers: { "infinite-canvas": { command: canvasAgentMcp.command, args: canvasAgentMcp.args, default_tools_approval_mode: "approve", startup_timeout_sec: 20, tool_timeout_sec: 90 } } };
+    return { model_reasoning_summary: "auto", ...(permissionMode === "automatic" ? { approvals_reviewer: "auto_review" } : {}), mcp_servers: { "infinite-canvas": { command: canvasAgentMcp.command, args: canvasAgentMcp.args, default_tools_approval_mode: "approve", startup_timeout_sec: 20, tool_timeout_sec: CLARIFICATION_TOOL_TIMEOUT_SEC } } };
 }
 
 function threadSettings(permissionMode: AgentPermissionMode) {
@@ -847,6 +957,47 @@ function codexEventScope(params: JsonRecord) {
     return { ...(threadId ? { thread_id: threadId } : {}), ...(turnId ? { turn_id: turnId } : {}) };
 }
 
+function normalizeClarificationRequest(requestId: string, params: JsonRecord, fallbackThreadId: string, fallbackTurnId: string) {
+    const requestedSchema = field(params, "requestedSchema") as JsonRecord || {};
+    const properties = field(requestedSchema, "properties") as JsonRecord || {};
+    const required = new Set(Array.isArray(field(requestedSchema, "required")) ? field(requestedSchema, "required") as unknown[] : []);
+    const meta = field(params, "_meta") as JsonRecord || {};
+    const clarification = field(meta, "infinite-canvas/clarification") as JsonRecord || {};
+    const supplied = Array.isArray(field(clarification, "questions")) ? field(clarification, "questions") as JsonRecord[] : [];
+    const suppliedById = new Map(supplied.map((question) => [String(field(question, "id") || ""), question]));
+    const questions = Object.entries(properties).flatMap(([id, definition]) => {
+        const schema = definition && typeof definition === "object" ? definition as JsonRecord : {};
+        const source = suppliedById.get(id) || {};
+        const type = String(field(schema, "type") || "string");
+        const standardOptions = type === "array" ? field(field(schema, "items"), "anyOf") : field(schema, "oneOf");
+        const kind = field(source, "kind") || (type === "array" ? "multiple" : Array.isArray(field(schema, "enum")) || Array.isArray(standardOptions) ? "single" : "text");
+        const values = type === "array" ? field(field(schema, "items"), "enum") : field(schema, "enum");
+        const enumNames = field(schema, "enumNames");
+        const options = Array.isArray(field(source, "options"))
+            ? field(source, "options")
+            : Array.isArray(standardOptions)
+                ? standardOptions.flatMap((option) => {
+                    const optionValue = field(option, "const");
+                    return typeof optionValue === "string" ? [{ value: optionValue, label: String(field(option, "title") || optionValue) }] : [];
+                })
+            : Array.isArray(values)
+                ? values.map((value, index) => ({ value: String(value), label: Array.isArray(enumNames) ? String(enumNames[index] || value) : String(value) }))
+                : undefined;
+        return id ? [{
+            id,
+            label: String(field(source, "label") || field(schema, "title") || id),
+            ...(String(field(source, "description") || field(schema, "description") || "") ? { description: String(field(source, "description") || field(schema, "description")) } : {}),
+            kind,
+            ...(options ? { options } : {}),
+            required: Boolean(field(source, "required") ?? required.has(id)),
+            ...(String(field(source, "placeholder") || "") ? { placeholder: String(field(source, "placeholder")) } : {}),
+        }] : [];
+    });
+    const threadId = String(field(params, "threadId") || fallbackThreadId);
+    const turnId = String(field(params, "turnId") || fallbackTurnId);
+    return { requestId, ...(threadId ? { threadId } : {}), ...(turnId ? { turnId } : {}), message: String(field(params, "message") || "请补充以下信息。"), questions };
+}
+
 /** 统一 app-server item 的类型和参数格式。 */
 function normalizeItem(item: unknown) {
     const value = item && typeof item === "object" ? { ...(item as JsonRecord) } : {};
@@ -897,4 +1048,10 @@ function parseMaybeJson(value: unknown) {
 /** 定位当前依赖中 Codex CLI 的执行文件。 */
 function codexBin() {
     return path.join(path.dirname(require.resolve("@openai/codex/package.json")), "bin", "codex.js");
+}
+
+function mcpCacheKey(cwd?: string) {
+    if (!cwd) return "";
+    const resolved = path.resolve(cwd);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }

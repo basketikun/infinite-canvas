@@ -12,6 +12,7 @@ type TestClient = {
     plansByTurn: Map<string, unknown>;
     lastUsage: unknown;
     answerServerRequest(message: Record<string, unknown>): void;
+    cancelClarifications(threadId: string): void;
     failAll(message: string): void;
     handle(message: Record<string, unknown>): void;
     handleNotification(method: string, params: Record<string, unknown>): void;
@@ -41,6 +42,64 @@ test("审批只在 app-server 确认 resolved 后清除", () => {
     assert.equal(client.resolveApproval("17", "accept"), false);
 });
 
+test("MCP elicitation 会暂停并在网页回答后恢复同一请求", () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const events: Array<{ type: string; payload: unknown }> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, (type: string, payload: unknown) => events.push({ type, payload }), emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+    testClient.currentThreadId = "thread-1";
+    testClient.currentTurnId = "turn-1";
+
+    testClient.answerServerRequest({ id: 18, method: "mcpServer/elicitation/request", params: { threadId: "thread-1", turnId: "turn-1", message: "请选择形式", requestedSchema: { type: "object", properties: { style: { type: "string", title: "视频形式", oneOf: [{ const: "brand", title: "品牌宣传片" }, { const: "story", title: "剧情短片" }] } }, required: ["style"] } } });
+    assert.equal(writes.length, 0);
+    assert.deepEqual(events.find((event) => event.type === "agent_clarification")?.payload, { requestId: "18", threadId: "thread-1", turnId: "turn-1", message: "请选择形式", questions: [{ id: "style", label: "视频形式", kind: "single", options: [{ value: "brand", label: "品牌宣传片" }, { value: "story", label: "剧情短片" }], required: true }] });
+
+    assert.deepEqual(client.resolveClarification("18", { style: "brand" }), { ok: true, state: "accepted" });
+    assert.deepEqual(writes[0], { id: 18, result: { action: "accept", content: { style: "brand" } } });
+    assert.deepEqual(events.find((event) => event.type === "agent_clarification_resolved")?.payload, { threadId: "thread-1", turnId: "turn-1", requestId: "18", action: "accept", state: "accepted" });
+    testClient.handleNotification("serverRequest/resolved", { requestId: "18" });
+    assert.equal(events.filter((event) => event.type === "agent_clarification_resolved").length, 1);
+});
+
+test("取消 MCP elicitation 会返回标准 cancel 结果", () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, () => undefined, emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+    testClient.answerServerRequest({ id: 19, method: "mcpServer/elicitation/request", params: { requestedSchema: { type: "object", properties: {} } } });
+
+    assert.deepEqual(client.resolveClarification("19", null), { ok: true, state: "cancelled" });
+    assert.deepEqual(writes[0], { id: 19, result: { action: "cancel" } });
+});
+
+test("中断澄清只发出一次取消事件", () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const events: Array<{ type: string; payload: unknown }> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, (type: string, payload: unknown) => events.push({ type, payload }), emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+    testClient.currentThreadId = "thread-1";
+    testClient.answerServerRequest({ id: 20, method: "mcpServer/elicitation/request", params: { threadId: "thread-1", requestedSchema: { type: "object", properties: {} } } });
+
+    testClient.cancelClarifications("thread-1");
+    testClient.handleNotification("serverRequest/resolved", { requestId: "20" });
+    assert.deepEqual(writes, [{ id: 20, result: { action: "cancel" } }]);
+    assert.equal(events.filter((event) => event.type === "agent_clarification_resolved").length, 1);
+});
+
+test("澄清提交后重复回答不会再次写入上游", () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, () => undefined, emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+
+    testClient.answerServerRequest({ id: 21, method: "mcpServer/elicitation/request", params: { threadId: "thread-1", turnId: "turn-1", requestedSchema: { type: "object", properties: {} } } });
+    assert.deepEqual(client.resolveClarification("21", { answer: "first" }), { ok: true, state: "accepted" });
+    assert.deepEqual(client.resolveClarification("21", { answer: "second" }), { ok: true, state: "accepted" });
+    assert.equal(writes.length, 1);
+});
+
 test("中断请求只作用于当前运行线程", async () => {
     const writes: Array<Record<string, unknown>> = [];
     const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
@@ -65,6 +124,19 @@ test("中断请求只作用于当前运行线程", async () => {
     assert.deepEqual(draftRequest?.params, { threadId: "draft-thread", turnId: "draft-turn" });
     testClient.handle({ id: draftRequest?.id, result: {} });
     assert.equal(await draftInterrupt, true);
+});
+
+test("回退最后一个 turn 使用同一 Codex thread", async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
+    const client = Reflect.construct(CodexAppClient, [child, () => undefined, emptyEventHistory]) as CodexAppClient;
+    const testClient = client as unknown as TestClient;
+
+    const rollingBack = client.rollbackThread("thread-1");
+    const request = writes.at(-1);
+    assert.deepEqual(request, { id: 1, method: "thread/rollback", params: { threadId: "thread-1", numTurns: 1 } });
+    testClient.handle({ id: request?.id, result: { thread: { id: "thread-1" } } });
+    assert.equal((await rollingBack).id, "thread-1");
 });
 
 test("Skill 列表与启用配置使用 app-server 原生协议", async () => {
@@ -168,6 +240,13 @@ test("MCP 启动状态区分空对话预热与正常 turn 运行", async () => {
     testClient.handleNotification("mcpServer/startupStatus/updated", { threadId: "thread-1", name: "notion", status: "failed" });
     testClient.handle({ id: statusRequest.id, result: { data: [{ name: "notion", authStatus: "notLoggedIn", tools: [], resources: [], resourceTemplates: [] }], nextCursor: null } });
     await starting;
+
+    const secondStarting = client.startThread("D:\\site", "request", true);
+    const secondThreadRequest = writes.filter((item) => item.method === "thread/start").at(-1);
+    assert.ok(secondThreadRequest);
+    testClient.handle({ id: secondThreadRequest.id, result: { thread: { id: "thread-2" } } });
+    await secondStarting;
+    assert.equal(writes.filter((item) => item.method === "mcpServerStatus/list").length, 1);
 
     const running = client.startTurn("thread-1", "test", [], "request");
     const turnRequest = writes.find((item) => item.method === "turn/start");

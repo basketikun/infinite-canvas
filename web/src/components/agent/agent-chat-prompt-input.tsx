@@ -90,7 +90,8 @@ export function AgentChatPromptInput({ value, disabled, placeholder, theme, onCh
         if (type === "skill") {
             const agent = useAgentStore.getState();
             const skillState = useAgentSkillStore.getState();
-            if (agent.connected && !skillState.loaded && !skillState.loading) void skillState.loadSkills(agent.url.trim().replace(/\/$/, ""), agent.token);
+            const clientId = readAgentClientId();
+            if (agent.connected && clientId && !skillState.loaded && !skillState.loading) void skillState.loadSkills(agent.url.trim().replace(/\/$/, ""), agent.token, clientId);
             return;
         }
         const snapshot = useAgentStore.getState().canvasContext?.snapshot;
@@ -240,6 +241,14 @@ export function AgentChatPromptInput({ value, disabled, placeholder, theme, onCh
             {command ? <AgentCommandMenu command={command} candidates={candidates} activeIndex={Math.min(activeIndex, Math.max(candidates.length - 1, 0))} loading={command.type === "skill" && skillsLoading} theme={theme} onSelect={insertCandidate} /> : null}
         </div>
     );
+}
+
+function readAgentClientId() {
+    try {
+        return sessionStorage.getItem("canvas-agent-client-id") || "";
+    } catch {
+        return "";
+    }
 }
 function AgentCommandMenu({ command, candidates, activeIndex, loading, theme, onSelect }: { command: ComposerCommand; candidates: ComposerCandidate[]; activeIndex: number; loading: boolean; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (candidate: ComposerCandidate) => void }) {
     const { t } = useTranslation();

@@ -3,5 +3,9 @@
   "installCommand": "cd web && bun install",
   "buildCommand": "cd web && bun run build",
   "outputDirectory": "web/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "routes": [
+    { "src": "/api/ark/(.*)", "dest": "/api/ark/[...path].js" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }

@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import i18n from "@/i18n";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
-import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import { CanvasNodeType, type CanvasAssistantSession, type CanvasConnection, type CanvasNodeData, type ViewportTransform } from "@/types/canvas";
 
 export type CanvasProject = {
     id: string;
@@ -45,12 +45,23 @@ type PersistedCanvasState = Pick<CanvasStore, "projects" | "deletedProjects">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
 
-const canvasStorage: PersistStorage<CanvasStore> = {
+function enableLegacyVideoAudio(projects: CanvasProject[]) {
+    return projects.map((project) => ({
+        ...project,
+        nodes: project.nodes.map((node) => {
+            const isVideoConfig = node.type === CanvasNodeType.Config && node.metadata?.generationMode === "video";
+            if ((node.type !== CanvasNodeType.Video && !isVideoConfig) || node.metadata?.generateAudio !== "false") return node;
+            return { ...node, metadata: { ...node.metadata, generateAudio: "true" } };
+        }),
+    }));
+}
+
+const canvasStorage: PersistStorage<PersistedCanvasState> = {
     getItem: async (name) => {
         const value = await localForageStorage.getItem(name);
         if (!value) return null;
-        const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
-        queuedPersistState = parsed.state as PersistedCanvasState;
+        const parsed = JSON.parse(value) as StorageValue<PersistedCanvasState>;
+        queuedPersistState = parsed.state;
         return parsed;
     },
     setItem: (name, value) => {
@@ -138,6 +149,12 @@ export const useCanvasStore = create<CanvasStore>()(
                     projects: state.projects,
                     deletedProjects: state.deletedProjects,
                 }) as StorageValue<CanvasStore>["state"],
+                }) as PersistedCanvasState,
+            version: 1,
+            migrate: (persistedState) => {
+                const state = persistedState as PersistedCanvasState;
+                return { ...state, projects: enableLegacyVideoAudio(state.projects || []) };
+            },
             onRehydrateStorage: () => () => {
                 useCanvasStore.setState({ hydrated: true });
             },

@@ -6,14 +6,14 @@ import { z } from "zod";
 import type { CanvasSnapshot } from "../canvas/types.js";
 import { logger } from "../utils/logger.js";
 import { errorMessage, field, type JsonRecord } from "../utils/value.js";
-import { CodexAppClient, CodexReportedError } from "./codex-client.js";
+import { CodexAppClient, CodexReportedError, type ClarificationResolution } from "./codex-client.js";
 import { codexEventHistory } from "./codex-event-history.js";
 import { settledTurnIds, summarizeCodexThread, threadMessages } from "./codex-history.js";
 import { messageMetadataStore } from "./message-metadata.js";
 import type { CodexReasoningEffort, CodexSkillMetadata, CodexSkillSelector, CodexSkillsListEntry } from "./codex-protocol.js";
 import type { AgentAttachment, AgentEmit, AgentPermissionMode } from "./types.js";
 
-type CodexRunOptions = { threadId?: string; cwd?: string; permissionMode?: AgentPermissionMode; model?: string; effort?: CodexReasoningEffort; skill?: CodexSkillSelector; messageText?: string; appEmit?: AgentEmit; onStart?: () => void; onThread?: (threadId: string) => void; onTurn?: (turnId: string) => void; onFinish?: () => void };
+type CodexRunOptions = { threadId?: string; cwd?: string; permissionMode?: AgentPermissionMode; model?: string; effort?: CodexReasoningEffort; skill?: CodexSkillSelector; messageText?: string; allowThreadRecovery?: boolean; appEmit?: AgentEmit; onStart?: () => void; onThread?: (threadId: string) => void; onTurn?: (turnId: string) => void; onFinish?: () => void };
 type CodexSkillDraftInput = { model?: string; effort?: CodexReasoningEffort } & ({ source: "conversation"; threadId: string } | { source: "canvas"; snapshot: CanvasSnapshot });
 
 const skillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -51,6 +51,13 @@ export class CodexSkillLookupError extends Error {
     }
 }
 
+export class CodexTurnEditError extends Error {
+    override name = "CodexTurnEditError";
+    constructor(message: string) {
+        super(message);
+    }
+}
+
 let codexQueue: Promise<unknown> = Promise.resolve();
 let codexApp: CodexAppClient | null = null;
 let codexAppStart: Promise<CodexAppClient> | null = null;
@@ -82,6 +89,12 @@ export async function interruptCodexTurn(threadId?: string) {
 /** 回复当前 app-server 的待处理权限请求。 */
 export async function resolveCodexApproval(requestId: string, decision: string) {
     return Boolean(codexApp?.resolveApproval(requestId, decision));
+}
+
+/** 回复当前 app-server 的待处理业务澄清请求。 */
+export async function resolveCodexClarification(requestId: string, answers: JsonRecord | null) {
+    const result = codexApp?.resolveClarification(requestId, answers);
+    return result || ({ ok: false, state: "missing" } satisfies ClarificationResolution);
 }
 
 /** 创建新的 Codex 线程并记录当前线程 ID。 */
@@ -156,6 +169,17 @@ export async function readCodexThread(emit: AgentEmit, threadId: string, cwd?: s
     return { thread: summarizeCodexThread(history.thread), messages, settledTurnIds: settledTurnIds(history.thread, supplementalItems), historyReady: history.historyReady };
 }
 
+/** 只读取并校验线程归属，不触发完整历史加载或 MCP 预热。 */
+export async function verifyCodexThread(emit: AgentEmit, threadId: string, cwd?: string) {
+    const app = await getCodexApp(emit);
+    try {
+        return summarizeCodexThread(await loadCodexThread(emit, threadId, cwd, false));
+    } catch (error) {
+        if (!isRecoverableThreadError(error)) throw error;
+        return summarizeCodexThread(await resumeLoadedThread(app, threadId, cwd, "request", false, false));
+    }
+}
+
 /** 归档指定 Codex 线程。 */
 export async function archiveCodexThread(emit: AgentEmit, threadId: string, cwd?: string) {
     const app = await getCodexApp(emit);
@@ -170,6 +194,19 @@ export async function archiveCodexThread(emit: AgentEmit, threadId: string, cwd?
     await codexEventHistory.removeThread(threadId);
     await messageMetadataStore.removeThread(threadId).catch((error) => logger.warn("Failed to remove archived thread message metadata", { threadId, error }));
     if (loadedThreadId === threadId) loadedThreadId = "";
+}
+
+/** 回退当前线程最后一个已完成 turn，不创建派生线程。 */
+export async function rollbackLatestCodexTurn(emit: AgentEmit, threadId: string, turnId: string, cwd?: string) {
+    const app = await getCodexApp(emit);
+    const thread = await loadCodexThread(emit, threadId, cwd, true);
+    const supplementalItems = await codexEventHistory.readThread(threadId);
+    const latestTurnId = settledTurnIds(thread, supplementalItems).at(-1);
+    if (!turnId || latestTurnId !== turnId) throw new CodexTurnEditError("只能修改当前会话最后一条已完成输入，请刷新后重试");
+    await app.rollbackThread(threadId);
+    await codexEventHistory.removeTurn(threadId, turnId);
+    await messageMetadataStore.removeTurn(threadId, turnId);
+    app.clearPlanUpdate(threadId, turnId);
 }
 
 async function mergeMessageMetadata<T extends { role: string; threadId: string; turnId: string }>(threadId: string, messages: T[]) {
@@ -199,6 +236,7 @@ async function runCodexTurnNow(prompt: string, lifecycleEmit: AgentEmit, attachm
             await app.startTurn(threadId, prompt, files, options.permissionMode || "request", options.model, options.effort, options.onTurn, options.skill, options.messageText);
         } catch (error) {
             if (!isRecoverableThreadError(error)) throw error;
+            if (options.allowThreadRecovery === false) throw error;
             lifecycleEmit("agent_log", { text: `Codex thread unavailable, starting a new thread: ${errorMessage(error)}` });
             loadedThreadId = "";
             threadId = await ensureCodexThread(app, { cwd: options.cwd }, lifecycleEmit);
@@ -223,6 +261,7 @@ async function ensureCodexThread(app: CodexAppClient, options: CodexRunOptions, 
             return loadedThreadId;
         } catch (error) {
             if (!isRecoverableThreadError(error)) throw error;
+            if (options.allowThreadRecovery === false) throw error;
             emit("agent_log", { text: `Codex thread unavailable, starting a new thread: ${errorMessage(error)}` });
             loadedThreadId = "";
         }

@@ -18,14 +18,15 @@ npx -y @basketikun/canvas-agent@latest --debug
 
 Debug 日志会以 `[DEBUG][HH:mm:ss]` 等传统格式输出到终端，并按启动日期保存到 `~/.infinite-canvas/logs/canvas-agent-YYYY-MM-DD.log`。终端日志带级别颜色，文件日志为纯文本；日志包含 HTTP、SSE、线程、turn、Codex app-server 和工具调用事件，token 与图片 Data URL 会自动隐藏。
 
-本仓库开发时也可以直接运行：
+本仓库开发时运行当前源码：
 
 ```bash
 cd canvas-agent
-npm install
-npm run build
-node dist/index.js
+bun install --frozen-lockfile
+bun src/index.ts
 ```
+
+根目录的 `start-local.bat` 会同时启动 Vite 和上述源码 Agent；`start-release.bat` 则使用 npm 已发布包，两种方式切换前都先运行 `stop-local.bat`。
 
 启动后会输出本机地址和 token：
 

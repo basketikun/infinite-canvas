@@ -11,10 +11,11 @@ import type { CanvasSnapshot } from "./types.js";
 type PendingRequest = { clientId: string; resolve: (value: unknown) => void; reject: (error: Error) => void };
 type TurnAttachment = { clientId: string; id: string; name: string; type: string; size: number; width: number; height: number; dataUrl: string };
 type ReplayEvent = { type: string; payload: Record<string, unknown> };
-export type CodexState = { busy: boolean; threadId: string; turnId: string };
+export type CodexState = { busy: boolean; threadId: string; turnId: string; projectId: string };
 export type McpStartupState = "starting" | "ready" | "failed" | "cancelled";
 export type ConversationState = {
     revision: number;
+    projectId: string;
     conversationId: string;
     threadId: string;
     status: "idle" | "preparing" | "ready" | "warning" | "running" | "failed";
@@ -23,7 +24,7 @@ export type ConversationState = {
     error?: string;
 };
 type McpInventoryItem = { name: string; authStatus?: string };
-export const AGENT_PROTOCOL_VERSION = 6;
+export const AGENT_PROTOCOL_VERSION = 10;
 
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
@@ -44,6 +45,7 @@ export class CanvasSession {
     private clientFocusOrder = new Map<string, number>();
     private pending = new Map<string, PendingRequest>();
     private pendingApprovals = new Map<string, Record<string, unknown>>();
+    private pendingClarifications = new Map<string, Record<string, unknown>>();
     private canvasStates = new Map<string, CanvasSnapshot>();
     private turnAttachments = new Map<string, TurnAttachment>();
     private codexReplayEvents = new Map<string, ReplayEvent>();
@@ -52,14 +54,16 @@ export class CanvasSession {
     private activeClientId = "";
     private boundClientId = "";
     private focusSequence = 0;
-    private codexState: CodexState = { busy: false, threadId: "", turnId: "" };
+    private codexState: CodexState = { busy: false, threadId: "", turnId: "", projectId: "default" };
     private conversationState: ConversationState;
     private conversationInventoryComplete = false;
     private preparedConversationThreadId = "";
 
-    constructor(activeThreadId = "") {
+    constructor(activeThreadId = "", projectId = "default") {
+        this.codexState.projectId = projectId;
         this.conversationState = {
             revision: 1,
+            projectId,
             conversationId: activeThreadId || crypto.randomUUID(),
             threadId: activeThreadId,
             status: activeThreadId ? "ready" : "idle",
@@ -102,10 +106,11 @@ export class CanvasSession {
     }
 
     /** 原子开始一次新建或恢复对话流程。 */
-    beginConversation(options: { threadId?: string; conversationId?: string; sourceClientId?: string } = {}) {
+    beginConversation(options: { threadId?: string; conversationId?: string; sourceClientId?: string; projectId?: string } = {}) {
         this.conversationInventoryComplete = false;
         this.preparedConversationThreadId = "";
         return this.updateConversation({
+            projectId: options.projectId || this.conversationState.projectId,
             conversationId: options.conversationId || options.threadId || crypto.randomUUID(),
             threadId: options.threadId || "",
             status: "preparing",
@@ -164,10 +169,11 @@ export class CanvasSession {
     }
 
     /** 切换到无需重新预热的既有状态，例如删除当前对话后的空状态。 */
-    activateConversation(threadId: string, sourceClientId?: string) {
+    activateConversation(threadId: string, sourceClientId?: string, projectId?: string) {
         this.conversationInventoryComplete = false;
         this.preparedConversationThreadId = "";
         return this.updateConversation({
+            projectId: projectId || this.conversationState.projectId,
             conversationId: threadId || crypto.randomUUID(),
             threadId,
             status: threadId ? "ready" : "idle",
@@ -224,12 +230,29 @@ export class CanvasSession {
         return [...this.pendingApprovals.values()];
     }
 
+    /** 返回刷新后仍需展示的 Codex 业务澄清请求。 */
+    get codexPendingClarifications() {
+        return [...this.pendingClarifications.values()];
+    }
+
     /** 跟踪需要跨页面重连恢复的 Codex 权限请求。 */
     trackCodexEvent(type: string, payload: Record<string, unknown>) {
         const requestId = String(payload.requestId || "");
         if (type === "codex_approval" && requestId) this.pendingApprovals.set(requestId, payload);
         if (type === "codex_approval_resolved" && requestId) this.pendingApprovals.delete(requestId);
-        if (type === "agent_error") this.pendingApprovals.clear();
+        if (type === "agent_clarification" && requestId) this.pendingClarifications.set(requestId, payload);
+        if (type === "agent_clarification_resolved" && requestId) this.pendingClarifications.delete(requestId);
+        if (type === "agent_error") {
+            this.pendingApprovals.clear();
+            this.pendingClarifications.clear();
+        }
+        if (type === "agent_event" && (payload.type === "turn.completed" || payload.type === "error")) {
+            const threadId = String(payload.threadId || payload.thread_id || "");
+            const turnId = String(payload.turnId || payload.turn_id || "");
+            if (threadId && turnId) this.pendingClarifications.forEach((value, id) => {
+                if (String(value.threadId || value.thread_id || "") === threadId && String(value.turnId || value.turn_id || "") === turnId) this.pendingClarifications.delete(id);
+            });
+        }
     }
 
     /** 更新并广播 Codex 运行状态；静默后台活动可保留上一 turn 的断线重放。 */
@@ -245,7 +268,7 @@ export class CanvasSession {
         if (!next.busy) {
             if (this.boundClientId && !this.clients.has(this.boundClientId)) this.boundClientId = "";
         }
-        if (next.busy === this.codexState.busy && next.threadId === this.codexState.threadId && next.turnId === this.codexState.turnId) return;
+        if (next.busy === this.codexState.busy && next.threadId === this.codexState.threadId && next.turnId === this.codexState.turnId && next.projectId === this.codexState.projectId) return;
         this.codexState = next;
         logger.debug("Codex state changed", this.codexState);
         this.emitAll("codex_state", this.codexState);
@@ -265,8 +288,27 @@ export class CanvasSession {
         });
     }
 
+    /** 编辑回退后清除该 turn 的断线重放和待处理交互。 */
+    discardCodexTurn(threadId: string, turnId: string) {
+        if (!threadId || !turnId) return;
+        this.codexReplayEvents.forEach((event, key) => {
+            const eventThreadId = String(event.payload.threadId || event.payload.thread_id || "");
+            const eventTurnId = String(event.payload.turnId || event.payload.turn_id || "");
+            if (eventThreadId === threadId && eventTurnId === turnId) {
+                this.codexReplayEvents.delete(key);
+                this.codexReplayActiveItems.delete(key);
+            }
+        });
+        this.pendingApprovals.forEach((value, requestId) => {
+            if (String(value.threadId || value.thread_id || "") === threadId && String(value.turnId || value.turn_id || "") === turnId) this.pendingApprovals.delete(requestId);
+        });
+        this.pendingClarifications.forEach((value, requestId) => {
+            if (String(value.threadId || value.thread_id || "") === threadId && String(value.turnId || value.turn_id || "") === turnId) this.pendingClarifications.delete(requestId);
+        });
+    }
+
     /** 建立网页与 Canvas Agent 之间的 SSE 连接。 */
-    openEvents(url: URL, res: ServerResponse, activeThreadId = "") {
+    openEvents(url: URL, res: ServerResponse, activeThreadId = "", projectId = "default") {
         const clientId = url.searchParams.get("clientId") || crypto.randomUUID();
         const statusOnly = url.searchParams.get("role") === "status";
         logger.info("SSE client connected", { clientId, statusOnly });
@@ -279,7 +321,10 @@ export class CanvasSession {
                 this.clientFocusOrder.set(clientId, ++this.focusSequence);
             }
         }
-        sendEvent(res, "hello", { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, clientId, workspace: { activeThreadId }, conversation: this.conversationStateSnapshot, codex: this.codexState, pendingApprovals: this.codexPendingApprovals });
+        const currentProject = this.conversationState.projectId === projectId;
+        const conversation = currentProject ? this.conversationStateSnapshot : { revision: 0, projectId, conversationId: activeThreadId || crypto.randomUUID(), threadId: activeThreadId, status: "idle" as const, mcpStatuses: {} };
+        const codex = this.codexState.projectId === projectId ? this.codexState : { busy: false, threadId: "", turnId: "", projectId };
+        sendEvent(res, "hello", { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, clientId, project: { id: projectId, active: currentProject }, workspace: { activeThreadId }, conversation, codex, globalCodexBusy: this.codexState.busy, pendingApprovals: currentProject ? this.codexPendingApprovals : [], pendingClarifications: currentProject ? this.codexPendingClarifications : [] });
         if (!statusOnly && activeThreadId && this.codexState.threadId === activeThreadId) this.codexReplayEvents.forEach((event) => sendEvent(res, event.type, event.payload));
         const timer = setInterval(() => sendEvent(res, "ping", { time: Date.now() }), 15000);
         res.on("close", () => {

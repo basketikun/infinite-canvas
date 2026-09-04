@@ -48,6 +48,7 @@ export type CanvasNodeMetadata = {
     content?: string;
     composerContent?: string;
     prompt?: string;
+    titleSource?: "auto" | "user";
     status?: CanvasNodeStatus;
     errorDetails?: string;
     fontSize?: number;

@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { App, Button, Image, Modal, Popover } from "antd";
-import { Brain, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleAlert, Copy, ExternalLink, FilePenLine, FileText, FolderOpen, ListChecks, LoaderCircle, Search, ShieldAlert, TerminalSquare, Wrench, XCircle } from "lucide-react";
+import { App, Button, Image, Modal, Popover, Tooltip } from "antd";
+import { Brain, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleAlert, Copy, ExternalLink, FilePenLine, FileText, FolderOpen, ListChecks, LoaderCircle, Pencil, Search, ShieldAlert, TerminalSquare, Wrench, XCircle } from "lucide-react";
 import { Streamdown, type LinkSafetyModalProps } from "streamdown";
 import { useTranslation } from "react-i18next";
 
@@ -102,7 +102,8 @@ export type AgentChatMessageItem = {
     streamId?: string;
 };
 
-export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool }: { item: AgentChatMessageItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRejectTool?: (id: string) => void; onApproveTool?: (id: string) => void }) {
+export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onEdit }: { item: AgentChatMessageItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRejectTool?: (id: string) => void; onApproveTool?: (id: string) => void; onEdit?: () => void }) {
+    const copyText = useCopyText();
     const isUser = item.role === "user";
     const isSystem = item.role === "system";
     const color = item.role === "error" ? "#dc2626" : item.role === "tool" ? "#2563eb" : theme.node.text;
@@ -121,7 +122,7 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool }: {
         return <AgentToolCard title={item.title || tr("toolCall")} text={item.text} detail={item.detail} theme={theme} />;
     }
     return (
-        <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+        <div className={`group flex ${isUser ? "justify-end" : "justify-start"}`}>
             <div
                 className={isUser ? "min-w-0 max-w-[82%] py-1 text-right text-sm leading-6" : "min-w-0 w-full text-left text-sm leading-6"}
                 style={{ color }}
@@ -133,6 +134,12 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool }: {
                 )}
                 {item.attachments?.length ? <AgentMessageAttachments attachments={item.attachments} alignRight={isUser} /> : null}
                 {item.meta ? <div className={`mt-1 text-[11px] tabular-nums opacity-55 ${isUser ? "text-right" : ""}`}>{item.meta}</div> : null}
+                {isUser ? (
+                    <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                        <Tooltip title={tr("copyMessage")}><Button type="text" shape="circle" className="!size-7 !min-w-7" icon={<Copy className="size-3.5" />} onClick={() => copyText(item.text, tr("copied"))} aria-label={tr("copyMessage")} /></Tooltip>
+                        {onEdit ? <Tooltip title={tr("editMessage")}><Button type="text" shape="circle" className="!size-7 !min-w-7" icon={<Pencil className="size-3.5" />} onClick={onEdit} aria-label={tr("editMessage")} /></Tooltip> : null}
+                    </div>
+                ) : null}
             </div>
         </div>
     );

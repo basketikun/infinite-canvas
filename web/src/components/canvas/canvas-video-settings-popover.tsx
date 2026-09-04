@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Settings2 } from "lucide-react";
-import { Button } from "antd";
+import { Settings2, Volume2, VolumeX } from "lucide-react";
+import { Button, Tooltip } from "antd";
+import { useTranslation } from "react-i18next";
 
 import { VideoSettingsPanel, videoModeLabel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -16,11 +17,13 @@ type CanvasVideoSettingsPopoverProps = {
 };
 
 export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClassName, placement = "topLeft" }: CanvasVideoSettingsPopoverProps) {
+    const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+    const generatesAudio = config.videoGenerateAudio !== "false";
 
     useEffect(() => {
         if (!open) return;
@@ -52,6 +55,11 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
                     <span className="truncate">
                         {videoResolutionLabel(config.vquality)} · {videoSizeLabel(config.size)} · {videoSecondsLabel(config.videoSeconds)} · {videoModeLabel(config.videoMode)}
                     </span>
+                    <Tooltip title={t(`settingsPanels.video.${generatesAudio ? "audioOn" : "audioOff"}`)}>
+                        <span className="ml-auto shrink-0" aria-label={t(`settingsPanels.video.${generatesAudio ? "audioOn" : "audioOff"}`)}>
+                            {generatesAudio ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+                        </span>
+                    </Tooltip>
                 </Button>
             </span>
             {panel}
