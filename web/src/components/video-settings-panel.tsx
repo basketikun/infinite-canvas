@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Slider } from "antd";
+import { Slider, Switch } from "antd";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -100,6 +100,10 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                     </div>
                 </SettingGroup>
+                <div className="flex h-10 items-center justify-between" onMouseDown={(event) => event.stopPropagation()}>
+                    <span className="text-sm" style={{ color: theme.node.text }}>{t("settingsPanels.video.generateAudio")}</span>
+                    <Switch checked={config.videoGenerateAudio !== "false"} onChange={(checked) => onConfigChange("videoGenerateAudio", String(checked))} aria-label={t("settingsPanels.video.generateAudio")} />
+                </div>
             </div>
         </ImageSettingsTheme>
     );

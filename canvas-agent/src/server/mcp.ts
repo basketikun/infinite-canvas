@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { toolDescriptions, toolInputSchemas, toolNames, type ToolName } from "../canvas/schemas.js";
-import { AGENT_PROMPT, loadConfig, type CanvasAgentConfig, VERSION } from "../config.js";
+import { AGENT_PROMPT, CLARIFICATION_TIMEOUT_MS, loadConfig, type CanvasAgentConfig, VERSION } from "../config.js";
 
 type CanvasAgentToolResponse = { ok?: boolean; result?: unknown; error?: string };
 
@@ -63,7 +63,7 @@ function registerAskUserTool(server: McpServer) {
             message: value.message || "请补充以下创作信息。",
             requestedSchema,
             _meta: { "infinite-canvas/clarification": { questions } },
-        });
+        }, { timeout: CLARIFICATION_TIMEOUT_MS, maxTotalTimeout: CLARIFICATION_TIMEOUT_MS });
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], isError: result.action !== "accept" };
     });
 }

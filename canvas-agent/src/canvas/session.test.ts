@@ -221,10 +221,10 @@ test("new clients receive the current Codex state and later updates", (t) => {
     t.after(() => client.close());
 
     const hello = client.event("hello");
-    assert.equal(field(hello, "protocolVersion"), 8);
+    assert.equal(field(hello, "protocolVersion"), 10);
     assert.deepEqual(field(hello, "workspace"), { activeThreadId: "thread-2" });
-    assert.deepEqual(field(hello, "conversation"), { revision: 1, conversationId: "thread-2", threadId: "thread-2", status: "ready", mcpStatuses: {} });
-    assert.deepEqual(field(hello, "codex"), { busy: true, threadId: "thread-2", turnId: "turn-1" });
+    assert.deepEqual(field(hello, "conversation"), { revision: 1, projectId: "default", conversationId: "thread-2", threadId: "thread-2", status: "ready", mcpStatuses: {} });
+    assert.deepEqual(field(hello, "codex"), { busy: true, threadId: "thread-2", turnId: "turn-1", projectId: "default" });
     assert.deepEqual(field(hello, "pendingApprovals"), [{ requestId: "approval-1", threadId: "thread-2" }]);
     assert.deepEqual(field(hello, "pendingClarifications"), []);
 
@@ -247,6 +247,22 @@ test("new clients restore pending Codex clarifications and resolution clears the
 
     assert.deepEqual(field(client.event("hello"), "pendingClarifications"), [{ requestId: "question-1", threadId: "thread-1", turnId: "turn-1", message: "请选择", questions: [{ id: "style", label: "形式", kind: "single", options: [{ value: "brand", label: "品牌宣传片" }], required: true }] }]);
     session.trackCodexEvent("agent_clarification_resolved", { requestId: "question-1" });
+    assert.deepEqual(session.codexPendingClarifications, []);
+});
+
+test("重复澄清事件只保留同一个 requestId", () => {
+    const session = new CanvasSession("thread-1");
+    session.trackCodexEvent("agent_clarification", { requestId: "question-1", threadId: "thread-1", message: "第一次", questions: [] });
+    session.trackCodexEvent("agent_clarification", { requestId: "question-1", threadId: "thread-1", message: "重复事件", questions: [] });
+
+    assert.deepEqual(session.codexPendingClarifications, [{ requestId: "question-1", threadId: "thread-1", message: "重复事件", questions: [] }]);
+});
+
+test("turn 终态会清理未回答的澄清卡片", () => {
+    const session = new CanvasSession("thread-1");
+    session.trackCodexEvent("agent_clarification", { requestId: "question-1", threadId: "thread-1", turnId: "turn-1", questions: [] });
+    session.trackCodexEvent("agent_event", { type: "turn.completed", thread_id: "thread-1", turn_id: "turn-1" });
+
     assert.deepEqual(session.codexPendingClarifications, []);
 });
 

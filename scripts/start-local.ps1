@@ -40,8 +40,8 @@ function Confirm-AgentReady([string]$outputLog, [string]$errorLog) {
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
         try {
             $config = Invoke-RestMethod -Uri "http://127.0.0.1:17371/config" -TimeoutSec 2
-            if ($config.ok -and $config.protocolVersion -eq 8) { return }
-            $lastError = "Canvas Agent started with protocol v$($config.protocolVersion), but this page requires v8."
+            if ($config.ok -and $config.protocolVersion -eq 10) { return }
+            $lastError = "Canvas Agent started with protocol v$($config.protocolVersion), but this page requires v10."
         } catch {
             $lastError = $_.Exception.Message
         }

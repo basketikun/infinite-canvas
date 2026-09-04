@@ -5,12 +5,12 @@ import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
+import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
-type ScopeFilter = "all" | AgentSkillScope;
+type ScopeFilter = "project" | "global" | "all";
 type SkillDraftSource = "conversation" | "canvas";
 type SkillEditor = { mode: "create"; values?: SkillFormValues } | { mode: "edit"; detail: AgentSkillDetail };
 type SkillFormValues = { name: string; description: string; instructions: string; displayName?: string; shortDescription?: string; defaultPrompt?: string };
@@ -24,6 +24,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const connected = useAgentStore((state) => state.connected);
     const url = useAgentStore((state) => state.url);
     const token = useAgentStore((state) => state.token);
+    const workspacePath = useAgentStore((state) => state.workspacePath);
     const activeThreadId = useAgentStore((state) => state.activeThreadId);
     const hasConversation = useAgentStore((state) => hasSettledConversation(state.messages, state.activeThreadId));
     const hasCanvas = useAgentStore((state) => Boolean(state.canvasContext));
@@ -43,7 +44,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const setDraft = useAgentSkillStore((state) => state.setDraft);
     const setGeneratingSource = useAgentSkillStore((state) => state.setGeneratingSource);
     const [query, setQuery] = useState("");
-    const [scope, setScope] = useState<ScopeFilter>("all");
+    const [scope, setScope] = useState<ScopeFilter>("project");
     const [editor, setEditor] = useState<SkillEditor | null>(null);
     const [saving, setSaving] = useState(false);
     const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -53,17 +54,20 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const confirmRef = useRef<{ destroy: () => void } | null>(null);
     const [form] = Form.useForm<SkillFormValues>();
     const endpoint = url.trim().replace(/\/$/, "");
-    const filteredSkills = useMemo(() => {
+    const matchesQuery = (skill: AgentSkillSummary) => {
         const keyword = query.trim().toLowerCase();
-        return skills.filter((skill) => {
-            if (scope !== "all" && skill.scope !== scope) return false;
-            return !keyword || [skill.name, skill.description, skill.interface?.displayName, skill.interface?.shortDescription, skill.shortDescription].some((value) => value?.toLowerCase().includes(keyword));
-        });
-    }, [query, scope, skills]);
+        return !keyword || [skill.name, skill.description, skill.interface?.displayName, skill.interface?.shortDescription, skill.shortDescription].some((value) => value?.toLowerCase().includes(keyword));
+    };
+    const projectSkills = useMemo(() => skills.filter((skill) => skill.scope === "repo" && matchesQuery(skill)), [query, skills]);
+    const globalSkills = useMemo(() => skills.filter((skill) => skill.scope !== "repo" && matchesQuery(skill)), [query, skills]);
+    const hasProjectSkills = skills.some((skill) => skill.scope === "repo");
+    const hasGlobalSkills = skills.some((skill) => skill.scope !== "repo");
+    const filteredSkills = scope === "project" ? projectSkills : scope === "global" ? globalSkills : [...projectSkills, ...globalSkills];
 
     const editorValues = editor?.mode === "edit" ? skillFormValues(editor.detail) : editor?.values;
 
-    const refresh = (forceReload = true) => loadSkills(endpoint, token, forceReload);
+    const refresh = (forceReload = true) => loadSkills(endpoint, token, clientId, forceReload);
+    const previousWorkspacePath = useRef(workspacePath);
     const connectionIsCurrent = (revision: number) => {
         const agent = useAgentStore.getState();
         const skillsState = useAgentSkillStore.getState();
@@ -72,6 +76,11 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     useEffect(() => {
         if (draft) setEditor((current) => current || { mode: "create", values: draftFormValues(draft) });
     }, [draft]);
+    useEffect(() => {
+        if (previousWorkspacePath.current === workspacePath) return;
+        previousWorkspacePath.current = workspacePath;
+        setScope("project");
+    }, [workspacePath]);
     useEffect(() => {
         if (connected) return;
         confirmRef.current?.destroy();
@@ -124,7 +133,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         const connectionRevision = useAgentSkillStore.getState().connectionRevision;
         setBusySkill(skill.path);
         try {
-            const response = await fetchCodexSkill(endpoint, token, skill.name);
+            const response = await fetchCodexSkill(endpoint, token, clientId, skill.name);
             if (!connectionIsCurrent(connectionRevision)) return;
             if (!response.data) throw new Error(t("agent.skillManager.contentMissing"));
             setEditor({ mode: "edit", detail: response.data });
@@ -158,8 +167,8 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         setSaving(true);
         try {
             const input = { description: values.description.trim(), instructions: values.instructions.trim(), interface: skillInterface || null };
-            if (editor.mode === "create") await createCodexSkill(endpoint, token, { name, ...input });
-            else await updateCodexSkill(endpoint, token, name, { ...input, expectedRevision: editor.detail.revision });
+            if (editor.mode === "create") await createCodexSkill(endpoint, token, clientId, { name, ...input });
+            else await updateCodexSkill(endpoint, token, clientId, name, { ...input, expectedRevision: editor.detail.revision });
             if (!connectionIsCurrent(connectionRevision)) return;
             setDraft(null);
             setEditor(null);
@@ -185,10 +194,10 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                 if (!connectionIsCurrent(connectionRevision)) return;
                 setBusySkill(skill.path);
                 try {
-                    const response = await fetchCodexSkill(endpoint, token, skill.name);
+                    const response = await fetchCodexSkill(endpoint, token, clientId, skill.name);
                     if (!connectionIsCurrent(connectionRevision)) return;
                     if (!response.data) throw new Error(t("agent.skillManager.contentMissing"));
-                    await deleteCodexSkill(endpoint, token, skill.name, response.data.revision);
+                    await deleteCodexSkill(endpoint, token, clientId, skill.name, response.data.revision);
                     if (!connectionIsCurrent(connectionRevision)) return;
                     if (selectedSkill?.name === skill.name && selectedSkill.path === skill.path) clearSelection();
                     await refresh();
@@ -212,7 +221,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         if (!connectionIsCurrent(connectionRevision)) return;
         setBusySkill(skill.path);
         try {
-            await setCodexSkillEnabled(endpoint, token, skill, enabled);
+            await setCodexSkillEnabled(endpoint, token, clientId, skill, enabled);
             if (!connectionIsCurrent(connectionRevision)) return;
             if (!enabled && selectedSkill?.name === skill.name && selectedSkill.path === skill.path) clearSelection();
             await refresh();
@@ -267,6 +276,54 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
             else void generateDraft(key as SkillDraftSource);
         },
     };
+    const renderEmptyState = (emptyMessage: string, hasSourceSkills: boolean) => (
+        <div className="flex min-h-40 flex-col items-center justify-center px-3 py-6 text-center">
+            <Sparkles className="size-5" style={{ color: theme.node.faint }} />
+            <div className="mt-3 text-sm font-medium">{t(!connected ? "agent.skillManager.connectToView" : hasSourceSkills ? "agent.skillManager.noMatch" : emptyMessage)}</div>
+            <div className="mt-1 text-xs" style={{ color: theme.node.muted }}>{t(!connected ? "agent.skillManager.connectDescription" : hasSourceSkills ? "agent.skillManager.tryAnotherFilter" : "agent.skillManager.createOrInstall")}</div>
+        </div>
+    );
+    const renderSkillList = (items: AgentSkillSummary[], emptyMessage: string, hasSourceSkills: boolean) => items.length ? (
+        <div className="divide-y" style={{ borderColor: theme.node.stroke }}>
+            {items.map((skill) => {
+                const selected = selectedSkill?.name === skill.name && selectedSkill.path === skill.path;
+                const busy = busySkill === skill.path;
+                return (
+                    <div key={`${skill.name}:${skill.path}`} className={`py-3 transition-opacity ${skill.enabled ? "" : "opacity-55"}`} style={{ borderColor: theme.node.stroke }}>
+                        <div className="flex items-start gap-3">
+                            <Sparkles className="mt-0.5 size-4 shrink-0" style={{ color: selected ? theme.node.text : theme.node.muted }} />
+                            <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-center gap-2">
+                                    <span className="truncate text-sm font-medium">{skill.interface?.displayName || skill.name}</span>
+                                    {!skill.managed ? <Tooltip title={t("agent.skillManager.externalReadonly")}><LockKeyhole className="size-3.5 shrink-0" style={{ color: theme.node.faint }} /></Tooltip> : null}
+                                </div>
+                                <div className="mt-1 line-clamp-2 text-xs leading-5" style={{ color: theme.node.muted }}>{skill.interface?.shortDescription || skill.shortDescription || skill.description || t("agent.skillManager.noDescription")}</div>
+                                <Tooltip title={skill.path}>
+                                    <div className="mt-1.5 truncate text-[11px]" style={{ color: theme.node.faint }}>{t(`agent.skillManager.scopes.${skill.scope}`)} · {skill.name}</div>
+                                </Tooltip>
+                            </div>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2 pl-7">
+                            <label className="inline-flex items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
+                                <Switch size="small" checked={skill.enabled} loading={busy} disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} onChange={(enabled) => void toggleEnabled(skill, enabled)} />
+                                {t(skill.enabled ? "agent.skillManager.enabled" : "agent.skillManager.disabled")}
+                            </label>
+                            <div className="flex items-center gap-0.5">
+                                <Button type="text" size="small" disabled={!connected || !skill.enabled || Boolean(busySkill)} icon={selected ? <Check className="size-3.5" /> : <Sparkles className="size-3.5" />} onClick={() => useSkill(skill)}>{t(selected ? "agent.skillManager.selected" : "agent.skillManager.use")}</Button>
+                                {skill.managed ? (
+                                    <>
+                                        <Tooltip title={t("common.edit")}><Button type="text" shape="circle" size="small" aria-label={t("agent.skillManager.editNamed", { name: skill.interface?.displayName || skill.name })} disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} icon={<FilePenLine className="size-3.5" />} onClick={() => void openEdit(skill)} /></Tooltip>
+                                        <Tooltip title={t("common.delete")}><Button danger type="text" shape="circle" size="small" aria-label={t("agent.skillManager.deleteNamed", { name: skill.interface?.displayName || skill.name })} disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} icon={<Trash2 className="size-3.5" />} onClick={() => confirmDelete(skill)} /></Tooltip>
+                                    </>
+                                ) : null}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    ) : renderEmptyState(emptyMessage, hasSourceSkills);
+    const groupLabel = (key: "project" | "global" | "all", count: number) => t("agent.skillManager.groupCount", { label: t(`agent.skillManager.groups.${key}`), count });
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -293,11 +350,15 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                         size="small"
                         variant="borderless"
                         aria-label={t("agent.skillManager.filterBySource")}
-                        className="w-28 shrink-0"
+                        className="w-32 shrink-0"
                         disabled={!connected}
                         value={scope}
                         onChange={setScope}
-                        options={[{ value: "all", label: t("agent.skillManager.scopes.all") }, ...(["repo", "user", "system", "admin"] as AgentSkillScope[]).map((value) => ({ value, label: t(`agent.skillManager.scopes.${value}`) }))]}
+                        options={[
+                            { value: "project", label: groupLabel("project", projectSkills.length) },
+                            { value: "global", label: groupLabel("global", globalSkills.length) },
+                            { value: "all", label: groupLabel("all", projectSkills.length + globalSkills.length) },
+                        ]}
                     />
                 </div>
                 {errors.length ? (
@@ -307,51 +368,20 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
             <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-4">
                 {loading && !loaded ? (
                     <div className="flex h-40 items-center justify-center gap-2 text-sm" style={{ color: theme.node.muted }}><LoaderCircle className="size-4 animate-spin" />{t("agent.skills.loading")}</div>
-                ) : filteredSkills.length ? (
-                    <div className="divide-y" style={{ borderColor: theme.node.stroke }}>
-                        {filteredSkills.map((skill) => {
-                            const selected = selectedSkill?.name === skill.name && selectedSkill.path === skill.path;
-                            const busy = busySkill === skill.path;
-                            return (
-                                <div key={`${skill.name}:${skill.path}`} className={`py-3 transition-opacity ${skill.enabled ? "" : "opacity-55"}`} style={{ borderColor: theme.node.stroke }}>
-                                    <div className="flex items-start gap-3">
-                                        <Sparkles className="mt-0.5 size-4 shrink-0" style={{ color: selected ? theme.node.text : theme.node.muted }} />
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex min-w-0 items-center gap-2">
-                                                <span className="truncate text-sm font-medium">{skill.interface?.displayName || skill.name}</span>
-                                                {!skill.managed ? <Tooltip title={t("agent.skillManager.externalReadonly")}><LockKeyhole className="size-3.5 shrink-0" style={{ color: theme.node.faint }} /></Tooltip> : null}
-                                            </div>
-                                            <div className="mt-1 line-clamp-2 text-xs leading-5" style={{ color: theme.node.muted }}>{skill.interface?.shortDescription || skill.shortDescription || skill.description || t("agent.skillManager.noDescription")}</div>
-                                            <Tooltip title={skill.path}>
-                                                <div className="mt-1.5 truncate text-[11px]" style={{ color: theme.node.faint }}>{t(`agent.skillManager.scopes.${skill.scope}`)} · {skill.name}</div>
-                                            </Tooltip>
-                                        </div>
-                                    </div>
-                                    <div className="mt-2 flex items-center justify-between gap-2 pl-7">
-                                        <label className="inline-flex items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
-                                            <Switch size="small" checked={skill.enabled} loading={busy} disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} onChange={(enabled) => void toggleEnabled(skill, enabled)} />
-                                            {t(skill.enabled ? "agent.skillManager.enabled" : "agent.skillManager.disabled")}
-                                        </label>
-                                        <div className="flex items-center gap-0.5">
-                                            <Button type="text" size="small" disabled={!connected || !skill.enabled || Boolean(busySkill)} icon={selected ? <Check className="size-3.5" /> : <Sparkles className="size-3.5" />} onClick={() => useSkill(skill)}>{t(selected ? "agent.skillManager.selected" : "agent.skillManager.use")}</Button>
-                                            {skill.managed ? (
-                                                <>
-                                                    <Tooltip title={t("common.edit")}><Button type="text" shape="circle" size="small" aria-label={t("agent.skillManager.editNamed", { name: skill.interface?.displayName || skill.name })} disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} icon={<FilePenLine className="size-3.5" />} onClick={() => void openEdit(skill)} /></Tooltip>
-                                                    <Tooltip title={t("common.delete")}><Button danger type="text" shape="circle" size="small" aria-label={t("agent.skillManager.deleteNamed", { name: skill.interface?.displayName || skill.name })} disabled={!connected || Boolean(busySkill) || Boolean(generatingSource)} icon={<Trash2 className="size-3.5" />} onClick={() => confirmDelete(skill)} /></Tooltip>
-                                                </>
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                ) : !connected ? (
+                    renderEmptyState("agent.skillManager.emptyProject", false)
+                ) : scope === "all" ? (
+                    <Collapse
+                        ghost
+                        size="small"
+                        defaultActiveKey={["project"]}
+                        items={[
+                            { key: "project", label: <span className="text-sm font-medium">{groupLabel("project", projectSkills.length)}</span>, children: renderSkillList(projectSkills, "agent.skillManager.emptyProject", hasProjectSkills) },
+                            { key: "global", label: <span className="text-sm font-medium">{groupLabel("global", globalSkills.length)}</span>, children: renderSkillList(globalSkills, "agent.skillManager.emptyGlobal", hasGlobalSkills) },
+                        ]}
+                    />
                 ) : (
-                    <div className="flex h-48 flex-col items-center justify-center text-center">
-                        <Sparkles className="size-5" style={{ color: theme.node.faint }} />
-                        <div className="mt-3 text-sm font-medium">{t(!connected ? "agent.skillManager.connectToView" : skills.length ? "agent.skillManager.noMatch" : "agent.skillManager.none")}</div>
-                        <div className="mt-1 text-xs" style={{ color: theme.node.muted }}>{t(!connected ? "agent.skillManager.connectDescription" : skills.length ? "agent.skillManager.tryAnotherFilter" : "agent.skillManager.createOrInstall")}</div>
-                    </div>
+                    renderSkillList(filteredSkills, scope === "project" ? "agent.skillManager.emptyProject" : "agent.skillManager.emptyGlobal", scope === "project" ? hasProjectSkills : hasGlobalSkills)
                 )}
             </div>
 

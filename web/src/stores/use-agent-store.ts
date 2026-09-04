@@ -78,6 +78,7 @@ export type AgentTokenUsage = { input: number; cached: number; output: number };
 export type AgentBootstrapStatus = { key: string; text: string; detail: string; status: "running" | "ready" | "error" };
 export type AgentConversationState = {
     revision: number;
+    projectId?: string;
     conversationId: string;
     threadId: string;
     status: "idle" | "preparing" | "ready" | "warning" | "running" | "failed";

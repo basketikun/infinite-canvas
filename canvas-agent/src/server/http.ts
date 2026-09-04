@@ -4,12 +4,12 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import { runClaudeTurn } from "../agent/claude.js";
-import { archiveCodexThread, CodexSkillLookupError, CodexTurnEditError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexClarification, resolveCodexSkill, resumeCodexThread, rollbackLatestCodexTurn, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
+import { archiveCodexThread, CodexSkillLookupError, CodexTurnEditError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexClarification, resolveCodexSkill, resumeCodexThread, rollbackLatestCodexTurn, runCodexTurn, startCodexThread, summarizeCodexThread, verifyCodexThread } from "../agent/codex.js";
 import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
 import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
-import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
+import { DEFAULT_PORT, DEFAULT_PROJECT_ID, createProject, getProject, listProjects, loadConfig, removeProject, saveConfig, updateProject, type AgentProjectConfig, type CanvasAgentConfig } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
@@ -21,9 +21,42 @@ export function startHttpServer() {
     config.url = `http://127.0.0.1:${port}`;
     saveConfig(config);
 
-    const initialWorkspace = ensureSiteWorkspace(config);
-    const session = new CanvasSession(initialWorkspace.activeThreadId || "");
-    const skillStore = new SkillStore(initialWorkspace.workspacePath);
+    const initialProject = getProject(config, DEFAULT_PROJECT_ID);
+    const session = new CanvasSession(initialProject.activeThreadId || "", initialProject.id);
+    const clientProjects = new Map<string, string>();
+    const skillStores = new Map<string, SkillStore>();
+    let activeProjectId = initialProject.id;
+    const projectForClient = (clientId: string) => {
+        const projectId = clientProjects.get(clientId) || DEFAULT_PROJECT_ID;
+        try {
+            return getProject(config, projectId);
+        } catch (error) {
+            if (projectId === DEFAULT_PROJECT_ID) throw error;
+            clientProjects.set(clientId, DEFAULT_PROJECT_ID);
+            return getProject(config, DEFAULT_PROJECT_ID);
+        }
+    };
+    const requestClientId = (req: Request) => String(req.body?.clientId || req.query.clientId || "");
+    const skillStoreFor = (project: AgentProjectConfig) => {
+        let store = skillStores.get(project.workspacePath);
+        if (!store) {
+            store = new SkillStore(project.workspacePath);
+            skillStores.set(project.workspacePath, store);
+        }
+        return store;
+    };
+    const projectPayload = (project: AgentProjectConfig) => ({ ...project, isDefault: project.id === DEFAULT_PROJECT_ID });
+    const projectState = (project: AgentProjectConfig) => ({ project: projectPayload(project), projects: listProjects(config).map(projectPayload), workspace: project });
+    const conversationForProject = (project: AgentProjectConfig) => {
+        const conversation = session.conversationStateSnapshot;
+        return conversation.projectId === project.id
+            ? conversation
+            : { revision: 0, projectId: project.id, conversationId: project.activeThreadId || "", threadId: project.activeThreadId || "", status: "idle" as const, mcpStatuses: {} };
+    };
+    const assertProjectThread = async (project: AgentProjectConfig, threadId: string) => {
+        await verifyCodexThread(emit, threadId, project.workspacePath);
+    };
+    const canRecoverProjectThread = (error: unknown) => isRecoverableThreadError(error) || /该 Codex 会话不属于当前画布工作空间|该会话不属于当前项目|thread(?: id)? .*not found/i.test(error instanceof Error ? error.message : String(error));
     /** 将 Agent 事件广播到所属线程或全部网页。 */
     const emit = (type: string, payload: unknown) => {
         const value = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : { value: payload };
@@ -36,11 +69,12 @@ export function startHttpServer() {
             if (value.type === "mcp.complete") session.completeConversationMcpInventory(mcpInventory(value.services));
         }
         const scope = session.codexBusy ? session.codexEventScope : { threadId: "", turnId: "", sourceClientId: "" };
-        const threadId = String(value.threadId || value.thread_id || scope.threadId || ensureSiteWorkspace(config).activeThreadId || "");
+        const threadId = String(value.threadId || value.thread_id || scope.threadId || getProject(config, activeProjectId).activeThreadId || "");
         const turnId = String(value.turnId || value.turn_id || scope.turnId || "");
         const sourceClientId = String(value.sourceClientId || scope.sourceClientId || "");
         const data = {
             ...value,
+            projectId: String(value.projectId || activeProjectId),
             ...(threadId ? { threadId, thread_id: threadId } : {}),
             ...(turnId ? { turnId, turn_id: turnId } : {}),
             ...(sourceClientId ? { sourceClientId } : {}),
@@ -48,29 +82,30 @@ export function startHttpServer() {
         session.trackCodexEvent(type, data);
         threadId ? session.emitThread(type, threadId, data) : session.emitAll(type, data);
     };
-    /** 保存并广播当前站点工作空间的活跃线程。 */
-    const setActiveThread = (activeThreadId: string, payload: Record<string, unknown> = {}, preserveConversation = false) => {
-        const workspace = updateSiteWorkspace(config, { activeThreadId: activeThreadId || undefined });
-        if (!preserveConversation) session.activateConversation(activeThreadId, String(payload.sourceClientId || "") || undefined);
-        if (!session.codexBusy && session.codexThreadId !== activeThreadId) session.setCodexState({ threadId: activeThreadId, turnId: "" });
-        session.emitThread("workspace_changed", activeThreadId, { ...payload, activeThreadId, conversation: session.conversationStateSnapshot });
+    /** 保存并广播当前项目的活跃线程。 */
+    const setActiveThread = (project: AgentProjectConfig, activeThreadId: string, payload: Record<string, unknown> = {}, preserveConversation = false) => {
+        activeProjectId = project.id;
+        const workspace = updateProject(config, project.id, { activeThreadId: activeThreadId || undefined });
+        if (!preserveConversation) session.activateConversation(activeThreadId, String(payload.sourceClientId || "") || undefined, project.id);
+        if (!session.codexBusy && session.codexThreadId !== activeThreadId) session.setCodexState({ threadId: activeThreadId, turnId: "", projectId: project.id });
+        session.emitThread("workspace_changed", activeThreadId, { ...payload, projectId: project.id, activeThreadId, conversation: session.conversationStateSnapshot });
         return workspace;
     };
     let draftThreadStart: ReturnType<typeof startCodexThread> | null = null;
     let skillDraftRunning = false;
-    const prepareDraftThread = (clientId: string, permission: AgentPermissionMode) => {
+    const prepareDraftThread = (project: AgentProjectConfig, clientId: string, permission: AgentPermissionMode) => {
         if (draftThreadStart) return draftThreadStart;
-        const workspace = ensureSiteWorkspace(config);
+        activeProjectId = project.id;
         let prepared!: ReturnType<typeof startCodexThread>;
         prepared = (async () => {
             emit("agent_bootstrap", { type: "codex.preparing", sourceClientId: clientId });
             try {
-                const thread = await startCodexThread(emit, workspace.workspacePath, permission, true);
+                const thread = await startCodexThread(emit, project.workspacePath, permission, true);
                 if (draftThreadStart !== prepared) return thread;
                 const threadId = String((thread as Record<string, unknown>).id || "");
-                if (threadId && !ensureSiteWorkspace(config).activeThreadId) {
+                if (threadId && !getProject(config, project.id).activeThreadId) {
                     session.completeConversationPreparation(threadId);
-                    setActiveThread(threadId, { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
+                    setActiveThread(project, threadId, { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
                 }
                 return thread;
             } catch (error) {
@@ -88,11 +123,11 @@ export function startHttpServer() {
         return prepared;
     };
     /** 恢复已有线程并等待完整 MCP 清单，供启动恢复和手动切换共用。 */
-    const prepareExistingThread = async (threadId: string, clientId = "", permission: AgentPermissionMode = "request") => {
-        const workspace = ensureSiteWorkspace(config);
-        session.beginConversation({ conversationId: threadId, threadId, sourceClientId: clientId || undefined });
-        emit("agent_bootstrap", { type: "codex.preparing", threadId, sourceClientId: clientId || undefined });
-        const result = await resumeCodexThread(emit, threadId, workspace.workspacePath, permission, true);
+    const prepareExistingThread = async (project: AgentProjectConfig, threadId: string, clientId = "", permission: AgentPermissionMode = "request") => {
+        activeProjectId = project.id;
+        session.beginConversation({ conversationId: threadId, threadId, sourceClientId: clientId || undefined, projectId: project.id });
+        emit("agent_bootstrap", { type: "codex.preparing", threadId, sourceClientId: clientId || undefined, projectId: project.id });
+        const result = await resumeCodexThread(emit, threadId, project.workspacePath, permission, true);
         session.completeConversationPreparation(threadId);
         return result;
     };
@@ -100,6 +135,26 @@ export function startHttpServer() {
         const text = error instanceof Error ? error.message : String(error);
         session.failConversationPreparation(text);
         emit("agent_bootstrap", { type: "codex.prepare_failed", threadId, sourceClientId: clientId || undefined, error: text });
+    };
+    const activateProject = async (project: AgentProjectConfig, clientId: string, permission: AgentPermissionMode = "request") => {
+        activeProjectId = project.id;
+        const activeThreadId = project.activeThreadId || "";
+        if (activeThreadId) {
+            try {
+                const result = await prepareExistingThread(project, activeThreadId, clientId, permission);
+                const workspace = setActiveThread(project, activeThreadId, { sourceClientId: clientId }, true);
+                return { ...projectState(workspace), conversation: session.conversationStateSnapshot, ...result };
+            } catch (error) {
+                if (!canRecoverProjectThread(error)) throw error;
+                session.beginConversation({ sourceClientId: clientId, projectId: project.id });
+                setActiveThread(project, "", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
+            }
+        } else {
+            session.beginConversation({ sourceClientId: clientId, projectId: project.id });
+            setActiveThread(project, "", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
+        }
+        const thread = await prepareDraftThread(project, clientId, permission);
+        return { ...projectState(getProject(config, project.id)), conversation: session.conversationStateSnapshot, thread: summarizeCodexThread(thread), messages: [] };
     };
     const app = express();
     app.disable("x-powered-by");
@@ -127,7 +182,11 @@ export function startHttpServer() {
         res.status(401).json({ ok: false, error: "invalid token" });
     });
     app.get("/events", (req, res) => {
-        session.openEvents(requestUrl(req, config), res, ensureSiteWorkspace(config).activeThreadId || "");
+        const clientId = String(req.query.clientId || "");
+        const requestedProjectId = String(req.query.projectId || "");
+        if (clientId && requestedProjectId) clientProjects.set(clientId, requestedProjectId);
+        const project = projectForClient(clientId);
+        session.openEvents(requestUrl(req, config), res, project.activeThreadId || "", project.id);
     });
     app.post("/canvas/state", (req, res) => {
         session.updateState(req.body, String(req.query.clientId || "") || undefined);
@@ -161,6 +220,16 @@ export function startHttpServer() {
         await revealLocalFile(filePath, file.isDirectory());
         res.json({ ok: true });
     }));
+    app.post("/agent/local-directory/select", route(async (req, res) => {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        req.once("aborted", abort);
+        try {
+            res.json({ ok: true, path: await selectLocalDirectory(controller.signal) });
+        } finally {
+            req.off("aborted", abort);
+        }
+    }));
     app.post("/agent/local-image", route(async (req, res) => {
         const filePath = String(req.body?.path || "");
         if (!path.isAbsolute(filePath) || !/\.(?:avif|gif|jpe?g|png|webp)$/i.test(filePath)) return res.status(400).json({ ok: false, error: "图片路径无效" });
@@ -170,21 +239,72 @@ export function startHttpServer() {
         res.type(path.extname(filePath)).send(await readFile(filePath));
     }));
     app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
-    app.get("/agent/codex/workspace", (_req, res) => {
-        const workspace = ensureSiteWorkspace(config);
-        res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot });
+    app.get("/agent/codex/projects", (req, res) => {
+        const project = projectForClient(requestClientId(req));
+        res.json({ ok: true, ...projectState(project), conversation: conversationForProject(project) });
+    });
+    app.post("/agent/codex/projects", codexMutation(async (req, res) => {
+        const clientId = requestClientId(req);
+        if (!clientId || !session.hasClient(clientId)) return res.status(409).json({ ok: false, error: "当前网页未连接，请重新连接后再试" });
+        const project = createProject(config, { name: String(req.body?.name || ""), workspacePath: String(req.body?.workspacePath || "") });
+        const previousProjectId = clientProjects.get(clientId);
+        let result: Awaited<ReturnType<typeof activateProject>>;
+        try {
+            result = await activateProject(project, clientId, permissionMode(req.body?.permissionMode));
+        } catch (error) {
+            if (previousProjectId) clientProjects.set(clientId, previousProjectId);
+            else clientProjects.delete(clientId);
+            throw error;
+        }
+        clientProjects.set(clientId, project.id);
+        session.emitAll("projects_changed", { projects: listProjects(config).map(projectPayload), projectId: project.id, sourceClientId: clientId });
+        res.status(201).json({ ok: true, ...result });
+    }));
+    app.post("/agent/codex/projects/:projectId/activate", codexMutation(async (req, res) => {
+        const clientId = requestClientId(req);
+        if (!clientId || !session.hasClient(clientId)) return res.status(409).json({ ok: false, error: "当前网页未连接，请重新连接后再试" });
+        const project = getProject(config, routeParam(req.params.projectId));
+        const previousProjectId = clientProjects.get(clientId);
+        let result: Awaited<ReturnType<typeof activateProject>>;
+        try {
+            result = await activateProject(project, clientId, permissionMode(req.body?.permissionMode));
+        } catch (error) {
+            if (previousProjectId) clientProjects.set(clientId, previousProjectId);
+            else clientProjects.delete(clientId);
+            throw error;
+        }
+        clientProjects.set(clientId, project.id);
+        res.json({ ok: true, ...result });
+    }));
+    app.post("/agent/codex/projects/:projectId/delete", codexMutation(async (req, res) => {
+        const clientId = requestClientId(req);
+        const deletedProjectId = routeParam(req.params.projectId);
+        const deletingCurrentProject = clientProjects.get(clientId) === deletedProjectId;
+        removeProject(config, deletedProjectId);
+        clientProjects.forEach((projectId, id) => {
+            if (projectId === deletedProjectId) clientProjects.set(id, DEFAULT_PROJECT_ID);
+        });
+        const project = projectForClient(clientId);
+        const result = activeProjectId === deletedProjectId || deletingCurrentProject ? await activateProject(project, clientId, permissionMode(req.body?.permissionMode)) : { ...projectState(project), conversation: conversationForProject(project) };
+        session.emitAll("projects_changed", { projects: listProjects(config).map(projectPayload), deletedProjectId, projectId: project.id, sourceClientId: clientId });
+        res.json({ ok: true, ...result });
+    }));
+    app.get("/agent/codex/workspace", (req, res) => {
+        const project = projectForClient(requestClientId(req));
+        res.json({ ok: true, ...projectState(project), conversation: conversationForProject(project) });
     });
     app.get("/agent/codex/models", route(async (_req, res) => res.json({ ok: true, ...(await listCodexModels(emit)) })));
     app.get("/agent/codex/skills", route(async (req, res) => {
-        const workspace = ensureSiteWorkspace(config);
-        const result = await listCodexSkills(emit, workspace.workspacePath, String(req.query.forceReload || "") === "1");
-        res.json({ ok: true, data: result.skills.map((skill) => ({ ...skill, managed: skillStore.isManagedPath(skill.path) })), errors: result.errors });
+        const project = projectForClient(requestClientId(req));
+        const result = await listCodexSkills(emit, project.workspacePath, String(req.query.forceReload || "") === "1");
+        res.json({ ok: true, ...projectState(project), data: result.skills.map((skill) => ({ ...skill, managed: skillStoreFor(project).isManagedPath(skill.path) })), errors: result.errors });
     }));
     app.post("/agent/codex/skills/draft", codexMutation(async (req, res) => {
-        const workspace = ensureSiteWorkspace(config);
+        const clientId = String(req.body?.clientId || "");
+        const project = projectForClient(clientId);
+        activeProjectId = project.id;
         const source = String(req.body?.source || "");
         if (source !== "conversation" && source !== "canvas") return res.status(400).json({ ok: false, error: "Skill 草稿来源无效" });
-        const clientId = String(req.body?.clientId || "");
         if (!clientId || !session.hasClient(clientId)) return res.status(409).json({ ok: false, error: "发起提炼的网页已断开，请重新连接后再试" });
         const model = String(req.body?.model || "") || undefined;
         const effort = reasoningEffort(req.body?.effort);
@@ -194,18 +314,19 @@ export function startHttpServer() {
             if (source === "conversation") {
                 const threadId = String(req.body?.threadId || "");
                 if (!threadId) return res.status(409).json({ ok: false, error: "当前没有可提炼的对话" });
-                if (threadId !== (workspace.activeThreadId || "")) return res.status(409).json({ ok: false, error: "当前对话已在其他页面切换，请同步后重试" });
-                const history = await readCodexThread(emit, threadId, workspace.workspacePath);
+                if (threadId !== (project.activeThreadId || "")) return res.status(409).json({ ok: false, error: "当前对话已在其他页面切换，请同步后重试" });
+                await assertProjectThread(project, threadId);
+                const history = await readCodexThread(emit, threadId, project.workspacePath);
                 if (!history.messages.some((message) => message.role === "user" && message.turnId)) return res.status(409).json({ ok: false, error: "当前对话还没有可提炼的已完成内容" });
-                session.setCodexState({ busy: true, threadId, turnId: "" }, { preserveReplay: true });
-                const data = await generateCodexSkillDraft(emit, workspace.workspacePath, { source, threadId, model, effort });
+                session.setCodexState({ busy: true, threadId, turnId: "", projectId: project.id }, { preserveReplay: true });
+                const data = await generateCodexSkillDraft(emit, project.workspacePath, { source, threadId, model, effort });
                 if (!session.hasClient(clientId)) return res.status(409).json({ ok: false, error: "发起提炼的网页已断开，请重新连接后再试" });
                 return res.json({ ok: true, data });
             }
             const snapshot = session.canvasStateForClient(clientId);
             if (!snapshot || (snapshot as Record<string, unknown>).hasCanvas === false) return res.status(409).json({ ok: false, error: "当前页面没有可提炼的画布" });
-            session.setCodexState({ busy: true, threadId: workspace.activeThreadId || "", turnId: "" }, { preserveReplay: true });
-            const data = await generateCodexSkillDraft(emit, workspace.workspacePath, { source, snapshot, model, effort });
+            session.setCodexState({ busy: true, threadId: project.activeThreadId || "", turnId: "", projectId: project.id }, { preserveReplay: true });
+            const data = await generateCodexSkillDraft(emit, project.workspacePath, { source, snapshot, model, effort });
             if (!session.hasClient(clientId)) return res.status(409).json({ ok: false, error: "发起提炼的网页已断开，请重新连接后再试" });
             return res.json({ ok: true, data });
         } finally {
@@ -214,90 +335,113 @@ export function startHttpServer() {
         }
     }));
     app.get("/agent/codex/skills/:name", route(async (req, res) => {
-        res.json({ ok: true, data: await skillStore.get(routeParam(req.params.name)) });
+        const project = projectForClient(requestClientId(req));
+        res.json({ ok: true, ...projectState(project), data: await skillStoreFor(project).get(routeParam(req.params.name)) });
     }));
     app.post("/agent/codex/skills", codexMutation(async (req, res) => {
-        const data = await skillStore.create(req.body);
-        session.emitAll("skills_changed", { forceReload: true });
-        res.status(201).json({ ok: true, data });
+        const project = projectForClient(requestClientId(req));
+        const data = await skillStoreFor(project).create(req.body);
+        session.emitAll("skills_changed", { forceReload: true, projectId: project.id });
+        res.status(201).json({ ok: true, ...projectState(project), data });
     }));
     app.post("/agent/codex/skills/:name/enabled", codexMutation(async (req, res) => {
         if (typeof req.body?.enabled !== "boolean") return res.status(400).json({ ok: false, error: "Skill 启用状态无效" });
-        const workspace = ensureSiteWorkspace(config);
+        const project = projectForClient(requestClientId(req));
         const selector = skillSelector(req.body);
         if (selector.name !== routeParam(req.params.name)) return res.status(400).json({ ok: false, error: "Skill 选择无效" });
-        const data = await configureCodexSkill(emit, workspace.workspacePath, selector, req.body.enabled);
-        session.emitAll("skills_changed", { forceReload: true });
-        res.json({ ok: true, data });
+        const data = await configureCodexSkill(emit, project.workspacePath, selector, req.body.enabled);
+        session.emitAll("skills_changed", { forceReload: true, projectId: project.id });
+        res.json({ ok: true, ...projectState(project), data });
     }));
     app.post("/agent/codex/skills/:name/delete", codexMutation(async (req, res) => {
-        await skillStore.delete(routeParam(req.params.name), String(req.body?.expectedRevision || ""));
-        session.emitAll("skills_changed", { forceReload: true });
-        res.json({ ok: true });
+        const project = projectForClient(requestClientId(req));
+        await skillStoreFor(project).delete(routeParam(req.params.name), String(req.body?.expectedRevision || ""));
+        session.emitAll("skills_changed", { forceReload: true, projectId: project.id });
+        res.json({ ok: true, ...projectState(project) });
     }));
     app.post("/agent/codex/skills/:name", codexMutation(async (req, res) => {
-        const data = await skillStore.update(routeParam(req.params.name), req.body);
-        session.emitAll("skills_changed", { forceReload: true });
-        res.json({ ok: true, data });
+        const project = projectForClient(requestClientId(req));
+        const data = await skillStoreFor(project).update(routeParam(req.params.name), req.body);
+        session.emitAll("skills_changed", { forceReload: true, projectId: project.id });
+        res.json({ ok: true, ...projectState(project), data });
     }));
     app.get("/agent/codex/threads", route(async (req, res) => {
-        const workspace = ensureSiteWorkspace(config);
-        const result = await listCodexThreads(emit, { cwd: workspace.workspacePath, searchTerm: String(req.query.searchTerm || "") });
-        res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot, ...result });
+        const project = projectForClient(requestClientId(req));
+        const result = await listCodexThreads(emit, { cwd: project.workspacePath, searchTerm: String(req.query.searchTerm || "") });
+        let data = result.data;
+        const activeThreadId = project.activeThreadId || "";
+        if (activeThreadId && !data.some((thread) => thread.id === activeThreadId)) {
+            try {
+                const activeThread = await verifyCodexThread(emit, activeThreadId, project.workspacePath);
+                data = [activeThread, ...data];
+            } catch (error) {
+                if (!isRecoverableThreadError(error)) throw error;
+            }
+        }
+        res.json({ ok: true, ...projectState(project), conversation: conversationForProject(project), data, nextCursor: result.nextCursor, backwardsCursor: result.backwardsCursor });
     }));
     app.post("/agent/codex/threads/new", codexMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");
-        session.beginConversation({ sourceClientId: clientId });
-        setActiveThread("", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
-        const thread = await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode));
-        res.json({ ok: true, workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot, thread: summarizeCodexThread(thread), messages: [] });
+        const project = projectForClient(clientId);
+        activeProjectId = project.id;
+        session.beginConversation({ sourceClientId: clientId, projectId: project.id });
+        setActiveThread(project, "", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
+        const thread = await prepareDraftThread(project, clientId, permissionMode(req.body?.permissionMode));
+        res.json({ ok: true, ...projectState(getProject(config, project.id)), conversation: conversationForProject(project), thread: summarizeCodexThread(thread), messages: [] });
     }));
     app.post("/agent/codex/threads/reset", codexMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");
-        session.beginConversation({ sourceClientId: clientId });
-        setActiveThread("", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
-        await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode));
-        res.json({ ok: true, workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot });
+        const project = projectForClient(clientId);
+        activeProjectId = project.id;
+        session.beginConversation({ sourceClientId: clientId, projectId: project.id });
+        setActiveThread(project, "", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
+        await prepareDraftThread(project, clientId, permissionMode(req.body?.permissionMode));
+        res.json({ ok: true, ...projectState(getProject(config, project.id)), conversation: conversationForProject(project) });
     }));
     app.get("/agent/codex/threads/:threadId", route(async (req, res) => {
-        const workspace = ensureSiteWorkspace(config);
+        const project = projectForClient(requestClientId(req));
         const threadId = routeParam(req.params.threadId);
-        res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot, ...(await readCodexThread(emit, threadId, workspace.workspacePath)) });
+        res.json({ ok: true, ...projectState(project), conversation: conversationForProject(project), ...(await readCodexThread(emit, threadId, project.workspacePath)) });
     }));
-    app.post("/agent/codex/history/ack", (req, res) => {
+    app.post("/agent/codex/history/ack", route(async (req, res) => {
+        const project = projectForClient(requestClientId(req));
         const threadId = String(req.body?.threadId || "");
+        if (threadId && threadId !== (project.activeThreadId || "")) await assertProjectThread(project, threadId);
         const turnIds = Array.isArray(req.body?.turnIds) ? req.body.turnIds.map(String) : [];
         session.acknowledgeCodexHistory(threadId, turnIds);
         res.json({ ok: true });
-    });
+    }));
     app.post("/agent/codex/threads/:threadId/resume", codexMutation(async (req, res) => {
         const threadId = routeParam(req.params.threadId);
         const clientId = String(req.body?.clientId || "");
+        const project = projectForClient(clientId);
         try {
-            const result = await prepareExistingThread(threadId, clientId, permissionMode(req.body?.permissionMode));
-            const nextWorkspace = setActiveThread(threadId, { sourceClientId: clientId }, true);
-            res.json({ ok: true, workspace: nextWorkspace, conversation: session.conversationStateSnapshot, ...result });
+            const result = await prepareExistingThread(project, threadId, clientId, permissionMode(req.body?.permissionMode));
+            const nextWorkspace = setActiveThread(project, threadId, { sourceClientId: clientId }, true);
+            res.json({ ok: true, ...projectState(nextWorkspace), conversation: conversationForProject(nextWorkspace), ...result });
         } catch (error) {
             failPreparedConversation(error, threadId, clientId);
             throw error;
         }
     }));
     app.post("/agent/codex/threads/:threadId/delete", codexMutation(async (req, res) => {
-        const workspace = ensureSiteWorkspace(config);
+        const clientId = String(req.body?.clientId || "");
+        const project = projectForClient(clientId);
         const threadId = routeParam(req.params.threadId);
-        await archiveCodexThread(emit, threadId, workspace.workspacePath);
-        const nextWorkspace = setActiveThread(workspace.activeThreadId === threadId ? "" : workspace.activeThreadId || "", { sourceClientId: String(req.body?.clientId || "") });
-        res.json({ ok: true, workspace: nextWorkspace, conversation: session.conversationStateSnapshot });
+        await archiveCodexThread(emit, threadId, project.workspacePath);
+        const nextWorkspace = setActiveThread(project, project.activeThreadId === threadId ? "" : project.activeThreadId || "", { sourceClientId: clientId });
+        res.json({ ok: true, ...projectState(nextWorkspace), conversation: conversationForProject(nextWorkspace) });
     }));
     app.post("/agent/codex/turn", codexMutation(async (req, res) => {
         const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as AgentAttachment[]) : [];
-        const workspace = ensureSiteWorkspace(config);
         const prompt = String(req.body?.prompt || "");
         if (!prompt.trim()) return res.status(400).json({ ok: false, error: "请输入任务内容" });
         const clientId = String(req.body?.clientId || "");
         if (!clientId || !session.hasClient(clientId)) return res.status(409).json({ ok: false, error: "发起任务的网页已断开，请重新连接后再试" });
+        const project = projectForClient(clientId);
+        activeProjectId = project.id;
         const requestedThreadId = String(req.body?.threadId || "");
-        const activeThreadId = workspace.activeThreadId || "";
+        const activeThreadId = project.activeThreadId || "";
         const conversation = session.conversationStateSnapshot;
         const requestedConversationId = String(req.body?.conversationId || "");
         const expectedRevision = Number(req.body?.expectedRevision || 0);
@@ -309,14 +453,14 @@ export function startHttpServer() {
         }
         const model = String(req.body?.model || "") || undefined;
         const effort = reasoningEffort(req.body?.effort);
-        const skill = req.body?.skill === undefined ? undefined : await resolveCodexSkill(emit, workspace.workspacePath, skillSelector(req.body.skill), true);
+        const skill = req.body?.skill === undefined ? undefined : await resolveCodexSkill(emit, project.workspacePath, skillSelector(req.body.skill), true);
         const messageId = String(req.body?.messageId || Date.now());
         const messageText = String(req.body?.messageText || prompt || `发送了 ${attachments.length} 张图片`);
         const messageMetadata = await messageMetadataStore.recordPending(messageId, req.body?.messageMetadata);
         const replaceLastTurnId = String(req.body?.replaceLastTurnId || "");
         if (replaceLastTurnId) {
             try {
-                await rollbackLatestCodexTurn(emit, activeThreadId, replaceLastTurnId, workspace.workspacePath);
+                await rollbackLatestCodexTurn(emit, activeThreadId, replaceLastTurnId, project.workspacePath);
                 session.discardCodexTurn(activeThreadId, replaceLastTurnId);
             } catch (error) {
                 await messageMetadataStore.remove(messageId, activeThreadId).catch((metadataError) => logger.warn("Failed to remove rejected edit metadata", { clientMessageId: messageId, error: metadataError }));
@@ -327,11 +471,12 @@ export function startHttpServer() {
         logger.info("Codex turn accepted", { threadId: req.body?.threadId, model: model || "default", reasoningEffort: effort || "default", promptLength: prompt.length, attachmentCount: attachments.length });
         session.bindClient(clientId);
         session.markConversationRunning(threadId);
-        session.setCodexState({ busy: true, threadId, turnId: "" });
+        session.setCodexState({ busy: true, threadId, turnId: "", projectId: project.id });
         try {
             let turnId = "";
             const attachmentRefs = session.setTurnAttachments(clientId, attachments);
             session.emitThread("chat_message", threadId, {
+                projectId: project.id,
                 sourceClientId: clientId,
                 message: { id: `${threadId}:pending:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId: "", role: "user", text: messageText, ...messageMetadata },
             });
@@ -344,6 +489,7 @@ export function startHttpServer() {
                 const sourceClientId = String(value.sourceClientId || clientId);
                 session.emitThread(type, eventThreadId, {
                     ...value,
+                    projectId: project.id,
                     threadId: eventThreadId,
                     thread_id: eventThreadId,
                     ...(eventTurnId ? { turnId: eventTurnId, turn_id: eventTurnId } : {}),
@@ -352,7 +498,7 @@ export function startHttpServer() {
             };
             void runCodexTurn(withAttachmentContext(prompt, attachmentRefs), lifecycleEmit, attachments, {
                 threadId,
-                cwd: workspace.workspacePath,
+                cwd: project.workspacePath,
                 permissionMode: permissionMode(req.body?.permissionMode),
                 model,
                 effort,
@@ -366,12 +512,13 @@ export function startHttpServer() {
                     void messageMetadataStore.bindThread(messageId, actualThreadId).catch((error) => logger.warn("Failed to bind message metadata to thread", { clientMessageId: messageId, threadId: actualThreadId, error }));
                     if (actualThreadId !== threadId) {
                         threadId = actualThreadId;
-                        setActiveThread(threadId, { emptyThread: true, sourceClientId: clientId });
+                        setActiveThread(project, threadId, { emptyThread: true, sourceClientId: clientId });
                     }
                     session.markConversationRunning(threadId);
-                    session.setCodexState({ busy: true, threadId, turnId: "" });
+                    session.setCodexState({ busy: true, threadId, turnId: "", projectId: project.id });
                     if (threadChanged) {
                         session.emitThread("chat_message", threadId, {
+                            projectId: project.id,
                             sourceClientId: clientId,
                             message: { id: `${threadId}:pending:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId: "", role: "user", text: messageText, ...messageMetadata },
                         });
@@ -383,20 +530,21 @@ export function startHttpServer() {
                     if (chatTurnId !== turnId) {
                         chatTurnId = turnId;
                         session.emitThread("chat_message", threadId, {
+                            projectId: project.id,
                             turnId,
                             sourceClientId: clientId,
                             message: { id: `${threadId}:${turnId}:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId, role: "user", text: messageText, ...messageMetadata },
                         });
                     }
                     logger.info("Codex turn started", { threadId, turnId, model: model || "default", reasoningEffort: effort || "default" });
-                    session.setCodexState({ busy: true, threadId, turnId });
+                    session.setCodexState({ busy: true, threadId, turnId, projectId: project.id });
                 },
                 onFinish: () => {
                     logger.info("Codex turn finished", { threadId, turnId });
                     if (!turnId) void messageMetadataStore.remove(messageId, threadId).catch((error) => logger.warn("Failed to remove unbound message metadata", { clientMessageId: messageId, error }));
                     session.clearTurnAttachments(clientId);
                     if (clientId) session.releaseClient(clientId);
-                    session.setCodexState({ busy: false, threadId, turnId });
+                    session.setCodexState({ busy: false, threadId, turnId, projectId: project.id });
                     session.finishConversationRun(threadId);
                 },
             });
@@ -404,7 +552,7 @@ export function startHttpServer() {
         } catch (error) {
             await messageMetadataStore.remove(messageId, threadId).catch((metadataError) => logger.warn("Failed to remove rejected message metadata", { clientMessageId: messageId, error: metadataError }));
             session.releaseClient(clientId);
-            session.setCodexState({ busy: false, threadId, turnId: "" });
+            session.setCodexState({ busy: false, threadId, turnId: "", projectId: project.id });
             session.finishConversationRun(threadId);
             throw error;
         }
@@ -431,8 +579,8 @@ export function startHttpServer() {
         const requestId = String(req.body?.requestId || "");
         const answers = req.body?.answers;
         if (!requestId || (answers !== null && (!answers || typeof answers !== "object" || Array.isArray(answers))) || !validClarificationAnswers(answers)) return res.status(400).json({ ok: false, error: "澄清答案无效" });
-        const ok = await resolveCodexClarification(requestId, answers === null ? null : answers as Record<string, unknown>);
-        res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "澄清请求已失效" }) });
+        const result = await resolveCodexClarification(requestId, answers === null ? null : answers as Record<string, unknown>);
+        res.status(result.ok ? 200 : 409).json(result.ok ? result : { ...result, error: result.state === "expired" ? "澄清请求已过期" : "澄清请求已失效" });
     }));
     app.post("/agent/codex/interrupt", route(async (req, res) => {
         const ok = await interruptCodexTurn(skillDraftRunning ? undefined : String(req.body?.threadId || ""));
@@ -459,14 +607,14 @@ export function startHttpServer() {
         console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent@latest mcp");
         console.log("Remove manually added MCP: codex mcp remove infinite-canvas");
         if (logger.enabled) console.log(`Debug log: ${logger.filePath}`);
-        logger.info("Canvas Agent started", { url: config.url, workspace: ensureSiteWorkspace(config).workspacePath, debugLog: logger.filePath });
-        const activeThreadId = initialWorkspace.activeThreadId || "";
+        logger.info("Canvas Agent started", { url: config.url, workspace: initialProject.workspacePath, debugLog: logger.filePath });
+        const activeThreadId = initialProject.activeThreadId || "";
         if (activeThreadId && session.beginCodexMutation()) {
-            void prepareExistingThread(activeThreadId).catch(async (error) => {
-                if (!isRecoverableThreadError(error)) return failPreparedConversation(error, activeThreadId);
-                session.beginConversation();
-                setActiveThread("", { emptyThread: true, draftThread: true }, true);
-                await prepareDraftThread("", "request");
+            void prepareExistingThread(initialProject, activeThreadId).catch(async (error) => {
+                if (!canRecoverProjectThread(error)) return failPreparedConversation(error, activeThreadId);
+                session.beginConversation({ projectId: initialProject.id });
+                setActiveThread(initialProject, "", { emptyThread: true, draftThread: true }, true);
+                await prepareDraftThread(initialProject, "", "request");
             }).finally(() => session.endCodexMutation()).catch(() => undefined);
         }
     });
@@ -534,6 +682,36 @@ function revealLocalFile(filePath: string, isDirectory: boolean) {
             resolve();
         });
         child.once("error", reject);
+    });
+}
+
+/** 打开 Windows 原生文件夹选择器；请求断开时同步终止选择器进程。 */
+async function selectLocalDirectory(signal: AbortSignal) {
+    if (process.platform !== "win32") throw new Error("当前系统不支持 Windows 文件夹选择器");
+    const script = "$shell = New-Object -ComObject Shell.Application; $folder = $shell.BrowseForFolder(0, '选择 Agent 项目目录', 0, 0); if ($folder) { [Console]::Out.Write($folder.Self.Path) }";
+    return await new Promise<string | null>((resolve, reject) => {
+        const child = spawn("powershell.exe", ["-NoProfile", "-STA", "-WindowStyle", "Normal", "-Command", script], { stdio: ["ignore", "pipe", "pipe"], windowsHide: false });
+        let output = "";
+        let error = "";
+        let aborted = signal.aborted;
+        const cancel = () => {
+            aborted = true;
+            child.kill();
+        };
+        if (aborted) {
+            child.kill();
+            return resolve(null);
+        }
+        signal.addEventListener("abort", cancel, { once: true });
+        child.stdout.on("data", (chunk: Buffer) => output += chunk.toString());
+        child.stderr.on("data", (chunk: Buffer) => error += chunk.toString());
+        child.once("error", reject);
+        child.once("close", (code) => {
+            signal.removeEventListener("abort", cancel);
+            if (aborted) return resolve(null);
+            if (code === 0) return resolve(output.trim() || null);
+            reject(new Error(error.trim() || "无法打开 Windows 文件夹选择窗口"));
+        });
     });
 }
 

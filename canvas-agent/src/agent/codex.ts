@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { CanvasSnapshot } from "../canvas/types.js";
 import { logger } from "../utils/logger.js";
 import { errorMessage, field, type JsonRecord } from "../utils/value.js";
-import { CodexAppClient, CodexReportedError } from "./codex-client.js";
+import { CodexAppClient, CodexReportedError, type ClarificationResolution } from "./codex-client.js";
 import { codexEventHistory } from "./codex-event-history.js";
 import { settledTurnIds, summarizeCodexThread, threadMessages } from "./codex-history.js";
 import { messageMetadataStore } from "./message-metadata.js";
@@ -93,7 +93,8 @@ export async function resolveCodexApproval(requestId: string, decision: string) 
 
 /** 回复当前 app-server 的待处理业务澄清请求。 */
 export async function resolveCodexClarification(requestId: string, answers: JsonRecord | null) {
-    return Boolean(codexApp?.resolveClarification(requestId, answers));
+    const result = codexApp?.resolveClarification(requestId, answers);
+    return result || ({ ok: false, state: "missing" } satisfies ClarificationResolution);
 }
 
 /** 创建新的 Codex 线程并记录当前线程 ID。 */
@@ -166,6 +167,17 @@ export async function readCodexThread(emit: AgentEmit, threadId: string, cwd?: s
     const supplementalItems = await codexEventHistory.readThread(threadId);
     const messages = await mergeMessageMetadata(threadId, threadMessages(history.thread, app.planUpdates(threadId), supplementalItems));
     return { thread: summarizeCodexThread(history.thread), messages, settledTurnIds: settledTurnIds(history.thread, supplementalItems), historyReady: history.historyReady };
+}
+
+/** 只读取并校验线程归属，不触发完整历史加载或 MCP 预热。 */
+export async function verifyCodexThread(emit: AgentEmit, threadId: string, cwd?: string) {
+    const app = await getCodexApp(emit);
+    try {
+        return summarizeCodexThread(await loadCodexThread(emit, threadId, cwd, false));
+    } catch (error) {
+        if (!isRecoverableThreadError(error)) throw error;
+        return summarizeCodexThread(await resumeLoadedThread(app, threadId, cwd, "request", false, false));
+    }
 }
 
 /** 归档指定 Codex 线程。 */

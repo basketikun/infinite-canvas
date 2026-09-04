@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createAgentLogWriter } from "../utils/agent-runtime.js";
-import { VERSION } from "../config.js";
+import { CLARIFICATION_TIMEOUT_MS, CLARIFICATION_TOOL_TIMEOUT_SEC, VERSION } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { field, type JsonRecord } from "../utils/value.js";
 import { codexEventHistory, type CodexEventHistory } from "./codex-event-history.js";
@@ -17,8 +17,11 @@ type ActiveTurn = PendingRequest & { threadId: string; turnId: string; prompt: s
 type ItemDeltaParams = { threadId: string; turnId: string; itemId: string; delta: string; summaryIndex?: number };
 type PendingDelta = { delta: string; itemType: string; params: ItemDeltaParams; timer: ReturnType<typeof setTimeout> };
 type ApprovalRequest = { id: number; method: string; params: JsonRecord; decision?: string };
-type ClarificationRequest = { id: number; method: string; params: JsonRecord; result?: JsonRecord };
+export type ClarificationState = "pending" | "accepted" | "cancelled" | "expired";
+export type ClarificationResolution = { ok: boolean; state: ClarificationState | "missing" };
+type ClarificationRequest = { id: number; method: string; params: JsonRecord; state: ClarificationState; result?: JsonRecord; timer?: ReturnType<typeof setTimeout> };
 type PendingTurnStart = { threadId: string; prompt: string; messageText?: string; turnId?: string; onTurn?: (turnId: string) => void };
+type McpServiceStatus = { name: string; authStatus?: string };
 
 const canvasAgentMcp = canvasAgentMcpCommand();
 const require = createRequire(import.meta.url);
@@ -53,6 +56,7 @@ export class CodexAppClient {
     private plansByTurn = new Map<string, CodexPlanUpdate>();
     private approvalRequests = new Map<string, ApprovalRequest>();
     private clarificationRequests = new Map<string, ClarificationRequest>();
+    private completedClarifications = new Map<string, ClarificationResolution>();
     private finalizingTurns = new Map<string, Promise<void>>();
     private skillReloads = new Map<string, Promise<CodexRequestResult<"skills/list">>>();
     private silentThreadIds = new Set<string>();
@@ -61,6 +65,7 @@ export class CodexAppClient {
     private pendingThreadStartedNotifications: JsonRecord[] = [];
     private pendingPreheatThreadStarts = 0;
     private preheatingThreadIds = new Set<string>();
+    private preheatedMcpServices = new Map<string, McpServiceStatus[]>();
     private failing = false;
     private failureMessage = "";
 
@@ -116,7 +121,7 @@ export class CodexAppClient {
             threadId = thread.id;
             if (preheat) {
                 this.preheatingThreadIds.add(threadId);
-                await this.completeMcpPreheat(threadId);
+                await this.completeMcpPreheat(threadId, cwd);
             }
             return thread;
         } finally {
@@ -142,7 +147,7 @@ export class CodexAppClient {
             if (preheat) this.preheatingThreadIds.add(threadId);
             const { thread } = await this.request("thread/resume", { threadId, ...threadSettings(permissionMode), ...(cwd ? { cwd } : {}) });
             if (!thread.id) throw new Error("Codex app-server 没有返回 thread id");
-            if (preheat) await this.completeMcpPreheat(thread.id);
+            if (preheat) await this.completeMcpPreheat(thread.id, cwd);
             return thread;
         } finally {
             if (preheat) this.pendingPreheatThreadStarts -= 1;
@@ -151,9 +156,15 @@ export class CodexAppClient {
     }
 
     /** 以 app-server 的权威 MCP 清单响应作为预热完成边界。 */
-    private async completeMcpPreheat(threadId: string) {
-        const result = await this.request("mcpServerStatus/list", { threadId, limit: 100, detail: "toolsAndAuthOnly" });
-        this.emit("agent_bootstrap", { type: "mcp.complete", phase: "preheat", threadId, services: result.data.map(({ name, authStatus }) => ({ name, authStatus })) });
+    private async completeMcpPreheat(threadId: string, cwd?: string) {
+        const cacheKey = mcpCacheKey(cwd);
+        let services = this.preheatedMcpServices.get(cacheKey);
+        if (!services) {
+            const result = await this.request("mcpServerStatus/list", { threadId, limit: 100, detail: "toolsAndAuthOnly" });
+            services = result.data.map(({ name, authStatus }) => ({ name, authStatus }));
+            this.preheatedMcpServices.set(cacheKey, services);
+        }
+        this.emit("agent_bootstrap", { type: "mcp.complete", phase: "preheat", threadId, services });
     }
 
     /** 查询 Codex 线程列表。 */
@@ -308,12 +319,21 @@ export class CodexAppClient {
     }
 
     /** 回复网页端已经完成或取消的业务澄清请求。 */
-    resolveClarification(requestId: string, answers: JsonRecord | null) {
+    resolveClarification(requestId: string, answers: JsonRecord | null): ClarificationResolution {
         const request = this.clarificationRequests.get(requestId);
-        if (!request || request.result) return false;
-        request.result = answers === null ? { action: "cancel" } : { action: "accept", content: answers };
-        this.write({ id: request.id, result: request.result });
-        return true;
+        if (!request) return this.completedClarifications.get(requestId) || { ok: false, state: "missing" };
+        if (request.state !== "pending") return { ok: false, state: request.state };
+        const state = answers === null ? "cancelled" : "accepted";
+        const result = answers === null ? { action: "cancel" } : { action: "accept", content: answers };
+        request.state = state;
+        request.result = result;
+        if (request.timer) clearTimeout(request.timer);
+        this.write({ id: request.id, result });
+        this.emit("agent_clarification_resolved", { ...request.params, requestId, action: result.action, state });
+        this.clarificationRequests.delete(requestId);
+        const resolution = { ok: true, state } satisfies ClarificationResolution;
+        this.rememberClarification(requestId, resolution);
+        return resolution;
     }
 
     /** 标记下一次临时线程创建，使早于请求响应到达的通知也不会外泄。 */
@@ -403,8 +423,14 @@ export class CodexAppClient {
             }
             const clarification = requestId ? this.clarificationRequests.get(requestId) : undefined;
             if (clarification) {
+                if (clarification.state === "pending") {
+                    clarification.state = "cancelled";
+                    clarification.result = { action: "cancel" };
+                    if (clarification.timer) clearTimeout(clarification.timer);
+                    this.emit("agent_clarification_resolved", { ...clarification.params, ...params, requestId, action: "cancel", state: "cancelled" });
+                    this.rememberClarification(requestId, { ok: false, state: "cancelled" });
+                }
                 this.clarificationRequests.delete(requestId);
-                this.emit("agent_clarification_resolved", { ...clarification.params, ...params, requestId, action: clarification.result?.action || "cancel" });
             }
             return;
         }
@@ -599,8 +625,10 @@ export class CodexAppClient {
     private completeTurn(event: AgentEvent, params: JsonRecord, eventScope: ReturnType<typeof codexEventScope>) {
         const turn = (params as unknown as CodexNotificationParams<"turn/completed">).turn;
         const turnId = turn.id;
-        const turnKey = turnCacheKey(String(field(params, "threadId") || field(event, "thread_id") || ""), turnId);
+        const threadId = String(field(params, "threadId") || field(event, "thread_id") || "");
+        const turnKey = turnCacheKey(threadId, turnId);
         this.finalizingTurns.delete(turnKey);
+        if (threadId && turnId) this.cancelClarifications(threadId, turnId);
         this.emit("agent_event", { agent: "codex", ...event });
         const pending = this.activeTurns.get(turnKey);
         const error = turn.error;
@@ -712,8 +740,10 @@ export class CodexAppClient {
         }
         if (method === "mcpServer/elicitation/request") {
             const requestId = String(message.id);
-            this.clarificationRequests.set(requestId, { id: Number(message.id), method, params });
+            const request: ClarificationRequest = { id: Number(message.id), method, params, state: "pending" };
+            this.clarificationRequests.set(requestId, request);
             this.emit("agent_clarification", normalizeClarificationRequest(requestId, params, this.currentThreadId, this.currentTurnId));
+            request.timer = setTimeout(() => this.expireClarification(requestId), Math.max(1_000, CLARIFICATION_TIMEOUT_MS - 1_000));
             return;
         }
         const result = { decision: "decline" };
@@ -722,14 +752,27 @@ export class CodexAppClient {
     }
 
     /** 将指定线程仍在等待的澄清统一取消，避免 turn 中断后永久悬挂。 */
-    private cancelClarifications(threadId: string) {
+    cancelClarifications(threadId: string, turnId?: string) {
         this.clarificationRequests.forEach((request, requestId) => {
-            if (String(field(request.params, "threadId") || this.currentThreadId) !== threadId || request.result) return;
-            request.result = { action: "cancel" };
-            this.write({ id: request.id, result: request.result });
-            this.emit("agent_clarification_resolved", { ...request.params, requestId, action: "cancel" });
-            this.clarificationRequests.delete(requestId);
+            if (request.state !== "pending") return;
+            if (String(field(request.params, "threadId") || this.currentThreadId) !== threadId) return;
+            if (turnId && String(field(request.params, "turnId") || this.currentTurnId) !== turnId) return;
+            this.resolveClarification(requestId, null);
         });
+    }
+
+    /** 到期后取消仍未回答的澄清请求，避免前端保留失效卡片。 */
+    private expireClarification(requestId: string) {
+        const request = this.clarificationRequests.get(requestId);
+        if (!request || request.state !== "pending") return;
+        const result = { action: "cancel" };
+        request.state = "expired";
+        request.result = result;
+        if (request.timer) clearTimeout(request.timer);
+        this.write({ id: request.id, result });
+        this.emit("agent_clarification_resolved", { ...request.params, requestId, action: "cancel", state: "expired" });
+        this.clarificationRequests.delete(requestId);
+        this.rememberClarification(requestId, { ok: false, state: "expired" });
     }
 
     /** 完成指定 JSON-RPC 请求。 */
@@ -750,7 +793,15 @@ export class CodexAppClient {
         this.failing = true;
         this.failureMessage = message;
         this.approvalRequests.forEach((request, requestId) => this.emit("codex_approval_resolved", { ...request.params, requestId, decision: request.decision || "cancel" }));
-        this.clarificationRequests.forEach((request, requestId) => this.emit("agent_clarification_resolved", { ...request.params, requestId, action: "cancel" }));
+        this.clarificationRequests.forEach((request, requestId) => {
+            if (request.state !== "pending") return;
+            request.state = "cancelled";
+            request.result = { action: "cancel" };
+            if (request.timer) clearTimeout(request.timer);
+            this.emit("agent_clarification_resolved", { ...request.params, requestId, action: "cancel", state: "cancelled" });
+            this.rememberClarification(requestId, { ok: false, state: "cancelled" });
+        });
+        this.clarificationRequests.clear();
         const failedTurns = new Map<string, { threadId: string; turnId: string; prompt: string; messageText?: string }>();
         this.activeTurns.forEach(({ threadId, turnId, prompt, messageText }, key) => {
             if (this.silentThreadIds.has(threadId)) return;
@@ -801,6 +852,11 @@ export class CodexAppClient {
             this.finalizingTurns.clear();
         });
     }
+
+    private rememberClarification(requestId: string, resolution: ClarificationResolution) {
+        this.completedClarifications.set(requestId, resolution);
+        while (this.completedClarifications.size > 256) this.completedClarifications.delete(this.completedClarifications.keys().next().value as string);
+    }
 }
 
 /** 将 Codex 的字符串、摘要数组或文本对象转换为展示文本。 */
@@ -838,7 +894,7 @@ function canvasAgentMcpCommand() {
 
 /** 生成 Codex app-server 使用的 MCP 配置。 */
 function codexConfig(permissionMode: AgentPermissionMode) {
-    return { model_reasoning_summary: "auto", ...(permissionMode === "automatic" ? { approvals_reviewer: "auto_review" } : {}), mcp_servers: { "infinite-canvas": { command: canvasAgentMcp.command, args: canvasAgentMcp.args, default_tools_approval_mode: "approve", startup_timeout_sec: 20, tool_timeout_sec: 90 } } };
+    return { model_reasoning_summary: "auto", ...(permissionMode === "automatic" ? { approvals_reviewer: "auto_review" } : {}), mcp_servers: { "infinite-canvas": { command: canvasAgentMcp.command, args: canvasAgentMcp.args, default_tools_approval_mode: "approve", startup_timeout_sec: 20, tool_timeout_sec: CLARIFICATION_TOOL_TIMEOUT_SEC } } };
 }
 
 function threadSettings(permissionMode: AgentPermissionMode) {
@@ -992,4 +1048,10 @@ function parseMaybeJson(value: unknown) {
 /** 定位当前依赖中 Codex CLI 的执行文件。 */
 function codexBin() {
     return path.join(path.dirname(require.resolve("@openai/codex/package.json")), "bin", "codex.js");
+}
+
+function mcpCacheKey(cwd?: string) {
+    if (!cwd) return "";
+    const resolved = path.resolve(cwd);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
