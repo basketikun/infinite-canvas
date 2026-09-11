@@ -12,20 +12,23 @@ export function nodeBounds(nodes: CanvasNodeData[]) {
     );
 }
 
+function containsCenter(group: CanvasNodeData, node: CanvasNodeData) {
+    const centerX = node.position.x + node.width / 2;
+    const centerY = node.position.y + node.height / 2;
+    return centerX >= group.position.x && centerX <= group.position.x + group.width && centerY >= group.position.y && centerY <= group.position.y + group.height;
+}
+
 export function findGroupDropTarget(movedIds: Set<string>, nodes: CanvasNodeData[]) {
     if (nodes.some((node) => movedIds.has(node.id) && node.type === CanvasNodeType.Group)) return null;
     const movingNodes = nodes.filter((node) => movedIds.has(node.id) && node.type !== CanvasNodeType.Group);
     if (!movingNodes.length) return null;
-    return (
-        [...nodes].reverse().find((group) => {
-            if (group.type !== CanvasNodeType.Group || movedIds.has(group.id)) return false;
-            return movingNodes.some((node) => {
-                const centerX = node.position.x + node.width / 2;
-                const centerY = node.position.y + node.height / 2;
-                return centerX >= group.position.x && centerX <= group.position.x + group.width && centerY >= group.position.y && centerY <= group.position.y + group.height;
-            });
-        }) || null
-    );
+    // Walk backwards instead of copying and reversing; this runs on every drag frame.
+    for (let index = nodes.length - 1; index >= 0; index -= 1) {
+        const group = nodes[index];
+        if (group.type !== CanvasNodeType.Group || movedIds.has(group.id)) continue;
+        if (movingNodes.some((node) => containsCenter(group, node))) return group;
+    }
+    return null;
 }
 
 export function snapNodesIntoGroup(movedIds: Set<string>, nodes: CanvasNodeData[], group: CanvasNodeData) {
@@ -120,14 +123,12 @@ export function applyUngroupSelection(selectedIds: Set<string>, nodes: CanvasNod
 }
 
 export function findContainingGroupId(node: CanvasNodeData, nodes: CanvasNodeData[]) {
-    const centerX = node.position.x + node.width / 2;
-    const centerY = node.position.y + node.height / 2;
-    return (
-        [...nodes]
-            .reverse()
-            .find((group) => group.type === CanvasNodeType.Group && group.id !== node.id && centerX >= group.position.x && centerX <= group.position.x + group.width && centerY >= group.position.y && centerY <= group.position.y + group.height)?.id ||
-        undefined
-    );
+    // Called once per moved node when a drag ends, so avoid copying the node list each time.
+    for (let index = nodes.length - 1; index >= 0; index -= 1) {
+        const group = nodes[index];
+        if (group.type === CanvasNodeType.Group && group.id !== node.id && containsCenter(group, node)) return group.id;
+    }
+    return undefined;
 }
 
 export function getConnectionTargetAnchor(node: CanvasNodeData, current: ConnectionHandle) {
