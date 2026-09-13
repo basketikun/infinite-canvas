@@ -324,43 +324,30 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             ) : null}
                                             <div className="mt-3 text-xs font-medium text-stone-600 dark:text-stone-300">{t("config.account.savedProviders", { defaultValue: "Canvas providers" })}</div>
                                             {canvasProviders.length ? (
-                                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                                                    {canvasProviders.map((provider) => {
-                                                        const models = canvasProviderModels[provider.id] || [];
-                                                        return (
-                                                            <div
-                                                                key={provider.id}
-                                                                role="button"
-                                                                tabIndex={0}
-                                                                onClick={() => selectCanvasProvider(provider.id)}
-                                                                onKeyDown={(event) => {
-                                                                    if (event.key === "Enter" || event.key === " ") {
-                                                                        event.preventDefault();
-                                                                        selectCanvasProvider(provider.id);
-                                                                    }
-                                                                }}
-                                                                className={`rounded-md border px-3 py-2 transition-colors ${selectedCanvasProviderId === provider.id ? "border-primary bg-primary/5" : "border-stone-200 dark:border-stone-800"}`}
-                                                            >
-                                                                <div className="truncate text-sm font-medium">{provider.name}</div>
-                                                                <div className="mt-1 text-xs text-stone-500">
-                                                                    {provider.maskedKey} · {provider.providerType}
-                                                                </div>
-                                                                <Select
-                                                                    className="mt-2 w-full"
-                                                                    size="small"
-                                                                    value={provider.model || undefined}
-                                                                    placeholder="Chọn model"
-                                                                    loading={modelsLoadingProviderId === provider.id}
-                                                                    options={models.map((model) => ({ value: model, label: model }))}
-                                                                    onDropdownVisibleChange={(open) => {
-                                                                        if (open && !canvasProviderModels[provider.id]) void loadCanvasModels(provider.id).catch(() => undefined);
-                                                                    }}
-                                                                    onChange={(model) => void saveCanvasProviderModel(provider.id, model)}
-                                                                    onClick={(event) => event.stopPropagation()}
-                                                                />
-                                                            </div>
-                                                        );
-                                                    })}
+                                                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                                                    <Form.Item label={t("config.account.providerLabel", { defaultValue: "Provider" })} className="mb-0">
+                                                        <Select
+                                                            className="w-full"
+                                                            value={selectedCanvasProviderId || undefined}
+                                                            options={canvasProviders.map((provider) => ({ value: provider.id, label: `${provider.name}${provider.maskedKey ? ` · ${provider.maskedKey}` : ""}` }))}
+                                                            onChange={selectCanvasProvider}
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item label={t("config.account.modelLabel", { defaultValue: "Model" })} className="mb-0">
+                                                        <Select
+                                                            className="w-full"
+                                                            value={canvasProviders.find((provider) => provider.id === selectedCanvasProviderId)?.model || undefined}
+                                                            placeholder={t("config.account.selectModel", { defaultValue: "Select model" })}
+                                                            loading={selectedCanvasProviderId ? modelsLoadingProviderId === selectedCanvasProviderId : false}
+                                                            options={(selectedCanvasProviderId ? canvasProviderModels[selectedCanvasProviderId] || [] : []).map((model) => ({ value: model, label: model }))}
+                                                            onDropdownVisibleChange={(open) => {
+                                                                if (open && selectedCanvasProviderId && !canvasProviderModels[selectedCanvasProviderId]) void loadCanvasModels(selectedCanvasProviderId).catch(() => undefined);
+                                                            }}
+                                                            onChange={(model) => {
+                                                                if (selectedCanvasProviderId) void saveCanvasProviderModel(selectedCanvasProviderId, model);
+                                                            }}
+                                                        />
+                                                    </Form.Item>
                                                 </div>
                                             ) : (
                                                 <div className="mt-1 text-xs text-stone-500">{t("config.account.emptyProviders", { defaultValue: "No Canvas providers saved yet." })}</div>
