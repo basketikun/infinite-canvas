@@ -38,12 +38,12 @@ export class HttpGenerationProvider implements GenerationProvider {
         errorCode: "PROVIDER_NOT_FOUND",
       };
     if (generation.kind === "image")
-      return this.image(context.secret, generation);
+      return this.image(context.baseUrl, context.secret, generation);
     if (generation.kind === "audio")
-      return this.audio(context.secret, generation);
+      return this.audio(context.baseUrl, context.secret, generation);
     if (generation.kind === "video")
-      return this.videoStart(context.secret, generation);
-    return this.text(context.secret, generation);
+      return this.videoStart(context.baseUrl, context.secret, generation);
+    return this.text(context.baseUrl, context.secret, generation);
   }
 
   async poll(generation: GenerationRecord): Promise<ProviderResult> {
@@ -61,6 +61,7 @@ export class HttpGenerationProvider implements GenerationProvider {
         errorCode: "PROVIDER_TASK_MISSING",
       };
     const response = await this.request(
+      context.baseUrl,
       `/v1/videos/${encodeURIComponent(generation.providerTaskId)}`,
       context.secret,
     );
@@ -97,6 +98,7 @@ export class HttpGenerationProvider implements GenerationProvider {
       (!status && mediaUrl(payload))
     ) {
       return this.downloadCompletedVideo(
+        context.baseUrl,
         generation.providerTaskId,
         payload,
         context.secret,
@@ -110,10 +112,11 @@ export class HttpGenerationProvider implements GenerationProvider {
   }
 
   private async image(
+    baseUrl: string,
     secret: string,
     generation: GenerationRecord,
   ): Promise<ProviderResult> {
-    const response = await this.request("/v1/images/generations", secret, {
+    const response = await this.request(baseUrl, "/v1/images/generations", secret, {
       method: "POST",
       body: {
         model: inputString(generation, "model") || "gpt-image-1",
@@ -135,7 +138,7 @@ export class HttpGenerationProvider implements GenerationProvider {
       };
     const url = stringValue(first?.url) || mediaUrl(payload);
     return url
-      ? this.download(url, secret, "image/png")
+      ? this.download(baseUrl, url, secret, "image/png")
       : {
           status: "failed",
           retryable: false,
@@ -144,10 +147,11 @@ export class HttpGenerationProvider implements GenerationProvider {
   }
 
   private async audio(
+    baseUrl: string,
     secret: string,
     generation: GenerationRecord,
   ): Promise<ProviderResult> {
-    const response = await this.request("/v1/audio/speech", secret, {
+    const response = await this.request(baseUrl, "/v1/audio/speech", secret, {
       method: "POST",
       body: {
         model: inputString(generation, "model") || "gpt-4o-mini-tts",
@@ -166,10 +170,11 @@ export class HttpGenerationProvider implements GenerationProvider {
   }
 
   private async videoStart(
+    baseUrl: string,
     secret: string,
     generation: GenerationRecord,
   ): Promise<ProviderResult> {
-    const response = await this.request("/v1/videos", secret, {
+    const response = await this.request(baseUrl, "/v1/videos", secret, {
       method: "POST",
       body: {
         model: inputString(generation, "model") || "sora-2",
@@ -186,7 +191,7 @@ export class HttpGenerationProvider implements GenerationProvider {
     );
     const status = stringValue(payload.status ?? data.status)?.toLowerCase();
     if (!id && mediaUrl(payload))
-      return this.download(mediaUrl(payload)!, secret, "video/mp4");
+      return this.download(baseUrl, mediaUrl(payload)!, secret, "video/mp4");
     if (!id)
       return {
         status: "failed",
@@ -194,7 +199,7 @@ export class HttpGenerationProvider implements GenerationProvider {
         errorCode: "PROVIDER_TASK_MISSING",
       };
     if (["completed", "succeeded", "done"].includes(status || ""))
-      return this.downloadCompletedVideo(id, payload, secret);
+      return this.downloadCompletedVideo(baseUrl, id, payload, secret);
     return {
       status: "pending",
       providerTaskId: id,
@@ -203,10 +208,11 @@ export class HttpGenerationProvider implements GenerationProvider {
   }
 
   private async text(
+    baseUrl: string,
     secret: string,
     generation: GenerationRecord,
   ): Promise<ProviderResult> {
-    const response = await this.request("/v1/chat/completions", secret, {
+    const response = await this.request(baseUrl, "/v1/chat/completions", secret, {
       method: "POST",
       body: {
         model: inputString(generation, "model") || "gpt-4o-mini",
@@ -236,17 +242,18 @@ export class HttpGenerationProvider implements GenerationProvider {
   }
 
   private async download(
+    baseUrl: string,
     url: string,
     secret: string,
     fallbackContentType: string,
   ): Promise<ProviderResult> {
-    if (!this.isAllowedOutputUrl(url))
+    if (!this.isAllowedOutputUrl(baseUrl, url))
       return {
         status: "failed",
         retryable: false,
         errorCode: "PROVIDER_OUTPUT_URL_NOT_ALLOWED",
       };
-    const response = await this.request(url, secret);
+    const response = await this.request(baseUrl, url, secret);
     if (!response.ok) return httpFailure(response.status);
     return {
       status: "succeeded",
@@ -259,13 +266,15 @@ export class HttpGenerationProvider implements GenerationProvider {
   }
 
   private downloadCompletedVideo(
+    baseUrl: string,
     taskId: string,
     payload: Record<string, unknown>,
     secret: string,
   ): Promise<ProviderResult> {
     const url = mediaUrl(payload);
     return this.download(
-      url && this.isAllowedOutputUrl(url)
+      baseUrl,
+      url && this.isAllowedOutputUrl(baseUrl, url)
         ? url
         : `/v1/videos/${encodeURIComponent(taskId)}/content`,
       secret,
@@ -273,10 +282,10 @@ export class HttpGenerationProvider implements GenerationProvider {
     );
   }
 
-  private isAllowedOutputUrl(url: string): boolean {
+  private isAllowedOutputUrl(baseUrl: string, url: string): boolean {
     try {
-      const parsed = new URL(url, this.baseUrl);
-      const base = new URL(this.baseUrl);
+      const parsed = new URL(url, baseUrl);
+      const base = new URL(baseUrl);
       return (
         (parsed.protocol === "http:" || parsed.protocol === "https:") &&
         parsed.origin === base.origin
@@ -288,20 +297,21 @@ export class HttpGenerationProvider implements GenerationProvider {
 
   private async providerContext(
     generation: GenerationRecord,
-  ): Promise<{ secret: string } | undefined> {
+  ): Promise<{ baseUrl: string; secret: string } | undefined> {
     const provider = await this.providers.get(
       generation.accountId,
       generation.providerId,
     );
     if (!provider || provider.status !== "active") return undefined;
     try {
-      return { secret: this.secretBox.decrypt(provider.secret) };
+      return { baseUrl: provider.baseUrl || this.baseUrl, secret: this.secretBox.decrypt(provider.secret) };
     } catch {
       return undefined;
     }
   }
 
   private async request(
+    baseUrl: string,
     path: string,
     secret: string,
     options: { method?: string; body?: unknown } = {},
@@ -313,7 +323,7 @@ export class HttpGenerationProvider implements GenerationProvider {
       : undefined;
     try {
       return await this.fetchImpl(
-        path.startsWith("http") ? path : `${this.baseUrl}${path}`,
+        path.startsWith("http") ? path : `${baseUrl}${path}`,
         {
           method: options.method ?? "GET",
           headers: {

@@ -7,6 +7,7 @@ export type ProviderRecord = {
     accountId: string;
     name: string;
     providerType: string;
+    baseUrl?: string;
     model?: string;
     group?: string;
     channel?: string;

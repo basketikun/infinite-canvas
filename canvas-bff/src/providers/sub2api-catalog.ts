@@ -65,12 +65,12 @@ export class Sub2ApiCatalogAdapter {
         return { secret, item: normalizeCatalogItem(match, true) };
     }
 
-    async listModels(apiKey: string): Promise<string[]> {
+    async listModels(apiKey: string, baseUrl = this.baseUrl): Promise<string[]> {
         if (!apiKey.trim()) throw new HttpError(400, "PROVIDER_SECRET_REQUIRED", "Provider secret is required");
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
         try {
-            const response = await this.fetchImpl(`${this.baseUrl}/v1/models`, { headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` }, signal: controller.signal });
+            const response = await this.fetchImpl(`${baseUrl.replace(/\/$/, "")}/v1/models`, { headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` }, signal: controller.signal });
             if (!response.ok) {
                 if (response.status === 401 || response.status === 403) throw new HttpError(401, "PROVIDER_UNAUTHORIZED", "Sub2API rejected this provider API key");
                 throw new HttpError(502, "PROVIDER_MODELS_UNAVAILABLE", "Provider models are unavailable");

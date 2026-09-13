@@ -8,7 +8,7 @@ import { SessionService } from "../auth/session-service.js";
 import { Sub2ApiCatalogAdapter } from "./sub2api-catalog.js";
 import type { ProviderRecord, ProviderRepository } from "./repository.js";
 
-export const providerBody = z.object({ name: z.string().trim().min(1).max(120), providerType: z.string().trim().min(1).max(80).default("openai-compatible"), model: z.string().trim().max(200).optional(), group: z.string().trim().max(200).optional(), channel: z.string().trim().max(200).optional(), catalogKeyId: z.string().trim().min(1).max(200).optional(), secret: z.string().min(1).max(4_096).optional() }).superRefine((value, context) => { if (!value.catalogKeyId && !value.secret) context.addIssue({ code: z.ZodIssueCode.custom, message: "catalogKeyId or secret is required" }); });
+export const providerBody = z.object({ name: z.string().trim().min(1).max(120), providerType: z.string().trim().min(1).max(80).default("openai-compatible"), baseUrl: z.string().trim().url().optional(), model: z.string().trim().max(200).optional(), group: z.string().trim().max(200).optional(), channel: z.string().trim().max(200).optional(), catalogKeyId: z.string().trim().min(1).max(200).optional(), secret: z.string().min(1).max(4_096).optional() }).superRefine((value, context) => { if (!value.catalogKeyId && !value.secret) context.addIssue({ code: z.ZodIssueCode.custom, message: "catalogKeyId or secret is required" }); });
 export const providerPatch = z.object({ name: z.string().trim().min(1).max(120).optional(), model: z.string().trim().max(200).optional(), group: z.string().trim().max(200).optional(), channel: z.string().trim().max(200).optional(), status: z.enum(["active", "disabled"]).optional() });
 
 @Injectable()
@@ -28,7 +28,7 @@ export class ProvidersService {
         const record = await this.providers.get(accountId, id);
         if (!record || record.status !== "active") throw new HttpError(404, "PROVIDER_NOT_FOUND", "Provider was not found");
         try {
-            return this.catalog.listModels(this.secretBox.decrypt(record.secret));
+            return this.catalog.listModels(this.secretBox.decrypt(record.secret), record.baseUrl);
         } catch (error) {
             if (error instanceof HttpError) throw error;
             throw new HttpError(502, "PROVIDER_SECRET_INVALID", "Provider secret could not be decrypted");
@@ -45,7 +45,7 @@ export class ProvidersService {
         if (!secret) throw new HttpError(400, "PROVIDER_SECRET_REQUIRED", "Provider secret is required");
         const existing = input.catalogKeyId && (await this.providers.list(accountId)).find((item) => item.sub2ApiKeyId === input.catalogKeyId);
         if (existing) return toPublic(existing);
-        const record = await this.providers.create({ accountId, name: input.name, providerType: catalogItem?.providerType ?? input.providerType, ...(input.model ?? catalogItem?.model ? { model: input.model ?? catalogItem?.model } : {}), ...(input.group ?? catalogItem?.group ? { group: input.group ?? catalogItem?.group } : {}), ...(input.channel ?? catalogItem?.channel ? { channel: input.channel ?? catalogItem?.channel } : {}), ...(input.catalogKeyId ? { sub2ApiKeyId: input.catalogKeyId } : {}), secret: this.secretBox.encrypt(secret), secretDescription: this.secretBox.describe(secret), status: "active" });
+        const record = await this.providers.create({ accountId, name: input.name, providerType: catalogItem?.providerType ?? input.providerType, ...(!input.catalogKeyId && input.baseUrl ? { baseUrl: normalizeBaseUrl(input.baseUrl) } : {}), ...(input.model ?? catalogItem?.model ? { model: input.model ?? catalogItem?.model } : {}), ...(input.group ?? catalogItem?.group ? { group: input.group ?? catalogItem?.group } : {}), ...(input.channel ?? catalogItem?.channel ? { channel: input.channel ?? catalogItem?.channel } : {}), ...(input.catalogKeyId ? { sub2ApiKeyId: input.catalogKeyId } : {}), secret: this.secretBox.encrypt(secret), secretDescription: this.secretBox.describe(secret), status: "active" });
         return toPublic(record);
     }
 
@@ -59,4 +59,12 @@ export class ProvidersService {
     }
 }
 
-function toPublic(record: ProviderRecord) { return { id: record.id, name: record.name, providerType: record.providerType, ...(record.model ? { model: record.model } : {}), ...(record.group ? { group: record.group } : {}), ...(record.channel ? { channel: record.channel } : {}), ...(record.sub2ApiKeyId ? { sub2ApiKeyId: record.sub2ApiKeyId } : {}), status: record.status, fingerprint: record.secretDescription.fingerprint, maskedKey: record.secretDescription.masked, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
+function toPublic(record: ProviderRecord) { return { id: record.id, name: record.name, providerType: record.providerType, ...(record.baseUrl ? { baseUrl: record.baseUrl } : {}), ...(record.model ? { model: record.model } : {}), ...(record.group ? { group: record.group } : {}), ...(record.channel ? { channel: record.channel } : {}), ...(record.sub2ApiKeyId ? { sub2ApiKeyId: record.sub2ApiKeyId } : {}), status: record.status, fingerprint: record.secretDescription.fingerprint, maskedKey: record.secretDescription.masked, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
+
+function normalizeBaseUrl(value: string) {
+    const url = new URL(value);
+    url.pathname = url.pathname.replace(/\/+$/, "").replace(/\/v1$/i, "");
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+}

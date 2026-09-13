@@ -7,12 +7,13 @@ import { HttpGenerationProvider } from "../src/providers/http-generation-provide
 
 const secretBox = new ProviderSecretBox(Buffer.alloc(32, 7));
 
-function fixture() {
+function fixture(baseUrl?: string) {
   const providers = new InMemoryProviderRepository();
   const provider = providers.create({
     accountId: "account-a",
     name: "Sub2API key",
     providerType: "openai-compatible",
+    ...(baseUrl ? { baseUrl } : {}),
     model: "gpt-image-2",
     secret: secretBox.encrypt("sk-provider-secret"),
     secretDescription: secretBox.describe("sk-provider-secret"),
@@ -67,6 +68,37 @@ test("image adapter decrypts the provider secret and ingests base64 output", asy
     "Bearer sk-provider-secret",
   );
   assert.equal((await request?.json()).prompt, "a tree");
+});
+
+test("image adapter uses the provider-specific endpoint for third-party providers", async () => {
+  const { providers, provider } = fixture("https://third-party.example.test");
+  let requestUrl = "";
+  const adapter = new HttpGenerationProvider({
+    baseUrl: "https://sub2api.example.test",
+    providers,
+    secretBox,
+    fetchImpl: async (input) => {
+      requestUrl = String(input);
+      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from("third-party-image").toString("base64") }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+  });
+  const result = await adapter.start({
+    id: "generation-third-party",
+    accountId: "account-a",
+    projectId: "project-1",
+    providerId: provider.id,
+    kind: "image",
+    input: { prompt: "a tree", model: "image-model" },
+    inputHash: "hash-third-party",
+    clientRequestId: "request-third-party",
+    status: "running",
+    progress: 0,
+    attempt: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  assert.equal(result.status, "succeeded");
+  assert.equal(requestUrl, "https://third-party.example.test/v1/images/generations");
 });
 
 test("audio adapter returns binary provider output", async () => {

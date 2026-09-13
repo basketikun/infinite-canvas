@@ -2,8 +2,9 @@ import { create } from "zustand";
 
 import { CanvasBffError, canvasBff, type CanvasProvider, type ProviderCatalog } from "@/services/api/canvas-bff";
 
-type ProviderInput = { name: string; providerType?: string; model?: string; group?: string; channel?: string; catalogKeyId?: string; secret?: string };
+type ProviderInput = { name: string; providerType?: string; baseUrl?: string; model?: string; group?: string; channel?: string; catalogKeyId?: string; secret?: string };
 type ProviderPatch = { name?: string; model?: string; group?: string; channel?: string; status?: "active" | "disabled" };
+type StudioCapability = "image" | "video";
 
 type CanvasProviderStore = {
     providers: CanvasProvider[];
@@ -13,6 +14,7 @@ type CanvasProviderStore = {
     error: string | null;
     modelsByProvider: Record<string, string[]>;
     modelsLoadingProviderId: string | null;
+    studioModels: Partial<Record<StudioCapability, string>>;
     load: () => Promise<void>;
     loadCatalog: () => Promise<void>;
     loadModels: (providerId: string) => Promise<string[]>;
@@ -20,6 +22,7 @@ type CanvasProviderStore = {
     update: (providerId: string, input: ProviderPatch) => Promise<CanvasProvider>;
     remove: (providerId: string) => Promise<void>;
     select: (providerId: string) => void;
+    setStudioModel: (capability: StudioCapability, value: string) => void;
     clear: () => void;
 };
 
@@ -31,6 +34,7 @@ export const useCanvasProviderStore = create<CanvasProviderStore>()((set) => ({
     error: null,
     modelsByProvider: {},
     modelsLoadingProviderId: null,
+    studioModels: {},
     load: async () => {
         set({ status: "loading", error: null });
         try {
@@ -81,5 +85,6 @@ export const useCanvasProviderStore = create<CanvasProviderStore>()((set) => ({
         set((state) => ({ providers: state.providers.filter((item) => item.id !== providerId), selectedProviderId: state.selectedProviderId === providerId ? null : state.selectedProviderId, error: null }));
     },
     select: (providerId) => set((state) => ({ selectedProviderId: state.providers.some((item) => item.id === providerId && item.status === "active") ? providerId : state.selectedProviderId })),
-    clear: () => set({ providers: [], selectedProviderId: null, catalog: null, modelsByProvider: {}, modelsLoadingProviderId: null, status: "idle", error: null }),
+    setStudioModel: (capability, value) => set((state) => ({ studioModels: { ...state.studioModels, [capability]: value } })),
+    clear: () => set({ providers: [], selectedProviderId: null, catalog: null, modelsByProvider: {}, modelsLoadingProviderId: null, studioModels: {}, status: "idle", error: null }),
 }));

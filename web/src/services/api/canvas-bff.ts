@@ -15,6 +15,7 @@ export type CanvasProvider = {
     id: string;
     name: string;
     providerType: string;
+    baseUrl?: string;
     model?: string;
     group?: string;
     channel?: string;
@@ -25,6 +26,21 @@ export type CanvasProvider = {
     createdAt: string;
     updatedAt: string;
 };
+
+const CANVAS_MODEL_PREFIX = "canvas::";
+
+export function encodeCanvasModel(providerId: string, model: string) {
+    return `${CANVAS_MODEL_PREFIX}${providerId}::${model.trim()}`;
+}
+
+export function decodeCanvasModel(value: string) {
+    if (!value.startsWith(CANVAS_MODEL_PREFIX)) return null;
+    const separator = value.indexOf("::", CANVAS_MODEL_PREFIX.length);
+    if (separator < 0) return null;
+    const providerId = value.slice(CANVAS_MODEL_PREFIX.length, separator);
+    const model = value.slice(separator + 2).trim();
+    return providerId && model ? { providerId, model } : null;
+}
 
 export type ProviderCatalogItem = {
     id: string;
@@ -106,7 +122,7 @@ export const canvasBff = {
     listProviders: () => request<CanvasProvider[]>("/v1/providers"),
     listProviderModels: (providerId: string) => request<string[]>(`/v1/providers/${encodeURIComponent(providerId)}/models`),
     getProviderCatalog: () => request<ProviderCatalog>("/v1/providers/catalog"),
-    createProvider: (input: { name: string; providerType?: string; model?: string; group?: string; channel?: string; catalogKeyId?: string; secret?: string }) => request<CanvasProvider>("/v1/providers", { method: "POST", body: input }),
+    createProvider: (input: { name: string; providerType?: string; baseUrl?: string; model?: string; group?: string; channel?: string; catalogKeyId?: string; secret?: string }) => request<CanvasProvider>("/v1/providers", { method: "POST", body: input }),
     updateProvider: (providerId: string, input: { name?: string; model?: string; group?: string; channel?: string; status?: "active" | "disabled" }) =>
         request<CanvasProvider>(`/v1/providers/${encodeURIComponent(providerId)}`, { method: "PATCH", body: input }),
     deleteProvider: (providerId: string) => request<void>(`/v1/providers/${encodeURIComponent(providerId)}`, { method: "DELETE" }),

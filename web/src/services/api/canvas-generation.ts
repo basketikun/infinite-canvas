@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { useCanvasAccountStore } from "@/stores/use-canvas-account-store";
 import { useCanvasProviderStore } from "@/stores/use-canvas-provider-store";
 import { modelOptionName, type AiConfig } from "@/stores/use-config-store";
-import { canvasBff, type CanvasGeneration } from "./canvas-bff";
+import { canvasBff, decodeCanvasModel, type CanvasGeneration } from "./canvas-bff";
 
 export type CanvasGenerationInput = {
     projectId: string;
@@ -20,15 +20,25 @@ export function isCanvasAccountAuthenticated() {
 export async function submitCanvasGeneration(kind: CanvasGeneration["kind"], config: AiConfig, prompt: string, extra: Record<string, unknown> = {}, options?: { signal?: AbortSignal }) {
     throwIfAborted(options?.signal);
     const [providers, projects] = await Promise.all([canvasBff.listProviders(), canvasBff.listProjects()]);
-    const selectedProviderId = useCanvasProviderStore.getState().selectedProviderId;
-    const provider = providers.find((item) => item.id === selectedProviderId && item.status === "active") || providers.find((item) => item.status === "active");
+    const capabilityModel = kind === "image" ? config.imageModel : kind === "video" ? config.videoModel : kind === "audio" ? config.audioModel : config.textModel;
+    const selectedValue = capabilityModel || config.model;
+    const configuredModel = modelOptionName(selectedValue);
+    const explicitModel = decodeCanvasModel(selectedValue) || decodeCanvasModel(config.model || "");
+    const selectedProviderId = explicitModel?.providerId;
+    const activeProviders = providers.filter((item) => item.status === "active");
+    const preferredProviderId = useCanvasProviderStore.getState().selectedProviderId;
+    const provider = selectedProviderId
+        ? activeProviders.find((item) => item.id === selectedProviderId)
+        : activeProviders.find((item) => item.id === preferredProviderId && item.model === configuredModel)
+            || activeProviders.find((item) => item.model === configuredModel)
+            || (activeProviders.length === 1 ? activeProviders[0] : undefined);
     if (!provider) throw new Error("No active Canvas provider is configured");
     const project = projects[0] || (await canvasBff.createProject({ name: "Canvas Workbench", data: { source: "workbench" } }));
     return canvasBff.createGeneration({
         projectId: project.id,
         providerId: provider.id,
         kind,
-        input: { model: provider.model || modelOptionName(config.model || (kind === "image" ? config.imageModel : kind === "video" ? config.videoModel : kind === "audio" ? config.audioModel : config.textModel)), prompt, ...extra },
+        input: { model: explicitModel?.model || configuredModel, prompt, ...extra },
         clientRequestId: `canvas-${kind}-${nanoid()}`,
     });
 }

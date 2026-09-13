@@ -18,9 +18,9 @@ export class PostgresProviderRepository implements ProviderRepository {
 
     async create(input: Omit<ProviderRecord, "id" | "createdAt" | "updatedAt">): Promise<ProviderRecord> {
         const inserted = await this.pool.query(
-            `INSERT INTO canvas_providers (id, account_id, name, provider_type, model, group_name, channel, sub2api_key_id, secret_ciphertext, secret_iv, secret_auth_tag, secret_key_version, secret_fingerprint, secret_masked, status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING ${columns}`,
-            [randomUUID(), input.accountId, input.name, input.providerType, input.model ?? null, input.group ?? null, input.channel ?? null, input.sub2ApiKeyId ?? null, input.secret.ciphertext, input.secret.iv, input.secret.authTag, input.secret.keyVersion, input.secretDescription.fingerprint, input.secretDescription.masked, input.status],
+            `INSERT INTO canvas_providers (id, account_id, name, provider_type, base_url, model, group_name, channel, sub2api_key_id, secret_ciphertext, secret_iv, secret_auth_tag, secret_key_version, secret_fingerprint, secret_masked, status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING ${columns}`,
+            [randomUUID(), input.accountId, input.name, input.providerType, input.baseUrl ?? null, input.model ?? null, input.group ?? null, input.channel ?? null, input.sub2ApiKeyId ?? null, input.secret.ciphertext, input.secret.iv, input.secret.authTag, input.secret.keyVersion, input.secretDescription.fingerprint, input.secretDescription.masked, input.status],
         );
         return toProvider(inserted.rows[0]);
     }
@@ -43,7 +43,7 @@ export class PostgresProviderRepository implements ProviderRepository {
     }
 }
 
-const columns = "id, account_id, name, provider_type, model, group_name, channel, sub2api_key_id, secret_ciphertext, secret_iv, secret_auth_tag, secret_key_version, secret_fingerprint, secret_masked, status, created_at, updated_at";
+const columns = "id, account_id, name, provider_type, base_url, model, group_name, channel, sub2api_key_id, secret_ciphertext, secret_iv, secret_auth_tag, secret_key_version, secret_fingerprint, secret_masked, status, created_at, updated_at";
 const baseQuery = `SELECT ${columns} FROM canvas_providers`;
 
 function toProvider(row: Record<string, unknown>): ProviderRecord {
@@ -52,6 +52,7 @@ function toProvider(row: Record<string, unknown>): ProviderRecord {
         accountId: String(row.account_id),
         name: String(row.name),
         providerType: String(row.provider_type),
+        ...(row.base_url ? { baseUrl: String(row.base_url) } : {}),
         ...(row.model ? { model: String(row.model) } : {}),
         ...(row.group_name ? { group: String(row.group_name) } : {}),
         ...(row.channel ? { channel: String(row.channel) } : {}),

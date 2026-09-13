@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ModelPicker } from "@/components/model-picker";
+import { CanvasProviderModelPicker } from "@/components/canvas/canvas-provider-model-picker";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
 import { ConfigLocalProxy } from "@/components/layout/config-local-proxy";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
@@ -96,6 +97,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const updateCanvasProvider = useCanvasProviderStore((state) => state.update);
     const [selectedCatalogKeyId, setSelectedCatalogKeyId] = useState("");
     const [canvasProviderName, setCanvasProviderName] = useState("");
+    const [canvasProviderSource, setCanvasProviderSource] = useState<"sub2api" | "direct">("sub2api");
+    const [canvasProviderBaseUrl, setCanvasProviderBaseUrl] = useState("");
+    const [canvasProviderSecret, setCanvasProviderSecret] = useState("");
     const [savingCanvasProvider, setSavingCanvasProvider] = useState(false);
     const locale = i18n.resolvedLanguage as AppLocale;
     useEffect(() => setActiveTab(initialTab), [initialTab]);
@@ -138,21 +142,30 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const saveCanvasProvider = async () => {
         const catalogKey = canvasCatalog?.keys.find((item) => item.id === selectedCatalogKeyId);
-        if (!catalogKey) return;
+        if (canvasProviderSource === "sub2api" && !catalogKey) return;
+        if (canvasProviderSource === "direct" && (!canvasProviderBaseUrl.trim() || !canvasProviderSecret.trim())) return;
         setSavingCanvasProvider(true);
         try {
             const provider = await createCanvasProvider({
-                name: canvasProviderName.trim() || catalogKey.name,
-                catalogKeyId: catalogKey.id,
-                providerType: catalogKey.providerType,
-                model: catalogKey.model,
-                group: catalogKey.group,
-                channel: catalogKey.channel,
+                name: canvasProviderName.trim() || catalogKey?.name || new URL(canvasProviderBaseUrl).hostname,
+                ...(canvasProviderSource === "sub2api" ? {
+                    catalogKeyId: catalogKey?.id,
+                    providerType: catalogKey?.providerType,
+                    model: catalogKey?.model,
+                    group: catalogKey?.group,
+                    channel: catalogKey?.channel,
+                } : {
+                    providerType: "openai-compatible",
+                    baseUrl: canvasProviderBaseUrl.trim(),
+                    secret: canvasProviderSecret.trim(),
+                }),
             });
             const models = await loadCanvasModels(provider.id);
             if (!provider.model && models[0]) await updateCanvasProvider(provider.id, { model: models[0] });
             setSelectedCatalogKeyId("");
             setCanvasProviderName("");
+            setCanvasProviderBaseUrl("");
+            setCanvasProviderSecret("");
             message.success(t("config.account.providerSaved", { defaultValue: "Provider saved" }));
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("config.account.providerSaveFailed", { defaultValue: "Provider could not be saved" }));
@@ -352,8 +365,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             ) : (
                                                 <div className="mt-1 text-xs text-stone-500">{t("config.account.emptyProviders", { defaultValue: "No Canvas providers saved yet." })}</div>
                                             )}
-                                            <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-                                                <Form.Item label={t("config.account.selectKey", { defaultValue: "Sub2API API Key" })} className="mb-0">
+                                            <div className="mt-3 grid gap-2 md:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                                                <Form.Item label="Nguồn" className="mb-0">
+                                                    <Select className="w-full" value={canvasProviderSource} onChange={setCanvasProviderSource} options={[{ value: "sub2api", label: "Sub2API" }, { value: "direct", label: "Third-party" }]} />
+                                                </Form.Item>
+                                                {canvasProviderSource === "sub2api" ? <Form.Item label={t("config.account.selectKey", { defaultValue: "Sub2API API Key" })} className="mb-0">
                                                     <Select
                                                         className="w-full"
                                                         value={selectedCatalogKeyId || undefined}
@@ -363,13 +379,38 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                         onChange={setSelectedCatalogKeyId}
                                                         notFoundContent={t("config.account.emptyCatalog", { defaultValue: "No API keys available" })}
                                                     />
-                                                </Form.Item>
+                                                </Form.Item> : <Form.Item label="Endpoint API" className="mb-0"><Input value={canvasProviderBaseUrl} placeholder="https://api.example.com" onChange={(event) => setCanvasProviderBaseUrl(event.target.value)} /></Form.Item>}
                                                 <Form.Item label={t("config.account.providerName", { defaultValue: "Provider name" })} className="mb-0">
                                                     <Input value={canvasProviderName} placeholder={t("config.channels.newName")} onChange={(event) => setCanvasProviderName(event.target.value)} />
                                                 </Form.Item>
-                                                <Button type="primary" disabled={!selectedCatalogKeyId} loading={savingCanvasProvider} onClick={() => void saveCanvasProvider()}>
+                                                {canvasProviderSource === "direct" ? <Form.Item label="API key" className="mb-0"><Input.Password value={canvasProviderSecret} placeholder="sk-..." onChange={(event) => setCanvasProviderSecret(event.target.value)} /></Form.Item> : null}
+                                                <Button type="primary" disabled={canvasProviderSource === "sub2api" ? !selectedCatalogKeyId : !canvasProviderBaseUrl.trim() || !canvasProviderSecret.trim()} loading={savingCanvasProvider} onClick={() => void saveCanvasProvider()}>
                                                     {t("config.account.saveProvider", { defaultValue: "Save provider" })}
                                                 </Button>
+                                            </div>
+                                            <div className="mt-5 border-t border-stone-200 pt-4 dark:border-stone-800">
+                                                <div>
+                                                    <div className="text-sm font-semibold">{t("config.account.studioDefaultsTitle", { defaultValue: "Studio defaults" })}</div>
+                                                    <div className="mt-1 text-xs text-stone-500">
+                                                        {t("config.account.studioDefaultsDescription", { defaultValue: "These choices are applied when a Studio opens for the first time. You can change the provider or model at any time inside Studio." })}
+                                                    </div>
+                                                </div>
+                                                <div className="mt-3 divide-y divide-stone-200 dark:divide-stone-800">
+                                                    <div className="grid gap-3 py-3 first:pt-0 md:grid-cols-[minmax(9rem,0.55fr)_minmax(0,1.45fr)] md:items-center">
+                                                        <div>
+                                                            <div className="text-sm font-medium">{t("config.account.studioImageLabel", { defaultValue: "Image Studio" })}</div>
+                                                            <div className="mt-1 text-xs text-stone-500">{t("config.account.studioImageDescription", { defaultValue: "Provider and model used for image generation." })}</div>
+                                                        </div>
+                                                        <CanvasProviderModelPicker capability="image" value={config.imageModel} showLabels onChange={(model) => updateConfig("imageModel", model)} />
+                                                    </div>
+                                                    <div className="grid gap-3 py-3 last:pb-0 md:grid-cols-[minmax(9rem,0.55fr)_minmax(0,1.45fr)] md:items-center">
+                                                        <div>
+                                                            <div className="text-sm font-medium">{t("config.account.studioVideoLabel", { defaultValue: "Video Studio" })}</div>
+                                                            <div className="mt-1 text-xs text-stone-500">{t("config.account.studioVideoDescription", { defaultValue: "Provider and model used for video generation." })}</div>
+                                                        </div>
+                                                        <CanvasProviderModelPicker capability="video" value={config.videoModel} showLabels onChange={(model) => updateConfig("videoModel", model)} />
+                                                    </div>
+                                                </div>
                                             </div>
                                         </>
                                     ) : null}
