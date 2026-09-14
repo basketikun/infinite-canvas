@@ -7,7 +7,7 @@ import { HttpGenerationProvider } from "../src/providers/http-generation-provide
 
 const secretBox = new ProviderSecretBox(Buffer.alloc(32, 7));
 
-function fixture(baseUrl?: string) {
+function fixture(baseUrl?: string, sub2ApiKeyId?: string) {
   const providers = new InMemoryProviderRepository();
   const provider = providers.create({
     accountId: "account-a",
@@ -15,6 +15,7 @@ function fixture(baseUrl?: string) {
     providerType: "openai-compatible",
     ...(baseUrl ? { baseUrl } : {}),
     model: "gpt-image-2",
+    ...(sub2ApiKeyId ? { sub2ApiKeyId } : {}),
     secret: secretBox.encrypt("sk-provider-secret"),
     secretDescription: secretBox.describe("sk-provider-secret"),
     status: "active",
@@ -405,4 +406,130 @@ test("adapter rejects media URLs outside the configured Sub2API origin", async (
     retryable: false,
     errorCode: "PROVIDER_OUTPUT_URL_NOT_ALLOWED",
   });
+});
+
+test("Sub2API image CDN output is downloaded without forwarding the API key", async () => {
+  const { providers, provider } = fixture(undefined, "sub2api-key-1");
+  const requests: Request[] = [];
+  const adapter = new HttpGenerationProvider({
+    baseUrl: "https://sub2api.example.test",
+    providers,
+    secretBox,
+    fetchImpl: async (input, init) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      if (request.url.endsWith("/v1/images/generations"))
+        return new Response(
+          JSON.stringify({
+            data: [{ url: "https://cdn.example.test/generated/image.png?signature=abc" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      return new Response(new Uint8Array([137, 80, 78, 71]), {
+        status: 200,
+        headers: { "Content-Type": "image/png" },
+      });
+    },
+  });
+
+  const result = await adapter.start({
+    id: "generation-sub2api-cdn",
+    accountId: "account-a",
+    projectId: "project-1",
+    providerId: provider.id,
+    kind: "image",
+    input: { prompt: "a tree", model: "gpt-image-2" },
+    inputHash: "hash-sub2api-cdn",
+    clientRequestId: "request-sub2api-cdn",
+    status: "running",
+    progress: 0,
+    attempt: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].url, "https://cdn.example.test/generated/image.png?signature=abc");
+  assert.equal(requests[1].headers.has("authorization"), false);
+});
+
+test("Sub2API external output URLs cannot target private addresses", async () => {
+  const { providers, provider } = fixture(undefined, "sub2api-key-2");
+  let downloadAttempted = false;
+  const adapter = new HttpGenerationProvider({
+    baseUrl: "https://sub2api.example.test",
+    providers,
+    secretBox,
+    fetchImpl: async (input) => {
+      if (String(input).endsWith("/v1/images/generations"))
+        return new Response(JSON.stringify({ data: [{ url: "https://127.0.0.1/image.png" }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      downloadAttempted = true;
+      return new Response(new Uint8Array([1]), { status: 200 });
+    },
+  });
+
+  const result = await adapter.start({
+    id: "generation-sub2api-private-url",
+    accountId: "account-a",
+    projectId: "project-1",
+    providerId: provider.id,
+    kind: "image",
+    input: { prompt: "blocked", model: "gpt-image-2" },
+    inputHash: "hash-sub2api-private-url",
+    clientRequestId: "request-sub2api-private-url",
+    status: "running",
+    progress: 0,
+    attempt: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  assert.deepEqual(result, {
+    status: "failed",
+    retryable: false,
+    errorCode: "PROVIDER_OUTPUT_URL_NOT_ALLOWED",
+  });
+  assert.equal(downloadAttempted, false);
+});
+
+test("Sub2API external output URLs cannot target IPv4-mapped private addresses", async () => {
+  const { providers, provider } = fixture(undefined, "sub2api-key-3");
+  let downloadAttempted = false;
+  const adapter = new HttpGenerationProvider({
+    baseUrl: "https://sub2api.example.test",
+    providers,
+    secretBox,
+    fetchImpl: async (input) => {
+      if (String(input).endsWith("/v1/images/generations"))
+        return new Response(JSON.stringify({ data: [{ url: "https://[::ffff:127.0.0.1]/image.png" }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      downloadAttempted = true;
+      return new Response(new Uint8Array([1]), { status: 200 });
+    },
+  });
+
+  const result = await adapter.start({
+    id: "generation-sub2api-mapped-private-url",
+    accountId: "account-a",
+    projectId: "project-1",
+    providerId: provider.id,
+    kind: "image",
+    input: { prompt: "blocked", model: "gpt-image-2" },
+    inputHash: "hash-sub2api-mapped-private-url",
+    clientRequestId: "request-sub2api-mapped-private-url",
+    status: "running",
+    progress: 0,
+    attempt: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(downloadAttempted, false);
 });

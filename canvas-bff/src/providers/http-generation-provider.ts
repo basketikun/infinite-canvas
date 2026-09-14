@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 import type {
   GenerationProvider,
   ProviderResult,
@@ -38,11 +40,11 @@ export class HttpGenerationProvider implements GenerationProvider {
         errorCode: "PROVIDER_NOT_FOUND",
       };
     if (generation.kind === "image")
-      return this.image(context.baseUrl, context.secret, generation);
+      return this.image(context.baseUrl, context.secret, generation, context.allowExternalOutputUrl);
     if (generation.kind === "audio")
       return this.audio(context.baseUrl, context.secret, generation);
     if (generation.kind === "video")
-      return this.videoStart(context.baseUrl, context.secret, generation);
+      return this.videoStart(context.baseUrl, context.secret, generation, context.allowExternalOutputUrl);
     return this.text(context.baseUrl, context.secret, generation);
   }
 
@@ -102,6 +104,7 @@ export class HttpGenerationProvider implements GenerationProvider {
         generation.providerTaskId,
         payload,
         context.secret,
+        context.allowExternalOutputUrl,
       );
     }
     return {
@@ -115,6 +118,7 @@ export class HttpGenerationProvider implements GenerationProvider {
     baseUrl: string,
     secret: string,
     generation: GenerationRecord,
+    allowExternalOutputUrl: boolean,
   ): Promise<ProviderResult> {
     const response = await this.request(baseUrl, "/v1/images/generations", secret, {
       method: "POST",
@@ -138,7 +142,7 @@ export class HttpGenerationProvider implements GenerationProvider {
       };
     const url = stringValue(first?.url) || mediaUrl(payload);
     return url
-      ? this.download(baseUrl, url, secret, "image/png")
+      ? this.download(baseUrl, url, secret, "image/png", allowExternalOutputUrl)
       : {
           status: "failed",
           retryable: false,
@@ -173,6 +177,7 @@ export class HttpGenerationProvider implements GenerationProvider {
     baseUrl: string,
     secret: string,
     generation: GenerationRecord,
+    allowExternalOutputUrl: boolean,
   ): Promise<ProviderResult> {
     const response = await this.request(baseUrl, "/v1/videos", secret, {
       method: "POST",
@@ -191,7 +196,7 @@ export class HttpGenerationProvider implements GenerationProvider {
     );
     const status = stringValue(payload.status ?? data.status)?.toLowerCase();
     if (!id && mediaUrl(payload))
-      return this.download(baseUrl, mediaUrl(payload)!, secret, "video/mp4");
+      return this.download(baseUrl, mediaUrl(payload)!, secret, "video/mp4", allowExternalOutputUrl);
     if (!id)
       return {
         status: "failed",
@@ -199,7 +204,7 @@ export class HttpGenerationProvider implements GenerationProvider {
         errorCode: "PROVIDER_TASK_MISSING",
       };
     if (["completed", "succeeded", "done"].includes(status || ""))
-      return this.downloadCompletedVideo(baseUrl, id, payload, secret);
+      return this.downloadCompletedVideo(baseUrl, id, payload, secret, allowExternalOutputUrl);
     return {
       status: "pending",
       providerTaskId: id,
@@ -246,14 +251,18 @@ export class HttpGenerationProvider implements GenerationProvider {
     url: string,
     secret: string,
     fallbackContentType: string,
+    allowExternalOutputUrl = false,
   ): Promise<ProviderResult> {
-    if (!this.isAllowedOutputUrl(baseUrl, url))
+    if (!this.isAllowedOutputUrl(baseUrl, url, allowExternalOutputUrl))
       return {
         status: "failed",
         retryable: false,
         errorCode: "PROVIDER_OUTPUT_URL_NOT_ALLOWED",
       };
-    const response = await this.request(baseUrl, url, secret);
+    const isExternal = this.isExternalOutputUrl(baseUrl, url);
+    const response = await this.request(baseUrl, url, secret, {
+      withAuthorization: !isExternal,
+    });
     if (!response.ok) return httpFailure(response.status);
     return {
       status: "succeeded",
@@ -270,26 +279,39 @@ export class HttpGenerationProvider implements GenerationProvider {
     taskId: string,
     payload: Record<string, unknown>,
     secret: string,
+    allowExternalOutputUrl = false,
   ): Promise<ProviderResult> {
     const url = mediaUrl(payload);
     return this.download(
       baseUrl,
-      url && this.isAllowedOutputUrl(baseUrl, url)
+      url && this.isAllowedOutputUrl(baseUrl, url, allowExternalOutputUrl)
         ? url
         : `/v1/videos/${encodeURIComponent(taskId)}/content`,
       secret,
       "video/mp4",
+      allowExternalOutputUrl,
     );
   }
 
-  private isAllowedOutputUrl(baseUrl: string, url: string): boolean {
+  private isAllowedOutputUrl(
+    baseUrl: string,
+    url: string,
+    allowExternalOutputUrl = false,
+  ): boolean {
     try {
       const parsed = new URL(url, baseUrl);
       const base = new URL(baseUrl);
-      return (
-        (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-        parsed.origin === base.origin
-      );
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+      if (parsed.origin === base.origin) return true;
+      return allowExternalOutputUrl && isSafeExternalOutputUrl(parsed);
+    } catch {
+      return false;
+    }
+  }
+
+  private isExternalOutputUrl(baseUrl: string, url: string): boolean {
+    try {
+      return new URL(url, baseUrl).origin !== new URL(baseUrl).origin;
     } catch {
       return false;
     }
@@ -297,14 +319,21 @@ export class HttpGenerationProvider implements GenerationProvider {
 
   private async providerContext(
     generation: GenerationRecord,
-  ): Promise<{ baseUrl: string; secret: string } | undefined> {
+  ): Promise<
+    | { baseUrl: string; secret: string; allowExternalOutputUrl: boolean }
+    | undefined
+  > {
     const provider = await this.providers.get(
       generation.accountId,
       generation.providerId,
     );
     if (!provider || provider.status !== "active") return undefined;
     try {
-      return { baseUrl: provider.baseUrl || this.baseUrl, secret: this.secretBox.decrypt(provider.secret) };
+      return {
+        baseUrl: provider.baseUrl || this.baseUrl,
+        secret: this.secretBox.decrypt(provider.secret),
+        allowExternalOutputUrl: Boolean(provider.sub2ApiKeyId),
+      };
     } catch {
       return undefined;
     }
@@ -314,7 +343,7 @@ export class HttpGenerationProvider implements GenerationProvider {
     baseUrl: string,
     path: string,
     secret: string,
-    options: { method?: string; body?: unknown } = {},
+    options: { method?: string; body?: unknown; withAuthorization?: boolean } = {},
   ): Promise<Response> {
     const controller =
       this.timeoutMs && this.timeoutMs > 0 ? new AbortController() : undefined;
@@ -328,7 +357,9 @@ export class HttpGenerationProvider implements GenerationProvider {
           method: options.method ?? "GET",
           headers: {
             Accept: "application/json",
-            Authorization: `Bearer ${secret}`,
+            ...(options.withAuthorization === false || !secret
+              ? {}
+              : { Authorization: `Bearer ${secret}` }),
             ...(options.body ? { "Content-Type": "application/json" } : {}),
           },
           ...(options.body ? { body: JSON.stringify(options.body) } : {}),
@@ -423,4 +454,52 @@ function mediaUrl(payload: Record<string, unknown>): string | undefined {
 
 function isAbsoluteHttpUrl(value: string) {
   return /^https?:\/\//i.test(value);
+}
+
+function isSafeExternalOutputUrl(url: URL): boolean {
+  if (url.protocol !== "https:" || url.username || url.password) return false;
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    !hostname ||
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal")
+  )
+    return false;
+  const version = isIP(hostname);
+  return version === 0
+    ? true
+    : version === 4
+      ? !isPrivateIPv4(hostname)
+      : !isPrivateIPv6(hostname);
+}
+
+function isPrivateIPv4(hostname: string): boolean {
+  const parts = hostname.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+  const [first, second] = parts;
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+}
+
+function isPrivateIPv6(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  if (normalized.startsWith("::ffff:")) {
+    return isPrivateIPv4(normalized.slice("::ffff:".length));
+  }
+  return (
+    normalized === "::" ||
+    normalized === "::1" ||
+    normalized.startsWith("fc") ||
+    normalized.startsWith("fd") ||
+    /^fe[89ab]/.test(normalized)
+  );
 }

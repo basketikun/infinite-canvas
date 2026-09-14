@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- [修复] Canvas BFF 接收 Sub2API 返回的 HTTPS 图片 CDN 地址时不再误报生成失败，并避免向 CDN 转发 provider API key。
 - [修复] Canvas provider/model selector hiển thị loading, lỗi tải và nút thử lại thay vì select trống không phản hồi.
 - [调整] Thiết kế lại mặc định Studio ảnh/video thành hai nhóm provider-model rõ ràng; lựa chọn thay đổi trong Studio được giữ theo phiên và không ghi đè mặc định.
 - [修复] Provider/model picker không còn ghép model trùng tên vào provider sai; mặc định image/video chỉ chọn provider có model mặc định tương ứng và lọc theo capability.
