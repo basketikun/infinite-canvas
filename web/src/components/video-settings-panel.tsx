@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Slider } from "antd";
+import { Checkbox, Slider } from "antd";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -17,6 +17,15 @@ const videoModeOptions = [
     { value: "frames", labelKey: "frames" },
     { value: "reference", labelKey: "reference" },
 ];
+// 扩散步数为可选项：留空表示沿用服务端默认，只有用户显式开启并设置时才随请求发送 num_inference_steps。
+const VIDEO_STEPS_MIN = 1;
+const VIDEO_STEPS_MAX = 50;
+const VIDEO_STEPS_DEFAULT = 20;
+function clampVideoSteps(value: string | number) {
+    const parsed = Math.round(Number(value));
+    if (!Number.isFinite(parsed)) return VIDEO_STEPS_DEFAULT;
+    return Math.min(VIDEO_STEPS_MAX, Math.max(VIDEO_STEPS_MIN, parsed));
+}
 
 export const videoResolutionOptions = resolutionOptions.map((item) => ({ value: item.value, label: item.label }));
 export const videoSizeOptions = videoRatioOptions.map((item) => ({ value: item.value, get label() { return item.value === "auto" ? i18n.t("settingsPanels.common.auto") : item.value; } }));
@@ -24,7 +33,7 @@ export const videoSecondsRange = { min: VIDEO_SECONDS_MIN, max: VIDEO_SECONDS_MA
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode" | "videoSteps", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -33,6 +42,8 @@ type VideoSettingsPanelProps = {
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
     const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
+    const stepsEnabled = (config.videoSteps || "").trim() !== "";
+    const steps = stepsEnabled ? clampVideoSteps(config.videoSteps) : VIDEO_STEPS_DEFAULT;
     const videoMode = normalizeVideoModeValue(config.videoMode);
     const resolution = parseVideoResolution(config.vquality);
     const selectedRatio = inferVideoRatio(config.size || "auto");
@@ -99,6 +110,18 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             </OptionPill>
                         ))}
                     </div>
+                </SettingGroup>
+                <SettingGroup title={t("settingsPanels.video.steps")} color={theme.node.muted}>
+                    <Checkbox checked={stepsEnabled} onChange={(event) => onConfigChange("videoSteps", event.target.checked ? String(VIDEO_STEPS_DEFAULT) : "")}>
+                        <span style={{ color: theme.node.text }}>{t("settingsPanels.video.stepsCustom")}</span>
+                    </Checkbox>
+                    {stepsEnabled ? (
+                        <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
+                            <Slider className="min-w-0 flex-1" min={VIDEO_STEPS_MIN} max={VIDEO_STEPS_MAX} step={1} value={steps} onChange={(value) => onConfigChange("videoSteps", String(clampVideoSteps(Array.isArray(value) ? value[0] : value)))} />
+                            <StepsInput value={steps} theme={theme} onCommit={(value) => onConfigChange("videoSteps", String(value))} />
+                        </div>
+                    ) : null}
+                    <div className="text-xs" style={{ color: theme.node.muted }}>{t("settingsPanels.video.stepsHint")}</div>
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>
@@ -186,6 +209,32 @@ function SecondsInput({ value, theme, onCommit }: { value: number; theme: Canvas
                 type="number"
                 min={VIDEO_SECONDS_MIN}
                 max={VIDEO_SECONDS_MAX}
+                className="min-w-0 flex-1 bg-transparent px-2 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                defaultValue={value}
+                key={value}
+                onBlur={(event) => commit(event.currentTarget)}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+            />
+        </label>
+    );
+}
+
+function StepsInput({ value, theme, onCommit }: { value: number; theme: CanvasTheme; onCommit: (value: number) => void }) {
+    const commit = (input: HTMLInputElement) => {
+        const next = clampVideoSteps(input.value || value);
+        input.value = String(next);
+        onCommit(next);
+    };
+
+    return (
+        <label className="flex h-9 w-[68px] shrink-0 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text }}>
+            <input
+                type="number"
+                min={VIDEO_STEPS_MIN}
+                max={VIDEO_STEPS_MAX}
                 className="min-w-0 flex-1 bg-transparent px-2 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 defaultValue={value}
                 key={value}
