@@ -113,6 +113,7 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
                 generateAudio: boolConfig(config.videoGenerateAudio, true),
                 watermark: boolConfig(config.videoWatermark, false),
                 mode: resolveVideoMode(config.videoMode, refs.length),
+                steps: normalizeVideoSteps(config.videoSteps),
             },
             signal: options?.signal,
         }),
@@ -160,6 +161,9 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     body.append("generate_audio", String(boolConfig(config.videoGenerateAudio, true)));
     body.append("watermark", String(boolConfig(config.videoWatermark, false)));
     body.append("mode", mode);
+    // 扩散步数为可选项：仅当用户显式设置时才发送 num_inference_steps，避免改变不认识该字段的模型的默认行为。
+    const steps = normalizeVideoSteps(config.videoSteps);
+    if (steps !== null) body.append("num_inference_steps", String(steps));
     if (mode === "frames") {
         if (images[0]) body.append("first_frame", images[0], "first.png");
         if (images[1]) body.append("last_frame", images[1], "last.png");
@@ -307,6 +311,14 @@ async function referenceMediaToFile(item: { name: string; type?: string; url?: s
 
 function normalizeVideoSeconds(value: string) {
     return clampVideoSeconds(value);
+}
+
+// 扩散步数（num_inference_steps）：空值表示不指定、沿用服务端默认；有效值夹在 1–50。
+function normalizeVideoSteps(value: string | undefined): number | null {
+    if (!value || !value.trim()) return null;
+    const parsed = Math.round(Number(value));
+    if (!Number.isFinite(parsed)) return null;
+    return Math.min(50, Math.max(1, parsed));
 }
 
 function resolveVideoMode(mode: string | undefined, imageCount: number) {
