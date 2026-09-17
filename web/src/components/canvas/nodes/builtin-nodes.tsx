@@ -17,7 +17,7 @@ function builtinResource(node: CanvasNodeData): CanvasNodeResource | null {
     return null;
 }
 
-const iconClass = "size-5";
+const iconClass = "size-4";
 
 const BUILTIN_DEFINITIONS: CanvasNodeDefinition[] = [
     { type: CanvasNodeType.Text, title: i18n.t("assets.kinds.text"), icon: <FileText className={iconClass} />, minimapColor: undefined, resource: builtinResource },
