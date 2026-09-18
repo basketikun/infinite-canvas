@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Modal, Progress, Select, Tabs } from "antd";
+import { App, Button, Form, Input, Modal, Progress, Radio, Select, Tabs } from "antd";
 import type { TFunction } from "i18next";
 import { Cloud, Download, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -260,6 +260,18 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         />
                                     </Form.Item>
                                 </div>
+                                <Form.Item label={t("config.preferences.regenerateBehavior")} className="mb-4">
+                                    <Radio.Group value={config.nodeRegenerateBehavior} onChange={(event) => updateConfig("nodeRegenerateBehavior", event.target.value)} className="flex flex-col gap-2">
+                                        <Radio value="overwrite">
+                                            <span className="block text-sm font-medium">{t("config.preferences.regenerateBehaviorOverwrite")}</span>
+                                            <span className="mt-0.5 block text-xs opacity-60">{t("config.preferences.regenerateBehaviorOverwriteDescription")}</span>
+                                        </Radio>
+                                        <Radio value="new-node">
+                                            <span className="block text-sm font-medium">{t("config.preferences.regenerateBehaviorNewNode")}</span>
+                                            <span className="mt-0.5 block text-xs opacity-60">{t("config.preferences.regenerateBehaviorNewNodeDescription")}</span>
+                                        </Radio>
+                                    </Radio.Group>
+                                </Form.Item>
                                 <Form.Item label={t("config.preferences.audioInstructions")} className="mb-4">
                                     <Input.TextArea rows={2} value={config.audioInstructions} placeholder={t("config.preferences.audioInstructionsPlaceholder")} onChange={(event) => updateConfig("audioInstructions", event.target.value)} />
                                 </Form.Item>
