@@ -151,20 +151,33 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     const videos = await Promise.all((options?.videos || []).map((video) => referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options)));
     const audios = await Promise.all((options?.audios || []).map((audio) => referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options)));
     const mode = resolveVideoMode(config.videoMode, images.length);
+    const ratio = inferVideoRatio(config.size || "16:9");
     const body = new FormData();
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
     body.append("size", normalizeVideoSize(config.size, config.vquality) || "1280x720");
+    if (ratio && ratio !== "auto") {
+        body.append("ratio", ratio);
+    }
     body.append("resolution_name", normalizeVideoResolution(config.vquality));
     body.append("generate_audio", String(boolConfig(config.videoGenerateAudio, true)));
     body.append("watermark", String(boolConfig(config.videoWatermark, false)));
     body.append("mode", mode);
     if (mode === "frames") {
-        if (images[0]) body.append("first_frame", images[0], "first.png");
-        if (images[1]) body.append("last_frame", images[1], "last.png");
+        if (images[0]) {
+            body.append("first_frame", images[0], "first.png");
+            body.append("images", images[0], "first.png");
+        }
+        if (images[1]) {
+            body.append("last_frame", images[1], "last.png");
+            body.append("images", images[1], "last.png");
+        }
     } else {
-        images.forEach((file) => body.append("image[]", file, "ref.png"));
+        images.forEach((file, idx) => {
+            body.append("image[]", file, `ref_${idx + 1}.png`);
+            body.append("images", file, `ref_${idx + 1}.png`);
+        });
     }
     videos.forEach((file) => body.append("video[]", file));
     audios.forEach((file) => body.append("audio[]", file));
