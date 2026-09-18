@@ -3,6 +3,7 @@ import i18n from "@/i18n";
 
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { isDesktopApp } from "@/lib/desktop-runtime";
 
 export type AgentChatRole = "user" | "assistant" | "system" | "tool" | "error";
 export type AgentAttachment = { id: string; name: string; type: string; size: number; width: number; height: number; url: string; dataUrl: string };
@@ -53,6 +54,7 @@ type AgentStore = {
     token: string;
     connected: boolean;
     enabled: boolean;
+    desktopManaged: boolean;
     silentConnect: boolean;
     fragmentBootstrap: boolean;
     prompt: string;
@@ -98,13 +100,14 @@ export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
 export const useAgentStore = create<AgentStore>((set, get) => ({
     width: typeof window === "undefined" ? 440 : Number(localStorage.getItem("canvas-agent-panel-width")) || 440,
     panelOpen: false,
-    panelMounted: true,
+    panelMounted: !isDesktopApp(),
     panelClosing: false,
     canvasContext: null,
-    url: typeof window === "undefined" ? "http://127.0.0.1:17371" : localStorage.getItem("canvas-agent-url") || "http://127.0.0.1:17371",
-    token: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-token") || "",
+    url: typeof window === "undefined" || isDesktopApp() ? "http://127.0.0.1:17371" : localStorage.getItem("canvas-agent-url") || "http://127.0.0.1:17371",
+    token: typeof window === "undefined" || isDesktopApp() ? "" : localStorage.getItem("canvas-agent-token") || "",
     connected: false,
     enabled: false,
+    desktopManaged: isDesktopApp(),
     silentConnect: false,
     fragmentBootstrap: false,
     prompt: "",
@@ -155,8 +158,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         } catch {
             return set({ connectError: silent ? "" : i18n.t("agent.state.invalidUrl") });
         }
-        localStorage.setItem("canvas-agent-url", endpoint);
-        localStorage.setItem("canvas-agent-token", token);
+        if (!get().desktopManaged) {
+            localStorage.setItem("canvas-agent-url", endpoint);
+            localStorage.setItem("canvas-agent-token", token);
+        }
         // Only set enabled here; LocalAgentPanel's effect owns SSE initialization.
         set({ url: endpoint, token, enabled: true, silentConnect: silent, fragmentBootstrap: false, activity: i18n.t("agent.status.connecting"), connectError: "" });
     },

@@ -12,6 +12,15 @@ web/dist
 
 **/dist
 web/public/plugins
+
+# Desktop build and staging output is produced only by GitHub Actions.
+web/src-tauri/target/
+web/src-tauri/gen/
+web/src-tauri/binaries/*
+!web/src-tauri/binaries/.gitkeep
+web/src-tauri/resources/canvas-agent/*
+!web/src-tauri/resources/canvas-agent/.gitkeep
+desktop-release/
 plugins/canvas/*/dist
 plugins/canvas/*/node_modules
 web/public/plugins

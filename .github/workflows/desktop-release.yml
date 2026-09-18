@@ -1,0 +1,216 @@
+name: Desktop Windows Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the v prefix
+        required: true
+        type: string
+      release_notes:
+        description: Notes shown in the desktop update prompt
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22.14.0"
+  DOWNLOAD_ORIGIN: "https://downloads.infinite.aiengine.cloud"
+
+jobs:
+  release-windows:
+    name: Build and publish Windows installer
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            canvas-agent/package-lock.json
+            web/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if ("${{ github.event_name }}" -eq "push") {
+            $version = "${{ github.ref_name }}" -replace '^v', ''
+          } else {
+            $version = $env:INPUT_VERSION.Trim()
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+            throw "Version must be valid SemVer without a v prefix: $version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Validate release secrets
+        shell: pwsh
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          $required = @(
+            "R2_ACCOUNT_ID",
+            "R2_ACCESS_KEY_ID",
+            "R2_SECRET_ACCESS_KEY",
+            "R2_BUCKET",
+            "TAURI_SIGNING_PRIVATE_KEY",
+            "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+            "TAURI_UPDATER_PUBLIC_KEY"
+          )
+          $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) })
+          if ($missing.Count -gt 0) {
+            throw "Missing required repository secrets: $($missing -join ', ')"
+          }
+
+      - name: Install Canvas Agent dependencies
+        working-directory: canvas-agent
+        run: npm ci
+
+      - name: Test Canvas Agent
+        working-directory: canvas-agent
+        run: npm test
+
+      - name: Build Canvas Agent
+        working-directory: canvas-agent
+        run: npm run build
+
+      - name: Keep Canvas Agent runtime dependencies only
+        working-directory: canvas-agent
+        run: npm prune --omit=dev
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci --force
+
+      - name: Type-check web application
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build web application
+        working-directory: web
+        run: npm run build
+
+      - name: Stage bundled Agent and Node runtime
+        shell: pwsh
+        run: |
+          $agentTarget = "web/src-tauri/resources/canvas-agent"
+          Remove-Item $agentTarget -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item $agentTarget -ItemType Directory -Force | Out-Null
+          Copy-Item "canvas-agent/dist" $agentTarget -Recurse
+          Copy-Item "canvas-agent/node_modules" $agentTarget -Recurse
+          Copy-Item "canvas-agent/package.json" $agentTarget
+          Copy-Item "canvas-agent/agent-instructions.md" $agentTarget
+
+          New-Item "web/src-tauri/binaries" -ItemType Directory -Force | Out-Null
+          Copy-Item (Get-Command node).Source "web/src-tauri/binaries/node-x86_64-pc-windows-msvc.exe"
+
+      - name: Generate desktop icons
+        working-directory: web
+        run: npm run tauri -- icon public/desktop-icon.svg
+
+      - name: Configure signed updater artifacts
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          $overlay = @{
+            version = $env:RELEASE_VERSION
+            bundle = @{ createUpdaterArtifacts = $true }
+            plugins = @{ updater = @{ pubkey = $env:TAURI_UPDATER_PUBLIC_KEY } }
+          } | ConvertTo-Json -Depth 8 -Compress
+          "TAURI_CONFIG=$overlay" >> $env:GITHUB_ENV
+
+      - name: Build unsigned NSIS installer and signed updater artifact
+        working-directory: web
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri:build:nsis
+
+      - name: Prepare release metadata
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          $installer = Get-ChildItem "web/src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer was not generated" }
+          $signature = Get-Item "$($installer.FullName).sig" -ErrorAction Stop
+
+          New-Item "desktop-release" -ItemType Directory -Force | Out-Null
+          $installerFileName = "Infinite-Canvas_$($env:RELEASE_VERSION)_x64-setup.exe"
+          Copy-Item $installer.FullName "desktop-release/$installerFileName"
+          Copy-Item $signature.FullName "desktop-release/$installerFileName.sig"
+
+          $notes = ([string]$env:RELEASE_NOTES).Trim()
+          if (-not $notes) { $notes = "Infinite Canvas $($env:RELEASE_VERSION)" }
+          $metadata = @{
+            version = $env:RELEASE_VERSION
+            notes = $notes
+            pub_date = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = (Get-Content "desktop-release/$installerFileName.sig" -Raw).Trim()
+                url = "$($env:DOWNLOAD_ORIGIN)/releases/$($env:RELEASE_VERSION)/$installerFileName"
+              }
+            }
+          }
+          $metadata | ConvertTo-Json -Depth 8 | Set-Content "desktop-release/latest.json" -Encoding utf8NoBOM
+          "installer=$installerFileName" >> $env:GITHUB_OUTPUT
+        id: metadata
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: infinite-canvas-windows-${{ steps.version.outputs.version }}
+          path: desktop-release/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload immutable release files to R2
+        shell: pwsh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          INSTALLER: ${{ steps.metadata.outputs.installer }}
+        run: |
+          $endpoint = "https://$($env:R2_ACCOUNT_ID).r2.cloudflarestorage.com"
+          $prefix = "s3://$($env:R2_BUCKET)/releases/$($env:RELEASE_VERSION)"
+          aws s3 cp "desktop-release/$($env:INSTALLER)" "$prefix/$($env:INSTALLER)" --endpoint-url $endpoint --region auto --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp "desktop-release/$($env:INSTALLER).sig" "$prefix/$($env:INSTALLER).sig" --endpoint-url $endpoint --region auto --cache-control "public,max-age=31536000,immutable"
+
+      - name: Publish updater manifest last
+        shell: pwsh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          $endpoint = "https://$($env:R2_ACCOUNT_ID).r2.cloudflarestorage.com"
+          aws s3 cp "desktop-release/latest.json" "s3://$($env:R2_BUCKET)/latest.json" --endpoint-url $endpoint --region auto --content-type "application/json" --cache-control "no-store"

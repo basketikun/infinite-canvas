@@ -1,0 +1,20 @@
+{
+    "$schema": "../gen/schemas/desktop-schema.json",
+    "identifier": "default",
+    "description": "Permissions required by the Infinite Canvas desktop window",
+    "windows": ["main"],
+    "permissions": [
+        "core:default",
+        {
+            "identifier": "http:default",
+            "allow": [
+                { "url": "http://*" },
+                { "url": "https://*" },
+                { "url": "http://*:*" },
+                { "url": "https://*:*" }
+            ]
+        },
+        "process:allow-restart",
+        "updater:default"
+    ]
+}

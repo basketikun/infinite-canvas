@@ -1,0 +1,94 @@
+name: Desktop Windows PR
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-*.yml"
+      - "canvas-agent/**"
+      - "web/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22.14.0"
+
+jobs:
+  build-windows:
+    name: Build Windows installer
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            canvas-agent/package-lock.json
+            web/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Canvas Agent dependencies
+        working-directory: canvas-agent
+        run: npm ci
+
+      - name: Test Canvas Agent
+        working-directory: canvas-agent
+        run: npm test
+
+      - name: Build Canvas Agent
+        working-directory: canvas-agent
+        run: npm run build
+
+      - name: Keep Canvas Agent runtime dependencies only
+        working-directory: canvas-agent
+        run: npm prune --omit=dev
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci --force
+
+      - name: Type-check web application
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build web application
+        working-directory: web
+        run: npm run build
+
+      - name: Stage bundled Agent and Node runtime
+        shell: pwsh
+        run: |
+          $agentTarget = "web/src-tauri/resources/canvas-agent"
+          Remove-Item $agentTarget -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item $agentTarget -ItemType Directory -Force | Out-Null
+          Copy-Item "canvas-agent/dist" $agentTarget -Recurse
+          Copy-Item "canvas-agent/node_modules" $agentTarget -Recurse
+          Copy-Item "canvas-agent/package.json" $agentTarget
+          Copy-Item "canvas-agent/agent-instructions.md" $agentTarget
+
+          New-Item "web/src-tauri/binaries" -ItemType Directory -Force | Out-Null
+          Copy-Item (Get-Command node).Source "web/src-tauri/binaries/node-x86_64-pc-windows-msvc.exe"
+
+      - name: Generate desktop icons
+        working-directory: web
+        run: npm run tauri -- icon public/desktop-icon.svg
+
+      - name: Build unsigned NSIS installer
+        working-directory: web
+        run: npm run tauri:build:nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: infinite-canvas-windows-pr
+          path: web/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 7

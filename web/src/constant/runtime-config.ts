@@ -8,6 +8,8 @@
 type RuntimeConfig = {
     ANALYTICS_GA4_ID?: string; // GA4 measurement ID (G-XXXX)
     ANALYTICS_BAIDU_ID?: string; // Baidu Analytics site ID
+    MODEL_API_PROXY_TARGET?: string; // HTTP model gateway origin bridged by the current HTTPS site
+    MODEL_API_PROXY_PATH?: string; // Same-origin path that forwards to MODEL_API_PROXY_TARGET
 };
 
 declare global {
@@ -27,3 +29,5 @@ function read(key: keyof RuntimeConfig, buildTime: string | undefined, fallback 
 
 export const ANALYTICS_GA4_ID = read("ANALYTICS_GA4_ID", import.meta.env.VITE_ANALYTICS_GA4_ID);
 export const ANALYTICS_BAIDU_ID = read("ANALYTICS_BAIDU_ID", import.meta.env.VITE_ANALYTICS_BAIDU_ID);
+export const MODEL_API_PROXY_TARGET = read("MODEL_API_PROXY_TARGET", import.meta.env.VITE_MODEL_API_PROXY_TARGET);
+export const MODEL_API_PROXY_PATH = read("MODEL_API_PROXY_PATH", import.meta.env.VITE_MODEL_API_PROXY_PATH);

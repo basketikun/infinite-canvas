@@ -17,12 +17,14 @@ import { SkillStore, SkillStoreError } from "../skills/store.js";
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
 export function startHttpServer() {
     const config = loadConfig(true);
-    const port = Number(process.env.PORT) || Number(new URL(config.url).port) || DEFAULT_PORT;
+    const requestedPort = process.env.PORT === undefined ? Number(new URL(config.url).port) || DEFAULT_PORT : Number(process.env.PORT);
+    const port = Number.isInteger(requestedPort) && requestedPort >= 0 ? requestedPort : DEFAULT_PORT;
     config.url = `http://127.0.0.1:${port}`;
     saveConfig(config);
 
     const initialWorkspace = ensureSiteWorkspace(config);
-    const session = new CanvasSession(initialWorkspace.activeThreadId || "");
+    const lazyCodex = process.env.CANVAS_AGENT_LAZY_CODEX === "1";
+    const session = new CanvasSession(initialWorkspace.activeThreadId || "", !lazyCodex);
     const skillStore = new SkillStore(initialWorkspace.workspacePath);
     /** 将 Agent 事件广播到所属线程或全部网页。 */
     const emit = (type: string, payload: unknown) => {
@@ -100,6 +102,25 @@ export function startHttpServer() {
         const text = error instanceof Error ? error.message : String(error);
         session.failConversationPreparation(text);
         emit("agent_bootstrap", { type: "codex.prepare_failed", threadId, sourceClientId: clientId || undefined, error: text });
+    };
+    /** 首次需要 Codex 时恢复历史会话，历史不可恢复时创建一个空白会话。 */
+    const initializeConversation = async (clientId = "", permission: AgentPermissionMode = "request") => {
+        const activeThreadId = ensureSiteWorkspace(config).activeThreadId || "";
+        if (activeThreadId) {
+            try {
+                const result = await prepareExistingThread(activeThreadId, clientId, permission);
+                return { workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot, ...result };
+            } catch (error) {
+                if (!isRecoverableThreadError(error)) {
+                    failPreparedConversation(error, activeThreadId, clientId);
+                    throw error;
+                }
+            }
+        }
+        session.beginConversation({ sourceClientId: clientId || undefined });
+        setActiveThread("", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
+        const thread = await prepareDraftThread(clientId, permission);
+        return { workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot, thread: summarizeCodexThread(thread), messages: [] };
     };
     const app = express();
     app.disable("x-powered-by");
@@ -244,6 +265,10 @@ export function startHttpServer() {
         const workspace = ensureSiteWorkspace(config);
         const result = await listCodexThreads(emit, { cwd: workspace.workspacePath, searchTerm: String(req.query.searchTerm || "") });
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot, ...result });
+    }));
+    app.post("/agent/codex/threads/initialize", codexMutation(async (req, res) => {
+        const data = await initializeConversation(String(req.body?.clientId || ""), permissionMode(req.body?.permissionMode));
+        res.json({ ok: true, ...data });
     }));
     app.post("/agent/codex/threads/new", codexMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");
@@ -431,24 +456,24 @@ export function startHttpServer() {
         res.status(500).json({ ok: false, error: error.message });
     });
 
-    app.listen(port, "127.0.0.1", () => {
+    const server = app.listen(port, "127.0.0.1", () => {
+        const address = server.address();
+        const actualPort = address && typeof address === "object" ? address.port : port;
+        config.url = `http://127.0.0.1:${actualPort}`;
+        saveConfig(config);
         console.log("Infinite Canvas Agent");
         checkVersions();
         console.log(`Local URL: ${config.url}`);
         console.log(`Connect token: ${config.token}`);
+        console.log(`CANVAS_AGENT_READY ${JSON.stringify({ url: config.url, token: config.token })}`);
         console.log("Codex MCP is not installed by this command.");
         console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent@latest mcp");
         console.log("Remove manually added MCP: codex mcp remove infinite-canvas");
         if (logger.enabled) console.log(`Debug log: ${logger.filePath}`);
         logger.info("Canvas Agent started", { url: config.url, workspace: ensureSiteWorkspace(config).workspacePath, debugLog: logger.filePath });
         const activeThreadId = initialWorkspace.activeThreadId || "";
-        if (activeThreadId && session.beginCodexMutation()) {
-            void prepareExistingThread(activeThreadId).catch(async (error) => {
-                if (!isRecoverableThreadError(error)) return failPreparedConversation(error, activeThreadId);
-                session.beginConversation();
-                setActiveThread("", { emptyThread: true, draftThread: true }, true);
-                await prepareDraftThread("", "request");
-            }).finally(() => session.endCodexMutation()).catch(() => undefined);
+        if (!lazyCodex && activeThreadId && session.beginCodexMutation()) {
+            void initializeConversation().finally(() => session.endCodexMutation()).catch(() => undefined);
         }
     });
 }

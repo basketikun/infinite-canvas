@@ -1,0 +1,32 @@
+---
+title: Windows Desktop Release
+description: Build and publish the local desktop application through GitHub and R2
+---
+
+# Windows Desktop Release
+
+The desktop application is a Windows x64 Tauri package containing the web UI, a pinned Node.js runtime, and Canvas Agent. Do not build or package it on the application server. Pull requests and releases are built only by GitHub-hosted Windows runners.
+
+## One-time setup
+
+1. Create a private R2 bucket and connect `downloads.infinite.aiengine.cloud` as its public custom domain. Do not expose the `r2.dev` development URL.
+2. Create an R2 API token scoped to object read and write access for that bucket only.
+3. On a trusted administrator workstation, generate the Tauri updater key pair with `npm run tauri signer generate -- -w <private-key-path>`. Keep the private key and password outside the repository and application server.
+4. Add these GitHub Actions repository secrets: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and `TAURI_UPDATER_PUBLIC_KEY`.
+
+The updater key signs Tauri update artifacts and prevents a modified update from being installed. It does not Authenticode-sign the Windows executable. Until a code-signing certificate is added, the first installer can show an unknown-publisher warning.
+
+## Pull request build
+
+The `Desktop Windows PR` workflow builds Canvas Agent and the web app, stages Node.js as a Tauri sidecar, creates an unsigned NSIS installer, and uploads it as a seven-day GitHub artifact. It never publishes to R2.
+
+## Release
+
+Run `Desktop Windows Release` manually with a SemVer version and release notes, or push a matching `v*` tag. The workflow:
+
+1. Builds the application on `windows-2022`.
+2. Generates the updater signature with the repository signing key.
+3. Uploads the installer and its updater `.sig` to `releases/<version>/` with immutable caching.
+4. Uploads `/latest.json` last with `no-store`, so clients never discover an incomplete release.
+
+With current Tauri 2 releases, the same NSIS `.exe` is used for first installation and in-app updates; `latest.json` embeds its separate updater signature. The desktop app checks that manifest in the background, shows the release notes, and installs only after the user confirms. Never rotate the updater key without first shipping a version that trusts the replacement public key.
