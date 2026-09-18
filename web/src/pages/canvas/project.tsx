@@ -1115,6 +1115,16 @@ function InfiniteCanvasPage() {
         [size.height, size.width],
     );
 
+    const focusNodeRef = useRef(focusNode);
+    useEffect(() => {
+        focusNodeRef.current = focusNode;
+    }, [focusNode]);
+
+    const focusSelectedNode = useCallback(() => {
+        const nodeId = selectedNodeIdsRef.current.values().next().value;
+        if (nodeId) focusNode(nodeId);
+    }, [focusNode]);
+
     useEffect(() => () => void (focusAnimRef.current && cancelAnimationFrame(focusAnimRef.current)), []);
 
     const setZoomScale = useCallback(
@@ -1334,6 +1344,10 @@ function InfiniteCanvasPage() {
                 setDialogNodeId((current) => (current === clickedNodeId ? current : null));
             } else if (clickedNode?.type !== CanvasNodeType.Group) {
                 setDialogNodeId(clickedNodeId);
+                if (useConfigStore.getState().config.autoFocusOnSelect) {
+                    // Wait for the generation panel to render so centering accounts for it.
+                    requestAnimationFrame(() => focusNodeRef.current(clickedNodeId));
+                }
             }
         }
     }, []);
@@ -3293,6 +3307,7 @@ function InfiniteCanvasPage() {
                 <CanvasToolbar
                     selectedCount={selectedNodeIds.size}
                     canvasTool={canvasTool}
+                    onFocusSelected={focusSelectedNode}
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
                     backgroundMode={backgroundMode}
