@@ -545,8 +545,6 @@ function toolHistorySummary(tool: string, item: unknown, input: unknown) {
         const summary = field(result, "summary");
         return `共 ${numberValue(field(result, "total"))} 个任务，排队 ${numberValue(field(summary, "queued"))}，运行中 ${numberValue(field(summary, "running"))}，成功 ${numberValue(field(summary, "succeeded"))}，失败 ${numberValue(field(summary, "failed"))}`;
     }
-    if (tool === "workbench_image_generate" || tool === "workbench_video_generate") return String(field(result, "note") || "已在工作台执行");
-    if (tool === "workbench_image_get_config" || tool === "workbench_video_get_config") return "已读取工作台配置";
     return "";
 }
 
@@ -728,10 +726,6 @@ function toolName(name: string) {
     if (name === "canvas_select_nodes") return "选择节点";
     if (name === "canvas_set_viewport") return "调整视口";
     if (name === "canvas_run_generation") return "触发生成";
-    if (name === "workbench_image_get_config") return "生图配置";
-    if (name === "workbench_image_generate") return "生图工作台生成";
-    if (name === "workbench_video_get_config") return "视频配置";
-    if (name === "workbench_video_generate") return "视频创作台生成";
     if (name === "prompts_search") return "搜索提示词";
     if (name === "assets_list") return "资产列表";
     if (name === "assets_add") return "添加资产";

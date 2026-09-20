@@ -83,6 +83,7 @@ test("同一 Conversation 拒绝并发 run，不同 Conversation 可以并行，
 
     const first = await runtime.runTurn(store, ctx, { conversationId: firstConversation.id, prompt: "first" });
     await assert.rejects(() => runtime.runTurn(store, ctx, { conversationId: firstConversation.id, prompt: "conflict" }), (error) => error instanceof AppError && error.code === "conversation_busy");
+    await assert.rejects(() => store.archiveConversation(ctx, firstConversation.id), (error) => error instanceof AppError && error.code === "conversation_busy");
     const second = await runtime.runTurn(store, ctx, { conversationId: activeSecondConversation.id, prompt: "parallel" });
 
     await runtime.abort(store, ctx, firstConversation.id, first.runId);

@@ -76,6 +76,7 @@ export class InMemoryResearchStore implements ResearchStore {
 
     async archiveConversation(ctx: RequestContext, conversationId: string) {
         const conversation = this.ownedConversation(ctx, conversationId);
+        if ([...this.runs.values()].some((run) => run.conversationId === conversationId && run.status === "running")) throw new AppError("当前对话仍在运行", 409, "conversation_busy");
         this.conversations.set(conversationId, { ...conversation, status: "archived", updatedAt: new Date().toISOString() });
     }
 

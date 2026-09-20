@@ -16,7 +16,15 @@ export enum CanvasNodeType {
     Video = "video",
     Audio = "audio",
     Group = "group",
-    CrEntity = "cr_entity",
+    Seed = "seed",
+    Direction = "direction",
+    ResearchQuestion = "research_question",
+    Problem = "problem",
+    Hypothesis = "hypothesis",
+    Approach = "approach",
+    Method = "method",
+    Evaluation = "evaluation",
+    Idea = "idea",
     Frame = "frame",
     Note = "note",
     Question = "question",
@@ -24,23 +32,22 @@ export enum CanvasNodeType {
     Web = "web",
 }
 
-// The 15 research-entity kinds a `crEntity` node can carry (see design/canvas/research-canvas.md §4).
-export type CrEntityKind =
-    | "seed"
-    | "direction"
-    | "phase"
-    | "focus"
-    | "problem"
-    | "claim"
-    | "hypothesis"
-    | "prediction"
-    | "work"
-    | "question"
-    | "probe"
-    | "requirement"
-    | "approach"
-    | "operation"
-    | "component";
+export const RESEARCH_FLOW_NODE_TYPES = [
+    CanvasNodeType.Seed,
+    CanvasNodeType.Direction,
+    CanvasNodeType.ResearchQuestion,
+    CanvasNodeType.Problem,
+    CanvasNodeType.Hypothesis,
+    CanvasNodeType.Approach,
+    CanvasNodeType.Method,
+    CanvasNodeType.Evaluation,
+    CanvasNodeType.Idea,
+] as const;
+
+export type ResearchFlowNodeType = (typeof RESEARCH_FLOW_NODE_TYPES)[number];
+
+export const RESEARCH_FLOW_FIRST_BATCH = RESEARCH_FLOW_NODE_TYPES.slice(0, 5);
+export const RESEARCH_FLOW_SECOND_BATCH = RESEARCH_FLOW_NODE_TYPES.slice(5);
 
 // Node types are open strings: built-ins use CanvasNodeType and plugins use "<pluginId>:<name>".
 export type CanvasNodeTypeId = CanvasNodeType | (string & {});
@@ -109,8 +116,7 @@ export type CanvasNodeMetadata = {
     videoTaskProvider?: "openai" | "gemini";
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
-    entityKind?: CrEntityKind; // crEntity node discriminator.
-    summary?: string; // Card summary text for crEntity/question/pdf/web nodes.
+    summary?: string; // Card summary text for research-flow / question / pdf / web nodes.
     sourceUrl?: string; // Source link for pdf/web nodes.
 };
 

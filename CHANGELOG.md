@@ -2,7 +2,14 @@
 
 ## Unreleased
 
++ [调整] 底部工具栏、双击创建菜单和左侧元素筛选只保留研究主流程九种节点。
+
++ [修复] Agent 面板窄栏不再把标签数量挤成一排数字；对话初始化只展开失败的 MCP，分页会话读历史失败时不再把整场对话判死。
++ [修复] 网络连接 Codex 支持同源相对地址（如 `/__agent`），不再因地址不是 http(s) 而无法连接。
++ [调整] Agent 面板未连接时只保留网络连接 Codex，填写地址和 Token 即可，不再展示插件、npx 或 MCP 说明。
 + [新增] 新增 Supabase 多用户托管 Agent API，每个用户可拥有多个相互隔离的 Project，每个 Project 唯一绑定一个 Canvas Workspace，并支持 Project 私有 Pi 对话、Skill、持久化事件、画布工具确认与按用户分区的 WebDAV 同步。
++ [新增] 新增账号密码登录与内置 `test / 12345678` 测试账号，由托管 Agent API 在启动时通过 Supabase Admin 幂等初始化。
++ [新增] 新增 Project Skill 管理、Conversation 归档、持久化历史恢复，以及真实 Supabase RLS 和 Pi Canvas 闭环验收入口。
 
 ## v0.19.0 - 2026-09-16
 

@@ -96,6 +96,48 @@ for each row execute function public.set_updated_at();
 create trigger project_skills_updated_at before update on public.project_skills
 for each row execute function public.set_updated_at();
 
+create or replace function public.guard_agent_run_start()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+    conversation_status text;
+begin
+    select c.status into conversation_status
+    from public.conversations c
+    where c.id = new.conversation_id
+    for update;
+
+    if conversation_status is distinct from 'active' then
+        raise exception 'conversation_not_active' using errcode = 'P0409';
+    end if;
+    return new;
+end;
+$$;
+
+create trigger agent_runs_require_active_conversation before insert on public.agent_runs
+for each row execute function public.guard_agent_run_start();
+
+create or replace function public.guard_conversation_archive()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+    if old.status = 'active' and new.status = 'archived' and exists (
+        select 1 from public.agent_runs r
+        where r.conversation_id = old.id and r.status = 'running'
+    ) then
+        raise exception 'conversation_busy' using errcode = 'P0409';
+    end if;
+    return new;
+end;
+$$;
+
+create trigger conversations_reject_archive_while_running before update of status on public.conversations
+for each row execute function public.guard_conversation_archive();
+
 alter table public.projects enable row level security;
 alter table public.canvas_workspaces enable row level security;
 alter table public.conversations enable row level security;
@@ -214,6 +256,9 @@ with check (
         where p.id = project_id and p.owner_user_id = auth.uid()
     )
 );
+
+revoke all on public.projects, public.canvas_workspaces, public.conversations, public.agent_runs, public.agent_events, public.project_skills from anon, authenticated;
+revoke all on sequence public.agent_events_sequence_seq from anon, authenticated;
 
 grant select, delete on public.projects to authenticated;
 grant update (name) on public.projects to authenticated;

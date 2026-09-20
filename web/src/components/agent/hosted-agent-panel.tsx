@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { App, Button, Input } from "antd";
-import { Bot, PanelRightClose, Plus, Send, Square } from "lucide-react";
+import { App, Button, Input, Modal, Switch } from "antd";
+import { Archive, Bot, PanelRightClose, Plus, Send, Settings2, Square, Trash2 } from "lucide-react";
 
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { hostedAgentApi, type HostedConversation, type HostedRuntimeEvent } from "@/services/api/hosted-agent";
+import { hostedAgentApi, type HostedConversation, type HostedProjectSkill, type HostedRuntimeEvent } from "@/services/api/hosted-agent";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { hostedBrowserClientId, sanitizeHostedSnapshot, type useHostedAgentProject } from "./use-hosted-agent-project";
@@ -26,34 +26,68 @@ export function HostedAgentPanel({ scope }: { scope: HostedScope }) {
     const [initializing, setInitializing] = useState(false);
     const [streamError, setStreamError] = useState("");
     const [streamAttempt, setStreamAttempt] = useState(0);
+    const [snapshotReady, setSnapshotReady] = useState(false);
+    const [skillsOpen, setSkillsOpen] = useState(false);
+    const [skills, setSkills] = useState<HostedProjectSkill[]>([]);
+    const [skillName, setSkillName] = useState("");
+    const [editingSkillName, setEditingSkillName] = useState("");
+    const [skillDefinition, setSkillDefinition] = useState("");
+    const [skillEnabled, setSkillEnabled] = useState(true);
+    const [savingSkill, setSavingSkill] = useState(false);
     const sequenceRef = useRef(0);
     const protocolErrorRef = useRef(false);
-    const initializingRef = useRef(false);
+    const conversationLoadRef = useRef<{ key: string; promise: Promise<{ items: HostedConversation[]; next: HostedConversation }> } | null>(null);
     const projectId = scope.project?.agentProjectId || "";
 
     useEffect(() => {
-        if (!scope.enabled || !scope.token || !projectId || initializingRef.current) return;
-        initializingRef.current = true;
+        if (!scope.enabled || !scope.token || !projectId) return;
+        const key = `${scope.token}:${projectId}`;
+        let load = conversationLoadRef.current?.key === key ? conversationLoadRef.current.promise : null;
+        if (!load) {
+            load = hostedAgentApi.listConversations(scope.token, projectId).then(async (items) => ({
+                items,
+                next: items.find((item) => item.status === "active") || await hostedAgentApi.createConversation(scope.token!, projectId),
+            }));
+            conversationLoadRef.current = { key, promise: load };
+        }
+        let current = true;
         setInitializing(true);
-        void hostedAgentApi.listConversations(scope.token, projectId).then(async (items) => {
-            const next = items.find((item) => item.status === "active") || await hostedAgentApi.createConversation(scope.token!, projectId);
+        void load.then(({ items, next }) => {
+            if (!current) return;
             setConversations(items.some((item) => item.id === next.id) ? items : [next, ...items]);
             setConversationId(next.id);
-        }).catch((error) => message.error(error instanceof Error ? error.message : "读取对话失败")).finally(() => {
-            initializingRef.current = false;
-            setInitializing(false);
+        }).catch((error) => {
+            if (conversationLoadRef.current?.key === key) conversationLoadRef.current = null;
+            if (current) message.error(error instanceof Error ? error.message : "读取对话失败");
+        }).finally(() => {
+            if (current) setInitializing(false);
         });
+        return () => { current = false; };
     }, [message, projectId, scope.enabled, scope.token]);
 
     useEffect(() => {
         sequenceRef.current = 0;
         protocolErrorRef.current = false;
         setMessages([]);
+        setRunId("");
+        setPendingTool(null);
         setStreamError("");
-    }, [conversationId]);
+        setSnapshotReady(false);
+        if (!scope.token || !projectId || !conversationId) return;
+        let current = true;
+        void hostedAgentApi.readConversation(scope.token, projectId, conversationId).then((snapshot) => {
+            if (!current) return;
+            snapshot.events.forEach(consumeEvent);
+            setSnapshotReady(true);
+        }).catch((error) => {
+            if (!current) return;
+            setStreamError(error instanceof Error ? error.message : "读取对话历史失败");
+        });
+        return () => { current = false; };
+    }, [conversationId, projectId, scope.token]);
 
     useEffect(() => {
-        if (!scope.token || !projectId || !conversationId) return;
+        if (!snapshotReady || !scope.token || !projectId || !conversationId) return;
         const controller = new AbortController();
         setStreamError("");
         void hostedAgentApi.streamEvents(scope.token, projectId, conversationId, sequenceRef.current, controller.signal, consumeEvent).then(() => {
@@ -62,9 +96,14 @@ export function HostedAgentPanel({ scope }: { scope: HostedScope }) {
             if (!controller.signal.aborted) setStreamError(error instanceof Error ? error.message : "Agent 事件连接失败");
         });
         return () => controller.abort();
-    }, [conversationId, projectId, scope.token, streamAttempt]);
+    }, [conversationId, projectId, scope.token, snapshotReady, streamAttempt]);
 
-    const consumeEvent = (event: HostedRuntimeEvent) => {
+    useEffect(() => {
+        if (!skillsOpen || !scope.token || !projectId) return;
+        void hostedAgentApi.listSkills(scope.token, projectId).then(setSkills).catch((error) => message.error(error instanceof Error ? error.message : "读取 Project Skill 失败"));
+    }, [message, projectId, scope.token, skillsOpen]);
+
+    function consumeEvent(event: HostedRuntimeEvent) {
         if (event.protocolVersion !== 1) {
             if (!protocolErrorRef.current) message.error("Agent 通信协议版本不兼容，已停止合并事件");
             protocolErrorRef.current = true;
@@ -88,9 +127,61 @@ export function HostedAgentPanel({ scope }: { scope: HostedScope }) {
                 summary: String(event.payload.summary || "Agent 请求修改当前画布"),
                 operations: Array.isArray(event.payload.operations) ? event.payload.operations as CanvasAgentOp[] : [],
             });
+        } else if (event.type === "tool.completed") {
+            setPendingTool(null);
         } else if (event.type === "run.completed" || event.type === "run.failed" || event.type === "run.aborted") {
             setRunId((current) => current === event.runId ? "" : current);
+            setPendingTool(null);
             if (event.type === "run.failed") message.error(String(event.payload.message || "Agent 运行失败"));
+        }
+    }
+
+    const archiveConversation = async () => {
+        if (!scope.token || !projectId || !conversationId || runId) return;
+        try {
+            await hostedAgentApi.archiveConversation(scope.token, projectId, conversationId);
+            const archived = conversations.map((item) => item.id === conversationId ? { ...item, status: "archived" as const } : item);
+            let next = archived.find((item) => item.status === "active");
+            if (!next) {
+                next = await hostedAgentApi.createConversation(scope.token, projectId);
+                archived.unshift(next);
+            }
+            setConversations(archived);
+            setConversationId(next.id);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "归档对话失败");
+        }
+    };
+
+    const editSkill = (skill?: HostedProjectSkill) => {
+        setSkillName(skill?.name || "");
+        setEditingSkillName(skill?.name || "");
+        setSkillDefinition(skill?.definition || "");
+        setSkillEnabled(skill?.enabled ?? true);
+    };
+
+    const saveSkill = async () => {
+        if (!scope.token || !projectId || !skillName.trim() || !skillDefinition.trim()) return;
+        setSavingSkill(true);
+        try {
+            const saved = await hostedAgentApi.saveSkill(scope.token, projectId, { name: skillName.trim(), definition: skillDefinition.trim(), enabled: skillEnabled });
+            setSkills((items) => [saved, ...items.filter((item) => item.id !== saved.id)].sort((left, right) => left.name.localeCompare(right.name)));
+            editSkill();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "保存 Project Skill 失败");
+        } finally {
+            setSavingSkill(false);
+        }
+    };
+
+    const deleteSkill = async (skill: HostedProjectSkill) => {
+        if (!scope.token || !projectId) return;
+        try {
+            await hostedAgentApi.deleteSkill(scope.token, projectId, skill.name);
+            setSkills((items) => items.filter((item) => item.id !== skill.id));
+            if (skillName === skill.name) editSkill();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "删除 Project Skill 失败");
         }
     };
 
@@ -148,6 +239,8 @@ export function HostedAgentPanel({ scope }: { scope: HostedScope }) {
             <div className="flex h-12 items-center gap-2 border-b px-3" style={{ borderColor: theme.node.stroke }}>
                 <Bot className="size-4" />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">Pi Agent</span>
+                <button type="button" className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10" onClick={() => setSkillsOpen(true)} title="Project Skills"><Settings2 className="size-4" /></button>
+                <button type="button" className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30" disabled={!conversationId || Boolean(runId) || conversations.find((item) => item.id === conversationId)?.status === "archived"} onClick={() => void archiveConversation()} title="归档当前对话"><Archive className="size-4" /></button>
                 <button type="button" className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10" onClick={() => void createConversation()} title="新对话"><Plus className="size-4" /></button>
                 <button type="button" className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10" onClick={closePanel} title="收起"><PanelRightClose className="size-4" /></button>
             </div>
@@ -155,7 +248,7 @@ export function HostedAgentPanel({ scope }: { scope: HostedScope }) {
                 {!scope.enabled || initializing ? <div className="text-sm opacity-60">正在绑定当前 Project 与独立 Canvas Workspace… {!initializing && !scope.binding ? <button type="button" className="underline" onClick={scope.retryBinding}>重试</button> : null}</div> : null}
                 {conversations.length > 1 ? (
                     <select className="w-full bg-transparent p-1 text-sm" value={conversationId} onChange={(event) => setConversationId(event.target.value)}>
-                        {conversations.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+                        {conversations.map((item) => <option key={item.id} value={item.id}>{item.status === "archived" ? `[已归档] ${item.title}` : item.title}</option>)}
                     </select>
                 ) : null}
                 {messages.map((item) => (
@@ -175,9 +268,28 @@ export function HostedAgentPanel({ scope }: { scope: HostedScope }) {
                     if (!event.shiftKey) { event.preventDefault(); void send(); }
                 }} />
                 <div className="mt-2 flex justify-end">
-                    {runId ? <Button type="text" icon={<Square className="size-3.5" />} onClick={() => void stop()}>停止</Button> : <Button type="text" icon={<Send className="size-4" />} disabled={!scope.enabled || !conversationId || !prompt.trim()} onClick={() => void send()}>发送</Button>}
+                    {runId ? <Button type="text" icon={<Square className="size-3.5" />} onClick={() => void stop()}>停止</Button> : <Button type="text" icon={<Send className="size-4" />} disabled={!scope.enabled || !snapshotReady || !conversationId || conversations.find((item) => item.id === conversationId)?.status === "archived" || !prompt.trim()} onClick={() => void send()}>发送</Button>}
                 </div>
             </div>
+            <Modal title="Project Skills" open={skillsOpen} onCancel={() => setSkillsOpen(false)} footer={null} destroyOnHidden>
+                <div className="space-y-3">
+                    <div className="max-h-44 space-y-1 overflow-y-auto">
+                        {skills.map((skill) => (
+                            <div key={skill.id} className="flex items-center gap-2 py-1 text-sm">
+                                <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => editSkill(skill)}>{skill.name}</button>
+                                <Switch size="small" checked={skill.enabled} onChange={(enabled) => void hostedAgentApi.saveSkill(scope.token!, projectId, { name: skill.name, definition: skill.definition, enabled }).then((saved) => setSkills((items) => items.map((item) => item.id === saved.id ? saved : item))).catch((error) => message.error(error instanceof Error ? error.message : "更新 Project Skill 失败"))} />
+                                <Button type="text" size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => void deleteSkill(skill)} />
+                            </div>
+                        ))}
+                    </div>
+                    <Input value={skillName} disabled={Boolean(editingSkillName)} onChange={(event) => setSkillName(event.target.value)} placeholder="Skill 名称" />
+                    <Input.TextArea value={skillDefinition} onChange={(event) => setSkillDefinition(event.target.value)} autoSize={{ minRows: 4, maxRows: 10 }} placeholder="仅注入当前 Project 的 Skill 定义" />
+                    <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-sm"><Switch size="small" checked={skillEnabled} onChange={setSkillEnabled} />启用</label>
+                        <div className="flex gap-2"><Button onClick={() => editSkill()}>清空</Button><Button type="primary" loading={savingSkill} disabled={!skillName.trim() || !skillDefinition.trim()} onClick={() => void saveSkill()}>保存</Button></div>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 }

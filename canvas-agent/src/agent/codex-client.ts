@@ -352,7 +352,7 @@ export class CodexAppClient {
         if (message.error && this.pending.has(id)) {
             const error = String(field(message.error, "message") || "Codex request failed");
             if (!this.pending.get(id)?.silent) {
-                if (/not materialized yet.*includeTurns/i.test(error)) logger.debug("Codex thread has no messages yet", { id });
+                if (/not materialized yet.*includeTurns|paginated threads do not support thread\/read/i.test(error)) logger.debug("Codex thread history is not fully readable", { id });
                 else logger.warn("Codex request failed", { id, error });
             }
             return this.reject(id, error);

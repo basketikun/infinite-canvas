@@ -415,21 +415,34 @@ export function AgentWorkingMessage({ text, detail, status = "running", mcpStatu
                 <span className="min-w-0">{text}</span>
                 {status === "running" && elapsed >= 5 ? <span className="shrink-0 text-[11px] tabular-nums opacity-60">{waitingTime(elapsed)}</span> : null}
             </div>
-            {detail ? <div className="ml-5.5 mt-1 text-xs leading-5 opacity-65" style={{ color: theme.node.muted }}>{detail}</div> : null}
-            {mcpStatuses.length ? (
-                <div className="ml-5.5 mt-3 space-y-2">
-                    {mcpStatuses.map((item) => (
-                        <div key={item.name} className="flex min-w-0 items-start gap-2 text-xs leading-5" style={{ color: theme.node.muted }}>
-                            {item.status === "running" ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" /> : item.status === "ready" ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" /> : <XCircle className="mt-0.5 size-3.5 shrink-0 text-red-600" />}
-                            <div className="min-w-0">
-                                <div className="font-medium" style={{ color: theme.node.text }}>{item.name}</div>
-                                <div className="opacity-65">{item.detail}</div>
-                            </div>
-                        </div>
-                    ))}
+            {detail ? <div className="ml-5.5 mt-1 text-xs leading-5 break-words opacity-65" style={{ color: theme.node.muted }}>{detail}</div> : null}
+            {mcpStatuses.length ? <AgentMcpStatusList items={mcpStatuses} compact={status !== "running"} theme={theme} /> : null}
+            {status === "running" && elapsed >= 30 ? <div className="mt-1 text-xs leading-5 opacity-65" style={{ color: theme.node.muted }}>{t("agent.message.slowResponse")}</div> : null}
+        </div>
+    );
+}
+
+function AgentMcpStatusList({ items, compact, theme }: { items: Array<{ name: string; status: "running" | "ready" | "error"; detail: string }>; compact: boolean; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    const listed = compact ? items.filter((item) => item.status !== "ready") : items;
+    const readyCount = items.filter((item) => item.status === "ready").length;
+    if (!listed.length && !readyCount) return null;
+    return (
+        <div className="ml-5.5 mt-3 space-y-2">
+            {listed.map((item) => (
+                <div key={item.name} className="flex min-w-0 items-start gap-2 text-xs leading-5" style={{ color: theme.node.muted }}>
+                    {item.status === "running" ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" /> : item.status === "ready" ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" /> : <XCircle className="mt-0.5 size-3.5 shrink-0 text-red-600" />}
+                    <div className="min-w-0">
+                        <div className="font-medium break-words" style={{ color: theme.node.text }}>{item.name}</div>
+                        <div className="break-words opacity-65">{item.detail}</div>
+                    </div>
+                </div>
+            ))}
+            {compact && readyCount ? (
+                <div className="flex min-w-0 items-start gap-2 text-xs leading-5" style={{ color: theme.node.muted }}>
+                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                    <div className="min-w-0">{i18n.t("agent.runtime.mcpServicesReady", { count: readyCount })}</div>
                 </div>
             ) : null}
-            {status === "running" && elapsed >= 30 ? <div className="mt-1 text-xs leading-5 opacity-65" style={{ color: theme.node.muted }}>{t("agent.message.slowResponse")}</div> : null}
         </div>
     );
 }

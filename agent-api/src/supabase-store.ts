@@ -65,6 +65,10 @@ export class SupabaseResearchStore implements ResearchStore {
     }
 
     async archiveConversation(ctx: RequestContext, conversationId: string) {
+        await this.readConversation(ctx, conversationId);
+        const { data: activeRuns, error: activeRunError } = await this.client.from("agent_runs").select("id").eq("conversation_id", conversationId).eq("status", "running").limit(1);
+        if (activeRunError) throw databaseError(activeRunError);
+        if (activeRuns?.length) throw new AppError("当前对话仍在运行", 409, "conversation_busy");
         const { data, error } = await this.client.from("conversations").update({ status: "archived" }).eq("id", conversationId).eq("project_id", ctx.projectId).select("id").maybeSingle();
         if (error) throw databaseError(error);
         if (!data) throw new AppError("找不到对话", 404, "conversation_not_found");
@@ -169,6 +173,7 @@ export class SupabaseResearchStore implements ResearchStore {
 
 function databaseError(error: { code?: string; message: string }) {
     if (error.code === "23505") return new AppError("当前对话已有任务正在运行", 409, "conversation_busy");
+    if (error.code === "P0409") return new AppError(error.message === "conversation_not_active" ? "对话已归档" : "当前对话仍在运行", 409, error.message === "conversation_not_active" ? "conversation_archived" : "conversation_busy");
     if (error.code === "42501") return new AppError("无权访问该资源", 403, "forbidden");
     return new AppError(error.message, 500, "database_error");
 }

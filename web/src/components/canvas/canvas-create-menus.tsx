@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
-import { CanvasNodeType, type ConnectionHandle, type Position } from "@/types/canvas";
+import { getNodeDefinition, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
+import { CanvasNodeType, RESEARCH_FLOW_NODE_TYPES, type ConnectionHandle, type Position } from "@/types/canvas";
 
 export type PendingConnectionCreate = {
     connection: ConnectionHandle;
@@ -80,7 +80,7 @@ export function NodeCreateMenu({ position, onCreate, onClose }: { position: Posi
     const { t } = useTranslation();
     useNodeRegistryVersion();
     const menuRef = useRef<HTMLDivElement>(null);
-    const definitions = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false);
+    const definitions = RESEARCH_FLOW_NODE_TYPES.map((type) => getNodeDefinition(type)).filter((def): def is NonNullable<typeof def> => Boolean(def));
     // Close automatically when clicking outside the menu.
     useEffect(() => {
         const handlePointerDown = (event: PointerEvent) => {

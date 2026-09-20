@@ -1,12 +1,13 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, Grid2x2, Group, Hand, Image as ImageIcon, Info, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Eraser, Grid2x2, Hand, Info, Moon, MousePointer2, Palette, Puzzle, Redo2, Square, Sun, Trash2, Undo2, Upload } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
-import { getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
+import { getNodeDefinition, getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { RESEARCH_FLOW_FIRST_BATCH, RESEARCH_FLOW_SECOND_BATCH } from "@/types/canvas";
 import { useTranslation } from "react-i18next";
 
 export function CanvasToolbar({
@@ -16,12 +17,7 @@ export function CanvasToolbar({
     canRedo,
     backgroundMode,
     showImageInfo,
-    onAddImage,
-    onAddVideo,
-    onAddAudio,
-    onAddText,
-    onAddConfig,
-    onAddGroup,
+    onAddNode,
     onAddExtensionNode,
     onUndo,
     onRedo,
@@ -38,12 +34,7 @@ export function CanvasToolbar({
     canRedo: boolean;
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
-    onAddImage: () => void;
-    onAddVideo: () => void;
-    onAddAudio: () => void;
-    onAddText: () => void;
-    onAddConfig: () => void;
-    onAddGroup: () => void;
+    onAddNode: (type: string) => void;
     onAddExtensionNode: (type: string) => void;
     onUndo: () => void;
     onRedo: () => void;
@@ -101,24 +92,26 @@ export function CanvasToolbar({
                     <Redo2 className="size-4.5" />
                 </ToolbarButton>
                 <Divider theme={theme} />
-                <ToolbarButton id="tool-text" label={t("canvas.toolbar.text")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddText}>
-                    <Type className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-image" label={t("canvas.toolbar.image")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddImage}>
-                    <ImageIcon className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-video" label={t("canvas.toolbar.video")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddVideo}>
-                    <Video className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-audio" label={t("canvas.toolbar.audio")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddAudio}>
-                    <Music2 className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-config" label={t("canvas.toolbar.config")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddConfig}>
-                    <Settings2 className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-group" label={t("canvas.toolbar.group")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddGroup}>
-                    <Group className="size-4.5" />
-                </ToolbarButton>
+                {RESEARCH_FLOW_FIRST_BATCH.map((type) => {
+                    const def = getNodeDefinition(type);
+                    if (!def) return null;
+                    return (
+                        <ToolbarButton key={type} id={`tool-${type}`} label={def.title} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={() => onAddNode(type)}>
+                            <span className="flex items-center justify-center [&_svg]:size-4.5">{def.icon}</span>
+                        </ToolbarButton>
+                    );
+                })}
+                <Divider theme={theme} />
+                {RESEARCH_FLOW_SECOND_BATCH.map((type) => {
+                    const def = getNodeDefinition(type);
+                    if (!def) return null;
+                    return (
+                        <ToolbarButton key={type} id={`tool-${type}`} label={def.title} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={() => onAddNode(type)}>
+                            <span className="flex items-center justify-center [&_svg]:size-4.5">{def.icon}</span>
+                        </ToolbarButton>
+                    );
+                })}
+                <Divider theme={theme} />
                 {extensionDefs.length ? (
                     <ToolbarButton
                         id="tool-extensions"
@@ -356,12 +349,10 @@ function toolLabel(id: string, t: (key: string) => string) {
     if (id === "tool-pan") return t("canvas.toolbar.pan");
     if (id === "tool-undo") return t("canvas.undo");
     if (id === "tool-redo") return t("canvas.redo");
-    if (id === "tool-text") return t("canvas.toolbar.text");
-    if (id === "tool-image") return t("canvas.toolbar.image");
-    if (id === "tool-video") return t("canvas.toolbar.video");
-    if (id === "tool-audio") return t("canvas.toolbar.audio");
-    if (id === "tool-config") return t("canvas.toolbar.config");
-    if (id === "tool-group") return t("canvas.toolbar.group");
+    if (id.startsWith("tool-") && id !== "tool-select" && id !== "tool-pan" && id !== "tool-undo" && id !== "tool-redo" && id !== "tool-extensions" && id !== "tool-upload" && id !== "tool-style" && id !== "tool-delete" && id !== "tool-clear") {
+        const type = id.slice("tool-".length);
+        return t(`canvas.nodeTypes.${type}`);
+    }
     if (id === "tool-extensions") return t("canvas.toolbar.extensions");
     if (id === "tool-upload") return t("canvas.toolbar.upload");
     if (id === "tool-style") return t("canvas.toolbar.appearance");

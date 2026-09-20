@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button } from "antd";
 import { Download, FileUp, Plus } from "lucide-react";
@@ -25,7 +25,8 @@ export default function CanvasPage() {
     const autoOpenRef = useRef(false);
     const hydrated = useCanvasStore((state) => state.hydrated);
     const ownerUserId = useUserStore((state) => state.user?.id);
-    const projects = useCanvasStore((state) => state.projects.filter((project) => project.localOwnerUserId === ownerUserId));
+    const allProjects = useCanvasStore((state) => state.projects);
+    const projects = useMemo(() => allProjects.filter((project) => project.localOwnerUserId === ownerUserId), [allProjects, ownerUserId]);
     const createProject = useCanvasStore((state) => state.createProject);
     const importProject = useCanvasStore((state) => state.importProject);
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);

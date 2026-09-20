@@ -6,7 +6,7 @@ import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, 
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
-import { readAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
+import { readAgentUrlBootstrap, isValidAgentEndpoint } from "@/lib/agent/agent-url-bootstrap";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { imageMetadata } from "@/lib/canvas/canvas-node-factory";
@@ -117,9 +117,7 @@ function conversationBootstrapView(conversation: AgentConversationState) {
             ? { key: "mcp:warning", text: rt("someMcpFailed"), detail: rt("remainingToolsReady"), status: "error" }
             : conversation.status === "failed"
                 ? { key: "codex:prepare_failed", text: rt("conversationInitFailed"), detail: conversation.error || rt("conversationCreateFailed"), status: "error" }
-                : conversation.status === "ready"
-                    ? { key: "mcp:ready", text: rt("mcpServicesReady", { count: services.length }), detail: rt("toolsReady"), status: "ready" }
-                    : null;
+                : null;
     return { bootstrapStatus, mcpStartupStatuses };
 }
 
@@ -912,7 +910,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const urlToken = searchParams.get("agentToken") || "";
         const urlEndpoint = searchParams.get("agentUrl") || "";
         const discovered = urlToken ? null : await discoverAgentConfig(endpoint || DEFAULT_AGENT_URL);
-        const nextEndpoint = (urlEndpoint || discovered?.url || endpoint || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
+        const nextEndpoint = (urlEndpoint || endpoint || discovered?.url || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
         const nextToken = (urlToken || token.trim() || discovered?.token || "").trim();
         if (!nextEndpoint) {
             const text = rt("addressRequired");
@@ -930,10 +928,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             }
             return;
         }
-        try {
-            const parsed = new URL(nextEndpoint);
-            if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("invalid protocol");
-        } catch {
+        if (!isValidAgentEndpoint(nextEndpoint)) {
             const text = rt("invalidAddress");
             if (!silent) {
                 setAgentState({ connectError: text });
@@ -954,10 +949,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             useAgentStore.getState().openPanel();
             return;
         }
-        try {
-            const parsed = new URL(bootstrap.url);
-            if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("invalid protocol");
-        } catch {
+        if (!isValidAgentEndpoint(bootstrap.url)) {
             setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: rt("invalidAddress") });
             useAgentStore.getState().openPanel();
             return;

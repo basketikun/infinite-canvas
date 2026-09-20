@@ -1,6 +1,6 @@
 # Pi SDK 迁移：单用户独立 Project 与 Canvas Workspace
 
-状态：首期代码已落地，等待 Supabase、真实模型和浏览器端到端验收。
+状态：首期代码路径与自动化验收入口已落地，等待目标 Supabase、真实模型和浏览器环境执行发布 Gate。
 
 ## 目标模型
 
@@ -101,16 +101,26 @@ type MemoryScope = "user_project_private";
 
 配置 `VITE_SUPABASE_URL`、`VITE_SUPABASE_PUBLISHABLE_KEY` 和 `VITE_AGENT_API_URL` 后：
 
-- 右上角提供 Supabase 登录、注册和退出。
+- 右上角提供 Supabase 账号密码登录和退出。
+- 登录交互使用账号+密码，内置 `test / 12345678` 测试用户由 Agent API 通过仅服务端可见的 Supabase Secret Key 幂等创建。
 - 登录用户打开本地 Canvas Project 时，前端创建并绑定其独立服务端 Project/Workspace。
 - Agent 面板默认使用 Pi 托管链路，并可显式切回本地 Codex。
 - Pi 面板支持 Project 私有 Conversation、流式回复、停止和画布写工具确认。
+- Pi 面板先读取持久化 Conversation 快照，再按 sequence 接续实时事件；历史已物化事件不会重复合并。
+- Pi 面板支持归档 Conversation，以及创建、编辑、启停和删除当前 Project 私有 Skill。
 
-## 尚未完成的发布 Gate
+## 部署与自动化验收
+
+- `agent-api/Dockerfile` 与 `docker-compose.local.yml` 提供 Web + Agent API 的本地容器闭环。
+- `RUN_SUPABASE_RLS_TESTS=1 npm test` 验证真实 Supabase 中的跨用户/跨 Project 隔离、唯一 Workspace 和客户端不可绕过的写权限。
+- `AGENT_API_URL=http://localhost:4100 npm run acceptance:live` 使用内置 test 账号驱动真实 Pi，并模拟浏览器确认工具结果，验证 streaming、session、read/write Canvas tools、事件 sequence、abort 与凭据不进入持久化产品数据。
+- 两类外部验收都必须显式启用；缺少 Supabase 或模型凭据时不会用 fake 结果代替通过状态。
+
+## 待在目标环境执行的发布 Gate
 
 - 在目标 Supabase 实例执行 migration 并运行真实 RLS 集成测试。
 - 使用真实平台模型凭据验证 Pi provider、流式事件、abort、session 恢复和两个工具。
-- 验证 SSE 断线恢复与历史物化不会重复展示同一 turn。
+- 在浏览器中验证 SSE 断线恢复与历史物化不会重复展示同一 turn。
 - 验证凭据不出现在浏览器、日志、事件或数据库。
 - 完成真实 `Browser → Agent API → Pi → Tool → Canvas → Browser` 验收。
 - 横向扩容前，为运行中的 abort、在线 Canvas 快照和待确认工具调用增加粘性路由或共享事件代理。

@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, File, FileText, Globe, HelpCircle, Image as ImageIcon, LayoutPanelTop, ListChecks, Music2, Plus, Search, Settings2, Sparkles, Square, StickyNote, Trash2, Type, Video } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, ChevronRight, Compass, Download, Eye, File, FileText, GitBranch, Globe, HelpCircle, Image as ImageIcon, LayoutPanelTop, Lightbulb, ListChecks, Music2, Plus, Scale, Search, Settings2, Sparkles, Sprout, Square, StickyNote, Trash2, Type, Video, Wrench } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -9,7 +9,7 @@ import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { exportCanvasNodes } from "@/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { cn } from "@/lib/utils";
-import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dialog";
+import { PromptDetailDialog } from "@/components/prompts/prompt-detail-dialog";
 import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision, uploadImage } from "@/services/image-storage";
@@ -17,7 +17,7 @@ import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-st
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, RESEARCH_FLOW_NODE_TYPES, type CanvasNodeData } from "@/types/canvas";
 
 import type { InsertAssetPayload } from "./asset-picker-modal";
 
@@ -41,7 +41,15 @@ const NODE_TYPE_ICON: Record<string, typeof Square> = {
     [CanvasNodeType.Text]: Type,
     [CanvasNodeType.Config]: Settings2,
     [CanvasNodeType.Group]: Square,
-    [CanvasNodeType.CrEntity]: Sparkles,
+    [CanvasNodeType.Seed]: Sprout,
+    [CanvasNodeType.Direction]: Compass,
+    [CanvasNodeType.ResearchQuestion]: HelpCircle,
+    [CanvasNodeType.Problem]: AlertTriangle,
+    [CanvasNodeType.Hypothesis]: Lightbulb,
+    [CanvasNodeType.Approach]: GitBranch,
+    [CanvasNodeType.Method]: Wrench,
+    [CanvasNodeType.Evaluation]: Scale,
+    [CanvasNodeType.Idea]: Sparkles,
     [CanvasNodeType.Frame]: LayoutPanelTop,
     [CanvasNodeType.Note]: StickyNote,
     [CanvasNodeType.Question]: HelpCircle,
@@ -138,24 +146,11 @@ function TabButton({ label, active, theme, onClick }: { label: string; active: b
 // Canvas tab: list nodes and center, zoom, and select the clicked node.
 // ---------------------------------------------------------------------------
 
-const NODE_FILTER_VALUES = [
-    "all",
-    CanvasNodeType.Image,
-    CanvasNodeType.Video,
-    CanvasNodeType.Text,
-    CanvasNodeType.Audio,
-    CanvasNodeType.Config,
-    CanvasNodeType.Group,
-    CanvasNodeType.CrEntity,
-    CanvasNodeType.Frame,
-    CanvasNodeType.Note,
-    CanvasNodeType.Question,
-    CanvasNodeType.Pdf,
-    CanvasNodeType.Web,
-];
+const NODE_FILTER_VALUES = ["all", ...RESEARCH_FLOW_NODE_TYPES];
 
 function nodePreviewText(node: CanvasNodeData) {
     if (node.type === CanvasNodeType.Text) return node.metadata?.content || node.metadata?.prompt || "";
+    if (node.metadata?.summary) return node.metadata.summary;
     return getNodeDefinition(node.type)?.title || node.type;
 }
 
@@ -172,7 +167,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
 
     const filtered = useMemo(() => {
         const query = keyword.trim().toLowerCase();
-        return nodes.filter((node) => (typeFilter === "all" || node.type === typeFilter) && (!query || [node.title, node.metadata?.content, node.metadata?.prompt].filter(Boolean).join(" ").toLowerCase().includes(query)));
+        return nodes.filter((node) => (typeFilter === "all" || node.type === typeFilter) && (!query || [node.title, node.metadata?.content, node.metadata?.prompt, node.metadata?.summary].filter(Boolean).join(" ").toLowerCase().includes(query)));
     }, [nodes, keyword, typeFilter]);
     const treeRows = useMemo(() => {
         const filteredIds = new Set(filtered.map((node) => node.id));

@@ -6,4 +6,23 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+      AGENT_API_URL: ${AGENT_API_URL:-http://localhost:4100}
+    depends_on:
+      - agent-api
     restart: unless-stopped
+  agent-api:
+    build:
+      context: ./agent-api
+    env_file:
+      - ./agent-api/.env
+    ports:
+      - "4100:4100"
+    volumes:
+      - pi-agent-data:/var/lib/research-canvas/pi
+    restart: unless-stopped
+
+volumes:
+  pi-agent-data:

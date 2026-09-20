@@ -16,8 +16,10 @@ Conversation 1 ── N AgentRun
 ## 配置
 
 1. 在 Supabase SQL Editor 执行 `supabase/migrations/001_agent_platform.sql`。
-2. 复制 `.env.example` 并填写 Supabase、Pi provider/model、平台 API Key 和 Agent 数据目录。
+2. 复制 `.env.example` 并填写 Supabase publishable key、仅服务端可见的 Secret Key、Pi provider/model、平台 API Key 和 Agent 数据目录。
 3. 安装依赖后运行 `npm run dev`。
+
+Agent API 启动时会幂等创建并确认内置测试用户：账号 `test`，密码 `12345678`（Supabase 内部邮箱为 `test@research-canvas.test`）。`SUPABASE_SECRET_KEY` 只用于这个服务端初始化动作，不会写入浏览器运行时配置。
 
 Pi provider credential 只能放在 Agent API 服务端环境中，不能使用 `VITE_` 前缀，也不能写入数据库或返回浏览器。Web 端需要配置：
 
@@ -28,6 +30,8 @@ VITE_AGENT_API_URL
 ```
 
 使用仓库内 nginx 容器镜像时，同样的三个公开值在启动容器时改用 `SUPABASE_URL`、`SUPABASE_PUBLISHABLE_KEY` 和 `AGENT_API_URL`，由 `web/docker-entrypoint.sh` 写入运行时 `config.js`。这些只是浏览器所需的 Supabase 公开配置和 API 地址，Pi provider credential 仍只能使用 Agent API 服务端的 `PI_API_KEY`。
+
+本地容器闭环：复制 `agent-api/.env.example` 为 `agent-api/.env`，在当前 Shell 设置 Web 需要的 `SUPABASE_URL` 和 `SUPABASE_PUBLISHABLE_KEY`，然后使用 `docker compose -f docker-compose.local.yml up --build`。Web 默认连接宿主机 `http://localhost:4100`，Pi 数据目录使用独立 volume。
 
 ## 安全边界
 
@@ -46,7 +50,19 @@ Conversation session 和事件已持久化到 Postgres，可以跨实例恢复�
 
 ## 验收
 
-`src/domain.test.ts` 覆盖 owner 隔离、Project/Workspace 唯一绑定、伪造上下文、session revision 和 Conversation 运行互斥。真实发布前还必须在配置好的 Supabase 与模型账号上完成：
+`src/domain.test.ts` 覆盖 owner 隔离、Project/Workspace 唯一绑定、伪造上下文、session revision 和 Conversation 运行互斥。常规 `npm test` 会跳过依赖外部 Supabase 的集成用例；应用 migration 后可显式运行真实 RLS 验收：
+
+```bash
+RUN_SUPABASE_RLS_TESTS=1 npm test
+```
+
+启动配置了真实模型的 Agent API 后，可从 `agent-api/` 执行协议级闭环验收。该脚本使用内置 test 账号，验证真实 Pi 流式回复、只读工具、模拟浏览器确认的写工具、session 持久化、事件序号、abort 和持久化数据中的凭据泄漏：
+
+```bash
+AGENT_API_URL=http://localhost:4100 npm run acceptance:live
+```
+
+脚本不添加隐式重试或超时，失败会保留原始 Gate；完成后仍需在真实浏览器界面人工确认：
 
 ```text
 Browser → Agent API → Pi → Tool → Canvas → Browser

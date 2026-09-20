@@ -55,7 +55,7 @@
 - 左侧画布面板等列表里的节点/元素缩略图容器，非图片类型（文本、配置、视频、音频等）不要使用 `theme.node.fill`（`#e7e5df`/`#292524`）这类灰色背景，图标直接无背景展示，尽量不要给多余底色，保持干净。
 - 画布内的操作按钮（如面板里的「添加」「导出」「选择」等）默认用扁平无底色样式：透明背景、仅 `hover:bg-black/5 dark:hover:bg-white/10` 轻微反馈，靠图标+文字表达，不要用 `theme.toolbar.activeBg`（`#e7e5df`/`#3a3631`）或 `theme.node.fill` 之类的灰色作为按钮填充底色。灰色 `activeBg` 只允许用于「选中态」等需要表达状态的高亮，不要当普通装饰底色。
 - 图片节点尺寸逻辑要尊重原始比例，除非功能明确要求自由变形。
-- 批量生成、多图展示、助手面板等画布交互要尽量简洁，不要占用过多画布空间。
+- 画布底部工具栏、双击创建菜单和左侧元素筛选只放研究主流程节点（Seed、Direction、Research Question、Problem、Hypothesis、Approach、Method、Evaluation、Idea），不要把文本、图片、视频、音频、配置、组、框架、便签、问题、PDF、网页放回这些入口。
 
 ## 文档规范
 
@@ -86,6 +86,11 @@
 - 对“需求有价值但实现不合格”的 PR，优先考虑要求作者修改、提取可用思路后自行重做，或把需求保留到 issue/todo；不要直接把需求一起否定。
 - 建议关闭 PR 前，必须先向用户分别说明需求价值、实现质量、可保留的思路和建议处理方式，并取得用户明确确认；批量关闭时也要让用户能看清每个 PR 的需求是否仍需保留。
 - 可以先在独立分支审查、修复、测试和准备提交；任何合并进 `main` 的操作都必须先说明修复内容、测试结果、风险与冲突，并取得用户明确同意。需要 force-push PR 作者分支时也必须提前说明影响并取得同意。
+
+## 设计文档
+
+- 画布研究实体/关系相关功能的设计来源是 `/Users/zmj/Desktop/CoResearch/docs/design/`（独立仓库 CoResearch 的一部分，不在本仓库内；CoResearch 是这套研究画布 SaaS 的正式实现，本仓库是它之前的本地 AI 图像画布工具，两者是不同代码库），按 `docs/design/README.md` 的索引阅读：`research-flow.md` → `idea-formation/` → `canvas/research-canvas.md` → `canvas/huabu-domain-binding.md` → `canvas/huabu-node-presentation-and-links.md` → `canvas/huabu-reverse-engineering.md`；`workspace.md`/`space.md`/`idea-structure.md` 是对象模型背景。CoResearch 根目录还有 `CONTEXT.md`（架构术语真值）和 `docs/adr/`（决策记录），设计文档里的交叉引用以那边为准。
+- 当前正在对照 `docs/design/canvas/huabu-node-presentation-and-links.md` 分阶段把本仓库画布 UI/UX 往这份设计推进；该设计假设了完整的版本化 Research Domain 后端（revision、领域校验、ConfirmResearchRevision，CoResearch 那边有），本仓库目前只有纯前端 plain JSON 数据模型，涉及需要真实后端才能诚实实现的部分（服务端关系校验、版本号/自动 stale 传播、Agent Node 上下文快照等）先不做，不要在前端伪造这些语义。
 
 ## 项目注意事项
 

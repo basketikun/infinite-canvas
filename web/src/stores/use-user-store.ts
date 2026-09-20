@@ -16,8 +16,7 @@ type UserStore = {
     accessToken: string | null;
     loading: boolean;
     initialize: () => Promise<void>;
-    signIn: (email: string, password: string) => Promise<void>;
-    signUp: (email: string, password: string) => Promise<void>;
+    signIn: (account: string, password: string) => Promise<void>;
     signOut: () => Promise<void>;
 };
 
@@ -38,14 +37,10 @@ export const useUserStore = create<UserStore>()((set) => ({
         setSession(set, data.session);
         supabase.auth.onAuthStateChange((_event, session) => setSession(set, session));
     },
-    signIn: async (email, password) => {
+    signIn: async (account, password) => {
         if (!supabase) throw new Error("Supabase 尚未配置");
+        const email = accountEmail(account);
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-    },
-    signUp: async (email, password) => {
-        if (!supabase) throw new Error("Supabase 尚未配置");
-        const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
     },
     signOut: async () => {
@@ -53,6 +48,13 @@ export const useUserStore = create<UserStore>()((set) => ({
         set({ user: null, accessToken: null });
     },
 }));
+
+function accountEmail(account: string) {
+    const value = account.trim().toLowerCase();
+    if (value.includes("@")) return value;
+    if (!/^[a-z0-9._-]+$/.test(value)) throw new Error("账号只能包含字母、数字、点、下划线或连字符");
+    return `${value}@research-canvas.test`;
+}
 
 function setSession(set: (state: Partial<UserStore>) => void, session: Session | null) {
     const user = session?.user;

@@ -427,19 +427,23 @@ export function assertDraftHasNoSensitiveValues(draft: AgentSkillDraft, privateV
     }
 }
 
+function cannotReadThreadTurns(error: unknown) {
+    return /not materialized yet.*includeTurns|paginated threads do not support thread\/read/i.test(errorMessage(error));
+}
+
 /** 读取线程历史，并显式标记 Codex 是否已经物化 turns。 */
 async function loadCodexHistory(emit: AgentEmit, threadId: string, cwd?: string) {
     try {
         return { thread: await loadCodexThread(emit, threadId, cwd, true), historyReady: true };
     } catch (error) {
-        if (/not materialized yet.*includeTurns/i.test(errorMessage(error))) return { thread: await loadCodexThread(emit, threadId, cwd, false), historyReady: false };
+        if (cannotReadThreadTurns(error)) return { thread: await loadCodexThread(emit, threadId, cwd, false), historyReady: false };
         if (!isRecoverableThreadError(error)) throw error;
         const app = await getCodexApp(emit);
         const thread = await resumeLoadedThread(app, threadId, cwd, "request", false);
         try {
             return { thread: await loadCodexThread(emit, threadId, cwd, true), historyReady: true };
         } catch (historyError) {
-            if (/not materialized yet.*includeTurns/i.test(errorMessage(historyError))) return { thread, historyReady: false };
+            if (cannotReadThreadTurns(historyError)) return { thread, historyReady: false };
             throw historyError;
         }
     }

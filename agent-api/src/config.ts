@@ -5,6 +5,7 @@ export function loadConfig() {
         port: Number(process.env.PORT || 4100),
         supabaseUrl: required("SUPABASE_URL"),
         supabasePublishableKey: required("SUPABASE_PUBLISHABLE_KEY"),
+        supabaseSecretKey: required("SUPABASE_SECRET_KEY"),
         origins: (process.env.AGENT_API_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean),
         pi: {
             provider: required("PI_PROVIDER"),

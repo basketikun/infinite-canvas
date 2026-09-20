@@ -1,37 +1,30 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { CanvasNodeType } from "@/types/canvas";
-import type { CrEntityKind } from "@/types/canvas";
+import { CanvasNodeType, type ResearchFlowNodeType } from "@/types/canvas";
 import type { CanvasNodeContext } from "@/types/canvas-plugin";
 
-// Label + accent color for each of the 15 crEntity research-object kinds (design/canvas/research-canvas.md §4).
-const ENTITY_KIND_META: Record<CrEntityKind, { label: string; color: string }> = {
-    seed: { label: "Seed", color: "#94a3b8" },
-    direction: { label: "Direction", color: "#38bdf8" },
-    phase: { label: "Phase", color: "#818cf8" },
-    focus: { label: "Focus", color: "#22d3ee" },
-    problem: { label: "Problem", color: "#f97316" },
-    claim: { label: "Claim", color: "#eab308" },
-    hypothesis: { label: "Hypothesis", color: "#a855f7" },
-    prediction: { label: "Prediction", color: "#ec4899" },
-    work: { label: "Work", color: "#10b981" },
-    question: { label: "Question", color: "#3b82f6" },
-    probe: { label: "Probe", color: "#64748b" },
-    requirement: { label: "Requirement", color: "#f59e0b" },
-    approach: { label: "Approach", color: "#14b8a6" },
-    operation: { label: "Operation", color: "#84cc16" },
-    component: { label: "Component", color: "#6366f1" },
+export const RESEARCH_FLOW_META: Record<ResearchFlowNodeType, { color: string }> = {
+    [CanvasNodeType.Seed]: { color: "#94a3b8" },
+    [CanvasNodeType.Direction]: { color: "#38bdf8" },
+    [CanvasNodeType.ResearchQuestion]: { color: "#3b82f6" },
+    [CanvasNodeType.Problem]: { color: "#f97316" },
+    [CanvasNodeType.Hypothesis]: { color: "#a855f7" },
+    [CanvasNodeType.Approach]: { color: "#14b8a6" },
+    [CanvasNodeType.Method]: { color: "#84cc16" },
+    [CanvasNodeType.Evaluation]: { color: "#eab308" },
+    [CanvasNodeType.Idea]: { color: "#ec4899" },
 };
 
-function EntityKindChip({ kind }: { kind: CrEntityKind }) {
-    const meta = ENTITY_KIND_META[kind];
+function TypeChip({ type }: { type: ResearchFlowNodeType }) {
+    const { t } = useTranslation();
+    const meta = RESEARCH_FLOW_META[type];
     return (
         <span
-            className="inline-flex w-fit shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            className="inline-flex w-fit shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide"
             style={{ background: `${meta.color}22`, color: meta.color }}
         >
-            {meta.label}
+            {t(`canvas.nodeTypes.${type}`)}
         </span>
     );
 }
@@ -75,13 +68,13 @@ function EditableTextArea({
     );
 }
 
-export function CrEntityContent({ ctx }: { ctx: CanvasNodeContext }) {
+export function ResearchCardContent({ ctx }: { ctx: CanvasNodeContext }) {
     const { t } = useTranslation();
-    const kind = ctx.node.metadata?.entityKind || "seed";
+    const type = ctx.node.type as ResearchFlowNodeType;
     const summary = ctx.node.metadata?.summary || "";
     return (
         <div data-canvas-no-zoom style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14, boxSizing: "border-box" }}>
-            <EntityKindChip kind={kind} />
+            <TypeChip type={type} />
             <EditableTextArea
                 value={summary}
                 placeholder={t("canvas.researchNodes.summaryPlaceholder")}
