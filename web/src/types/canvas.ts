@@ -16,7 +16,31 @@ export enum CanvasNodeType {
     Video = "video",
     Audio = "audio",
     Group = "group",
+    CrEntity = "cr_entity",
+    Frame = "frame",
+    Note = "note",
+    Question = "question",
+    Pdf = "pdf",
+    Web = "web",
 }
+
+// The 15 research-entity kinds a `crEntity` node can carry (see design/canvas/research-canvas.md §4).
+export type CrEntityKind =
+    | "seed"
+    | "direction"
+    | "phase"
+    | "focus"
+    | "problem"
+    | "claim"
+    | "hypothesis"
+    | "prediction"
+    | "work"
+    | "question"
+    | "probe"
+    | "requirement"
+    | "approach"
+    | "operation"
+    | "component";
 
 // Node types are open strings: built-ins use CanvasNodeType and plugins use "<pluginId>:<name>".
 export type CanvasNodeTypeId = CanvasNodeType | (string & {});
@@ -85,6 +109,9 @@ export type CanvasNodeMetadata = {
     videoTaskProvider?: "openai" | "gemini";
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
+    entityKind?: CrEntityKind; // crEntity node discriminator.
+    summary?: string; // Card summary text for crEntity/question/pdf/web nodes.
+    sourceUrl?: string; // Source link for pdf/web nodes.
 };
 
 export type CanvasNodeData = {
