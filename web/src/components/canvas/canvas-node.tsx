@@ -146,6 +146,9 @@ export const CanvasNode = React.memo(function CanvasNode({
     const transparentBg = Boolean(definition?.transparentBackground);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const imageBorderColor = isActive ? selectionBlue : isRelated ? theme.node.muted : "transparent";
+    // Type accent strip: same per-type color used in the side panel and minimap, shown only where the
+    // node renders its neutral fill (media nodes with actual content stay edge-to-edge, uncolored).
+    const showTypeAccent = !isGroup && !hasImageContent && !hasVideoContent && !transparentBg && Boolean(definition?.minimapColor);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const titleInputRef = useRef<HTMLInputElement>(null);
     const resizeRef = useRef({
@@ -392,6 +395,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     setIsEditingContent(true);
                 }}
             >
+                {showTypeAccent ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[3px] rounded-t-[22px]" style={{ background: definition?.minimapColor }} /> : null}
                 <div
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={
