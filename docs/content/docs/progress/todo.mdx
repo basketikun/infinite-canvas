@@ -5,5 +5,7 @@ description: Planned follow-up work
 
 # TODO
 
+- Run the hosted Pi Agent migration against a real Supabase project and platform model account, verify RLS and the full Browser → Agent API → Pi → Tool → Canvas → Browser path, then decide whether the Codex app-server and MCP loop can be retired.
+- Add sticky routing or a shared event broker for in-flight abort controllers, online Canvas snapshots, and pending tool confirmations before horizontally scaling the hosted Agent API.
 - Replace the Claude Code CLI adapter with a Claude Agent SDK adapter and improve the tool queue, following the [Local Agent Integration Plan](/docs/progress/local-agent-integration-plan).
 - Add Skill installation from web search, Skill resource-file management, and controlled local-memory persistence.

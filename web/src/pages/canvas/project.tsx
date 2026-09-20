@@ -44,6 +44,7 @@ import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -164,6 +165,7 @@ function InfiniteCanvasPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const projectId = params.id || "";
+    const ownerUserId = useUserStore((state) => state.user?.id);
     const localAgentConnected = useAgentStore((state) => state.connected);
     const localAgentActivity = useAgentStore((state) => state.activity);
     const localAgentEnabled = useAgentStore((state) => state.enabled);
@@ -213,7 +215,7 @@ function InfiniteCanvasPage() {
     const updateProject = useCanvasStore((state) => state.updateProject);
     const renameProject = useCanvasStore((state) => state.renameProject);
     const deleteProjects = useCanvasStore((state) => state.deleteProjects);
-    const currentProject = useCanvasStore((state) => state.projects.find((project) => project.id === projectId));
+    const currentProject = useCanvasStore((state) => state.projects.find((project) => project.id === projectId && project.localOwnerUserId === ownerUserId));
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [nodes, setNodes] = useState<CanvasNodeData[]>([]);
     const [connections, setConnections] = useState<CanvasConnection[]>([]);
@@ -1169,9 +1171,10 @@ function InfiniteCanvasPage() {
     }, [applyHistory]);
 
     const createAndOpenProject = useCallback(() => {
-        const id = createProject(t("canvas.defaultTitle", { count: useCanvasStore.getState().projects.length + 1 }));
+        const projectCount = useCanvasStore.getState().projects.filter((project) => project.localOwnerUserId === ownerUserId).length;
+        const id = createProject(t("canvas.defaultTitle", { count: projectCount + 1 }));
         navigate(`/canvas/${id}`);
-    }, [createProject, navigate, t]);
+    }, [createProject, navigate, ownerUserId, t]);
 
     const deleteCurrentProject = useCallback(() => {
         deleteProjects([projectId]);
@@ -1180,7 +1183,7 @@ function InfiniteCanvasPage() {
     }, [cleanupAssetImages, deleteProjects, navigate, projectId]);
 
     const exportCurrentProject = useCallback(async () => {
-        const project = useCanvasStore.getState().projects.find((item) => item.id === projectId);
+        const project = useCanvasStore.getState().projects.find((item) => item.id === projectId && item.localOwnerUserId === ownerUserId);
         if (!project) return message.error(t("canvas.projectPage.notFound"));
         const hide = message.loading(t("canvas.projectPage.exporting"), 0);
         try {
@@ -1192,7 +1195,7 @@ function InfiniteCanvasPage() {
         } finally {
             hide();
         }
-    }, [message, projectId, t]);
+    }, [message, ownerUserId, projectId, t]);
 
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [新增] 新增 Supabase 多用户托管 Agent API，每个用户可拥有多个相互隔离的 Project，每个 Project 唯一绑定一个 Canvas Workspace，并支持 Project 私有 Pi 对话、Skill、持久化事件、画布工具确认与按用户分区的 WebDAV 同步。
+
 ## v0.19.0 - 2026-09-16
 
 + [优化] 画布图片、元素列表、节点参考栏、资产卡片和生图历史改用 WebP 缩略图渲染，避免反复解码原图。

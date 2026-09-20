@@ -659,6 +659,7 @@ export default {
             submittingApproval: "正在提交权限决定", waitingCodexApproval: "等待 Codex 确认权限", approvalFailed: "权限审批失败", enableFullAccess: "启用完全访问权限", fullAccessDescription: "Codex 将不受沙箱限制，可访问互联网及本机任意文件。请仅在信任当前任务时使用。", enableFullAccessAction: "启用完全访问", offline: "离线", addressRequired: "请填写本地 Agent 地址", agentNotFound: "没有发现本地 Agent，请先在 Codex 使用插件或手动启动 Canvas Agent", invalidAddress: "本地 Agent 地址格式不正确", connecting: "连接中", creatingConversation: "正在新建对话", newConversation: "新对话", newConversationFailed: "新建对话失败", conversationResumed: "已恢复会话", resumeConversationFailed: "恢复对话失败", recordsDeleted: "已删除 {{count}} 条记录", deleteConversationFailed: "删除对话失败", deleteConversations: "删除 {{count}} 条对话记录", deleteConversationsDescription: "删除后无法恢复，确定继续吗？", importGeneratedImages: "导入生成图片", addedToSourceCanvas: "已添加到发起任务的画布", imageGenerated: "图片已生成", noImageAttachments: "没有可添加的图片附件", invalidAttachmentNode: "图片附件节点参数无效", attachmentReadFailed: "读取图片附件失败", referenceImage: "参考图", generatedImageReadFailed: "读取 Codex 生成图片失败", generatedImageName: "生成图片 {{index}}",
         },
     },
+    auth: { title: "登录 Research Canvas", email: "邮箱", password: "密码", signIn: "登录", signUp: "注册", signOut: "退出登录", signedIn: "已登录", signedUp: "注册已提交，请按邮箱提示完成验证", failed: "认证失败" },
     locale: {
         zhCN: "简体中文",
         enUS: "English",
