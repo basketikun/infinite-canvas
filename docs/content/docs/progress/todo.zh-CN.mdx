@@ -7,5 +7,7 @@ description: 当前项目后续值得处理的事项
 
 本文档用来记录当前项目后续比较值得处理的事项。
 
+- 托管 Pi Agent 发布 Gate：在真实 Supabase 与平台模型账号上验证 RLS 和完整的 `Browser → Agent API → Pi → Tool → Canvas → Browser` 链路，通过后再决定是否退役 Codex app-server 与 MCP 回环。
+- 托管 Agent API 横向扩容前，为运行中的 abort controller、在线 Canvas 快照和待确认工具调用增加粘性路由或共享事件代理。
 - 本地 Agent 接入后续：按[本地 Agent 接入规划](/zh-CN/docs/progress/local-agent-integration-plan)把 Claude Code CLI Adapter 升级为 Claude Agent SDK Adapter，并完善工具队列体验。
 - Agent Skill 后续：补充网络检索安装、Skill 资源文件管理和可控的本地记忆沉淀。

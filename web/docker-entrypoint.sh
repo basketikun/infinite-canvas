@@ -11,12 +11,22 @@ sanitize_id() {
     printf '%s' "$1" | tr -cd 'A-Za-z0-9-'
 }
 
+escape_js_string() {
+    printf '%s' "$1" | tr -d '\r\n' | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
 GA4_ID=$(sanitize_id "${ANALYTICS_GA4_ID:-}")
 BAIDU_ID=$(sanitize_id "${ANALYTICS_BAIDU_ID:-}")
+SUPABASE_URL_VALUE=$(escape_js_string "${SUPABASE_URL:-}")
+SUPABASE_PUBLISHABLE_KEY_VALUE=$(escape_js_string "${SUPABASE_PUBLISHABLE_KEY:-}")
+AGENT_API_URL_VALUE=$(escape_js_string "${AGENT_API_URL:-}")
 
 cat > /usr/share/nginx/html/config.js <<EOF
 window.__RUNTIME_CONFIG__ = {
   ANALYTICS_GA4_ID: "${GA4_ID}",
-  ANALYTICS_BAIDU_ID: "${BAIDU_ID}"
+  ANALYTICS_BAIDU_ID: "${BAIDU_ID}",
+  SUPABASE_URL: "${SUPABASE_URL_VALUE}",
+  SUPABASE_PUBLISHABLE_KEY: "${SUPABASE_PUBLISHABLE_KEY_VALUE}",
+  AGENT_API_URL: "${AGENT_API_URL_VALUE}"
 };
 EOF

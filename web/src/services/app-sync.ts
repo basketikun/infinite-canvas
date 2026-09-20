@@ -7,6 +7,7 @@ import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from 
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { WebdavSyncConfig } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 import type { CanvasDeletedProject, CanvasProject } from "@/stores/canvas/use-canvas-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
@@ -84,20 +85,34 @@ const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-refere
 export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?: AppSyncProgress): Promise<AppSyncResult> {
     emitProgress(onProgress, { stage: "等待本地数据加载" });
     await Promise.all([waitForHydration(useCanvasStore), waitForHydration(useAssetStore)]);
+    const ownerUserId = useUserStore.getState().user?.id;
+    const syncScope = safeFileName(ownerUserId || "anonymous");
 
     const [canvas, assets, imageLogs, videoLogs] = await Promise.all([
-        syncDomain<CanvasDomainData>(config, onProgress, {
+        syncDomain<CanvasDomainData>(config, syncScope, onProgress, {
             key: "canvas",
             label: "画布",
             emptyData: { projects: [], deleted: [] },
             localData: async () => {
                 const { projects, deletedProjects } = useCanvasStore.getState();
-                return { projects, deleted: deletedProjects };
+                return {
+                    projects: projects.filter((project) => project.localOwnerUserId === ownerUserId),
+                    deleted: deletedProjects.filter((project) => project.localOwnerUserId === ownerUserId),
+                };
             },
-            mergeData: mergeCanvasData,
-            applyData: async (data) => useCanvasStore.getState().replaceProjects(data.projects, data.deleted),
+            mergeData: (local, remote) => mergeCanvasData(local, {
+                projects: (remote.projects || []).filter((project) => project.localOwnerUserId === ownerUserId),
+                deleted: (remote.deleted || []).filter((project) => project.localOwnerUserId === ownerUserId),
+            }),
+            applyData: async (data) => {
+                const { projects, deletedProjects } = useCanvasStore.getState();
+                useCanvasStore.getState().replaceProjects(
+                    [...projects.filter((project) => project.localOwnerUserId !== ownerUserId), ...data.projects],
+                    [...deletedProjects.filter((project) => project.localOwnerUserId !== ownerUserId), ...data.deleted],
+                );
+            },
         }),
-        syncDomain<AssetDomainData>(config, onProgress, {
+        syncDomain<AssetDomainData>(config, syncScope, onProgress, {
             key: "assets",
             label: "我的资产",
             emptyData: { assets: [] },
@@ -105,7 +120,7 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
             mergeData: (local, remote) => ({ assets: mergeById(local.assets, remote.assets, "updatedAt") }),
             applyData: async (data) => useAssetStore.getState().replaceAssets(await Promise.all(data.assets.map(hydrateAsset))),
         }),
-        syncDomain<LogDomainData>(config, onProgress, {
+        syncDomain<LogDomainData>(config, syncScope, onProgress, {
             key: "image-workbench",
             label: "生图工作台",
             emptyData: { logs: [] },
@@ -113,7 +128,7 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
             mergeData: (local, remote) => ({ logs: mergeById(local.logs, remote.logs, "createdAt") }),
             applyData: async (data) => replaceStoredLogs(imageLogStore, data.logs),
         }),
-        syncDomain<LogDomainData>(config, onProgress, {
+        syncDomain<LogDomainData>(config, syncScope, onProgress, {
             key: "video-workbench",
             label: "视频创作台",
             emptyData: { logs: [] },
@@ -139,10 +154,10 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
     return result;
 }
 
-async function syncDomain<T>(config: WebdavSyncConfig, onProgress: AppSyncProgress | undefined, options: SyncDomainOptions<T>): Promise<SyncDomainResult<T>> {
+async function syncDomain<T>(config: WebdavSyncConfig, syncScope: string, onProgress: AppSyncProgress | undefined, options: SyncDomainOptions<T>): Promise<SyncDomainResult<T>> {
     try {
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "读取远端清单", status: "active" });
-        const remoteManifest = await readDomainManifest(config, options.key, options.emptyData);
+        const remoteManifest = await readDomainManifest(config, syncScope, options.key, options.emptyData);
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "读取本地数据", status: "active" });
         const localData = await options.localData();
         const mergedData = remoteManifest ? options.mergeData(localData, remoteManifest.data) : localData;
@@ -155,11 +170,11 @@ async function syncDomain<T>(config: WebdavSyncConfig, onProgress: AppSyncProgre
         }
 
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "上传新增媒体", status: "active" });
-        const uploaded = await uploadChangedFiles(config, options.key, mergedData, remoteManifest?.files || [], onProgress);
+        const uploaded = await uploadChangedFiles(config, syncScope, options.key, mergedData, remoteManifest?.files || [], onProgress);
         const manifest: DomainManifest<T> = { app: "infinite-canvas", version: 1, domain: options.key, exportedAt: new Date().toISOString(), data: mergedData, files: uploaded.files };
         const manifestFile = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: `上传清单 ${formatBytes(manifestFile.size)}`, status: "active" });
-        await uploadWebdavFile(config, domainPath(options.key, WEBDAV_MANIFEST_FILE_NAME), manifestFile, "application/json");
+        await uploadWebdavFile(config, domainPath(syncScope, options.key, WEBDAV_MANIFEST_FILE_NAME), manifestFile, "application/json");
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "完成", current: 1, total: 1, status: "success" });
 
         return {
@@ -176,8 +191,8 @@ async function syncDomain<T>(config: WebdavSyncConfig, onProgress: AppSyncProgre
     }
 }
 
-async function readDomainManifest<T>(config: WebdavSyncConfig, domain: DomainKey, emptyData: T): Promise<DomainManifest<T> | null> {
-    const file = await downloadWebdavFile(config, domainPath(domain, WEBDAV_MANIFEST_FILE_NAME));
+async function readDomainManifest<T>(config: WebdavSyncConfig, syncScope: string, domain: DomainKey, emptyData: T): Promise<DomainManifest<T> | null> {
+    const file = await downloadWebdavFile(config, domainPath(syncScope, domain, WEBDAV_MANIFEST_FILE_NAME));
     if (!file) return null;
     const data = JSON.parse(await file.text()) as DomainManifest<T>;
     if (data.app !== "infinite-canvas" || data.domain !== domain) throw new Error(i18n.t("config.webdav.errors.invalidManifest", { domain }));
@@ -222,7 +237,7 @@ async function downloadMissingFiles<T>(config: WebdavSyncConfig, domain: DomainK
     });
 }
 
-async function uploadChangedFiles<T>(config: WebdavSyncConfig, domain: DomainKey, data: T, remoteFiles: AppSyncFile[], onProgress?: AppSyncProgress) {
+async function uploadChangedFiles<T>(config: WebdavSyncConfig, syncScope: string, domain: DomainKey, data: T, remoteFiles: AppSyncFile[], onProgress?: AppSyncProgress) {
     const remoteFileMap = new Map(remoteFiles.map((item) => [item.storageKey, item]));
     const files: AppSyncFile[] = [];
     const tasks: Array<{ item: AppSyncFile; blob: Blob }> = [];
@@ -242,7 +257,7 @@ async function uploadChangedFiles<T>(config: WebdavSyncConfig, domain: DomainKey
         }
         const item: AppSyncFile = {
             storageKey,
-            path: remoteFile?.path || domainPath(domain, `files/${safeFileName(storageKey)}.${fileExtension(blob.type, storageKey)}`),
+            path: remoteFile?.path || domainPath(syncScope, domain, `files/${safeFileName(storageKey)}.${fileExtension(blob.type, storageKey)}`),
             mimeType: blob.type || remoteFile?.mimeType || "application/octet-stream",
             bytes: blob.size,
         };
@@ -298,18 +313,18 @@ async function replaceStoredLogs(store: LogStore, logs: StoredLog[]) {
 function mergeCanvasData(local: CanvasDomainData, remote: CanvasDomainData): CanvasDomainData {
     const localDeleted = local.deleted || [];
     const remoteDeleted = remote.deleted || [];
-    const deletedAtById = new Map<string, string>();
+    const deletedById = new Map<string, CanvasDeletedProject>();
     for (const item of [...remoteDeleted, ...localDeleted]) {
         if (!item.id || !item.deletedAt) continue;
-        const current = deletedAtById.get(item.id);
-        if (!current || item.deletedAt >= current) deletedAtById.set(item.id, item.deletedAt);
+        const current = deletedById.get(item.id);
+        if (!current || item.deletedAt >= current.deletedAt) deletedById.set(item.id, item);
     }
 
     const projects = mergeById(local.projects || [], remote.projects || [], "updatedAt").filter((project) => {
-        const deletedAt = deletedAtById.get(project.id);
-        if (!deletedAt) return true;
-        if (getTime(project as Record<string, unknown>, "updatedAt") > Date.parse(deletedAt)) {
-            deletedAtById.delete(project.id);
+        const deleted = deletedById.get(project.id);
+        if (!deleted) return true;
+        if (getTime(project as Record<string, unknown>, "updatedAt") > Date.parse(deleted.deletedAt)) {
+            deletedById.delete(project.id);
             return true;
         }
         return false;
@@ -317,7 +332,7 @@ function mergeCanvasData(local: CanvasDomainData, remote: CanvasDomainData): Can
 
     return {
         projects,
-        deleted: [...deletedAtById.entries()].map(([id, deletedAt]) => ({ id, deletedAt })),
+        deleted: [...deletedById.values()],
     };
 }
 
@@ -347,8 +362,8 @@ function collectStorageKeys(value: unknown, keys = new Set<string>()) {
     return [...keys];
 }
 
-function domainPath(domain: DomainKey, path: string) {
-    return `${domain}/${path}`;
+function domainPath(syncScope: string, domain: DomainKey, path: string) {
+    return `users/${syncScope}/${domain}/${path}`;
 }
 
 function domainLabel(domain: DomainKey) {
