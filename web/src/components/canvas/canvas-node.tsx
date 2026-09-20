@@ -470,14 +470,14 @@ function NodeContent(props: NodeContentRendererProps) {
     return <MissingPluginContent theme={props.theme} type={props.node.type} />;
 }
 
-const nodeContentRenderers = {
+const nodeContentRenderers: Partial<Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>> = {
     [CanvasNodeType.Text]: TextContent,
     [CanvasNodeType.Image]: ImageNodeContent,
     [CanvasNodeType.Config]: EmptyImageContent,
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
     [CanvasNodeType.Group]: GroupNodeContent,
-} satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
+};
 
 function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererProps) {
     const { t } = useTranslation();
