@@ -1,20 +1,18 @@
 import type { NavigateFunction } from "react-router-dom";
 
 import i18n from "@/i18n";
-import { fetchPrompts } from "@/services/api/prompts";
 import { uploadImage } from "@/services/image-storage";
 import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 
-// Execute site-level Agent tools in the browser, including canvas lists, workbench generation, prompt search, and asset operations.
+// Execute site-level Agent tools in the browser, including canvas lists, workbench generation, and asset operations.
 // Their data lives locally in the browser through localforage and Zustand, so this module accesses the relevant stores directly.
 
 export const SITE_TOOL_NAMES = [
     "canvas_list_projects",
     "generation_get_status",
-    "prompts_search",
     "assets_list",
     "assets_add",
 ] as const;
@@ -32,7 +30,6 @@ function siteText(key: string, options?: Record<string, unknown>) {
 export const SITE_TOOL_LABELS: Record<SiteToolName, string> = {
     get canvas_list_projects() { return siteText("canvasList"); },
     get generation_get_status() { return siteText("generationStatus"); },
-    get prompts_search() { return siteText("promptSearch"); },
     get assets_list() { return siteText("assetList"); },
     get assets_add() { return siteText("assetAdd"); },
 };
@@ -48,8 +45,6 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
             return listCanvasProjects(input);
         case "generation_get_status":
             return getGenerationStatus(input, context.canvasSnapshot);
-        case "prompts_search":
-            return searchPrompts(input);
         case "assets_list":
             return listAssets(input);
         case "assets_add":
@@ -124,21 +119,6 @@ function listCanvasProjects(input: SiteToolInput) {
         connectionCount: project.connections.length,
     }));
     return { total: filtered.length, page, pageSize, items, hint: siteText("canvasHint") };
-}
-
-async function searchPrompts(input: SiteToolInput) {
-    const page = Math.max(1, Math.floor(Number(input.page)) || 1);
-    const pageSize = Math.max(1, Math.min(50, Math.floor(Number(input.pageSize)) || 20));
-    const tags = Array.isArray(input.tags) ? input.tags.filter((tag): tag is string => typeof tag === "string") : [];
-    const result = await fetchPrompts({ keyword: String(input.keyword || ""), category: String(input.category || i18n.t("common.all")), tag: tags, page, pageSize });
-    return {
-        total: result.total,
-        page,
-        pageSize,
-        categories: result.categories,
-        tags: result.tags.slice(0, 60),
-        items: result.items.map((prompt) => ({ id: prompt.id, title: prompt.title, prompt: prompt.prompt, category: prompt.category, tags: prompt.tags, coverUrl: prompt.coverUrl, githubUrl: prompt.githubUrl })),
-    };
 }
 
 function listAssets(input: SiteToolInput) {

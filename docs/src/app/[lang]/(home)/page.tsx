@@ -33,7 +33,7 @@ const messages = {
   en: {
     eyebrow: 'Open-source AI image creation workspace',
     center: 'Documentation',
-    description: 'An infinite canvas for image creation that brings canvas composition, AI generation, reference editing, prompt libraries, and reusable assets into one workflow.',
+    description: 'An infinite canvas for image creation that brings canvas composition, AI generation, reference editing, and reusable assets into one workflow.',
     quickStart: 'Quick Start',
     demo: 'Live Demo',
     gallery: 'Gallery',
@@ -46,7 +46,7 @@ const messages = {
   'zh-CN': {
     eyebrow: '开源 AI 图片创作工作台',
     center: '文档中心',
-    description: '面向图片创作的无限画布，把画布编排、AI 生成、参考图编辑、提示词库和素材沉淀放在同一个工作流里。',
+    description: '面向图片创作的无限画布，把画布编排、AI 生成、参考图编辑和素材沉淀放在同一个工作流里。',
     quickStart: '快速开始',
     demo: '在线体验',
     gallery: '效果展示',

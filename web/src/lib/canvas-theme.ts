@@ -4,8 +4,8 @@ export type CanvasBackgroundMode = "dots" | "lines" | "blank";
 export const canvasThemes = {
     light: {
         canvas: {
-            background: "#f4f2ed",
-            dot: "rgba(68,64,60,.28)",
+            background: "#f6f5f2",
+            dot: "rgba(68,64,60,.22)",
             line: "rgba(68,64,60,.12)",
             selectionStroke: "#1c1917",
             selectionFill: "rgba(28,25,23,.06)",
@@ -22,7 +22,7 @@ export const canvasThemes = {
             faint: "#a8a29e",
         },
         toolbar: {
-            panel: "rgba(251,250,247,.96)",
+            panel: "rgba(251,250,247,.90)",
             border: "#d6d3ca",
             item: "#57534e",
             itemHover: "#e7e5df",
@@ -32,8 +32,8 @@ export const canvasThemes = {
     },
     dark: {
         canvas: {
-            background: "#181715",
-            dot: "rgba(245,245,244,.24)",
+            background: "#0f100f",
+            dot: "rgba(245,245,244,.18)",
             line: "rgba(245,245,244,.10)",
             selectionStroke: "#fafaf9",
             selectionFill: "rgba(250,250,249,.10)",
@@ -41,7 +41,7 @@ export const canvasThemes = {
         node: {
             label: "#d6d3d1",
             fill: "#292524",
-            panel: "#1f1d1a",
+            panel: "#171816",
             stroke: "#44403c",
             activeStroke: "#fafaf9",
             placeholder: "#a8a29e",
@@ -50,8 +50,8 @@ export const canvasThemes = {
             faint: "#78716c",
         },
         toolbar: {
-            panel: "rgba(31,29,26,.96)",
-            border: "#44403c",
+            panel: "rgba(24,25,23,.90)",
+            border: "#353633",
             item: "#d6d3d1",
             itemHover: "#292524",
             activeBg: "#3a3631",

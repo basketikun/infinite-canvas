@@ -6,7 +6,6 @@
 - [功能介绍](/zh-CN/docs/overview/features)
 - [Render 部署](/zh-CN/docs/overview/render)
 - [Docker 部署](/zh-CN/docs/overview/docker)
-- [第三方提示词来源](/zh-CN/docs/overview/third-party-prompt-repositories)
 
 ## 操作手册
 
@@ -31,8 +30,13 @@
 ## 项目进度
 
 - [更新日志](/zh-CN/docs/progress/changelog)
+- [研究交互思路](/zh-CN/docs/progress/research-interaction)
 - [待测试](/zh-CN/docs/progress/pending-test)
 - [TODO](/zh-CN/docs/progress/todo)
+
+## CoResearch 设计副本
+
+- 源码树：[`docs/design/`](./design/README.md)（`research-flow.md` → `idea-formation/` → `canvas/`）
 
 ## 说明
 

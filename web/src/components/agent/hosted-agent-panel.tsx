@@ -236,9 +236,12 @@ export function HostedAgentPanel({ scope }: { scope: HostedScope }) {
 
     return (
         <div className="flex h-full min-h-0 flex-col" style={{ color: theme.node.text }}>
-            <div className="flex h-12 items-center gap-2 border-b px-3" style={{ borderColor: theme.node.stroke }}>
-                <Bot className="size-4" />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">Pi Agent</span>
+            <div className="flex h-16 shrink-0 items-center gap-2 border-b px-3" style={{ borderColor: theme.node.stroke }}>
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ background: theme.toolbar.itemHover }}><Bot className="size-4" /></span>
+                <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">Project Agent</span>
+                    <span className="mt-0.5 block truncate text-[11px]" style={{ color: theme.node.muted }}>Pi · 当前研究项目</span>
+                </span>
                 <button type="button" className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10" onClick={() => setSkillsOpen(true)} title="Project Skills"><Settings2 className="size-4" /></button>
                 <button type="button" className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30" disabled={!conversationId || Boolean(runId) || conversations.find((item) => item.id === conversationId)?.status === "archived"} onClick={() => void archiveConversation()} title="归档当前对话"><Archive className="size-4" /></button>
                 <button type="button" className="p-1.5 hover:bg-black/5 dark:hover:bg-white/10" onClick={() => void createConversation()} title="新对话"><Plus className="size-4" /></button>
@@ -263,12 +266,14 @@ export function HostedAgentPanel({ scope }: { scope: HostedScope }) {
                     </div>
                 ) : null}
             </div>
-            <div className="border-t p-3" style={{ borderColor: theme.node.stroke }}>
-                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} autoSize={{ minRows: 2, maxRows: 6 }} placeholder="询问当前 Project 的 Pi Agent" onPressEnter={(event) => {
-                    if (!event.shiftKey) { event.preventDefault(); void send(); }
-                }} />
-                <div className="mt-2 flex justify-end">
-                    {runId ? <Button type="text" icon={<Square className="size-3.5" />} onClick={() => void stop()}>停止</Button> : <Button type="text" icon={<Send className="size-4" />} disabled={!scope.enabled || !snapshotReady || !conversationId || conversations.find((item) => item.id === conversationId)?.status === "archived" || !prompt.trim()} onClick={() => void send()}>发送</Button>}
+            <div className="px-3 pb-3 pt-2">
+                <div className="rounded-[22px] border p-3 backdrop-blur-xl" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, boxShadow: "0 16px 40px rgba(0,0,0,.10)" }}>
+                    <Input.TextArea variant="borderless" className="!bg-transparent !p-0" value={prompt} onChange={(event) => setPrompt(event.target.value)} autoSize={{ minRows: 3, maxRows: 8 }} placeholder="询问当前 Project 的 Pi Agent" onPressEnter={(event) => {
+                        if (!event.shiftKey) { event.preventDefault(); void send(); }
+                    }} />
+                    <div className="mt-2 flex justify-end">
+                        {runId ? <Button type="text" shape="circle" icon={<Square className="size-3.5" />} onClick={() => void stop()} aria-label="停止" /> : <Button type="primary" shape="circle" icon={<Send className="size-4" />} disabled={!scope.enabled || !snapshotReady || !conversationId || conversations.find((item) => item.id === conversationId)?.status === "archived" || !prompt.trim()} onClick={() => void send()} aria-label="发送" />}
+                    </div>
                 </div>
             </div>
             <Modal title="Project Skills" open={skillsOpen} onCancel={() => setSkillsOpen(false)} footer={null} destroyOnHidden>

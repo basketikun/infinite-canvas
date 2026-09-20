@@ -1,13 +1,12 @@
-import { AlertTriangle, Compass, File, FileText, GitBranch, Globe, Group, HelpCircle, Image as ImageIcon, LayoutPanelTop, Lightbulb, Music2, Scale, Settings2, Sparkles, Sprout, StickyNote, Video, Wrench } from "lucide-react";
-import type { ReactNode } from "react";
+import { File, FileText, Globe, Group, HelpCircle, Image as ImageIcon, LayoutPanelTop, Music2, Settings2, StickyNote, Video } from "lucide-react";
 
 import i18n from "@/i18n";
 
 import { NODE_SPECS } from "@/constant/canvas";
 import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
-import { CanvasNodeType, RESEARCH_FLOW_NODE_TYPES, type CanvasNodeData, type ResearchFlowNodeType } from "@/types/canvas";
+import { CanvasNodeType, RESEARCH_FLOW_NODE_TYPES, type CanvasNodeData } from "@/types/canvas";
 import type { CanvasNodeDefinition, CanvasNodeResource } from "@/types/canvas-plugin";
-import { FrameContent, NoteContent, QuestionContent, ResearchCardContent, RESEARCH_FLOW_META, SourceLinkContent } from "./research-nodes";
+import { FrameContent, NoteContent, QuestionContent, ResearchCardContent, RESEARCH_FLOW_META, researchFlowIcon, ResearchPromptPanel, SourceLinkContent } from "./research-nodes";
 
 // Extensible metadata for built-in nodes, reusing NODE_SPECS for size and initial metadata.
 // Rendering remains in canvas-node's internal renderer, so no Content component is provided.
@@ -21,18 +20,6 @@ function builtinResource(node: CanvasNodeData): CanvasNodeResource | null {
 
 const iconClass = "size-5";
 
-const RESEARCH_FLOW_ICONS: Record<ResearchFlowNodeType, ReactNode> = {
-    [CanvasNodeType.Seed]: <Sprout className={iconClass} />,
-    [CanvasNodeType.Direction]: <Compass className={iconClass} />,
-    [CanvasNodeType.ResearchQuestion]: <HelpCircle className={iconClass} />,
-    [CanvasNodeType.Problem]: <AlertTriangle className={iconClass} />,
-    [CanvasNodeType.Hypothesis]: <Lightbulb className={iconClass} />,
-    [CanvasNodeType.Approach]: <GitBranch className={iconClass} />,
-    [CanvasNodeType.Method]: <Wrench className={iconClass} />,
-    [CanvasNodeType.Evaluation]: <Scale className={iconClass} />,
-    [CanvasNodeType.Idea]: <Sparkles className={iconClass} />,
-};
-
 const BUILTIN_DEFINITIONS: CanvasNodeDefinition[] = [
     { type: CanvasNodeType.Text, title: i18n.t("assets.kinds.text"), icon: <FileText className={iconClass} />, minimapColor: undefined, resource: builtinResource, showInCreateMenu: false },
     { type: CanvasNodeType.Image, title: i18n.t("assets.kinds.image"), icon: <ImageIcon className={iconClass} />, minimapColor: "#10b981", keepAspectRatio: (node: CanvasNodeData) => !node.metadata?.freeResize, resource: builtinResource, showInCreateMenu: false },
@@ -43,10 +30,11 @@ const BUILTIN_DEFINITIONS: CanvasNodeDefinition[] = [
     ...RESEARCH_FLOW_NODE_TYPES.map((type) => ({
         type,
         title: i18n.t(`canvas.nodeTypes.${type}`),
-        icon: RESEARCH_FLOW_ICONS[type],
+        icon: researchFlowIcon(type, iconClass),
         minimapColor: RESEARCH_FLOW_META[type].color,
-        hidePanel: true as const,
+        hideTypeAccent: true as const,
         Content: ResearchCardContent,
+        Panel: ResearchPromptPanel,
     })),
     { type: CanvasNodeType.Frame, title: i18n.t("canvas.nodeTypes.frame"), icon: <LayoutPanelTop className={iconClass} />, minimapColor: "#94a3b8", hasSourceHandle: false, hidePanel: true, showInCreateMenu: false, Content: FrameContent },
     { type: CanvasNodeType.Note, title: i18n.t("canvas.nodeTypes.note"), icon: <StickyNote className={iconClass} />, minimapColor: "#fbbf24", hidePanel: true, showInCreateMenu: false, Content: NoteContent },
@@ -58,9 +46,7 @@ const BUILTIN_DEFINITIONS: CanvasNodeDefinition[] = [
     return { ...def, title: spec.title, defaultSize: { width: spec.width, height: spec.height }, defaultMetadata: spec.metadata };
 });
 
-let registered = false;
 export function registerBuiltinNodes() {
-    if (registered) return;
-    registered = true;
+    // Always refresh definitions so HMR picks up accent/panel changes without a full reload.
     registerNodeDefinitions(BUILTIN_DEFINITIONS, "builtin");
 }

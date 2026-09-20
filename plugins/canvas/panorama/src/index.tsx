@@ -273,7 +273,7 @@ export default definePlugin({
             minimapColor: "#0ea5e9",
             // 宿主自动提供「交互 ⇄ 移动」开关:默认移动(拖动节点),切到交互后可转全景视角
             interactionToggle: true,
-            // 复用宿主内置生成面板(模型选择/设置/提示词库完全一致),生成结果写回本节点。
+            // 复用宿主内置生成面板(模型选择/设置完全一致),生成结果写回本节点。
             // 前缀约束模型产出可用于球面贴图的 equirectangular 全景图。
             useBuiltinPanel: { mode: "image", promptPrefix: PANORAMA_SYSTEM_PROMPT, writeBackToSelf: true },
             // 作为上游被消费时,输出自身全景图,供下游节点引用

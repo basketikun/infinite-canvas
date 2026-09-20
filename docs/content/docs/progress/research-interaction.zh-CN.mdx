@@ -1,0 +1,139 @@
+---
+title: 研究交互思路
+description: 对照 CoResearch 设计，本仓库画布与 Agent 的交互原则与落地边界
+---
+
+# 研究交互思路
+
+本文从 CoResearch 设计（`docs/design/research-flow.md`、`canvas/huabu-node-presentation-and-links.md`、`canvas/huabu-domain-binding.md`）压缩成本仓库可执行的交互思路。设计冲突时以 CoResearch Research Flow 为准。
+
+本仓库目前是纯前端 plain JSON，没有版本化 Research Domain 后端。凡依赖 revision、服务端 Gate、自动 stale 传播、Agent Node 上下文快照的能力，**先不做、不伪造语义**。
+
+## 1. 一句话原则
+
+> Agent 扩大可能性；用户确认、保留、组合；Canvas 只留下用户认可的研究状态。
+
+不是「Agent 自动生成一个 Idea」，也不是把聊天记录整页镜像到画布。
+
+## 2. 两条并行通道
+
+| 通道 | 角色 | 可以出现什么 | 不构成什么 |
+|---|---|---|---|
+| 右侧对话 | Exploration Space | 候选方向、临时解释、检索、比较、未确认综述 | 已认可的研究对象 |
+| 画布 | Commitment Space | 用户拖入 / 创建 / 确认过的对象与关系 | Agent 刚提出的全部候选 |
+
+交互节奏始终是：
+
+```text
+对话里提出 Candidate
+        ↓
+用户感兴趣 → 保存到画布（或本仓库等价：手动创建对应研究节点）
+用户想深入 → 留在对话追问
+用户不感兴趣 → 忽略，不写画布
+```
+
+画布不是聊天镜像，也不是 Agent 工作区。
+
+## 3. 主流程导航（不是单向 Wizard）
+
+```text
+兴趣 → Seed → Direction 探索 → Deep Dive → Research Question
+    → Problem → Hypothesis → Approach → Method ↔ Evaluation
+    → Idea → Review ↺ 文献刷新
+```
+
+- 这是导航顺序，不是强制 Wizard；任何一步可因新文献或用户改口回退并形成新版本（正式后端有 revision；本仓库只保留节点内容与连线）。
+- 完成条件是该步 Exit Gate（用户确认），不是 Agent 穷尽搜索。
+- Seed 要薄：只确认主题理解，不含 Gap / Method / Novelty / Evaluation。
+- Direction 候选先活在对话里；只有用户保留后才进画布。
+- Deep Dive 针对用户指定深入的那一条 Direction，不是先建全领域地图。
+
+## 4. 画布三层阅读
+
+同一张画布同时承担三种读法：
+
+| 层次 | 回答什么 | 典型节点 |
+|---|---|---|
+| Exploration | 我在哪个研究空间？ | Seed、Direction、Papers、Questions |
+| Reasoning | 研究逻辑是什么？ | Problem、Hypothesis、Approach、Method、Evaluation |
+| Synthesis | 形成了什么 Idea？ | Idea、Review、Versions |
+
+Frame / 分组只组织视图。把论文拖进 Method 组，**不会**把论文改成 Method，也**不会**自动写成「借用了该方法」。
+
+本仓库工具栏 / 双击菜单 / 左侧筛选只放九种研究主流程节点（Seed → Idea）。文本、图片、PDF、网页等材料节点从其他入口创建，不混进主流程入口。
+
+## 5. 节点怎么看
+
+每个研究节点三层内容，避免所有卡片永久展开：
+
+```text
+Identity   类型、标题、状态色
+Preview    一句摘要、关键标签、上下游数量
+Detail     完整正文、来源、关系、动作（侧栏 / 双击详情）
+```
+
+交互约定：
+
+- 远看结构与主线，近看单卡摘要，审阅时看关系类型与依据。
+- 单击选中 + 轻量预览；双击进详情。不要靠无限放大卡片读全文。
+- 缩放可用 compact / mark，但阈值按屏幕像素宽度，避免临界闪烁（完整 LOD 按设计推进，本仓库可先做类型色条 + 可编辑摘要）。
+
+## 6. 连线怎么做
+
+两种入口：
+
+1. **端口拖拽**：边缘端口 → pending edge → 落到目标节点 → 选关系类型（有正式领域后）→ 创建边。
+2. **快捷连接**：选中后点连接，再点目标；按两端类型推荐关系，仍需用户确认。
+
+本仓库现阶段：
+
+- 可以先做研究节点之间的视觉连线与类型推荐文案。
+- **不要**把边 label 当成唯一关系类型真相。
+- **不要**伪造「已验证的 supports / challenges」；没有来源审阅前，最多是视觉整理或关系提案。
+
+推荐关系矩阵（用户确认，不由模型自由发明）：
+
+```text
+Problem → Hypothesis     explains / challenges
+Hypothesis → Method      tests / operationalizes
+Method → Evaluation      evaluated_by / supports
+Paper → Claim/Problem    supports / challenges
+```
+
+拖到空白处创建节点时，先让用户选实体类型，不能只靠拖拽方向猜类型。
+
+## 7. Agent 与画布的分工
+
+| 谁 | 做什么 | 不做什么 |
+|---|---|---|
+| 对话 Agent | 探索、推荐候选、解释、比较、挑战 | 擅自把未确认候选写成画布事实 |
+| 用户 | 确认 Seed、保留 Direction、选深入对象、编辑草稿、确认版本 | 被系统替自己决定研究什么 |
+| 画布 | 保存已认可对象、组织布局与连线、展示状态 | 自动把对话输出整页落盘 |
+
+本仓库本地 Codex / 托管 Pi：
+
+- 连接成功后默认空白新对话，后台预热；旧会话从「历史」恢复。
+- 本机 Canvas Agent 在线时应自动发现并连接，失败再手填。
+- Agent 改画布须走可审阅工具路径（确认模式），与「用户确认研究对象」分开：前者是工具审批，后者是研究决定。
+
+CoResearch V1 正式产品收窄了 Agent 直接画布命令（见那边 ADR）；本仓库仍保留 MCP/工具改画布能力，但产品语义上仍应遵守「候选先对话、认可再落画布」。
+
+## 8. 本仓库落地优先级
+
+按设计对齐、且当前能诚实做的顺序：
+
+1. **入口与节点种类**：九种研究主流程节点的创建、类型色条、摘要编辑（已在推进）。
+2. **对话 ↔ 画布边界**：Agent 推荐留在对话；用户显式创建/保存节点才进画布；禁止静默批量落盘。
+3. **连线体验**：端口拖拽、类型推荐、视觉边；关系证据与 Confirm 等后端语义后置。
+4. **详情阅读**：双击 / 侧栏 Detail（Identity → Statement → Relations → Actions），不堆在卡片上。
+5. **Deep Dive / Papers**：选中 Direction 后建脉络与文献层（见 TODO），不塞进底部工具栏。
+
+明确后置（需 Research Domain）：
+
+- revision / ConfirmResearchRevision / 自动 stale
+- 有证据的研究关系升级
+- Agent Node 绑定会话与版本化上下文快照
+
+## 9. 设计来源
+
+CoResearch 设计树（本仓库副本）：`docs/design/`，阅读顺序：`research-flow.md` → `idea-formation/` → `canvas/huabu-domain-binding.md` → `canvas/huabu-node-presentation-and-links.md`。索引见 [`docs/design/README.md`](../../../design/README.md)。

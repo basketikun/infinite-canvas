@@ -28,7 +28,6 @@ export const AGENT_PROTOCOL_VERSION = 6;
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
     "canvas_list_projects",
-    "prompts_search",
     "assets_list",
     "assets_add",
     "generation_get_status",

@@ -125,13 +125,24 @@ export async function fetchAgentJson<T>(endpoint: string, token: string, path: s
 
 export async function discoverAgentConfig(endpoint: string) {
     try {
-        const res = await fetch(`${endpoint}/config`);
+        const res = await fetch(`${endpoint.replace(/\/$/, "")}/config`);
         if (!res.ok) return null;
         const data = (await res.json()) as AgentConfigResponse;
-        return data.ok ? data : null;
+        if (!data.ok || !data.token) return null;
+        return { ...data, url: endpoint.replace(/\/$/, "") || data.url };
     } catch {
         return null;
     }
+}
+
+/** 按候选地址探测本机 Canvas Agent，优先返回能读到 token 的第一个。 */
+export async function discoverLocalAgent(preferred = "") {
+    const candidates = [...new Set([preferred.trim().replace(/\/$/, ""), "/__agent", "http://127.0.0.1:17371"].filter(Boolean))];
+    for (const endpoint of candidates) {
+        const data = await discoverAgentConfig(endpoint);
+        if (data?.token) return data;
+    }
+    return null;
 }
 
 function jsonPost(body: unknown): RequestInit {

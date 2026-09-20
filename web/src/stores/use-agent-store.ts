@@ -41,6 +41,7 @@ export type AgentConversationState = {
 export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
 
 const CONNECT_TIMEOUT_MS = 6000;
+const AGENT_PANEL_WIDTH_KEY = "canvas-agent-panel-width-v2";
 let agentSource: EventSource | null = null;
 let connectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -59,6 +60,7 @@ type AgentStore = {
     prompt: string;
     attachments: AgentAttachment[];
     canvasReferences: CanvasResourceReference[];
+    pendingSend: number;
     sending: boolean;
     waiting: boolean;
     messages: AgentChatItem[];
@@ -97,7 +99,7 @@ type AgentStore = {
 export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
-    width: typeof window === "undefined" ? 440 : Number(localStorage.getItem("canvas-agent-panel-width")) || 440,
+    width: typeof window === "undefined" ? 400 : Number(localStorage.getItem(AGENT_PANEL_WIDTH_KEY)) || 400,
     panelOpen: false,
     panelMounted: true,
     panelClosing: false,
@@ -111,6 +113,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     prompt: "",
     attachments: [],
     canvasReferences: [],
+    pendingSend: 0,
     sending: false,
     waiting: false,
     messages: [],

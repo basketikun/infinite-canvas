@@ -89,7 +89,7 @@
 
 ## 设计文档
 
-- 画布研究实体/关系相关功能的设计来源是 `/Users/zmj/Desktop/CoResearch/docs/design/`（独立仓库 CoResearch 的一部分，不在本仓库内；CoResearch 是这套研究画布 SaaS 的正式实现，本仓库是它之前的本地 AI 图像画布工具，两者是不同代码库），按 `docs/design/README.md` 的索引阅读：`research-flow.md` → `idea-formation/` → `canvas/research-canvas.md` → `canvas/huabu-domain-binding.md` → `canvas/huabu-node-presentation-and-links.md` → `canvas/huabu-reverse-engineering.md`；`workspace.md`/`space.md`/`idea-structure.md` 是对象模型背景。CoResearch 根目录还有 `CONTEXT.md`（架构术语真值）和 `docs/adr/`（决策记录），设计文档里的交叉引用以那边为准。
+- 画布研究实体/关系相关功能的设计来源是本仓库 `docs/design/`（从 CoResearch 设计树复制；CoResearch 是正式研究画布 SaaS，本仓库是其前身本地画布工具）。按 `docs/design/README.md` 的索引阅读：`research-flow.md` → `idea-formation/` → `canvas/research-canvas.md` → `canvas/huabu-domain-binding.md` → `canvas/huabu-node-presentation-and-links.md` → `canvas/huabu-reverse-engineering.md`；`workspace.md`/`space.md`/`idea-structure.md` 是对象模型背景。架构术语与 ADR 仍以 CoResearch 仓库的 `CONTEXT.md` 和 `docs/adr/` 为准；设计文中指向那些路径的交叉引用在本仓库可能无效。
 - 当前正在对照 `docs/design/canvas/huabu-node-presentation-and-links.md` 分阶段把本仓库画布 UI/UX 往这份设计推进；该设计假设了完整的版本化 Research Domain 后端（revision、领域校验、ConfirmResearchRevision，CoResearch 那边有），本仓库目前只有纯前端 plain JSON 数据模型，涉及需要真实后端才能诚实实现的部分（服务端关系校验、版本号/自动 stale 传播、Agent Node 上下文快照等）先不做，不要在前端伪造这些语义。
 
 ## 项目注意事项

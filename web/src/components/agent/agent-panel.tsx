@@ -10,6 +10,7 @@ import { CANVAS_AGENT_PANEL_MOTION_MS, useAgentStore } from "@/stores/use-agent-
 import { useThemeStore } from "@/stores/use-theme-store";
 
 const PANEL_MOTION_SECONDS = CANVAS_AGENT_PANEL_MOTION_MS / 1000;
+const AGENT_PANEL_WIDTH_KEY = "canvas-agent-panel-width-v2";
 
 export function AgentPanel() {
     const { t } = useTranslation();
@@ -32,7 +33,7 @@ export function AgentPanel() {
             setAgentState({ width: nextWidth });
         };
         const onUp = () => {
-            localStorage.setItem("canvas-agent-panel-width", String(nextWidth));
+            localStorage.setItem(AGENT_PANEL_WIDTH_KEY, String(nextWidth));
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
             setResizing(false);
@@ -58,16 +59,18 @@ export function AgentPanel() {
                 initial={{ x: 48 }}
                 animate={{ x: panelClosing ? 28 : 0 }}
                 transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }}
-                style={{ width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                style={{ width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text, boxShadow: "-16px 0 40px rgba(0,0,0,.07)" }}
             >
                 <button type="button" className="absolute inset-y-0 left-0 z-40 w-4 -translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("agent.panel.resize")} />
                 {hostedScope.token && hostedScope.project ? (
-                    <div className="flex h-8 shrink-0 items-center justify-end gap-1 border-b px-2 text-xs" style={{ borderColor: theme.node.stroke }}>
-                        <button type="button" className="px-2 py-1 hover:bg-black/5 dark:hover:bg-white/10" style={{ opacity: runtimeMode === "hosted" ? 1 : 0.55 }} onClick={() => setRuntimeMode("hosted")}>Pi 托管</button>
-                        <button type="button" className="px-2 py-1 hover:bg-black/5 dark:hover:bg-white/10" style={{ opacity: runtimeMode === "local" ? 1 : 0.55 }} onClick={() => setRuntimeMode("local")}>本地 Codex</button>
+                    <div className="flex h-9 shrink-0 items-center justify-center gap-1 border-b px-2 text-[11px]" style={{ borderColor: theme.node.stroke }}>
+                        <div className="flex rounded-lg p-0.5" style={{ background: theme.toolbar.itemHover }}>
+                            <button type="button" className="rounded-md px-2 py-1 transition" style={{ background: runtimeMode === "hosted" ? theme.toolbar.panel : "transparent", opacity: runtimeMode === "hosted" ? 1 : 0.55 }} onClick={() => setRuntimeMode("hosted")}>Pi 托管</button>
+                            <button type="button" className="rounded-md px-2 py-1 transition" style={{ background: runtimeMode === "local" ? theme.toolbar.panel : "transparent", opacity: runtimeMode === "local" ? 1 : 0.55 }} onClick={() => setRuntimeMode("local")}>本地 Codex</button>
+                        </div>
                     </div>
                 ) : null}
-                <div className="min-h-0 flex-1">
+                <div className="flex min-h-0 flex-1 flex-col">
                     {hostedScope.token && hostedScope.project && runtimeMode === "hosted" ? <HostedAgentPanel scope={hostedScope} /> : <LocalAgentPanel embedded />}
                 </div>
             </motion.aside>

@@ -6,7 +6,6 @@
 - [Features](/docs/overview/features)
 - [Deploy on Render](/docs/overview/render)
 - [Docker Deployment](/docs/overview/docker)
-- [Third-party Prompt Sources](/docs/overview/third-party-prompt-repositories)
 
 ## Canvas Guide
 
@@ -32,8 +31,13 @@
 ## Project Progress
 
 - [Changelog](/docs/progress/changelog)
+- [Research Interaction](/docs/progress/research-interaction)
 - [Pending Tests](/docs/progress/pending-test)
 - [TODO](/docs/progress/todo)
+
+## CoResearch design copy
+
+- Tree: [`docs/design/`](./design/README.md) (`research-flow.md` → `idea-formation/` → `canvas/`)
 
 ## Notes
 

@@ -120,27 +120,6 @@ Base URL 如果已经以 `/v1` 结尾，系统不会再追加 `/v1`。
 
 Codex App 插件的安装与使用见 [Codex App 插件](/zh-CN/docs/overview/codex-app-plugin)。
 
-## 提示词库
-
-前台提示词库支持：
-
-- 按标题搜索。
-- 按标签筛选。
-- 按来源筛选。
-- 查看提示词详情。
-- 查看封面和结果图。
-- 复制提示词。
-- 把提示词加入“我的素材”。
-
-提示词管理支持：
-
-- 7 个内置来源可独立启用、查看和拉取，也可按设定周期批量更新。
-- 添加、编辑和删除自定义标准 JSON 来源。
-- 拉取失败时保留上一次成功缓存，并显示来源状态和最近成功时间。
-- 跨已启用来源搜索提示词，按标签筛选，查看详情、复制提示词或插入画布。
-
-7 个内置来源为 Banana Prompt Quicker、DavidWu GPT Image 2、Freestylefly GPT Image 2、Awesome GPT Image、Awesome GPT-4o、YouMind GPT Image 2 和 YouMind Nano Banana Pro。应用从 [Image Prompts](https://github.com/yukkcat/image-prompts) 统一仓库读取标准 JSON，由浏览器前端直连并缓存到 IndexedDB。完整来源见[第三方提示词来源](/zh-CN/docs/overview/third-party-prompt-repositories)。
-
 ## 素材
 
 “我的素材”是浏览器本地素材库，支持：
@@ -153,14 +132,14 @@ Codex App 插件的安装与使用见 [Codex App 插件](/zh-CN/docs/overview/co
 - 分页浏览。
 - 复制文本素材。
 - 下载图片素材。
-- 从提示词库和画布节点加入素材。
+- 从画布节点加入素材。
 - 在画布中插入素材。
 
 ## 配置和同步
 
 - 当前版本不需要账号登录，也不再提供后台管理页面。
 - 配置与用户偏好弹窗支持多个 OpenAI 兼容渠道、默认模型、生成偏好和 WebDAV 同步设置。
-- 第三方提示词、WebDAV 和 AI 接口都由浏览器前端直连，不经过项目后端代理。
+- WebDAV 和 AI 接口都由浏览器前端直连，不经过项目后端代理。
 
 ## 当前限制
 

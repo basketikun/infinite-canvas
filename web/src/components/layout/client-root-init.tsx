@@ -9,7 +9,6 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { hostedAgentApi } from "@/services/api/hosted-agent";
 
 const deletingHostedProjects = new Set<string>();
-import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -22,8 +21,6 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const accessToken = useUserStore((state) => state.accessToken);
     const deletedProjects = useCanvasStore((state) => state.deletedProjects);
     const markAgentProjectDeleted = useCanvasStore((state) => state.markAgentProjectDeleted);
-
-    usePromptSourceScheduler();
 
     useEffect(() => {
         void initializeUser();

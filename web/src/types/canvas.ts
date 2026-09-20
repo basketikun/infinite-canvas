@@ -117,6 +117,7 @@ export type CanvasNodeMetadata = {
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
     summary?: string; // Card summary text for research-flow / question / pdf / web nodes.
+    document?: string; // Long-form Markdown document attached to this node; the card remains the summary view.
     sourceUrl?: string; // Source link for pdf/web nodes.
 };
 

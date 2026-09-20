@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { summarizeCanvasAgentOps } from "@/lib/canvas/canvas-agent-ops";
 import { useAgentStore, type AgentChatItem, type AgentPendingApproval, type AgentPendingToolCall, type AgentTokenUsage } from "@/stores/use-agent-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { AgentApprovalCard, AgentChatMessage, AgentCommandGroup, AgentPendingToolCard, AgentToolCard, AgentWorkingMessage } from "./agent-chat-message";
 import { agentMessageToChatMessage, currentPlanMessage, isPlanMessage, latestPlanMessage, toolCallDetail, toolName, workingActivity } from "./agent-event-formatters";
 import { AgentScrollToBottom } from "./agent-scroll-to-bottom";
@@ -33,6 +34,7 @@ export function AgentChatTimeline({
 }) {
     const { t } = useTranslation();
     const messages = useAgentStore((state) => state.messages);
+    const username = useUserStore((state) => state.user?.username || "test");
     const bootstrapStatus = useAgentStore((state) => state.bootstrapStatus);
     const mcpStartupStatuses = useAgentStore((state) => state.mcpStartupStatuses);
     const timeline = useMemo(() => groupTimelineMessages(messages), [messages]);
@@ -79,6 +81,13 @@ export function AgentChatTimeline({
         <div className="relative min-h-0 flex-1">
             <div ref={listRef} className="thin-scrollbar h-full select-text overflow-y-auto" onScroll={updateScrollState}>
                 <div ref={contentRef} className="space-y-4 px-4 pt-4">
+                    {!timeline.length && !pendingTool && !pendingApprovals.length && !sending && !waiting && !showBootstrap ? (
+                        <div className="pb-3 pt-2">
+                            <span className="grid size-10 place-items-center rounded-xl text-xs font-semibold" style={{ background: theme.toolbar.itemHover }}>CR</span>
+                            <h2 className="mt-4 text-xl font-semibold tracking-[-0.025em]">{t("agent.chat.welcome", { name: username })}</h2>
+                            <p className="mt-1 text-sm leading-6" style={{ color: theme.node.muted }}>{t("agent.chat.welcomeDescription")}</p>
+                        </div>
+                    ) : null}
                     {timeline.map((entry) => entry.type === "commands"
                         ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} />
                         : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} />)}
@@ -166,7 +175,7 @@ function isCommandMessage(item: AgentChatItem) {
 export function AgentUsageBar({ usage, theme }: { usage: AgentTokenUsage; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
     const { t } = useTranslation();
     return (
-        <div className="flex items-center justify-center gap-4 px-4 pt-1 text-[11px] tabular-nums" style={{ color: theme.node.muted }}>
+        <div className="flex items-center justify-center gap-4 px-4 pb-1 pt-1.5 text-[11px] tabular-nums" style={{ color: theme.node.muted }}>
             <span className="opacity-70">{t("agent.chat.latestCall")}</span>
             <UsageNumber label={t("agent.chat.input")} value={usage.input} color={theme.node.text} />
             <UsageNumber label={t("agent.chat.cached")} value={usage.cached} color={theme.node.text} />

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Home, Maximize2, Menu, Plus, Settings2 } from "lucide-react";
+import { Bot, ChevronDown, FolderOpen, Home, Menu, Plus, Settings2, Sparkles } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -18,12 +18,14 @@ export function AppSidebar() {
     const { pathname } = useLocation();
     const navigate = useNavigate();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [projectsExpanded, setProjectsExpanded] = useState(true);
     const autoConnectRef = useRef(false);
     const agentToken = useAgentStore((state) => state.token);
     const agentEnabled = useAgentStore((state) => state.enabled);
     const agentConnected = useAgentStore((state) => state.connected);
     const connectAgent = useAgentStore((state) => state.connectAgent);
-    const togglePanel = useAgentStore((state) => state.togglePanel);
+    const openAgentPanel = useAgentStore((state) => state.openPanel);
+    const setAgentState = useAgentStore((state) => state.setAgentState);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const ownerUserId = useUserStore((state) => state.user?.id);
     const allProjects = useCanvasStore((state) => state.projects);
@@ -48,54 +50,82 @@ export function AppSidebar() {
 
     const navItems = [
         { to: "/", icon: Home, label: t("navigation.home"), active: pathname === "/" },
-        { to: "/canvas", icon: Maximize2, label: t("navigation.canvas"), active: pathname.startsWith("/canvas") },
+        { to: "/canvas", icon: FolderOpen, label: t("navigation.canvas"), active: pathname.startsWith("/canvas") },
     ];
 
     return (
         <>
             {hideChrome ? null : (
-            <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-stone-200 bg-stone-50 px-3 py-4 dark:border-stone-800 dark:bg-stone-950 md:flex">
-                <Link to="/" className="mb-5 flex items-center gap-2 px-1 text-sm font-semibold leading-none text-stone-950 dark:text-stone-100">
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold leading-none text-white">CR</span>
-                    <span className="truncate text-base">{t("meta.title")}</span>
+            <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-stone-200 bg-stone-50 px-3 py-4 dark:border-stone-800 dark:bg-stone-950 md:flex">
+                <Link to="/" className="mb-5 flex items-center gap-2 px-2 text-sm font-semibold leading-none text-stone-950 dark:text-stone-100">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-blue-500 text-[10px] font-bold leading-none text-white">CR</span>
+                    <span className="truncate text-[15px] font-semibold">{t("meta.title")}</span>
                 </Link>
 
-                <button type="button" onClick={createAndEnter} className="mb-5 flex h-10 items-center gap-2 rounded-xl border border-stone-200 px-3 text-sm text-stone-700 transition hover:bg-stone-100 dark:border-stone-800 dark:text-stone-200 dark:hover:bg-stone-900">
-                    <Plus className="size-4" />
-                    {t("canvas.create")}
-                </button>
-
                 <nav className="flex flex-col gap-0.5">
+                    <button type="button" onClick={createAndEnter} className="flex h-10 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-stone-700 transition hover:bg-stone-200/70 dark:text-stone-200 dark:hover:bg-stone-900">
+                        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-blue-500 text-white">
+                            <Plus className="size-3.5" />
+                        </span>
+                        <span className="truncate font-medium">{t("canvas.create")}</span>
+                    </button>
                     {navItems.map(({ to, icon: Icon, label, active }) => (
-                        <Link key={to} to={to} className={cn("flex h-10 items-center gap-2.5 rounded-xl px-3 text-sm transition", active ? "bg-stone-200/70 font-medium text-stone-950 dark:bg-stone-800 dark:text-stone-100" : "text-stone-600 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900")}>
+                        <Link key={to} to={to} className={cn("flex h-10 items-center gap-2.5 rounded-lg px-2 text-sm transition", active ? "bg-stone-200/70 font-medium text-stone-950 dark:bg-stone-800 dark:text-stone-100" : "text-stone-600 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900")}>
                             <Icon className="size-4 shrink-0" />
                             <span className="truncate">{label}</span>
                         </Link>
                     ))}
-                    <button type="button" onClick={() => openConfigDialog(false)} className="flex h-10 items-center gap-2.5 rounded-xl px-3 text-left text-sm text-stone-600 transition hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900">
+                    <button type="button" onClick={() => openConfigDialog(false)} className="flex h-10 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-stone-600 transition hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900">
                         <Settings2 className="size-4 shrink-0" />
                         <span className="truncate">{t("navigation.config")}</span>
                     </button>
-                    <button type="button" onClick={togglePanel} className="flex h-10 items-center gap-2.5 rounded-xl px-3 text-left text-sm text-stone-600 transition hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            openAgentPanel();
+                            setAgentState({ activeTab: "skills" });
+                        }}
+                        className="flex h-10 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-stone-600 transition hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900"
+                    >
+                        <Sparkles className="size-4 shrink-0" />
+                        <span className="truncate">{t("navigation.agentSkills")}</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            openAgentPanel();
+                            setAgentState({ activeTab: "setup" });
+                        }}
+                        className="flex h-10 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-stone-600 transition hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900"
+                    >
                         <Bot className="size-4 shrink-0" />
-                        <span className="truncate">Agent</span>
+                        <span className="truncate">{t("navigation.agentSettings")}</span>
                     </button>
                 </nav>
 
-                {recentProjects.length ? (
-                    <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
-                        <div className="px-3 text-xs font-medium text-stone-400 dark:text-stone-500">{t("canvas.recentProjects")}</div>
+                <div className="mt-5 min-h-0 flex-1 overflow-y-auto">
+                    <button
+                        type="button"
+                        onClick={() => setProjectsExpanded((prev) => !prev)}
+                        className="flex w-full items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-stone-400 transition hover:text-stone-600 dark:text-stone-500 dark:hover:text-stone-300"
+                    >
+                        <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", projectsExpanded ? "" : "-rotate-90")} />
+                        <span className="truncate">{t("canvas.recentProjects")}</span>
+                    </button>
+                    {projectsExpanded ? (
                         <div className="mt-1 flex flex-col gap-0.5">
-                            {recentProjects.map((project) => (
-                                <Link key={project.id} to={`/canvas/${project.id}`} className="truncate rounded-xl px-3 py-2 text-sm text-stone-600 transition hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900">
-                                    {project.title}
-                                </Link>
-                            ))}
+                            {recentProjects.length ? (
+                                recentProjects.map((project) => (
+                                    <Link key={project.id} to={`/canvas/${project.id}`} className="truncate rounded-lg px-3 py-2 text-sm text-stone-600 transition hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-900">
+                                        {project.title}
+                                    </Link>
+                                ))
+                            ) : (
+                                <div className="px-3 py-2 text-sm text-stone-400 dark:text-stone-600">{t("canvas.empty")}</div>
+                            )}
                         </div>
-                    </div>
-                ) : (
-                    <div className="flex-1" />
-                )}
+                    ) : null}
+                </div>
 
                 <div className="mt-4 border-t border-stone-200 pt-3 dark:border-stone-800">
                     <UserStatusActions showConfig={false} />

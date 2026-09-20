@@ -255,7 +255,7 @@ export type CanvasNodeContentProps = { ctx: CanvasNodeContext };
 export type CanvasNodePanelProps = { ctx: CanvasNodeContext; onClose: () => void };
 
 // 复用宿主内置生成面板(与图片/视频/文本节点同一个组件:模型选择、参数设置、
-// 提示词库、运行/停止状态全部一致)。声明它即可获得完整生成体验,无需自写面板。
+// 运行/停止状态全部一致)。声明它即可获得完整生成体验,无需自写面板。
 export type CanvasBuiltinPanelConfig = {
     mode: "image" | "video" | "text" | "audio"; // 生成类型,决定面板里的模型/设置项
     // 提交给模型前自动拼在用户提示词前面的固定前缀(如全景图的 equirectangular 约束)

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { App, Button, Tooltip } from "antd";
+import { App, Button, Modal, Tooltip } from "antd";
 import dayjs from "dayjs";
-import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
+import { Bot, History, PanelRightClose, PlugZap, Plus, Settings2, Sparkles, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -21,7 +21,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
-import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@/services/api/canvas-agent";
+import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverLocalAgent, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@/services/api/canvas-agent";
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentConnectView } from "./agent-connect-view";
@@ -132,7 +132,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     // canvasContext is intentionally excluded because project updates it every frame during dragging and resizing.
     // The panel uses it only for ref synchronization and debounced postState calls, never during rendering.
     // Subscribing here would rerender the panel every frame and amplify the #185 crash, so it is observed imperatively below.
-    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, tokenUsage, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, permissionMode, models, model, reasoningEffort, activity, conversation, connectError, pendingTool, pendingApprovals } = useAgentStore(
+    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, tokenUsage, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, permissionMode, models, model, reasoningEffort, activity, conversation, connectError, pendingTool, pendingApprovals, pendingSend } = useAgentStore(
         useShallow((state) => ({
             width: state.width,
             url: state.url,
@@ -160,6 +160,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             connectError: state.connectError,
             pendingTool: state.pendingTool,
             pendingApprovals: state.pendingApprovals,
+            pendingSend: state.pendingSend,
         })),
     );
     const setAgentState = useAgentStore((state) => state.setAgentState);
@@ -188,6 +189,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const liveTurnKeysRef = useRef(new Set<string>());
     const threadOperationRef = useRef(0);
     const threadOperationSequenceRef = useRef(0);
+    const lastHandledSendRef = useRef(0);
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
     const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
     useEffect(() => {
@@ -383,6 +385,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 : current.messages.filter((item) => !isConnectionErrorMessage(item));
             errorLoggedRef.current = false;
             connectedRef.current = true;
+            const wasSilent = useAgentStore.getState().silentConnect;
             setAgentState({
                 connected: true,
                 activity: pendingApprovals.length ? rt("awaitingApproval") : busy ? rt("codexRunning") : rt("connected"),
@@ -395,8 +398,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 activeTurnId,
                 messages,
                 pendingApprovals,
+                ...(wasSilent ? { activeTab: "chat" as const } : {}),
             });
-            if (!headless) message.success(rt("localAgentConnected"));
+            if (!headless && !wasSilent) message.success(rt("localAgentConnected"));
             void postState(endpoint, token, clientId, canvasContextRef.current?.snapshot || null);
             if (document.visibilityState === "visible" && document.hasFocus()) void activateAgentClient(endpoint, token, clientId);
             if (!busy && !nextThreadId && (!hello?.conversation || hello.conversation.status === "idle")) {
@@ -738,6 +742,14 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
     };
 
+    // A canvas node's own prompt box (e.g. ResearchPromptPanel) sets prompt + canvasReferences and bumps
+    // pendingSend to request a send without going through the composer UI directly.
+    useEffect(() => {
+        if (!pendingSend || pendingSend === lastHandledSendRef.current) return;
+        lastHandledSendRef.current = pendingSend;
+        void sendPrompt();
+    });
+
     const stopTurn = async () => {
         if (!connected || (!sending && !waiting)) return;
         setAgentState({ activity: rt("stopping") });
@@ -909,35 +921,29 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
         const urlToken = searchParams.get("agentToken") || "";
         const urlEndpoint = searchParams.get("agentUrl") || "";
-        const discovered = urlToken ? null : await discoverAgentConfig(endpoint || DEFAULT_AGENT_URL);
-        const nextEndpoint = (urlEndpoint || endpoint || discovered?.url || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
-        const nextToken = (urlToken || token.trim() || discovered?.token || "").trim();
+        const discovered = urlToken ? null : await discoverLocalAgent(urlEndpoint || endpoint || DEFAULT_AGENT_URL);
+        const nextEndpoint = (urlEndpoint || discovered?.url || endpoint || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
+        const nextToken = (urlToken || discovered?.token || token.trim() || "").trim();
         if (!nextEndpoint) {
             const text = rt("addressRequired");
-            if (!silent) {
-                setAgentState({ connectError: text });
-                if (!headless) message.warning(text);
-            }
+            setAgentState({ connectError: text, activeTab: "setup" });
+            if (!silent && !headless) message.warning(text);
             return;
         }
         if (!nextToken) {
             const text = rt("agentNotFound");
-            if (!silent) {
-                setAgentState({ connectError: text });
-                if (!headless) message.warning(text);
-            }
+            setAgentState({ connectError: text, activeTab: "setup" });
+            if (!silent && !headless) message.warning(text);
             return;
         }
         if (!isValidAgentEndpoint(nextEndpoint)) {
             const text = rt("invalidAddress");
-            if (!silent) {
-                setAgentState({ connectError: text });
-                if (!headless) message.warning(text);
-            }
+            setAgentState({ connectError: text, activeTab: "setup" });
+            if (!silent && !headless) message.warning(text);
             return;
         }
         errorLoggedRef.current = false;
-        setAgentState({ url: nextEndpoint, token: nextToken, enabled: true, connected: false, silentConnect: silent, fragmentBootstrap: false, activity: rt("connecting"), connectError: "", activeTab: "setup" });
+        setAgentState({ url: nextEndpoint, token: nextToken, enabled: true, connected: false, silentConnect: silent, fragmentBootstrap: false, activity: rt("connecting"), connectError: "", activeTab: silent ? "chat" : "setup" });
     };
 
     useLayoutEffect(() => {
@@ -963,10 +969,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     }, [confirmTools, setAgentState, urlAgentAutoConnect]);
 
     useEffect(() => {
-        if ((!autoConnect && !urlAgentAutoConnect) || autoConnectRef.current || enabled || connected) return;
+        if (autoConnectRef.current || enabled || connected) return;
+        if (!autoConnect && !urlAgentAutoConnect && !embedded) return;
         autoConnectRef.current = true;
         void toggleAgentConnection({ silent: true });
-    }, [autoConnect, connected, enabled, urlAgentAutoConnect]);
+    }, [autoConnect, connected, embedded, enabled, urlAgentAutoConnect]);
 
     function clearAgentSession(patch: Parameters<typeof setAgentState>[0] = {}) {
         loadThreadsSequenceRef.current += 1;
@@ -1307,137 +1314,150 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
 
     const connectionStatus = t(connectError ? "agent.status.failed" : connected ? "agent.status.connected" : enabled ? "agent.status.connecting" : "agent.status.disconnected");
     const connectionStatusColor = connectError ? "#dc2626" : connected ? "#16a34a" : enabled ? "#d97706" : theme.node.muted;
+    const settingsTab = activeTab === "chat" ? "setup" : activeTab;
     const content = (
-        <>
-            <AgentPanelTabs
-                value={activeTab}
-                theme={theme}
-                leading={
-                    <div className="flex items-center gap-1">
-                        <span className="grid size-8 place-items-center">
-                            <Bot className="size-4" />
-                        </span>
-                        <div className="hidden text-base font-semibold leading-5 @min-[560px]:block">Agent</div>
-                        <Tooltip title={t("agent.panel.connectionSettings", { status: connectionStatus })} placement="bottom">
-                            <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.panel.connectionSettingsLabel", { status: connectionStatus })} icon={<PlugZap className="size-3.5" style={{ color: connectionStatusColor }} />} onClick={() => setAgentState({ activeTab: "setup" })}>
-                                <span className="hidden @min-[560px]:inline">{connectionStatus}</span>
-                            </Button>
-                        </Tooltip>
+        <div className="flex h-full min-h-0 flex-col">
+            <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-3" style={{ borderColor: theme.node.stroke }}>
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ background: theme.toolbar.itemHover }}>
+                        <Bot className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold leading-5">Research Agent</div>
+                        <div className="max-w-[190px] truncate text-[11px] leading-4" style={{ color: theme.node.muted }}>{connectionStatus}</div>
                     </div>
-                }
-                items={[
-                    { value: "chat", label: t("agent.panel.chat"), icon: <MessageSquare className="size-3.5" /> },
-                    { value: "history", label: t("agent.panel.history"), icon: <History className="size-3.5" />, count: threads.length },
-                    { value: "skills", label: t("agent.panel.skills"), icon: <Sparkles className="size-3.5" />, count: skillCount },
-                    { value: "log", label: t("agent.panel.logs"), icon: <Terminal className="size-3.5" />, count: eventLogs.length },
-                ]}
-                onChange={(activeTab) => {
-                    setAgentState({ activeTab });
-                    if (activeTab === "history") void loadThreads();
+                    <Tooltip title={t("agent.panel.connectionSettings", { status: connectionStatus })} placement="bottom">
+                        <button type="button" className="grid size-6 shrink-0 place-items-center rounded-full" aria-label={t("agent.panel.connectionSettingsLabel", { status: connectionStatus })} onClick={() => setAgentState({ activeTab: "setup" })}>
+                            <span className="size-2 rounded-full" style={{ background: connectionStatusColor }} />
+                        </button>
+                    </Tooltip>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                    <Tooltip title={t("agent.history.newThread")} placement="bottom">
+                        <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" disabled={!connected || sending || waiting || loadingThreads || conversationBusy} aria-label={t("agent.history.newThread")} style={{ color: theme.node.muted }} icon={<Plus className="size-4" />} onClick={() => void startNewThread()} />
+                    </Tooltip>
+                    <Tooltip title={t("agent.panel.settings")} placement="bottom">
+                        <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" aria-label={t("agent.panel.settingsLabel")} style={{ color: theme.node.muted }} icon={<Settings2 className="size-4" />} onClick={() => setAgentState({ activeTab: "history" })} />
+                    </Tooltip>
+                    <Tooltip title={t("agent.panel.collapse")}>
+                        <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" aria-label={t("agent.panel.collapseLabel")} style={{ color: theme.node.muted }} icon={<PanelRightClose className="size-4" />} onClick={closePanel} />
+                    </Tooltip>
+                </div>
+            </div>
+
+            <Modal
+                open={activeTab !== "chat"}
+                onCancel={() => setAgentState({ activeTab: "chat" })}
+                title={t("agent.panel.settingsTitle")}
+                footer={null}
+                width={560}
+                destroyOnHidden
+                styles={{ body: { padding: 0, height: 520, display: "flex", flexDirection: "column" } }}
+            >
+                <AgentPanelTabs
+                    value={settingsTab}
+                    theme={theme}
+                    items={[
+                        { value: "setup", label: t("agent.panel.connection"), icon: <PlugZap className="size-3.5" /> },
+                        { value: "history", label: t("agent.panel.history"), icon: <History className="size-3.5" />, count: threads.length },
+                        { value: "skills", label: t("agent.panel.skills"), icon: <Sparkles className="size-3.5" />, count: skillCount },
+                        { value: "log", label: t("agent.panel.logs"), icon: <Terminal className="size-3.5" />, count: eventLogs.length },
+                    ]}
+                    onChange={(tab) => {
+                        setAgentState({ activeTab: tab });
+                        if (tab === "history") void loadThreads();
+                    }}
+                />
+                <div className="flex min-h-0 flex-1 flex-col">
+                    {settingsTab === "setup" ? (
+                        <AgentConnectView
+                            theme={theme}
+                            url={url}
+                            token={token}
+                            enabled={enabled}
+                            connected={connected}
+                            activity={activity}
+                            connectError={connectError}
+                            onUrlChange={(url) => setAgentState({ url, connectError: "" })}
+                            onTokenChange={(token) => setAgentState({ token, connectError: "" })}
+                            onToggleEnabled={toggleAgentConnection}
+                        />
+                    ) : settingsTab === "skills" ? (
+                        <AgentSkillsView clientId={clientIdRef.current} />
+                    ) : settingsTab === "history" ? (
+                        <AgentHistoryView
+                            theme={theme}
+                            threads={threads}
+                            activeThreadId={activeThreadId}
+                            workspacePath={workspacePath}
+                            loading={loadingThreads}
+                            busy={sending || waiting || conversationBusy}
+                            connected={connected}
+                            onRefresh={() => void loadThreads()}
+                            onNewThread={() => void startNewThread()}
+                            onResumeThread={(threadId) => void resumeThread(threadId)}
+                            onDeleteThreads={confirmDeleteThreads}
+                        />
+                    ) : (
+                        <AgentLogView
+                            logs={eventLogs}
+                            theme={theme}
+                            context={{ endpoint, connected, enabled, activity, waiting, sending, messages: messageCount, pendingTool: pendingTool?.name }}
+                            onClear={clearEventLogs}
+                            onCopied={(text) => message.success(text)}
+                            onCopyBlocked={(text) => message.warning(text)}
+                        />
+                    )}
+                </div>
+            </Modal>
+
+            <AgentChatTimeline theme={theme} pendingTool={pendingTool} pendingApprovals={pendingApprovals} sending={sending} waiting={waiting} onRejectTool={rejectPendingTool} onApproveTool={approvePendingTool} onApprovalDecision={decideApproval} />
+            <AgentTaskProgress theme={theme} busy={sending || waiting} />
+            <AgentChatComposer
+                prompt={prompt}
+                attachments={attachments.map((attachment) => agentAttachmentToChatAttachment(attachment, endpoint, token))}
+                disabled={!connected || !conversationReady || loadingThreads}
+                sending={sending || waiting}
+                placeholder={conversation.status === "idle" || conversation.status === "preparing"
+                    ? t("agent.panel.mcpInitializing")
+                    : conversation.status === "failed"
+                        ? t("agent.panel.initFailed")
+                        : t("agent.panel.placeholder")}
+                theme={theme}
+                onPromptChange={(prompt) => setAgentState({ prompt })}
+                onSubmit={sendPrompt}
+                onStop={stopTurn}
+                onAddFiles={addAttachments}
+                onRemoveAttachment={removeAttachment}
+                confirmTools={confirmTools}
+                onConfirmToolsChange={(confirmTools) => setAgentState({ confirmTools })}
+                permissionMode={permissionMode}
+                onPermissionModeChange={changePermissionMode}
+                models={models}
+                model={model}
+                reasoningEffort={reasoningEffort}
+                onModelChange={(model) => {
+                    const selected = models.find((item) => item.model === model);
+                    if (!selected) return;
+                    const effort = selected.defaultReasoningEffort || selected.supportedReasoningEfforts[0]?.reasoningEffort;
+                    localStorage.setItem("canvas-agent-model", model);
+                    if (effort) localStorage.setItem("canvas-agent-reasoning-effort", effort);
+                    setAgentState({ model, ...(effort ? { reasoningEffort: effort } : {}) });
                 }}
-                right={
-                    <>
-                        <Tooltip title={t("agent.history.newThread")} placement="bottom">
-                            <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.history.newThread")} disabled={!connected || loadingThreads || sending || waiting || conversationBusy} icon={<Plus className="size-3.5" />} onClick={startNewThread}>
-                                <span className="hidden @min-[560px]:inline">{t("agent.history.newThread")}</span>
-                            </Button>
-                        </Tooltip>
-                        <Tooltip title={t("agent.panel.collapse")}>
-                            <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" aria-label={t("agent.panel.collapseLabel")} style={{ color: theme.node.muted }} icon={<PanelRightClose className="size-4" />} onClick={closePanel} />
-                        </Tooltip>
-                    </>
+                onReasoningEffortChange={(reasoningEffort) => {
+                    localStorage.setItem("canvas-agent-reasoning-effort", reasoningEffort);
+                    setAgentState({ reasoningEffort });
+                }}
+                left={
+                    attachments.length ? (
+                        <span className="hidden text-[11px] @min-[660px]:inline" style={{ color: theme.node.muted }}>
+                            {formatBytes(attachmentPayloadBytes(attachments))} / 30MB
+                        </span>
+                    ) : null
                 }
             />
-
-            {activeTab === "setup" ? (
-                <AgentConnectView
-                    theme={theme}
-                    url={url}
-                    token={token}
-                    enabled={enabled}
-                    connected={connected}
-                    activity={activity}
-                    connectError={connectError}
-                    onUrlChange={(url) => setAgentState({ url, connectError: "" })}
-                    onTokenChange={(token) => setAgentState({ token, connectError: "" })}
-                    onToggleEnabled={toggleAgentConnection}
-                />
-            ) : activeTab === "skills" ? (
-                <AgentSkillsView clientId={clientIdRef.current} />
-            ) : activeTab === "history" ? (
-                <AgentHistoryView
-                    theme={theme}
-                    threads={threads}
-                    activeThreadId={activeThreadId}
-                    workspacePath={workspacePath}
-                    loading={loadingThreads}
-                    busy={sending || waiting || conversationBusy}
-                    connected={connected}
-                    onRefresh={() => void loadThreads()}
-                    onNewThread={() => void startNewThread()}
-                    onResumeThread={(threadId) => void resumeThread(threadId)}
-                    onDeleteThreads={confirmDeleteThreads}
-                />
-            ) : activeTab === "log" ? (
-                <AgentLogView
-                    logs={eventLogs}
-                    theme={theme}
-                    context={{ endpoint, connected, enabled, activity, waiting, sending, messages: messageCount, pendingTool: pendingTool?.name }}
-                    onClear={clearEventLogs}
-                    onCopied={(text) => message.success(text)}
-                    onCopyBlocked={(text) => message.warning(text)}
-                />
-            ) : (
-                <>
-                    <AgentChatTimeline theme={theme} pendingTool={pendingTool} pendingApprovals={pendingApprovals} sending={sending} waiting={waiting} onRejectTool={rejectPendingTool} onApproveTool={approvePendingTool} onApprovalDecision={decideApproval} />
-                    <AgentTaskProgress theme={theme} busy={sending || waiting} />
-                    {tokenUsage ? <AgentUsageBar usage={tokenUsage} theme={theme} /> : null}
-                    <AgentChatComposer
-                        prompt={prompt}
-                        attachments={attachments.map((attachment) => agentAttachmentToChatAttachment(attachment, endpoint, token))}
-                        disabled={!connected || !conversationReady || loadingThreads}
-                        sending={sending || waiting}
-                        placeholder={conversation.status === "idle" || conversation.status === "preparing"
-                            ? t("agent.panel.mcpInitializing")
-                            : conversation.status === "failed"
-                                ? t("agent.panel.initFailed")
-                                : t("agent.panel.placeholder")}
-                        theme={theme}
-                        onPromptChange={(prompt) => setAgentState({ prompt })}
-                        onSubmit={sendPrompt}
-                        onStop={stopTurn}
-                        onAddFiles={addAttachments}
-                        onRemoveAttachment={removeAttachment}
-                        confirmTools={confirmTools}
-                        onConfirmToolsChange={(confirmTools) => setAgentState({ confirmTools })}
-                        permissionMode={permissionMode}
-                        onPermissionModeChange={changePermissionMode}
-                        models={models}
-                        model={model}
-                        reasoningEffort={reasoningEffort}
-                        onModelChange={(model) => {
-                            const selected = models.find((item) => item.model === model);
-                            if (!selected) return;
-                            const effort = selected.defaultReasoningEffort || selected.supportedReasoningEfforts[0]?.reasoningEffort;
-                            localStorage.setItem("canvas-agent-model", model);
-                            if (effort) localStorage.setItem("canvas-agent-reasoning-effort", effort);
-                            setAgentState({ model, ...(effort ? { reasoningEffort: effort } : {}) });
-                        }}
-                        onReasoningEffortChange={(reasoningEffort) => {
-                            localStorage.setItem("canvas-agent-reasoning-effort", reasoningEffort);
-                            setAgentState({ reasoningEffort });
-                        }}
-                        left={
-                            attachments.length ? (
-                                <span className="hidden text-[11px] @min-[660px]:inline" style={{ color: theme.node.muted }}>
-                                    {formatBytes(attachmentPayloadBytes(attachments))} / 30MB
-                                </span>
-                            ) : null
-                        }
-                    />
-                </>
-            )}
-        </>
+            {tokenUsage ? <AgentUsageBar usage={tokenUsage} theme={theme} /> : null}
+        </div>
     );
 
     if (headless) return null;
