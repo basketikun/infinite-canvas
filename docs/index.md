@@ -1,4 +1,4 @@
-# Infinite Canvas Documentation Index
+# CoResearch Documentation Index
 
 ## Overview
 

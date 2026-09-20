@@ -9,12 +9,12 @@ import { getMDXComponents } from '@/components/mdx';
 
 const messages = {
   en: {
-    title: 'Infinite Canvas Documentation',
+    title: 'CoResearch Documentation',
     description: 'Features, canvas guides, deployment, development, business, and support',
     index: 'index.md',
   },
   'zh-CN': {
-    title: '无限画布文档',
+    title: 'CoResearch 文档',
     description: '功能说明、操作手册、部署方式、开发文档、商务合作与赞助支持',
     index: 'index.zh-CN.md',
   },

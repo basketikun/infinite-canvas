@@ -1,6 +1,6 @@
 ---
 title: Docker 部署
-description: 使用 Docker Compose 部署无限画布
+description: 使用 Docker Compose 部署 CoResearch
 ---
 
 # Docker 部署
@@ -10,8 +10,8 @@ description: 使用 Docker Compose 部署无限画布
 ## 使用发布镜像
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
-cd infinite-canvas
+git clone git@github.com:Zhanghoks/Research-canvas.git
+cd Research-canvas
 docker compose up -d
 ```
 
@@ -67,7 +67,7 @@ docker compose -f docker-compose.local.yml up -d --build
 ```yaml
 services:
   app:
-    image: ghcr.io/basketikun/infinite-canvas:latest
+    image: ghcr.io/zhanghoks/coresearch:latest
     ports:
       - "3000:3000"
     environment:
@@ -81,7 +81,7 @@ services:
 docker run -d -p 3000:3000 \
   -e ANALYTICS_GA4_ID=G-XXXXXXXXXX \
   -e ANALYTICS_BAIDU_ID=e8263761cc5c32f5f7a855b8203b965a \
-  ghcr.io/basketikun/infinite-canvas:latest
+  ghcr.io/zhanghoks/coresearch:latest
 ```
 
 单页应用的路由切换会自动向所有已启用的统计上报 pageview。

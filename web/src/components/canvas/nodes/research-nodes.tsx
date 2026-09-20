@@ -70,6 +70,7 @@ export function ResearchCardContent({ ctx }: { ctx: CanvasNodeContext }) {
     const meta = RESEARCH_FLOW_META[type];
     const Icon = meta.Icon;
     const summary = ctx.node.metadata?.summary || "";
+    const direction = type === CanvasNodeType.Direction ? ctx.node.metadata?.direction : undefined;
     const [drafting, setDrafting] = useState(false);
 
     // Keep empty research cards tall enough for the icon + try actions.
@@ -112,6 +113,23 @@ export function ResearchCardContent({ ctx }: { ctx: CanvasNodeContext }) {
                         <MessageSquare className="size-3.5 shrink-0 opacity-60" />
                         <span className="truncate">{t("canvas.researchNodes.tryAskAgent")}</span>
                     </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (direction) {
+        return (
+            <div data-canvas-no-zoom className="flex h-full w-full flex-col box-border p-4">
+                <div className="mb-3 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: ctx.theme.node.muted }}>
+                    <span>L{direction.level} · Direction</span>
+                    <span>{direction.subDirections.length} branches</span>
+                </div>
+                <EditableTextArea value={summary} placeholder={t("canvas.researchNodes.summaryPlaceholder")} color={ctx.theme.node.text} placeholderColor={ctx.theme.node.placeholder} onChange={(value) => ctx.updateMetadata({ summary: value })} />
+                <div className="mt-3 flex shrink-0 flex-wrap gap-1.5">
+                    {direction.includes.slice(0, 6).map((item) => (
+                        <span key={item} className="rounded-full border px-2 py-1 text-[10px]" style={{ borderColor: ctx.theme.node.stroke, color: ctx.theme.node.muted }}>{item}</span>
+                    ))}
                 </div>
             </div>
         );

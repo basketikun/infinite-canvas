@@ -75,6 +75,19 @@ export type CanvasNodeText = {
     content: string;
 };
 
+export type CanvasDirectionAxis = "what" | "how" | "signal" | "when" | "who" | "evaluation" | "reliability" | "transfer" | "efficiency";
+
+export type CanvasDirectionMetadata = {
+    level: 1 | 2;
+    axis: CanvasDirectionAxis;
+    scope: string;
+    includes: string[];
+    excludes: string[];
+    subDirections: string[];
+    evidenceRefs: string[];
+    status: "candidate" | "exploring" | "selected" | "deprioritized";
+};
+
 export type CanvasNodeMetadata = {
     content?: string;
     composerContent?: string;
@@ -118,6 +131,7 @@ export type CanvasNodeMetadata = {
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
     summary?: string; // Card summary text for research-flow / question / pdf / web nodes.
     document?: string; // Long-form Markdown document attached to this node; the card remains the summary view.
+    direction?: CanvasDirectionMetadata; // Coverage and hierarchy for taxonomy-driven research directions.
     sourceUrl?: string; // Source link for pdf/web nodes.
 };
 

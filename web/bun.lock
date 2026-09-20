@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "infinite-canvas",
+      "name": "coresearch",
       "dependencies": {
         "@ant-design/icons": "^6.1.1",
         "@ant-design/pro-components": "3.0.0-beta.3",

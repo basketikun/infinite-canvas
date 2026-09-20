@@ -1,30 +1,127 @@
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasConnection, type CanvasDirectionAxis, type CanvasNodeData } from "@/types/canvas";
 
 const CARD_WIDTH = 280;
-const CARD_HEIGHT = 320;
+const CARD_HEIGHT = 280;
+const BATCH_ID = "agent_harness_direction_batch";
 
-function researchNode(id: string, type: CanvasNodeType, title: string, summary: string, x: number, y: number): CanvasNodeData {
-    return {
-        id,
-        type,
-        title,
-        position: { x, y },
-        width: CARD_WIDTH,
-        height: CARD_HEIGHT,
-        metadata: { status: "success", summary },
-    };
+type DirectionDefinition = {
+    id: string;
+    number: string;
+    title: string;
+    axis: CanvasDirectionAxis;
+    question: string;
+    core: string;
+    includes: string[];
+    excludes: string[];
+    branches: string[];
+    evidence: Array<{ title: string; url: string }>;
+};
+
+const directions: DirectionDefinition[] = [
+    {
+        id: "harness_components", number: "01", title: "Harness Components", axis: "what",
+        question: "Harness 的哪些部分应该具有进化能力？",
+        core: "从单组件优化走向多组件、结构化的 Harness evolution。",
+        includes: ["Prompt", "Tools", "Skills", "Memory", "Middleware", "Workflow"],
+        excludes: ["搜索算法", "进化时机", "效果归因"],
+        branches: ["Prompt Evolution", "Tool Evolution", "Skill Evolution", "Memory Evolution", "Middleware / Runtime Evolution", "Workflow Evolution", "Sub-agent / Role Evolution", "Joint Multi-component Evolution"],
+        evidence: [{ title: "Agentic Harness Engineering", url: "https://arxiv.org/abs/2604.25850" }],
+    },
+    {
+        id: "evolution_mechanisms", number: "02", title: "Evolution Mechanisms", axis: "how",
+        question: "Harness 如何搜索、产生、选择和提交一个更好的版本？",
+        core: "研究如何探索 Harness configuration space，而不是限定某个被修改的组件。",
+        includes: ["Search", "Reflection", "Meta-Agent", "RL", "Program Opt.", "Population"],
+        excludes: ["组件范围", "反馈来源", "迁移边界"],
+        branches: ["Search-based Evolution", "Reflection-based Evolution", "Meta-agent Editing", "Reward-driven Optimization", "Program Optimization", "Population-based Evolution", "Hybrid Evolution"],
+        evidence: [{ title: "AFlow", url: "https://arxiv.org/abs/2410.10762" }, { title: "AgentSquare", url: "https://arxiv.org/abs/2410.06153" }],
+    },
+    {
+        id: "experience_feedback", number: "03", title: "Experience & Feedback", axis: "signal",
+        question: "Harness 应该从什么经验中知道哪里需要改变？",
+        core: "把原始运行经验转化为可行动、可验证的 evolution signal。",
+        includes: ["Reward", "Failure", "Trajectory", "Human", "Critique", "Tests"],
+        excludes: ["修改机制", "部署阶段", "安全约束"],
+        branches: ["Scalar Reward", "Benchmark Outcome", "Unit / Integration Tests", "Failure Trajectories", "Successful Trajectories", "Natural-language Critique", "Human / Preference Feedback", "Cross-agent Feedback"],
+        evidence: [{ title: "Agentic Harness Engineering", url: "https://arxiv.org/abs/2604.25850" }],
+    },
+    {
+        id: "continual_evolution", number: "04", title: "Continual & Temporal Evolution", axis: "when",
+        question: "Harness 应该在训练前、任务之间、任务中还是长期部署中进化？",
+        core: "区分 adaptation stage，研究一次性优化与持续自进化的不同约束。",
+        includes: ["Offline", "Benchmark", "Inter-task", "Test-time", "Online", "Lifelong"],
+        excludes: ["谁来修改", "修改什么", "如何归因"],
+        branches: ["Offline Evolution", "Benchmark-time Evolution", "Inter-task Evolution", "Test-time Evolution", "Online Evolution", "Continual Evolution", "Lifelong Evolution"],
+        evidence: [{ title: "A Survey of Self-Evolving Agents", url: "https://arxiv.org/abs/2507.21046" }],
+    },
+    {
+        id: "evolution_actors", number: "05", title: "Evolution Actors", axis: "who",
+        question: "Harness 的修改决策由谁产生并由谁提交？",
+        core: "比较 self-editing、独立 Evolver、团队与 Human-in-the-loop 的责任边界。",
+        includes: ["Self", "Evolver", "Critic", "Multi-Agent", "Human-AI", "Co-evolve"],
+        excludes: ["反馈信号", "组件范围", "成本优化"],
+        branches: ["Self-editing Agent", "Separate Evolver Agent", "Critic → Evolver", "Multi-agent Evolution Team", "Human-in-the-loop Evolution", "Population Evolution", "Agent–Environment Co-evolution"],
+        evidence: [{ title: "A Self-Improving Coding Agent", url: "https://arxiv.org/abs/2504.15228" }],
+    },
+    {
+        id: "evaluation_attribution", number: "06", title: "Evaluation & Attribution", axis: "evaluation",
+        question: "如何判断一次 Harness 修改真的有效，并确定性能变化来自哪里？",
+        core: "从结果评测走向 edit-level prediction、verification 与 causal attribution。",
+        includes: ["Credit", "Causality", "Ablation", "Counterfactual", "Verify", "Interaction"],
+        excludes: ["搜索预算", "安全回滚", "跨域迁移"],
+        branches: ["Edit-level Attribution", "Component Credit Assignment", "Interaction Effects", "Ablation", "Counterfactual Evaluation", "Prediction → Verification", "Longitudinal Evaluation", "Causal Attribution"],
+        evidence: [{ title: "Agentic Harness Engineering", url: "https://arxiv.org/abs/2604.25850" }, { title: "MIPRO", url: "https://arxiv.org/abs/2406.11695" }],
+    },
+    {
+        id: "reliable_safe_evolution", number: "07", title: "Reliable & Safe Evolution", axis: "reliability",
+        question: "Harness 如何持续改善，同时避免 regression、漂移和危险改变？",
+        core: "Self-improvement 不等于 monotonic improvement；所有修改都需要约束、验证与恢复路径。",
+        includes: ["Regression", "Rollback", "Overfit", "Shift", "Drift", "Safety"],
+        excludes: ["一般性能归因", "成本控制", "泛化收益"],
+        branches: ["Regression Detection", "Regression Prediction", "Safe Edit Validation", "Rollback", "Benchmark Overfitting", "Distribution Shift", "Constraint Preservation", "Capability Drift", "Security / Alignment"],
+        evidence: [{ title: "Agentic Harness Engineering", url: "https://arxiv.org/abs/2604.25850" }],
+    },
+    {
+        id: "transfer_generalization", number: "08", title: "Transfer & Generalization", axis: "transfer",
+        question: "Harness 学到的改进是局部技巧，还是可迁移的 Agent engineering？",
+        core: "确定 evolved Harness 在实例、任务、领域、benchmark 与模型之间的有效边界。",
+        includes: ["Instance", "Task", "Domain", "Benchmark", "Model", "Universal"],
+        excludes: ["演化成本", "修改主体", "在线时机"],
+        branches: ["Cross-instance", "Cross-task", "Cross-benchmark", "Cross-domain", "Cross-model", "Cross-model-family", "Universal vs Specialized Harness"],
+        evidence: [{ title: "Agentic Harness Engineering", url: "https://arxiv.org/abs/2604.25850" }],
+    },
+    {
+        id: "efficient_evolution", number: "09", title: "Efficiency & Scalability", axis: "efficiency",
+        question: "如何降低 Harness evolution 的搜索、推理和验证成本？",
+        core: "在有限 budget 下选择最值得提出、运行与复用的 edit 和 evaluation。",
+        includes: ["Budget", "Surrogate", "Predictor", "Early Stop", "Reuse", "Cost"],
+        excludes: ["安全本身", "进化主体", "组件 taxonomy"],
+        branches: ["Search-space Reduction", "Surrogate Evaluation", "Performance Prediction", "Targeted Evaluation", "Early Stopping", "Experience Reuse", "Edit Reuse", "Budget-aware Evolution", "Cost–Performance Optimization"],
+        evidence: [{ title: "AgentSquare", url: "https://arxiv.org/abs/2410.06153" }, { title: "MIPRO", url: "https://arxiv.org/abs/2406.11695" }],
+    },
+];
+
+function directionDocument(direction: DirectionDefinition) {
+    const references = direction.evidence.map((item) => `- [${item.title}](${item.url})`).join("\n");
+    return `# ${direction.number} · ${direction.title}\n\n> **L1 · Broad Direction** · Axis: \`${direction.axis.toUpperCase()}\`\n\n## Core Question\n\n${direction.question}\n\n## Research Core\n\n${direction.core}\n\n## Includes\n\n${direction.includes.map((item) => `- ${item}`).join("\n")}\n\n## Potential Sub-directions\n\n${direction.branches.map((item, index) => `${index + 1}. ${item}`).join("\n")}\n\n## Excludes at this level\n\n${direction.excludes.map((item) => `- ${item}`).join("\n")}\n\n## Representative Work\n\n${references}\n\n## Next Step\n\n选择一个 L2 Sub-direction，检查与其他 L1 Direction 的重叠，再形成可回答的 L3 Research Question。\n`;
 }
 
-function sourceNode(id: string, title: string, sourceUrl: string, x: number, y: number): CanvasNodeData {
+function directionNode(direction: DirectionDefinition, index: number): CanvasNodeData {
     return {
-        id,
-        type: CanvasNodeType.Web,
-        title,
-        position: { x, y },
-        width: 300,
-        height: 180,
-        metadata: { status: "success", sourceUrl },
+        id: `direction_${direction.id}`,
+        type: CanvasNodeType.Direction,
+        title: `${direction.number} · ${direction.title}`,
+        position: { x: 80 + (index % 3) * 320, y: 100 + Math.floor(index / 3) * 320 },
+        width: CARD_WIDTH,
+        height: CARD_HEIGHT,
+        metadata: {
+            status: "success", groupId: BATCH_ID, summary: direction.question, document: directionDocument(direction),
+            direction: {
+                level: 1, axis: direction.axis, scope: "Broad Direction", includes: direction.includes, excludes: direction.excludes,
+                subDirections: direction.branches, evidenceRefs: direction.evidence.map((item) => item.url), status: "candidate",
+            },
+        },
     };
 }
 
@@ -34,75 +131,40 @@ function edge(fromNodeId: string, toNodeId: string): CanvasConnection {
 
 export function createResearchTutorialProject(): Partial<CanvasProject> {
     const now = new Date().toISOString();
+    const branchCount = directions.reduce((total, direction) => total + direction.branches.length, 0);
     const nodes: CanvasNodeData[] = [
         {
-            id: "tutorial-guide",
-            type: CanvasNodeType.Note,
-            title: "教程｜从 Seed 到 Idea",
-            position: { x: -460, y: -520 },
-            width: 340,
-            height: 230,
+            id: BATCH_ID, type: CanvasNodeType.Group, title: `First Direction Map · 9 major directions · ${branchCount} branches`,
+            position: { x: 20, y: 20 }, width: 1000, height: 1040,
             metadata: {
                 status: "success",
-                content: "从中央 Seed 开始，向右阅读已选择的研究形成链。\n\n上下分支是 Agent 提出的备选方向；下方网页节点是 Evidence Resource，不属于九种 Research Reasoning Nodes。\n\n你可以修改任意节点，或让 Agent 基于当前节点继续探索。",
+                document: `# Research Direction Map\n\n围绕 **Agent Harness 自进化**，先建立 taxonomy-driven 的 L1 研究空间，而不是直接猜测几个论文题目。\n\n## Coverage axes\n\n1. WHAT — Harness Components\n2. HOW — Evolution Mechanisms\n3. SIGNAL — Experience & Feedback\n4. WHEN — Continual & Temporal Evolution\n5. WHO — Evolution Actors\n6. EVALUATE — Evaluation & Attribution\n7. RELIABILITY — Reliable & Safe Evolution\n8. TRANSFER — Transfer & Generalization\n9. EFFICIENCY — Efficiency & Scalability\n\n当前覆盖：**9 major directions · ${branchCount} potential branches**。这表示主要维度覆盖，不代表理论上穷尽全部研究方向。`,
             },
         },
-        researchNode("seed_ai_research_training", CanvasNodeType.Seed, "AI 时代的研究训练", "AI 能让学生更快搜索、总结和写作，但它究竟是在帮助学生形成研究能力，还是在替学生完成原本应该由学生完成的判断？", -140, -160),
-
-        researchNode("dir_ai_literacy", CanvasNodeType.Direction, "AI Literacy Training · Alternative", "研究大学教育应该培养什么样的 AI 使用能力，使学生能够理解、评估和负责任地使用 AI。", 300, -600),
-        researchNode("dir_research_judgment", CanvasNodeType.Direction, "AI × Research Judgment · Selected", "研究 AI 如何改变学生判断论文价值、证据质量、研究空白和问题值得研究程度的能力。", 300, -160),
-        researchNode("dir_ai_writing", CanvasNodeType.Direction, "AI × Academic Writing · Alternative", "研究 GenAI 如何改变学生从构思、组织论证到撰写学术文本的过程。", 300, 280),
-        researchNode("dir_learning_outcomes", CanvasNodeType.Direction, "AI × Learning Outcomes · Alternative", "研究 GenAI 交互质量与输出质量如何影响学习结果。", 300, 720),
-
-        researchNode("rq_relevance_credibility", CanvasNodeType.ResearchQuestion, "Evidence Relevance · Candidate", "AI 辅助文献探索如何影响新手研究者判断学术证据相关性与可信度的能力？", 740, -600),
-        researchNode("rq_judgment_support", CanvasNodeType.ResearchQuestion, "Supporting Research Judgment · Selected", "AI 辅助研究工具应如何支持新手研究者形成 research judgment，而不是替代这种判断？", 740, -160),
-        researchNode("rq_gap_identification", CanvasNodeType.ResearchQuestion, "Gap Identification · Merged", "对生成式 AI 的依赖如何影响学生识别有意义研究空白的能力？", 740, 280),
-
-        researchNode("problem_answer_first_ai", CanvasNodeType.Problem, "Answer-first AI may bypass judgment", "现有 AI 研究助手主要优化搜索、总结和答案生成，却可能绕过证据比较、可信度判断、冲突识别与研究问题形成过程。", 1180, -160),
-
-        researchNode("hyp_evidence_first", CanvasNodeType.Hypothesis, "Evidence-first Interaction · Selected", "如果 AI 先要求研究者比较证据、表达判断并说明理由，再提供支持，新手研究者将表现出更高的判断质量、校准能力和无 AI 迁移表现。", 1620, -160),
-        researchNode("hyp_efficiency_only", CanvasNodeType.Hypothesis, "Efficiency-first Interaction · Alternative", "如果研究工具只提高搜索与综合效率，任务完成时间会降低，但研究判断能力未必同步提高。", 1620, 280),
-
-        researchNode("approach_contrastive_workspace", CanvasNodeType.Approach, "Contrastive Human–AI Workspace", "构建功能能力相近但交互哲学不同的 Answer-first 与 Evidence-first AI research interfaces，比较两种支持方式如何影响研究判断形成。", 2060, -160),
-        researchNode("method_mixed_study", CanvasNodeType.Method, "Controlled Study + Process Analysis", "招募 48 名研究经验较少的高年级本科生与硕士一年级学生，开展组间对照实验；收集画布日志、论文选择、信心评分、任务结果、访谈与无 AI transfer task。", 2500, -160),
-        researchNode("evaluation_judgment", CanvasNodeType.Evaluation, "Research Judgment Evaluation", "从 Judgment Quality、Confidence Calibration、Process 和 Unaided Transfer 四层评估；主要指标包括证据选择准确率、可信度判断、校准误差与迁移表现。", 2940, -160),
-        researchNode("idea_judgment_scaffold", CanvasNodeType.Idea, "Judgment Scaffold", "一种 Evidence-first AI Workspace：AI 不直接替研究者完成综合与问题生成，而是在证据比较、可信度判断、矛盾识别和问题形成等关键节点提供结构化支持。", 3380, -160),
-
-        sourceNode("evidence_chi_critical_thinking", "Evidence｜CHI 2025 Critical Thinking", "https://www.microsoft.com/en-us/research/publication/the-impact-of-generative-ai-on-critical-thinking-self-reported-reductions-in-cognitive-effort-and-confidence-effects-from-a-survey-of-knowledge-workers/", 1120, 360),
-        sourceNode("evidence_unesco_guidance", "Evidence｜UNESCO Human-centred GenAI", "https://www.unesco.org/en/articles/guidance-generative-ai-education-and-research", 1460, 580),
-        sourceNode("evidence_unesco_competency", "Evidence｜UNESCO AI Competency", "https://www.unesco.org/en/articles/ai-competency-framework-students", 1120, 800),
-    ];
-
-    const connections: CanvasConnection[] = [
-        edge("seed_ai_research_training", "dir_ai_literacy"),
-        edge("seed_ai_research_training", "dir_research_judgment"),
-        edge("seed_ai_research_training", "dir_ai_writing"),
-        edge("seed_ai_research_training", "dir_learning_outcomes"),
-        edge("dir_research_judgment", "rq_relevance_credibility"),
-        edge("dir_research_judgment", "rq_judgment_support"),
-        edge("dir_research_judgment", "rq_gap_identification"),
-        edge("rq_judgment_support", "problem_answer_first_ai"),
-        edge("problem_answer_first_ai", "hyp_evidence_first"),
-        edge("problem_answer_first_ai", "hyp_efficiency_only"),
-        edge("hyp_evidence_first", "approach_contrastive_workspace"),
-        edge("approach_contrastive_workspace", "method_mixed_study"),
-        edge("method_mixed_study", "evaluation_judgment"),
-        edge("evaluation_judgment", "idea_judgment_scaffold"),
-        edge("evidence_chi_critical_thinking", "problem_answer_first_ai"),
-        edge("evidence_unesco_guidance", "problem_answer_first_ai"),
-        edge("evidence_unesco_competency", "hyp_evidence_first"),
+        {
+            id: "seed_agent_harness_evolution", type: CanvasNodeType.Seed, title: "Agent Harness 自进化",
+            position: { x: -420, y: 360 }, width: 300, height: 320,
+            metadata: {
+                status: "success",
+                summary: "研究 Agent Harness 如何从执行经验与反馈中持续改进自身。先铺开研究空间，再选择 L2 子方向形成 Research Question。",
+                document: "# Agent Harness 自进化\n\n## Seed\n\n研究 Agent Harness 如何从执行经验与反馈中持续改进自身。\n\n## Formation rule\n\n```text\nL0 Seed\n  ↓\nL1 Direction — 宽泛研究空间\n  ↓\nL2 Sub-direction — 明确问题区域\n  ↓\nL3 Research Question — 可研究、可回答的问题\n```\n\n第一轮不是生成几个看起来像论文题目的点子，而是搜索代表性文献、建立 taxonomy、检查九个正交轴的覆盖，并形成 Direction Map。",
+            },
+        },
+        {
+            id: "tutorial_guide", type: CanvasNodeType.Note, title: "教程｜如何使用这张地图",
+            position: { x: -420, y: 40 }, width: 300, height: 240,
+            metadata: {
+                status: "success",
+                content: "1. 从 Seed 进入 First Direction Map。\n2. 九张卡都是 L1 宽泛方向，不是论文题目。\n3. 卡片只显示核心问题、coverage 与分支数。\n4. 选中节点，在悬浮工具栏打开 Markdown 文档。\n5. 从文档中的 L2 分支继续形成 L3 Research Question。",
+                document: "# 教程：从 Seed 到 Direction Map\n\n- **浏览卡片**：快速比较九个研究轴。\n- **打开文档**：选中节点后点击工具栏的“文档”，查看和编辑完整 Markdown。\n- **继续探索**：选择一个 L2 Sub-direction，再生成具体 Research Question。\n- **保持层级**：Seed ≠ Direction ≠ Sub-direction ≠ Research Question。\n- **理解 coverage**：9/9 表示 taxonomy 的主要维度已经覆盖，不代表穷尽世界上所有方向。",
+            },
+        },
+        ...directions.map(directionNode),
     ];
 
     return {
-        title: "教程｜AI 时代的大学生研究训练",
-        createdAt: now,
-        updatedAt: now,
-        nodes,
-        connections,
-        chatSessions: [],
-        activeChatId: null,
-        backgroundMode: "dots",
-        showImageInfo: false,
-        viewport: { x: 520, y: 430, k: 0.32 },
+        title: "教程｜Agent Harness 自进化 Direction Map", createdAt: now, updatedAt: now, nodes,
+        connections: [edge("seed_agent_harness_evolution", BATCH_ID)], chatSessions: [], activeChatId: null,
+        backgroundMode: "dots", showImageInfo: false, viewport: { x: 520, y: 120, k: 0.62 },
     };
 }
