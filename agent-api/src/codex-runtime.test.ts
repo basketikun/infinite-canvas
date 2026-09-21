@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { CanvasBridge } from "./canvas-bridge.js";
+import { mapCodexNotification } from "./codex/events.js";
+import { spawnCodexProcess } from "./codex/process.js";
 import { CodexRuntimeAdapter, type CodexSpawnContext } from "./codex/runtime.js";
 import type { CodexTransport } from "./codex/client.js";
 import { AppError } from "./errors.js";
@@ -155,12 +159,17 @@ class ScriptedCodexTransport implements CodexTransport {
     private turns = 0;
     private holding = false;
     private resumeFails = false;
+    private initFails = false;
+    disposed = false;
 
     write(line: string) {
         const message = JSON.parse(line) as { id?: number; method?: string; params?: Record<string, unknown> };
         if (!message.method) return;
         this.calls.push({ method: message.method, params: message.params });
-        if (message.method === "initialize") return this.reply(message.id, {});
+        if (message.method === "initialize") {
+            if (this.initFails) return this.error(message.id, "initialize failed");
+            return this.reply(message.id, {});
+        }
         if (message.method === "thread/start") {
             this.started += 1;
             return this.reply(message.id, { thread: { id: this.started === 1 ? "thr_new" : "thr_other" } });
@@ -202,6 +211,14 @@ class ScriptedCodexTransport implements CodexTransport {
         this.exitHandler?.(new Error("Codex app-server exited: 1"));
     }
 
+    failInitialize() {
+        this.initFails = true;
+    }
+
+    emit(method: string, params: unknown) {
+        this.notify(method, params);
+    }
+
     onData(handler: (chunk: string) => void) {
         this.dataHandler = handler;
     }
@@ -210,7 +227,9 @@ class ScriptedCodexTransport implements CodexTransport {
         this.exitHandler = handler;
     }
 
-    dispose() {}
+    dispose() {
+        this.disposed = true;
+    }
 
     private complete(threadId: string, turnId: string) {
         this.notify("item/agentMessage/delta", { threadId, itemId: `${turnId}-m1`, delta: "hello" });
@@ -231,7 +250,7 @@ class ScriptedCodexTransport implements CodexTransport {
     }
 }
 
-async function harness(options: { holdTurns?: boolean } = {}) {
+async function harness(options: { holdTurns?: boolean; failInitialize?: boolean } = {}) {
     const store = new InMemoryResearchStore();
     const canvas = new CanvasBridge();
     const tokens = new RuntimeTokenService("test-secret");
@@ -248,6 +267,7 @@ async function harness(options: { holdTurns?: boolean } = {}) {
             spawns.push(input);
             const transport = new ScriptedCodexTransport();
             if (options.holdTurns) transport.holdTurns();
+            if (options.failInitialize && transports.length === 0) transport.failInitialize();
             transports.push(transport);
             return transport;
         },
@@ -265,7 +285,7 @@ async function harness(options: { holdTurns?: boolean } = {}) {
 }
 
 async function until(predicate: () => boolean) {
-    for (let i = 0; i < 40; i += 1) {
+    for (let i = 0; i < 200; i += 1) {
         if (predicate()) return;
         await new Promise((resolve) => setImmediate(resolve));
     }
@@ -273,10 +293,75 @@ async function until(predicate: () => boolean) {
 }
 
 async function settled(store: InMemoryResearchStore, ctx: { userId: string; projectId: string; canvasWorkspaceId: string }, conversationId: string, terminals: number, type = "run.completed") {
-    for (let i = 0; i < 40; i += 1) {
+    for (let i = 0; i < 200; i += 1) {
         const events = await store.listEvents(ctx, conversationId, 0);
         if (events.filter((event) => event.type === type).length >= terminals) return;
         await new Promise((resolve) => setImmediate(resolve));
     }
     throw new Error("run 没有结束");
 }
+
+test("产品事件不含 Codex JSON-RPC 原文", () => {
+    const event = mapCodexNotification("item/mcpToolCall/updated", {
+        threadId: "thr_new",
+        itemId: "call-1",
+        item: { id: "call-1", type: "mcp_tool_call", tool: "canvas_read_snapshot", output: { ok: true } },
+    });
+    assert.equal(event?.type, "tool.updated");
+    assert.equal(event?.itemId, "call-1");
+    assert.equal(event?.payload.toolName, "canvas_read_snapshot");
+    assert.deepEqual(event?.payload.update, { ok: true });
+    assert.equal("threadId" in (event?.payload || {}), false);
+    assert.equal("item" in (event?.payload || {}), false);
+});
+
+test("缺少 threadId 的通知不会落到唯一活跃 turn", async () => {
+    const { store, ctxA, conversationA, transports, runtime } = await harness({ holdTurns: true });
+    const first = runtime.runTurn(store, ctxA, { conversationId: conversationA.id, prompt: "one" });
+    await until(() => (transports[0]?.held.length || 0) === 1);
+    transports[0]?.emit("item/agentMessage/delta", { itemId: "orphan", delta: "leak" });
+    const events = await store.listEvents(ctxA, conversationA.id, 0);
+    assert.equal(events.filter((event) => event.type === "assistant.delta").length, 0);
+    transports[0]?.releaseTurns();
+    await settled(store, ctxA, conversationA.id, 1);
+    void first;
+});
+
+test("initialize 失败会 dispose 子进程，下一 turn 可重建", async () => {
+    const { store, ctxA, conversationA, transports, runtime } = await harness({ failInitialize: true });
+    await runtime.runTurn(store, ctxA, { conversationId: conversationA.id, prompt: "hello" });
+    await settled(store, ctxA, conversationA.id, 1, "run.failed");
+    assert.equal(transports[0]?.disposed, true);
+    await runtime.runTurn(store, ctxA, { conversationId: conversationA.id, prompt: "again" });
+    await settled(store, ctxA, conversationA.id, 1);
+    assert.equal(transports.length, 2);
+});
+
+test("启用的 Project Skill 写入 Codex workspace，停用的不写", async () => {
+    const { store, ctxA, conversationA, spawns, runtime } = await harness();
+    await store.saveSkill(ctxA, { name: "lab notes", definition: "# Lab", enabled: true });
+    await store.saveSkill(ctxA, { name: "off", definition: "nope", enabled: false });
+    await runtime.runTurn(store, ctxA, { conversationId: conversationA.id, prompt: "hello" });
+    await settled(store, ctxA, conversationA.id, 1);
+    const root = path.join(spawns[0]!.paths.workspace, ".agents", "skills");
+    assert.equal(await readFile(path.join(root, "lab-notes", "SKILL.md"), "utf8"), "# Lab");
+    await assert.rejects(() => readFile(path.join(root, "off", "SKILL.md"), "utf8"));
+});
+
+test("spawnCodexProcess 把 cwd 和 CODEX_HOME 交给子进程", () => {
+    const recorded: { cwd?: string; env?: NodeJS.ProcessEnv } = {};
+    const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stdin: { write: () => boolean }; kill: () => boolean };
+    child.stdout = new EventEmitter();
+    child.stdin = { write: () => true };
+    child.kill = () => true;
+    spawnCodexProcess({ bin: "codex", cwd: "/tmp/ws", codexHome: "/tmp/home", apiKey: "k" }, (_bin, _args, options) => {
+        recorded.cwd = options.cwd;
+        recorded.env = options.env as NodeJS.ProcessEnv;
+        return child as never;
+    });
+    assert.equal(recorded.cwd, "/tmp/ws");
+    assert.equal(recorded.env?.CODEX_HOME, "/tmp/home");
+    assert.equal(recorded.env?.OPENAI_API_KEY, "k");
+    assert.equal(recorded.env?.CODEX_API_KEY, "k");
+});
+

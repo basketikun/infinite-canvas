@@ -20,6 +20,7 @@ export type HostedRuntimeEvent = {
     createdAt: string;
 };
 export type HostedConversationSnapshot = { conversation: HostedConversation; events: HostedRuntimeEvent[] };
+export type HostedCanvas = { id: string; projectId: string; revision: number; snapshot: Record<string, unknown> | null; createdAt: string; updatedAt: string };
 
 export const hostedAgentApi = {
     createProject: (token: string, name: string) => request<HostedProject>(token, "/v1/projects", { method: "POST", body: JSON.stringify({ name }) }),
@@ -31,6 +32,7 @@ export const hostedAgentApi = {
     archiveConversation: (token: string, projectId: string, conversationId: string) => request(token, `/v1/projects/${projectId}/conversations/${conversationId}/archive`, { method: "POST" }),
     runTurn: (token: string, projectId: string, conversationId: string, prompt: string) => request<{ runId: string }>(token, `/v1/projects/${projectId}/conversations/${conversationId}/turns`, { method: "POST", body: JSON.stringify({ prompt }) }),
     abort: (token: string, projectId: string, conversationId: string, runId: string) => request<{ runId: string; abortRequested: boolean }>(token, `/v1/projects/${projectId}/conversations/${conversationId}/runs/${runId}/abort`, { method: "POST" }),
+    readCanvas: (token: string, projectId: string) => request<HostedCanvas>(token, `/v1/projects/${projectId}/canvas`),
     publishCanvas: (token: string, projectId: string, clientId: string, revision: number, snapshot: Record<string, unknown>) => request(token, `/v1/projects/${projectId}/canvas/state`, { method: "PUT", body: JSON.stringify({ clientId, revision, snapshot }) }),
     completeCanvasTool: (token: string, projectId: string, input: { callId: string; clientId?: string; revision?: number; snapshot?: Record<string, unknown>; result: Record<string, unknown> }) => request(token, `/v1/projects/${projectId}/canvas/tool-results/${input.callId}`, { method: "POST", body: JSON.stringify(input) }),
     listSkills: (token: string, projectId: string) => request<HostedProjectSkill[]>(token, `/v1/projects/${projectId}/skills`),

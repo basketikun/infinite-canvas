@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import { CanvasBridge } from "../canvas-bridge.js";
 import { AppError } from "../errors.js";
@@ -112,7 +113,12 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
             this.live.delete(id);
             this.runtimes.delete(id);
         });
-        await runtime.initialize();
+        try {
+            await runtime.initialize();
+        } catch (error) {
+            runtime.dispose();
+            throw error;
+        }
         this.live.set(id, runtime);
         return runtime;
     }
@@ -125,6 +131,7 @@ export class CodexRuntime {
     private readonly pendingTurns = new Map<string, (error?: Error) => void>();
     private readonly completedTurns = new Map<string, Error | null>();
     private closeHandler: (() => void) | null = null;
+    private skillsLock: Promise<void> = Promise.resolve();
 
     constructor(
         readonly ctx: RequestContext,
@@ -135,7 +142,7 @@ export class CodexRuntime {
     ) {
         this.client = new CodexJsonRpcClient(transport);
         this.client.onNotification((method, params) => {
-            const turn = turnForNotification(this.turns, this.turnsByThread, params);
+            const turn = turnForNotification(this.turnsByThread, params);
             if (turn) {
                 const event = mapCodexNotification(method, params);
                 if (event) void turn.emit(event);
@@ -157,6 +164,10 @@ export class CodexRuntime {
         this.closeHandler = handler;
     }
 
+    dispose() {
+        this.client.dispose();
+    }
+
     async initialize() {
         await this.client.request("initialize", {
             clientInfo: { name: "agent-api", title: "Research Canvas Agent API", version: "0.1.0" },
@@ -174,6 +185,8 @@ export class CodexRuntime {
         };
         input.signal.addEventListener("abort", onAbort, { once: true });
         try {
+            const skills = (await input.store.listSkills(input.ctx)).filter((skill) => skill.enabled);
+            await this.syncSkills(skills);
             const conversation = await input.store.readConversation(input.ctx, input.conversationId);
             turn.threadId = await this.ensureThread(input, conversation.codexThreadId);
             this.turnsByThread.set(turn.threadId, turn);
@@ -251,6 +264,12 @@ export class CodexRuntime {
         this.pendingTurns.get(key)?.(error || undefined);
     }
 
+    private async syncSkills(skills: Array<{ name: string; definition: string }>) {
+        const run = this.skillsLock.then(() => writeEnabledSkills(this.paths.workspace, skills));
+        this.skillsLock = run.then(() => undefined, () => undefined);
+        await run;
+    }
+
     private mcpConfig(conversationId: string) {
         return {
             mcp_servers: {
@@ -288,12 +307,25 @@ function terminalTurn(method: string, params: unknown) {
     return { threadId, turnId };
 }
 
-function turnForNotification(turns: Map<string, ActiveTurn>, byThread: Map<string, ActiveTurn>, params: unknown) {
+function turnForNotification(byThread: Map<string, ActiveTurn>, params: unknown) {
     const value = params && typeof params === "object" ? params as JsonObject : {};
     const threadId = typeof value.threadId === "string" ? value.threadId : "";
-    if (threadId && byThread.has(threadId)) return byThread.get(threadId);
-    if (turns.size === 1) return [...turns.values()][0];
-    return undefined;
+    return threadId ? byThread.get(threadId) : undefined;
+}
+
+async function writeEnabledSkills(workspace: string, skills: Array<{ name: string; definition: string }>) {
+    const root = path.join(workspace, ".agents", "skills");
+    await rm(root, { recursive: true, force: true });
+    await mkdir(root, { recursive: true });
+    for (const skill of skills) {
+        const dir = path.join(root, skillDirName(skill.name));
+        await mkdir(dir, { recursive: true });
+        await writeFile(path.join(dir, "SKILL.md"), skill.definition);
+    }
+}
+
+function skillDirName(name: string) {
+    return name.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "skill";
 }
 
 export function runtimeKey(ctx: Pick<RequestContext, "userId" | "projectId">) {

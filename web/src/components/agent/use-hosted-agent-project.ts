@@ -7,6 +7,7 @@ import { hostedAgentConfigured } from "@/services/api/supabase";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useUserStore } from "@/stores/use-user-store";
+import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 
 const bindingRequests = new Set<string>();
 const publishedRevisions = new Map<string, number>();
@@ -16,6 +17,7 @@ export function useHostedAgentProject() {
     const { id = "" } = useParams<{ id: string }>();
     const [bindingAttempt, setBindingAttempt] = useState(0);
     const [binding, setBinding] = useState(false);
+    const [canvasHydrated, setCanvasHydrated] = useState(false);
     const user = useUserStore((state) => state.user);
     const accessToken = useUserStore((state) => state.accessToken);
     const project = useCanvasStore((state) => state.projects.find((item) => item.id === id && item.localOwnerUserId === user?.id));
@@ -43,7 +45,44 @@ export function useHostedAgentProject() {
     }, [canvasContext, project?.id]);
 
     useEffect(() => {
-        if (!bound || !accessToken || !project?.agentProjectId || !snapshot) return;
+        if (!bound || !accessToken || !project?.agentProjectId) {
+            setCanvasHydrated(false);
+            return;
+        }
+        const canvasProjectId = project.id;
+        const hostedProjectId = project.agentProjectId;
+        let cancelled = false;
+        setCanvasHydrated(false);
+        void hostedAgentApi.readCanvas(accessToken, hostedProjectId).then((canvas) => {
+            if (cancelled) return;
+            const current = useCanvasStore.getState().projects.find((item) => item.id === canvasProjectId);
+            const snapshotValue = canvas.snapshot;
+            const nodes = Array.isArray(snapshotValue?.nodes) ? snapshotValue.nodes as CanvasNodeData[] : null;
+            const localRevision = current?.agentRevision || 0;
+            if (current && nodes && canvas.revision >= localRevision && (canvas.revision > localRevision || current.nodes.length === 0)) {
+                useCanvasStore.setState((state) => ({
+                    projects: state.projects.map((item) => item.id === canvasProjectId ? {
+                        ...item,
+                        nodes,
+                        connections: Array.isArray(snapshotValue?.connections) ? snapshotValue.connections as CanvasConnection[] : [],
+                        agentRevision: canvas.revision,
+                        updatedAt: new Date().toISOString(),
+                    } : item),
+                }));
+            }
+        }).catch((error) => {
+            if (!cancelled) message.error(error instanceof Error ? error.message : "读取托管画布失败");
+        }).finally(() => {
+            if (!cancelled) setCanvasHydrated(true);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [accessToken, bound, message, project?.agentProjectId, project?.id]);
+
+    useEffect(() => {
+        if (!canvasHydrated || !bound || !accessToken || !project?.agentProjectId || !snapshot) return;
+        if (project.nodes.length > 0 && snapshot.nodes.length === 0) return;
         const revision = project.agentRevision || 0;
         if (publishedRevisions.get(project.agentProjectId) === revision) return;
         publishedRevisions.set(project.agentProjectId, revision);
@@ -51,7 +90,7 @@ export function useHostedAgentProject() {
             publishedRevisions.delete(project.agentProjectId!);
             message.error(error instanceof Error ? error.message : "同步画布失败");
         });
-    }, [accessToken, bound, message, project?.agentProjectId, project?.agentRevision, snapshot]);
+    }, [accessToken, bound, canvasHydrated, message, project?.agentProjectId, project?.agentRevision, project?.nodes.length, snapshot]);
 
     return {
         enabled: hostedAgentConfigured && bound,

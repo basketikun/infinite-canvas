@@ -4,6 +4,7 @@
 
 + [新增] 托管 Agent API 可切换为服务器 Codex Runtime：每个用户 Project 一个隔离 app-server，Conversation 映射到 Codex Thread，画布 MCP 通过运行时 token 绑定当前 Project，浏览器仍只走 agent-api 并确认写画布。
 + [修复] 托管 Codex Runtime 崩溃后会重建进程并 resume 原 thread；同一 Project 下不同 Conversation 可并行；默认沙箱只读；内部画布 API 仅本机可调用。
++ [修复] 托管画布刷新后可从 Agent API 读回已确认 snapshot；Codex Runtime 会写入启用的 Project Skill，产品事件不再带 JSON-RPC 原文。
 
 
 + [新增] 新增「Agent Harness 自进化」教程 Canvas，以 Seed、Direction Batch 与 3×3 分类地图呈现九个 L1 研究方向及其覆盖范围。

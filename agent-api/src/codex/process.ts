@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 
 import type { CodexTransport } from "./client.js";
 
@@ -9,8 +9,10 @@ export type SpawnCodexInput = {
     apiKey: string;
 };
 
-export function spawnCodexProcess(input: SpawnCodexInput): CodexTransport {
-    const child = spawn(input.bin, ["app-server", "--stdio"], {
+export type SpawnCodexFn = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
+
+export function spawnCodexProcess(input: SpawnCodexInput, spawnFn: SpawnCodexFn = spawn): CodexTransport {
+    const child = spawnFn(input.bin, ["app-server", "--stdio"], {
         cwd: input.cwd,
         env: {
             ...process.env,

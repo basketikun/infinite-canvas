@@ -14,12 +14,14 @@ export function mapCodexNotification(method: string, params: unknown): AdapterEv
     if ((method === "item/completed" || method === "item/mcpToolCall/completed") && isTool(itemType) && itemId) {
         return { type: "tool.completed", itemId, payload: { toolName: string(item.tool) || string(item.name) || itemType, isError: Boolean(item.error), result: item.result ?? item.output ?? {} } };
     }
-    if (method === "item/mcpToolCall/updated" && itemId) return { type: "tool.updated", itemId, payload: { update: value } };
+    if (method === "item/mcpToolCall/updated" && itemId) {
+        return { type: "tool.updated", itemId, payload: { toolName: string(item.tool) || string(item.name) || itemType, update: item.result ?? item.output ?? {} } };
+    }
     return null;
 }
 
 function isAgentMessage(type: string) {
-    return type === "agent_message" || type === "agentMessage";
+    return type === "agent_message";
 }
 
 function isTool(type: string) {
