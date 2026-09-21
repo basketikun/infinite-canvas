@@ -194,7 +194,7 @@ export class CodexRuntime {
                 threadId: turn.threadId,
                 input: [{ type: "text", text: input.prompt, text_elements: [] }],
                 approvalPolicy: "on-request",
-                sandboxPolicy: { type: "readOnly" },
+                sandboxPolicy: { type: "readOnly", networkAccess: false },
             }) as TurnResult;
             turnId = started.turn?.id || "";
             if (!turnId) throw new Error("Codex 未返回 turn");
@@ -259,9 +259,8 @@ export class CodexRuntime {
         const terminal = terminalTurn(method, params);
         if (!terminal) return;
         const key = `${terminal.threadId}:${terminal.turnId}`;
-        const error = method === "turn/failed" ? new Error("Agent 运行失败") : null;
-        this.completedTurns.set(key, error);
-        this.pendingTurns.get(key)?.(error || undefined);
+        this.completedTurns.set(key, terminal.error);
+        this.pendingTurns.get(key)?.(terminal.error || undefined);
     }
 
     private async syncSkills(skills: Array<{ name: string; definition: string }>) {
@@ -304,7 +303,10 @@ function terminalTurn(method: string, params: unknown) {
     const turnId = typeof turn.id === "string" ? turn.id : typeof value.turnId === "string" ? value.turnId : "";
     const threadId = typeof value.threadId === "string" ? value.threadId : "";
     if (!turnId || !threadId) return null;
-    return { threadId, turnId };
+    const reported = turn.error && typeof turn.error === "object" ? turn.error as JsonObject : null;
+    const failed = method === "turn/failed" || Boolean(reported);
+    const message = typeof reported?.message === "string" ? reported.message : "Agent 运行失败";
+    return { threadId, turnId, error: failed ? new Error(message) : null };
 }
 
 function turnForNotification(byThread: Map<string, ActiveTurn>, params: unknown) {

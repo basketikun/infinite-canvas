@@ -21,7 +21,7 @@ export function mapCodexNotification(method: string, params: unknown): AdapterEv
 }
 
 function isAgentMessage(type: string) {
-    return type === "agent_message";
+    return type === "agent_message" || type === "agentMessage";
 }
 
 function isTool(type: string) {

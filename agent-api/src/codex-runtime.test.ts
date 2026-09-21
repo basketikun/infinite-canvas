@@ -80,7 +80,7 @@ test("Codex adapter 每个 Project 一个 Runtime，第二次 turn 走 resume，
     assert.ok(methodsA.includes("thread/resume"));
     assert.equal(methodsA.filter((method) => method === "thread/start").length, 2);
     const turnStart = transports[0]?.calls.find((item) => item.method === "turn/start")?.params as { sandboxPolicy?: unknown };
-    assert.deepEqual(turnStart.sandboxPolicy, { type: "readOnly" });
+    assert.deepEqual(turnStart.sandboxPolicy, { type: "readOnly", networkAccess: false });
     const threadStart = transports[0]?.calls.find((item) => item.method === "thread/start")?.params as { sandbox?: string; config?: Record<string, unknown> };
     assert.equal(threadStart.sandbox, "read-only");
     assert.equal(threadStart.config?.model_reasoning_summary, undefined);
@@ -160,6 +160,7 @@ class ScriptedCodexTransport implements CodexTransport {
     private holding = false;
     private resumeFails = false;
     private initFails = false;
+    private turnFails = false;
     disposed = false;
 
     write(line: string) {
@@ -189,7 +190,7 @@ class ScriptedCodexTransport implements CodexTransport {
                 this.held.push({ threadId, turnId });
                 return;
             }
-            setImmediate(() => this.complete(threadId, turnId));
+            setImmediate(() => this.turnFails ? this.failTurn(threadId, turnId) : this.complete(threadId, turnId));
         }
     }
 
@@ -205,6 +206,10 @@ class ScriptedCodexTransport implements CodexTransport {
 
     failNextResume() {
         this.resumeFails = true;
+    }
+
+    failNextTurn() {
+        this.turnFails = true;
     }
 
     crash() {
@@ -233,8 +238,13 @@ class ScriptedCodexTransport implements CodexTransport {
 
     private complete(threadId: string, turnId: string) {
         this.notify("item/agentMessage/delta", { threadId, itemId: `${turnId}-m1`, delta: "hello" });
-        this.notify("item/completed", { threadId, item: { id: `${turnId}-m1`, type: "agent_message", text: "hello" } });
+        this.notify("item/completed", { threadId, item: { id: `${turnId}-m1`, type: "agentMessage", text: "hello" } });
         this.notify("turn/completed", { threadId, turn: { id: turnId } });
+    }
+
+    private failTurn(threadId: string, turnId: string) {
+        this.turnFails = false;
+        this.notify("turn/completed", { threadId, turn: { id: turnId, error: { message: "boom" } } });
     }
 
     private reply(id: number | undefined, result: unknown) {
@@ -250,7 +260,7 @@ class ScriptedCodexTransport implements CodexTransport {
     }
 }
 
-async function harness(options: { holdTurns?: boolean; failInitialize?: boolean } = {}) {
+async function harness(options: { holdTurns?: boolean; failInitialize?: boolean; failTurn?: boolean } = {}) {
     const store = new InMemoryResearchStore();
     const canvas = new CanvasBridge();
     const tokens = new RuntimeTokenService("test-secret");
@@ -268,6 +278,7 @@ async function harness(options: { holdTurns?: boolean; failInitialize?: boolean 
             const transport = new ScriptedCodexTransport();
             if (options.holdTurns) transport.holdTurns();
             if (options.failInitialize && transports.length === 0) transport.failInitialize();
+            if (options.failTurn && transports.length === 0) transport.failNextTurn();
             transports.push(transport);
             return transport;
         },
@@ -313,6 +324,15 @@ test("产品事件不含 Codex JSON-RPC 原文", () => {
     assert.deepEqual(event?.payload.update, { ok: true });
     assert.equal("threadId" in (event?.payload || {}), false);
     assert.equal("item" in (event?.payload || {}), false);
+    const completed = mapCodexNotification("item/completed", { threadId: "thr_new", item: { id: "m1", type: "agentMessage", text: "hello" } });
+    assert.equal(completed?.type, "assistant.completed");
+    assert.equal(completed?.payload.text, "hello");
+});
+
+test("turn/completed 带 error 记为失败", async () => {
+    const { store, ctxA, conversationA, runtime } = await harness({ failTurn: true });
+    await runtime.runTurn(store, ctxA, { conversationId: conversationA.id, prompt: "hello" });
+    await settled(store, ctxA, conversationA.id, 1, "run.failed");
 });
 
 test("缺少 threadId 的通知不会落到唯一活跃 turn", async () => {
