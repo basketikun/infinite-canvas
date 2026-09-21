@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { AppError } from "./errors.js";
 import type { ResearchStore } from "./store.js";
-import { PI_SESSION_STORAGE_VERSION, type AgentRunStatus, type ConversationSession, type NewRuntimeEvent, type RequestContext } from "./types.js";
+import { PI_SESSION_STORAGE_VERSION, type AgentRunStatus, type ConversationSession, type JsonObject, type NewRuntimeEvent, type RequestContext } from "./types.js";
 
 export class SupabaseResearchStore implements ResearchStore {
     constructor(private readonly client: SupabaseClient) {}
@@ -32,7 +32,7 @@ export class SupabaseResearchStore implements ResearchStore {
     }
 
     async readCanvas(ctx: RequestContext) {
-        const { data, error } = await this.client.from("canvas_workspaces").select("id,project_id,revision,created_at,updated_at").eq("id", ctx.canvasWorkspaceId).eq("project_id", ctx.projectId).maybeSingle();
+        const { data, error } = await this.client.from("canvas_workspaces").select("id,project_id,revision,snapshot,created_at,updated_at").eq("id", ctx.canvasWorkspaceId).eq("project_id", ctx.projectId).maybeSingle();
         if (error) throw databaseError(error);
         if (!data) throw new AppError("找不到画布工作区", 404, "canvas_not_found");
         return canvas(row(data));
@@ -45,6 +45,13 @@ export class SupabaseResearchStore implements ResearchStore {
         return canvas(row(value));
     }
 
+    async saveCanvasState(ctx: RequestContext, revision: number, snapshot: JsonObject) {
+        const data = await this.rpc("save_canvas_state", { target_project_id: ctx.projectId, target_revision: revision, next_snapshot: snapshot });
+        const value = first(data);
+        if (!value) throw new AppError("找不到画布工作区", 404, "canvas_not_found");
+        return canvas(row(value));
+    }
+
     async createConversation(ctx: RequestContext, title: string) {
         const { data, error } = await this.client.from("conversations").insert({ project_id: ctx.projectId, owner_user_id: ctx.userId, title }).select().single();
         if (error) throw databaseError(error);
@@ -52,13 +59,13 @@ export class SupabaseResearchStore implements ResearchStore {
     }
 
     async listConversations(ctx: RequestContext) {
-        const { data, error } = await this.client.from("conversations").select("id,project_id,owner_user_id,title,status,session_revision,created_at,updated_at").eq("project_id", ctx.projectId).order("updated_at", { ascending: false });
+        const { data, error } = await this.client.from("conversations").select("id,project_id,owner_user_id,title,status,session_revision,codex_thread_id,created_at,updated_at").eq("project_id", ctx.projectId).order("updated_at", { ascending: false });
         if (error) throw databaseError(error);
         return (data || []).map((value) => conversation(row(value)));
     }
 
     async readConversation(ctx: RequestContext, conversationId: string) {
-        const { data, error } = await this.client.from("conversations").select("id,project_id,owner_user_id,title,status,session_revision,created_at,updated_at").eq("id", conversationId).eq("project_id", ctx.projectId).maybeSingle();
+        const { data, error } = await this.client.from("conversations").select("id,project_id,owner_user_id,title,status,session_revision,codex_thread_id,created_at,updated_at").eq("id", conversationId).eq("project_id", ctx.projectId).maybeSingle();
         if (error) throw databaseError(error);
         if (!data) throw new AppError("找不到对话", 404, "conversation_not_found");
         return conversation(row(data));
@@ -101,6 +108,21 @@ export class SupabaseResearchStore implements ResearchStore {
         const value = first(data);
         if (!value) throw new AppError("对话已在其他运行中更新", 409, "session_revision_conflict");
         return number(row(value).session_revision);
+    }
+
+    async bindCodexThread(ctx: RequestContext, conversationId: string, threadId: string) {
+        const { data, error } = await this.client.from("conversations").update({ codex_thread_id: threadId }).eq("id", conversationId).eq("project_id", ctx.projectId).select("id,project_id,owner_user_id,title,status,session_revision,codex_thread_id,created_at,updated_at").maybeSingle();
+        if (error) throw databaseError(error);
+        if (!data) throw new AppError("找不到对话", 404, "conversation_not_found");
+        return conversation(row(data));
+    }
+
+    async bindCodexTurn(ctx: RequestContext, conversationId: string, runId: string, turnId: string) {
+        await this.readConversation(ctx, conversationId);
+        const { data, error } = await this.client.from("agent_runs").update({ codex_turn_id: turnId }).eq("id", runId).eq("conversation_id", conversationId).select().maybeSingle();
+        if (error) throw databaseError(error);
+        if (!data) throw new AppError("找不到运行记录", 404, "run_not_found");
+        return run(row(data));
     }
 
     async beginRun(ctx: RequestContext, conversationId: string) {
@@ -186,16 +208,17 @@ function project(value: Record<string, unknown>) {
 }
 
 function canvas(value: Record<string, unknown>) {
-    return { id: string(value.id), projectId: string(value.project_id), revision: number(value.revision), createdAt: string(value.created_at), updatedAt: string(value.updated_at) };
+    const snapshot = value.snapshot && typeof value.snapshot === "object" && !Array.isArray(value.snapshot) ? row(value.snapshot) : null;
+    return { id: string(value.id), projectId: string(value.project_id), revision: number(value.revision), snapshot, createdAt: string(value.created_at), updatedAt: string(value.updated_at) };
 }
 
 function conversation(value: Record<string, unknown>) {
-    return { id: string(value.id), projectId: string(value.project_id), ownerUserId: string(value.owner_user_id), title: string(value.title), status: value.status === "archived" ? "archived" as const : "active" as const, sessionRevision: number(value.session_revision), createdAt: string(value.created_at), updatedAt: string(value.updated_at) };
+    return { id: string(value.id), projectId: string(value.project_id), ownerUserId: string(value.owner_user_id), title: string(value.title), status: value.status === "archived" ? "archived" as const : "active" as const, sessionRevision: number(value.session_revision), codexThreadId: value.codex_thread_id ? string(value.codex_thread_id) : null, createdAt: string(value.created_at), updatedAt: string(value.updated_at) };
 }
 
 function run(value: Record<string, unknown>) {
     const status = ["completed", "failed", "aborted"].includes(string(value.status)) ? string(value.status) as "completed" | "failed" | "aborted" : "running" as const;
-    return { id: string(value.id), conversationId: string(value.conversation_id), actorUserId: string(value.actor_user_id), status, startedAt: string(value.started_at), completedAt: value.completed_at ? string(value.completed_at) : null };
+    return { id: string(value.id), conversationId: string(value.conversation_id), actorUserId: string(value.actor_user_id), status, codexTurnId: value.codex_turn_id ? string(value.codex_turn_id) : null, startedAt: string(value.started_at), completedAt: value.completed_at ? string(value.completed_at) : null };
 }
 
 function runtimeEvent(value: Record<string, unknown>) {

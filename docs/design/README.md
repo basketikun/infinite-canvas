@@ -11,6 +11,7 @@
 | [canvas/huabu-node-presentation-and-links.md](./canvas/huabu-node-presentation-and-links.md) | 节点怎么展示、怎么连 | 画布呈现 |
 | [canvas/huabu-reverse-engineering.md](./canvas/huabu-reverse-engineering.md) | 从 Huabu 源码借什么、砍什么 | 实现依据；命令集结论已更新为 9 条（原 ADR 0010，见 CoResearch） |
 | [workspace.md](./workspace.md) | `research/` 里存什么，和能力源码怎么隔离 | 落盘；**目录结构已被 Postgres 架构取代**，实体/关系建模思路仍成立，文中 Superseded 标注 |
+| [hosted-codex-runtime.md](./hosted-codex-runtime.md) | 托管版 Agent：Codex Runtime 粒度、隔离、Conversation 与 Thread 映射 | 本仓库实现规格（非 CoResearch 副本） |
 | [space.md](./space.md) | Wiki 与 Idea 定位空间 | 知识与想法空间（与画布运行时边界"Canvas"是两个不同概念） |
 | [idea-structure.md](./idea-structure.md) | Idea 身份、十维、Proposal、确认 | 对象模型；`Proposal` 定义被 CoResearch ADR 0004 直接复用 |
 | [assets/](./assets/) | 文献空间概念图 | 视觉参考 |

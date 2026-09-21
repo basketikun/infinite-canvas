@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 import { AppError } from "./errors.js";
 import type { ResearchStore } from "./store.js";
-import { PI_SESSION_STORAGE_VERSION, type AgentRun, type AgentRunStatus, type CanvasWorkspace, type Conversation, type ConversationSession, type NewRuntimeEvent, type Project, type ProjectSkill, type RequestContext, type RuntimeEvent } from "./types.js";
+import { PI_SESSION_STORAGE_VERSION, type AgentRun, type AgentRunStatus, type CanvasWorkspace, type Conversation, type ConversationSession, type JsonObject, type NewRuntimeEvent, type Project, type ProjectSkill, type RequestContext, type RuntimeEvent } from "./types.js";
 
 type ProjectRecord = Project & { canvas: CanvasWorkspace };
 
@@ -20,7 +20,7 @@ export class InMemoryResearchStore implements ResearchStore {
         const projectId = crypto.randomUUID();
         const canvasWorkspaceId = crypto.randomUUID();
         const project: Project = { id: projectId, ownerUserId: userId, name, canvasWorkspaceId, createdAt: now, updatedAt: now };
-        const canvas: CanvasWorkspace = { id: canvasWorkspaceId, projectId, revision: 0, createdAt: now, updatedAt: now };
+        const canvas: CanvasWorkspace = { id: canvasWorkspaceId, projectId, revision: 0, snapshot: null, createdAt: now, updatedAt: now };
         this.projects.set(projectId, { ...project, canvas });
         return project;
     }
@@ -47,19 +47,26 @@ export class InMemoryResearchStore implements ResearchStore {
     }
 
     async readCanvas(ctx: RequestContext) {
-        return { ...this.contextProject(ctx).canvas };
+        const canvas = this.contextProject(ctx).canvas;
+        return { ...canvas, snapshot: canvas.snapshot ? structuredClone(canvas.snapshot) : null };
     }
 
     async advanceCanvasRevision(ctx: RequestContext, revision: number) {
         const project = this.contextProject(ctx);
         if (revision > project.canvas.revision) project.canvas = { ...project.canvas, revision, updatedAt: new Date().toISOString() };
-        return { ...project.canvas };
+        return { ...project.canvas, snapshot: project.canvas.snapshot ? structuredClone(project.canvas.snapshot) : null };
+    }
+
+    async saveCanvasState(ctx: RequestContext, revision: number, snapshot: JsonObject) {
+        const project = this.contextProject(ctx);
+        if (revision > project.canvas.revision) project.canvas = { ...project.canvas, revision, snapshot: structuredClone(snapshot), updatedAt: new Date().toISOString() };
+        return { ...project.canvas, snapshot: project.canvas.snapshot ? structuredClone(project.canvas.snapshot) : null };
     }
 
     async createConversation(ctx: RequestContext, title: string) {
         this.contextProject(ctx);
         const now = new Date().toISOString();
-        const conversation: Conversation = { id: crypto.randomUUID(), projectId: ctx.projectId, ownerUserId: ctx.userId, title, status: "active", sessionRevision: 0, createdAt: now, updatedAt: now };
+        const conversation: Conversation = { id: crypto.randomUUID(), projectId: ctx.projectId, ownerUserId: ctx.userId, title, status: "active", sessionRevision: 0, codexThreadId: null, createdAt: now, updatedAt: now };
         this.conversations.set(conversation.id, conversation);
         this.sessions.set(conversation.id, { storageVersion: PI_SESSION_STORAGE_VERSION, revision: 0, header: null, entries: [] });
         return { ...conversation };
@@ -97,11 +104,25 @@ export class InMemoryResearchStore implements ResearchStore {
         return revision;
     }
 
+    async bindCodexThread(ctx: RequestContext, conversationId: string, threadId: string) {
+        const conversation = this.ownedConversation(ctx, conversationId);
+        const next = { ...conversation, codexThreadId: threadId, updatedAt: new Date().toISOString() };
+        this.conversations.set(conversationId, next);
+        return { ...next };
+    }
+
+    async bindCodexTurn(ctx: RequestContext, conversationId: string, runId: string, turnId: string) {
+        const run = await this.readRun(ctx, conversationId, runId);
+        const next = { ...run, codexTurnId: turnId };
+        this.runs.set(runId, next);
+        return { ...next };
+    }
+
     async beginRun(ctx: RequestContext, conversationId: string) {
         this.ownedConversation(ctx, conversationId);
         const existing = [...this.runs.values()].find((run) => run.conversationId === conversationId && run.status === "running");
         if (existing) throw new AppError("当前对话已有任务正在运行", 409, "conversation_busy");
-        const run: AgentRun = { id: crypto.randomUUID(), conversationId, actorUserId: ctx.userId, status: "running", startedAt: new Date().toISOString(), completedAt: null };
+        const run: AgentRun = { id: crypto.randomUUID(), conversationId, actorUserId: ctx.userId, status: "running", codexTurnId: null, startedAt: new Date().toISOString(), completedAt: null };
         this.runs.set(run.id, run);
         return { ...run };
     }

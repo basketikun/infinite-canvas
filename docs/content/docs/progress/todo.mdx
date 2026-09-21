@@ -5,9 +5,13 @@ description: Planned follow-up work
 
 # TODO
 
-- Run the hosted Pi Agent migration against a real Supabase project and platform model account, verify RLS and the full Browser → Agent API → Pi → Tool → Canvas → Browser path, then decide whether the Codex app-server and MCP loop can be retired.
+- Bind user confirmation to an immutable node content version, add semantic relation review, and expose node-linked run progress. Stage transitions, candidate adoption, Method/Evaluation co-design, and Idea dependencies are now enforced locally, but the browser-local canvas still has no versioned Research Domain backend.
+
+- Run the hosted Pi Agent migration against a real Supabase project and platform model account, verify RLS and the full Browser → Agent API → Pi → Tool → Canvas → Browser path. Hosted Codex Runtime is now the target long-term adapter; keep Pi until that path is verified, then decide whether to retire it.
+- Hosted Codex Runtime: apply `002_codex_runtime.sql`, set `AGENT_RUNTIME=codex` with platform Codex credentials, and verify Browser → agent-api → project-scoped Codex app-server → MCP → Canvas confirm. See `docs/design/hosted-codex-runtime.md`. Idle recycle, max processes, and turn timeouts are still unset.
 - Add sticky routing or a shared event broker for in-flight abort controllers, online Canvas snapshots, and pending tool confirmations before horizontally scaling the hosted Agent API.
 - Replace the Claude Code CLI adapter with a Claude Agent SDK adapter and improve the tool queue, following the [Local Agent Integration Plan](/docs/progress/local-agent-integration-plan).
-- Add Skill installation from web search, Skill resource-file management, and controlled local-memory persistence.
+- Add Skill installation from web search and controlled local-memory persistence. Bundled Skill resource files are now installed recursively without overwriting user-owned edits.
+- Move local Project Artifacts to the hosted Agent API after the Project ownership path is verified; keep the public Artifact Tool contract and server-derived Project scope unchanged.
 - Direction Deep Dive: after a Direction is chosen, automatically build the research spine (Phase, literature Method/Evaluation, Papers). Phase is a structure node for that auto-build, not a bottom-toolbar main-flow node. See [Research Interaction](/docs/progress/research-interaction).
 - Literature Papers: connect PDF/Web source nodes into the Deep Dive literature layer; do not put Papers on the bottom toolbar.

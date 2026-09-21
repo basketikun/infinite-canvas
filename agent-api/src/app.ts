@@ -3,31 +3,44 @@ import express, { type NextFunction, type Request, type Response } from "express
 
 import { SupabaseAuth, type AuthenticatedRequest } from "./auth.js";
 import { CanvasBridge } from "./canvas-bridge.js";
+import type { AppConfig } from "./config.js";
+import { CodexRuntimeAdapter } from "./codex/runtime.js";
 import { AppError } from "./errors.js";
 import { EventHub } from "./event-hub.js";
-import { PiRuntimeAdapter, type PiRuntimeConfig } from "./pi-runtime.js";
+import { PiRuntimeAdapter } from "./pi-runtime.js";
 import { ConversationModule, ProjectModule, requiredText } from "./project-module.js";
+import type { RuntimeAdapter } from "./runtime.js";
 import { RuntimeManager } from "./runtime-manager.js";
+import { RuntimeTokenService } from "./runtime-token.js";
 import { SupabaseResearchStore } from "./supabase-store.js";
 import { AGENT_PROTOCOL_VERSION, type JsonObject, type RuntimeEvent } from "./types.js";
 
-type AppConfig = {
-    supabaseUrl: string;
-    supabasePublishableKey: string;
-    origins: string[];
-    pi: PiRuntimeConfig;
-};
-
-export function createApp(config: AppConfig) {
+export function createApp(config: AppConfig, deps: { canvas?: CanvasBridge; adapter?: RuntimeAdapter } = {}) {
     const app = express();
     const auth = new SupabaseAuth(config.supabaseUrl, config.supabasePublishableKey);
     const hub = new EventHub();
-    const canvas = new CanvasBridge();
-    const runtime = new RuntimeManager(new PiRuntimeAdapter(canvas, config.pi), hub);
+    const canvas = deps.canvas || new CanvasBridge();
+    const adapter = deps.adapter || createRuntimeAdapter(config, canvas);
+    const runtime = new RuntimeManager(adapter, hub);
+    const codex = adapter instanceof CodexRuntimeAdapter ? adapter : null;
 
     app.use(cors({ origin: (origin, callback) => callback(null, !origin || config.origins.includes(origin)) }));
     app.use(express.json());
-    app.get("/health", (_request, response) => response.json({ ok: true }));
+    app.get("/health", (_request, response) => response.json({ ok: true, runtime: config.runtime }));
+
+    app.post("/internal/runtime/canvas/read", asyncRoute(async (request, response) => {
+        if (!codex) throw new AppError("当前运行时不是 Codex", 409, "runtime_not_codex");
+        const snapshot = await codex.readCanvas(runtimeToken(request));
+        response.json(snapshot);
+    }));
+    app.post("/internal/runtime/canvas/apply", asyncRoute(async (request, response) => {
+        if (!codex) throw new AppError("当前运行时不是 Codex", 409, "runtime_not_codex");
+        const operations = Array.isArray(request.body?.operations) ? request.body.operations : [];
+        const summary = requiredText(request.body?.summary, "缺少画布修改说明");
+        const result = await codex.applyCanvas(runtimeToken(request), operations, summary);
+        response.json({ result });
+    }));
+
     app.use(asyncRoute(async (request, response, next) => {
         response.locals.auth = await auth.authenticate(request.header("authorization"));
         next();
@@ -60,32 +73,10 @@ export function createApp(config: AppConfig) {
         const ctx = await scope.projects.context(scope.auth.userId, request.params.projectId);
         response.json(await scope.store.readCanvas(ctx));
     }));
-    app.post("/v1/projects/:projectId/canvas/snapshot", asyncRoute(async (request, response) => {
-        const scope = requestScope(response);
-        const ctx = await scope.projects.context(scope.auth.userId, request.params.projectId);
-        const clientId = requiredText(request.body?.clientId, "缺少画布客户端 ID");
-        const revision = nonNegativeInteger(request.body?.revision, "画布 revision 无效");
-        const snapshot = jsonObject(request.body?.snapshot, "画布快照无效");
-        const workspace = await scope.store.advanceCanvasRevision(ctx, revision);
-        if (workspace.revision !== revision) throw new AppError("画布快照 revision 已过期", 409, "canvas_revision_conflict");
-        canvas.publishSnapshot(ctx, clientId, revision, snapshot);
-        response.json(workspace);
-    }));
-    app.post("/v1/projects/:projectId/canvas/tool-results", asyncRoute(async (request, response) => {
-        const scope = requestScope(response);
-        const ctx = await scope.projects.context(scope.auth.userId, request.params.projectId);
-        const result = jsonObject(request.body?.result, "工具结果无效");
-        if (request.body?.snapshot !== undefined || request.body?.revision !== undefined) {
-            const clientId = requiredText(request.body?.clientId, "缺少画布客户端 ID");
-            const revision = nonNegativeInteger(request.body?.revision, "画布 revision 无效");
-            const snapshot = jsonObject(request.body?.snapshot, "画布快照无效");
-            const workspace = await scope.store.advanceCanvasRevision(ctx, revision);
-            if (workspace.revision !== revision) throw new AppError("画布快照 revision 已过期", 409, "canvas_revision_conflict");
-            canvas.publishSnapshot(ctx, clientId, revision, snapshot);
-        }
-        canvas.completeMutation(ctx, requiredText(request.body?.callId, "缺少工具调用 ID"), result);
-        response.status(204).end();
-    }));
+    app.put("/v1/projects/:projectId/canvas/state", publishCanvas(canvas));
+    app.post("/v1/projects/:projectId/canvas/snapshot", publishCanvas(canvas));
+    app.post("/v1/projects/:projectId/canvas/tool-results/:requestId", completeCanvasTool(canvas));
+    app.post("/v1/projects/:projectId/canvas/tool-results", completeCanvasTool(canvas));
 
     app.post("/v1/projects/:projectId/conversations", asyncRoute(async (request, response) => {
         const scope = requestScope(response);
@@ -178,6 +169,60 @@ export function createApp(config: AppConfig) {
         response.status(status).json({ error: { code: error instanceof AppError ? error.code : "internal_error", message: error instanceof AppError ? error.message : "Agent API 内部错误" } });
     });
     return app;
+}
+
+function createRuntimeAdapter(config: AppConfig, canvas: CanvasBridge): RuntimeAdapter {
+    if (config.runtime === "codex") {
+        if (!config.codex) throw new AppError("缺少 Codex 运行时配置", 500, "configuration_error");
+        return new CodexRuntimeAdapter({
+            bin: config.codex.bin,
+            apiKey: config.codex.apiKey,
+            runtimeRoot: config.codex.runtimeRoot,
+            tokens: new RuntimeTokenService(config.codex.tokenSecret),
+            canvas,
+            mcp: config.codex.mcp,
+        });
+    }
+    if (!config.pi) throw new AppError("缺少 Pi 运行时配置", 500, "configuration_error");
+    return new PiRuntimeAdapter(canvas, config.pi);
+}
+
+function publishCanvas(canvas: CanvasBridge) {
+    return asyncRoute(async (request, response) => {
+        const scope = requestScope(response);
+        const ctx = await scope.projects.context(scope.auth.userId, request.params.projectId);
+        const clientId = requiredText(request.body?.clientId, "缺少画布客户端 ID");
+        const revision = nonNegativeInteger(request.body?.revision, "画布 revision 无效");
+        const snapshot = jsonObject(request.body?.snapshot, "画布快照无效");
+        const workspace = await scope.store.saveCanvasState(ctx, revision, snapshot);
+        if (workspace.revision !== revision) throw new AppError("画布快照 revision 已过期", 409, "canvas_revision_conflict");
+        canvas.publishSnapshot(ctx, clientId, revision, snapshot);
+        response.json(workspace);
+    });
+}
+
+function completeCanvasTool(canvas: CanvasBridge) {
+    return asyncRoute(async (request, response) => {
+        const scope = requestScope(response);
+        const ctx = await scope.projects.context(scope.auth.userId, request.params.projectId);
+        const result = jsonObject(request.body?.result, "工具结果无效");
+        if (request.body?.snapshot !== undefined || request.body?.revision !== undefined) {
+            const clientId = requiredText(request.body?.clientId, "缺少画布客户端 ID");
+            const revision = nonNegativeInteger(request.body?.revision, "画布 revision 无效");
+            const snapshot = jsonObject(request.body?.snapshot, "画布快照无效");
+            const workspace = await scope.store.saveCanvasState(ctx, revision, snapshot);
+            if (workspace.revision !== revision) throw new AppError("画布快照 revision 已过期", 409, "canvas_revision_conflict");
+            canvas.publishSnapshot(ctx, clientId, revision, snapshot);
+        }
+        canvas.completeMutation(ctx, requiredText(request.params.requestId || request.body?.callId, "缺少工具调用 ID"), result);
+        response.status(204).end();
+    });
+}
+
+function runtimeToken(request: Request) {
+    const match = /^Bearer\s+(.+)$/i.exec(request.header("authorization") || "");
+    if (!match?.[1]) throw new AppError("缺少运行时 token", 401, "invalid_runtime_token");
+    return match[1];
 }
 
 function requestScope(response: Response) {

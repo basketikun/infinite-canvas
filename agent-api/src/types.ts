@@ -15,6 +15,7 @@ export type CanvasWorkspace = {
     id: string;
     projectId: string;
     revision: number;
+    snapshot: JsonObject | null;
     createdAt: string;
     updatedAt: string;
 };
@@ -38,6 +39,7 @@ export type Conversation = {
     title: string;
     status: "active" | "archived";
     sessionRevision: number;
+    codexThreadId: string | null;
     createdAt: string;
     updatedAt: string;
 };
@@ -56,6 +58,7 @@ export type AgentRun = {
     conversationId: string;
     actorUserId: string;
     status: AgentRunStatus;
+    codexTurnId: string | null;
     startedAt: string;
     completedAt: string | null;
 };

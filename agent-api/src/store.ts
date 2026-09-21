@@ -1,4 +1,4 @@
-import type { AgentRun, AgentRunStatus, CanvasWorkspace, Conversation, ConversationSession, NewRuntimeEvent, Project, ProjectSkill, RequestContext, RuntimeEvent } from "./types.js";
+import type { AgentRun, AgentRunStatus, CanvasWorkspace, Conversation, ConversationSession, JsonObject, NewRuntimeEvent, Project, ProjectSkill, RequestContext, RuntimeEvent } from "./types.js";
 
 export interface ResearchStore {
     createProject(userId: string, name: string): Promise<Project>;
@@ -7,6 +7,7 @@ export interface ResearchStore {
     deleteProject(userId: string, projectId: string): Promise<void>;
     readCanvas(ctx: RequestContext): Promise<CanvasWorkspace>;
     advanceCanvasRevision(ctx: RequestContext, revision: number): Promise<CanvasWorkspace>;
+    saveCanvasState(ctx: RequestContext, revision: number, snapshot: JsonObject): Promise<CanvasWorkspace>;
 
     createConversation(ctx: RequestContext, title: string): Promise<Conversation>;
     listConversations(ctx: RequestContext): Promise<Conversation[]>;
@@ -15,6 +16,8 @@ export interface ResearchStore {
     loadConversationSession(ctx: RequestContext, conversationId: string): Promise<ConversationSession>;
     saveConversationSession(ctx: RequestContext, conversationId: string, session: ConversationSession): Promise<number>;
 
+    bindCodexThread(ctx: RequestContext, conversationId: string, threadId: string): Promise<Conversation>;
+    bindCodexTurn(ctx: RequestContext, conversationId: string, runId: string, turnId: string): Promise<AgentRun>;
     beginRun(ctx: RequestContext, conversationId: string): Promise<AgentRun>;
     finishRun(ctx: RequestContext, runId: string, status: Exclude<AgentRunStatus, "running">): Promise<void>;
     readRun(ctx: RequestContext, conversationId: string, runId: string): Promise<AgentRun>;
