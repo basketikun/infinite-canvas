@@ -16,7 +16,38 @@ export enum CanvasNodeType {
     Video = "video",
     Audio = "audio",
     Group = "group",
+    Seed = "seed",
+    Direction = "direction",
+    ResearchQuestion = "research_question",
+    Problem = "problem",
+    Hypothesis = "hypothesis",
+    Approach = "approach",
+    Method = "method",
+    Evaluation = "evaluation",
+    Idea = "idea",
+    Frame = "frame",
+    Note = "note",
+    Question = "question",
+    Pdf = "pdf",
+    Web = "web",
 }
+
+export const RESEARCH_FLOW_NODE_TYPES = [
+    CanvasNodeType.Seed,
+    CanvasNodeType.Direction,
+    CanvasNodeType.ResearchQuestion,
+    CanvasNodeType.Problem,
+    CanvasNodeType.Hypothesis,
+    CanvasNodeType.Approach,
+    CanvasNodeType.Method,
+    CanvasNodeType.Evaluation,
+    CanvasNodeType.Idea,
+] as const;
+
+export type ResearchFlowNodeType = (typeof RESEARCH_FLOW_NODE_TYPES)[number];
+
+export const RESEARCH_FLOW_FIRST_BATCH = RESEARCH_FLOW_NODE_TYPES.slice(0, 5);
+export const RESEARCH_FLOW_SECOND_BATCH = RESEARCH_FLOW_NODE_TYPES.slice(5);
 
 // Node types are open strings: built-ins use CanvasNodeType and plugins use "<pluginId>:<name>".
 export type CanvasNodeTypeId = CanvasNodeType | (string & {});
@@ -42,6 +73,19 @@ export type CanvasNodeText = {
     status: CanvasNodeStatus;
     errorDetails?: string;
     content: string;
+};
+
+export type CanvasDirectionAxis = "what" | "how" | "signal" | "when" | "who" | "evaluation" | "reliability" | "transfer" | "efficiency";
+
+export type CanvasDirectionMetadata = {
+    level: 1 | 2;
+    axis: CanvasDirectionAxis;
+    scope: string;
+    includes: string[];
+    excludes: string[];
+    subDirections: string[];
+    evidenceRefs: string[];
+    status: "candidate" | "exploring" | "selected" | "deprioritized";
 };
 
 export type CanvasNodeMetadata = {
@@ -85,6 +129,10 @@ export type CanvasNodeMetadata = {
     videoTaskProvider?: "openai" | "gemini";
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
+    summary?: string; // Card summary text for research-flow / question / pdf / web nodes.
+    document?: string; // Long-form Markdown document attached to this node; the card remains the summary view.
+    direction?: CanvasDirectionMetadata; // Coverage and hierarchy for taxonomy-driven research directions.
+    sourceUrl?: string; // Source link for pdf/web nodes.
 };
 
 export type CanvasNodeData = {

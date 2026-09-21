@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button } from "antd";
-import { Download, FileUp, Plus } from "lucide-react";
+import { BookOpen, Download, FileUp, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { readZip } from "@/lib/zip";
@@ -11,8 +11,10 @@ import { CanvasDeleteProjectsDialog } from "@/components/canvas/canvas-delete-pr
 import { CanvasProjectCard } from "@/components/canvas/canvas-project-card";
 import type { CanvasExportFile } from "@/types/canvas-export";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
+import { createResearchTutorialProject } from "@/lib/canvas/tutorial-template";
 import { hasAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
 
 export default function CanvasPage() {
@@ -23,7 +25,9 @@ export default function CanvasPage() {
     const inputRef = useRef<HTMLInputElement>(null);
     const autoOpenRef = useRef(false);
     const hydrated = useCanvasStore((state) => state.hydrated);
-    const projects = useCanvasStore((state) => state.projects);
+    const ownerUserId = useUserStore((state) => state.user?.id);
+    const allProjects = useCanvasStore((state) => state.projects);
+    const projects = useMemo(() => allProjects.filter((project) => project.localOwnerUserId === ownerUserId), [allProjects, ownerUserId]);
     const createProject = useCanvasStore((state) => state.createProject);
     const importProject = useCanvasStore((state) => state.importProject);
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
@@ -32,11 +36,17 @@ export default function CanvasPage() {
     const mode = searchParams.get("mode");
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";
     const agentQuery = agentMode ? `?${searchParams.toString()}` : "";
+
+    useEffect(() => {
+        useCanvasUiStore.setState({ selectedProjectIds: [], deleteProjectIds: [] });
+    }, [ownerUserId]);
+
     const enterProject = (id: string) => {
         const agentHash = hasAgentUrlBootstrap(window.location.hash) ? window.location.hash : "";
         navigate(`/canvas/${id}${agentQuery}${agentHash}`, { replace: Boolean(agentHash) });
     };
     const createAndEnter = () => enterProject(createProject(t("canvas.defaultTitle", { count: projects.length + 1 })));
+    const createTutorialAndEnter = () => enterProject(importProject(createResearchTutorialProject()));
     const importCanvas = async (file?: File) => {
         if (!file) return;
         try {
@@ -97,6 +107,9 @@ export default function CanvasPage() {
                         ) : null}
                         <Button disabled={!hydrated} icon={<FileUp className="size-4" />} onClick={() => inputRef.current?.click()}>
                             {t("canvas.import")}
+                        </Button>
+                        <Button disabled={!hydrated} icon={<BookOpen className="size-4" />} onClick={createTutorialAndEnter}>
+                            {t("canvas.tutorialTemplate")}
                         </Button>
                         <Button disabled={!hydrated} type="primary" icon={<Plus className="size-4" />} onClick={createAndEnter}>
                             {t("canvas.create")}

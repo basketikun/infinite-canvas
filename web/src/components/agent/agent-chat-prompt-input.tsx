@@ -177,7 +177,7 @@ export function AgentChatPromptInput({ value, disabled, placeholder, theme, onCh
                 role="textbox"
                 aria-multiline="true"
                 aria-label={placeholder}
-                className="thin-scrollbar max-h-32 min-h-20 w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-1 py-1 text-sm leading-6 outline-none"
+                className="thin-scrollbar max-h-28 min-h-11 w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0.5 py-0.5 text-sm leading-5 outline-none"
                 style={{ color: theme.node.text, cursor: disabled ? "default" : "text" }}
                 onInput={() => {
                     if (!composingRef.current) syncFromEditor();

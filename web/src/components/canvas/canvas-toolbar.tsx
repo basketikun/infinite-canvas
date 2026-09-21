@@ -1,12 +1,13 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, Grid2x2, Group, Hand, Image as ImageIcon, Info, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Eraser, Grid2x2, Hand, Info, Moon, MousePointer2, Palette, Plus, Puzzle, Redo2, Square, Sun, Trash2, Undo2, Upload } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
-import { getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
+import { getNodeDefinition, getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { RESEARCH_FLOW_FIRST_BATCH, RESEARCH_FLOW_SECOND_BATCH } from "@/types/canvas";
 import { useTranslation } from "react-i18next";
 
 export function CanvasToolbar({
@@ -16,12 +17,7 @@ export function CanvasToolbar({
     canRedo,
     backgroundMode,
     showImageInfo,
-    onAddImage,
-    onAddVideo,
-    onAddAudio,
-    onAddText,
-    onAddConfig,
-    onAddGroup,
+    onAddNode,
     onAddExtensionNode,
     onUndo,
     onRedo,
@@ -38,12 +34,7 @@ export function CanvasToolbar({
     canRedo: boolean;
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
-    onAddImage: () => void;
-    onAddVideo: () => void;
-    onAddAudio: () => void;
-    onAddText: () => void;
-    onAddConfig: () => void;
-    onAddGroup: () => void;
+    onAddNode: (type: string) => void;
     onAddExtensionNode: (type: string) => void;
     onUndo: () => void;
     onRedo: () => void;
@@ -66,31 +57,53 @@ export function CanvasToolbar({
     const [panelX, setPanelX] = useState(0);
     const [extensionsOpen, setExtensionsOpen] = useState(false);
     const [extPanelX, setExtPanelX] = useState(0);
+    const [createOpen, setCreateOpen] = useState(false);
+    const [createPanelX, setCreatePanelX] = useState(0);
     // Keep extension plugin nodes synchronized with registry changes.
     useNodeRegistryVersion();
     const extensionDefs = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false && getNodePluginId(def.type) !== "builtin");
-    const dockStyle = { background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item, boxShadow: colorTheme === "dark" ? "0 18px 45px rgba(0,0,0,.32)" : "0 16px 40px rgba(28,25,23,.12)" };
+    const dockStyle = { background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item, boxShadow: colorTheme === "dark" ? "0 18px 50px rgba(0,0,0,.38)" : "0 16px 42px rgba(28,25,23,.12)" };
     const hoverStyle = { background: theme.toolbar.itemHover, color: theme.toolbar.activeText };
     const activeStyle = { background: theme.toolbar.activeBg, color: theme.toolbar.activeText };
     const tip = hovered ? toolLabel(hovered, t) : "";
 
     // Close extension-node and canvas-appearance popovers when clicking outside the toolbar and its panels.
     useEffect(() => {
-        if (!extensionsOpen && !appearanceOpen) return;
+        if (!extensionsOpen && !appearanceOpen && !createOpen) return;
         const handlePointerDown = (event: PointerEvent) => {
             if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
                 setExtensionsOpen(false);
                 setAppearanceOpen(false);
+                setCreateOpen(false);
             }
         };
         document.addEventListener("pointerdown", handlePointerDown, true);
         return () => document.removeEventListener("pointerdown", handlePointerDown, true);
-    }, [extensionsOpen, appearanceOpen]);
+    }, [extensionsOpen, appearanceOpen, createOpen]);
 
     return (
-        <div ref={rootRef} className="pointer-events-none absolute bottom-5 z-50 flex justify-center" style={{ left: 300, right: 16 }}>
+        <div ref={rootRef} className="pointer-events-none absolute bottom-4 left-4 right-4 z-50 flex justify-center">
             {tip ? <DockTip label={tip} x={tipX} theme={theme} /> : null}
-            <div ref={wrapRef} className="thin-scrollbar pointer-events-auto flex h-14 max-w-full items-center gap-1 overflow-x-auto rounded-xl border px-2 shadow-lg backdrop-blur [&>*]:shrink-0" style={dockStyle}>
+            <div ref={wrapRef} className="thin-scrollbar pointer-events-auto flex h-12 max-w-full items-center gap-0.5 overflow-x-auto rounded-2xl border px-1.5 backdrop-blur-xl [&>*]:shrink-0" style={dockStyle}>
+                <ToolbarButton
+                    id="tool-create"
+                    label={t("canvas.create")}
+                    active={createOpen}
+                    hovered={hovered}
+                    activeStyle={activeStyle}
+                    hoverStyle={hoverStyle}
+                    wrapRef={wrapRef}
+                    onTipX={setTipX}
+                    onHover={setHovered}
+                    onClick={(event) => {
+                        setCreatePanelX(getTipX(wrapRef.current, event.currentTarget));
+                        setExtensionsOpen(false);
+                        setAppearanceOpen(false);
+                        setCreateOpen((value) => !value);
+                    }}
+                >
+                    <Plus className="size-5" />
+                </ToolbarButton>
                 <ToolbarButton id={`tool-${canvasTool}`} label={t(`canvas.toolbar.${canvasTool}`)} active hovered={hovered} activeStyle={activeStyle} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={() => onCanvasToolChange(canvasTool === "select" ? "pan" : "select")}>
                     {canvasTool === "select" ? <MousePointer2 className="size-4.5" /> : <Hand className="size-4.5" />}
                 </ToolbarButton>
@@ -101,24 +114,6 @@ export function CanvasToolbar({
                     <Redo2 className="size-4.5" />
                 </ToolbarButton>
                 <Divider theme={theme} />
-                <ToolbarButton id="tool-text" label={t("canvas.toolbar.text")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddText}>
-                    <Type className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-image" label={t("canvas.toolbar.image")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddImage}>
-                    <ImageIcon className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-video" label={t("canvas.toolbar.video")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddVideo}>
-                    <Video className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-audio" label={t("canvas.toolbar.audio")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddAudio}>
-                    <Music2 className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-config" label={t("canvas.toolbar.config")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddConfig}>
-                    <Settings2 className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-group" label={t("canvas.toolbar.group")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddGroup}>
-                    <Group className="size-4.5" />
-                </ToolbarButton>
                 {extensionDefs.length ? (
                     <ToolbarButton
                         id="tool-extensions"
@@ -132,6 +127,7 @@ export function CanvasToolbar({
                         onHover={setHovered}
                         onClick={(event) => {
                             setExtPanelX(getTipX(wrapRef.current, event.currentTarget));
+                            setCreateOpen(false);
                             setAppearanceOpen(false);
                             setExtensionsOpen((value) => !value);
                         }}
@@ -155,6 +151,7 @@ export function CanvasToolbar({
                     onHover={setHovered}
                     onClick={(event) => {
                         setPanelX(getTipX(wrapRef.current, event.currentTarget));
+                        setCreateOpen(false);
                         setExtensionsOpen(false);
                         setAppearanceOpen((value) => !value);
                     }}
@@ -175,9 +172,27 @@ export function CanvasToolbar({
                 </ToolbarButton>
             </div>
 
+            {createOpen ? (
+                <div className="pointer-events-auto absolute bottom-[60px] z-30 w-[280px] -translate-x-1/2 rounded-2xl border p-2 shadow-xl backdrop-blur-xl" style={{ left: createPanelX || "50%", background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item }}>
+                    <div className="px-1.5 pb-1.5 text-[11px] font-medium opacity-50">{t("canvas.create")}</div>
+                    <div className="grid grid-cols-2 gap-1">
+                        {[...RESEARCH_FLOW_FIRST_BATCH, ...RESEARCH_FLOW_SECOND_BATCH].map((type) => {
+                            const def = getNodeDefinition(type);
+                            if (!def) return null;
+                            return (
+                                <button key={type} type="button" className="flex items-center gap-2 rounded-lg px-2 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10" onClick={() => { onAddNode(type); setCreateOpen(false); }}>
+                                    <span className="grid size-7 shrink-0 place-items-center rounded-lg" style={{ background: theme.toolbar.itemHover }}>{def.icon}</span>
+                                    <span className="min-w-0 truncate">{def.title}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            ) : null}
+
             {extensionsOpen && extensionDefs.length ? (
                 <div
-                    className="thin-scrollbar pointer-events-auto absolute bottom-[72px] z-30 max-h-[50vh] w-[240px] -translate-x-1/2 overflow-y-auto rounded-xl border p-2 shadow-xl backdrop-blur"
+                    className="thin-scrollbar pointer-events-auto absolute bottom-[60px] z-30 max-h-[50vh] w-[240px] -translate-x-1/2 overflow-y-auto rounded-2xl border p-2 shadow-xl backdrop-blur-xl"
                     style={{ left: extPanelX || "50%", background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item }}
                 >
                     <div className="px-1.5 pb-1.5 text-[11px] font-medium opacity-50">{t("canvas.toolbar.extensions")}</div>
@@ -207,7 +222,7 @@ export function CanvasToolbar({
 
             {appearanceOpen ? (
                 <div
-                    className="pointer-events-auto absolute bottom-[72px] z-30 w-[248px] -translate-x-1/2 rounded-xl border p-2.5 shadow-xl backdrop-blur"
+                    className="pointer-events-auto absolute bottom-[60px] z-30 w-[248px] -translate-x-1/2 rounded-2xl border p-2.5 shadow-xl backdrop-blur-xl"
                     style={{ left: panelX || "50%", background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item }}
                 >
                     <div className="px-1 pb-2 text-sm font-medium opacity-65">{t("canvas.toolbar.appearance")}</div>
@@ -356,12 +371,10 @@ function toolLabel(id: string, t: (key: string) => string) {
     if (id === "tool-pan") return t("canvas.toolbar.pan");
     if (id === "tool-undo") return t("canvas.undo");
     if (id === "tool-redo") return t("canvas.redo");
-    if (id === "tool-text") return t("canvas.toolbar.text");
-    if (id === "tool-image") return t("canvas.toolbar.image");
-    if (id === "tool-video") return t("canvas.toolbar.video");
-    if (id === "tool-audio") return t("canvas.toolbar.audio");
-    if (id === "tool-config") return t("canvas.toolbar.config");
-    if (id === "tool-group") return t("canvas.toolbar.group");
+    if (id.startsWith("tool-") && id !== "tool-select" && id !== "tool-pan" && id !== "tool-undo" && id !== "tool-redo" && id !== "tool-extensions" && id !== "tool-upload" && id !== "tool-style" && id !== "tool-delete" && id !== "tool-clear") {
+        const type = id.slice("tool-".length);
+        return t(`canvas.nodeTypes.${type}`);
+    }
     if (id === "tool-extensions") return t("canvas.toolbar.extensions");
     if (id === "tool-upload") return t("canvas.toolbar.upload");
     if (id === "tool-style") return t("canvas.toolbar.appearance");

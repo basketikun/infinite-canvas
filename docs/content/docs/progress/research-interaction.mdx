@@ -1,0 +1,95 @@
+---
+title: Research Interaction
+description: Interaction principles for this repo, aligned with CoResearch design
+---
+
+# Research Interaction
+
+This document compresses the CoResearch design (`research-flow.md`, `huabu-node-presentation-and-links.md`, `huabu-domain-binding.md`) into an interaction approach for this repository. When designs conflict, CoResearch Research Flow wins.
+
+This repo is still a browser-local plain JSON canvas with no versioned Research Domain backend. Do not fake revision, server Gates, automatic stale propagation, or Agent Node context snapshots.
+
+## 1. One-line principle
+
+> The Agent expands possibilities; the user confirms, keeps, and combines; the Canvas only stores research state the user has endorsed.
+
+It is not “the Agent invents an Idea for you,” and the canvas is not a mirror of chat.
+
+## 2. Two parallel channels
+
+| Channel | Role | May contain | Does not count as |
+|---|---|---|---|
+| Right-hand chat | Exploration Space | Candidate directions, temporary explanations, search, comparison | Endorsed research objects |
+| Canvas | Commitment Space | Objects and relations the user saved or created | Every Agent proposal |
+
+Rhythm:
+
+```text
+Candidates appear in conversation
+        ↓
+User keeps → create the matching research node on canvas
+User digs deeper → stay in chat
+User ignores → nothing written to canvas
+```
+
+## 3. Navigation (not a one-way wizard)
+
+```text
+Interest → Seed → Direction exploration → Deep Dive → Research Question
+    → Problem → Hypothesis → Approach → Method ↔ Evaluation
+    → Idea → Review ↺ literature refresh
+```
+
+- Seeds stay thin: topic understanding only, no Gap / Method / Novelty yet.
+- Direction candidates live in chat first; only kept ones enter the canvas.
+- Deep Dive targets the Direction the user chose, not a full-domain map upfront.
+
+## 4. Three canvas readings
+
+| Layer | Question | Typical nodes |
+|---|---|---|
+| Exploration | Where am I researching? | Seed, Direction, Papers, Questions |
+| Reasoning | What is the logic? | Problem, Hypothesis, Approach, Method, Evaluation |
+| Synthesis | What Idea do I have? | Idea, Review, Versions |
+
+Frames/groups organize views only. Dropping a paper into a Method group does not turn it into a Method.
+
+Toolbar, double-click create menu, and left filters expose only the nine research-flow node kinds.
+
+## 5. How nodes are read
+
+```text
+Identity   type, title, status accent
+Preview    one-line summary, tags, relation counts
+Detail     full body, sources, relations, actions
+```
+
+Click selects; double-click opens Detail. Do not grow cards forever to read full text.
+
+## 6. How links work
+
+Port drag or toolbar Connect → pick relation type when the domain exists. For now this repo may keep visual edges and type suggestions, but must not invent verified `supports` / `challenges` without evidence review.
+
+## 7. Agent vs canvas
+
+| Who | Does | Does not |
+|---|---|---|
+| Chat Agent | Explore, propose, explain, challenge | Silently commit unconfirmed candidates |
+| User | Confirm Seed, keep Directions, edit drafts | Let the system decide the research topic |
+| Canvas | Hold endorsed objects and layout | Auto-dump the whole conversation |
+
+Local Codex / hosted Pi: auto-discover when Canvas Agent is online; default to a blank new thread; restore history explicitly. Tool approval is not the same as confirming a research revision.
+
+## 8. Implementation order here
+
+1. Nine research node kinds, accents, editable summaries  
+2. Chat vs canvas boundary (no silent bulk commits)  
+3. Connect UX (visual edges + suggested types)  
+4. Detail surface  
+5. Deep Dive / Papers (see TODO)
+
+Deferred until a real Research Domain exists: revision / Confirm, evidenced relations, Agent Node versioned context.
+
+## 9. Sources
+
+Design tree (copy in this repo): `docs/design/` — start with `research-flow.md`, then `idea-formation/`, then `canvas/huabu-*.md`. Index: [`docs/design/README.md`](../../../design/README.md).

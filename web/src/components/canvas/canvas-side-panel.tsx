@@ -1,30 +1,32 @@
-import { memo, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
-import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
-import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
+import { memo, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { App, Empty, Input, Popconfirm, Tag } from "antd";
+import { AlertTriangle, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, Download, Eye, File, FileText, FolderOpen, GitBranch, Globe, HelpCircle, Image as ImageIcon, LayoutGrid, LayoutPanelTop, Lightbulb, ListChecks, Music2, Plus, Scale, Search, Settings2, Sparkles, Sprout, Square, StickyNote, Trash2, Type, Video, Wrench } from "lucide-react";
 import { motion } from "motion/react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
+import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { exportCanvasNodes } from "@/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
+import { createResearchTutorialProject } from "@/lib/canvas/tutorial-template";
 import { cn } from "@/lib/utils";
-import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dialog";
-import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision, uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
-import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
+import { useAgentStore } from "@/stores/use-agent-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
+import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { useUserStore } from "@/stores/use-user-store";
+import { CanvasNodeType, RESEARCH_FLOW_NODE_TYPES, type CanvasNodeData } from "@/types/canvas";
 
 import type { InsertAssetPayload } from "./asset-picker-modal";
 
 const PANEL_MOTION_SECONDS = CANVAS_SIDE_PANEL_MOTION_MS / 1000;
 const PANEL_EASE = [0.22, 1, 0.36, 1] as const;
 
-type PanelTab = "canvas" | "assets" | "prompts";
+type PanelTab = "workspace" | "canvas" | "assets";
 
 type Props = {
     nodes: CanvasNodeData[];
@@ -41,6 +43,20 @@ const NODE_TYPE_ICON: Record<string, typeof Square> = {
     [CanvasNodeType.Text]: Type,
     [CanvasNodeType.Config]: Settings2,
     [CanvasNodeType.Group]: Square,
+    [CanvasNodeType.Seed]: Sprout,
+    [CanvasNodeType.Direction]: Compass,
+    [CanvasNodeType.ResearchQuestion]: HelpCircle,
+    [CanvasNodeType.Problem]: AlertTriangle,
+    [CanvasNodeType.Hypothesis]: Lightbulb,
+    [CanvasNodeType.Approach]: GitBranch,
+    [CanvasNodeType.Method]: Wrench,
+    [CanvasNodeType.Evaluation]: Scale,
+    [CanvasNodeType.Idea]: Sparkles,
+    [CanvasNodeType.Frame]: LayoutPanelTop,
+    [CanvasNodeType.Note]: StickyNote,
+    [CanvasNodeType.Question]: HelpCircle,
+    [CanvasNodeType.Pdf]: File,
+    [CanvasNodeType.Web]: Globe,
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -52,14 +68,29 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onInsertAsset }: Props) {
     const { t } = useTranslation();
+    const navigate = useNavigate();
+    const { id: projectId = "" } = useParams<{ id: string }>();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const [tab, setTab] = useState<PanelTab>("canvas");
+    const [tab, setTab] = useState<PanelTab>("workspace");
+    const user = useUserStore((state) => state.user);
+    const projects = useCanvasStore((state) => state.projects);
+    const createProject = useCanvasStore((state) => state.createProject);
+    const importProject = useCanvasStore((state) => state.importProject);
+    const openAgentPanel = useAgentStore((state) => state.openPanel);
+    const setAgentState = useAgentStore((state) => state.setAgentState);
     const width = useCanvasSidePanelStore((state) => state.width);
     const panelOpen = useCanvasSidePanelStore((state) => state.panelOpen);
     const panelMounted = useCanvasSidePanelStore((state) => state.panelMounted);
     const panelClosing = useCanvasSidePanelStore((state) => state.panelClosing);
     const setWidth = useCanvasSidePanelStore((state) => state.setWidth);
     const [resizing, setResizing] = useState(false);
+    const ownedProjects = useMemo(() => projects.filter((project) => project.localOwnerUserId === user?.id), [projects, user?.id]);
+
+    const createAndOpenProject = () => {
+        const id = createProject(t("canvas.defaultTitle", { count: ownedProjects.length + 1 }));
+        navigate(`/canvas/${id}`);
+    };
+    const createAndOpenTutorial = () => navigate(`/canvas/${importProject(createResearchTutorialProject())}`);
 
     const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
         event.preventDefault();
@@ -96,22 +127,71 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                 initial={{ x: -48 }}
                 animate={{ x: panelClosing ? -28 : 0 }}
                 transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
-                style={{ width, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+                style={{ width, background: theme.node.panel, borderColor: theme.toolbar.border, color: theme.node.text, boxShadow: "12px 0 32px rgba(0,0,0,.05)" }}
                 data-canvas-no-zoom
             >
-                <div className="flex items-center gap-5 px-4 pt-3.5">
-                    <TabButton label={t("canvas.sidePanel.canvas")} active={tab === "canvas"} theme={theme} onClick={() => setTab("canvas")} />
-                    <TabButton label={t("canvas.sidePanel.assets")} active={tab === "assets"} theme={theme} onClick={() => setTab("assets")} />
-                    <TabButton label={t("canvas.sidePanel.prompts")} active={tab === "prompts"} theme={theme} onClick={() => setTab("prompts")} />
+                <div className="flex h-[76px] shrink-0 items-center gap-3 px-5" style={{ borderColor: theme.toolbar.border }}>
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg border text-[10px] font-bold tracking-[-0.04em]" style={{ background: theme.toolbar.itemHover, borderColor: theme.toolbar.border, color: theme.toolbar.activeText }}>CR</span>
+                    <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[15px] font-semibold tracking-[-0.015em]">{t("meta.title")}</span>
+                    </span>
                 </div>
-                <div className="mt-2 min-h-0 flex-1 overflow-hidden">
-                    {tab === "canvas" ? (
-                        <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} theme={theme} />
-                    ) : tab === "assets" ? (
-                        <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
+                <div className="min-h-0 flex-1 overflow-hidden">
+                    {tab === "workspace" ? (
+                        <div className="flex h-full min-h-0 flex-col px-3">
+                            <nav className="space-y-0.5">
+                                <WorkspaceNavButton icon={<Plus className="size-4" />} label={t("canvas.sidePanel.startCreating")} theme={theme} onClick={createAndOpenProject} />
+                                <WorkspaceNavButton icon={<FolderOpen className="size-4" />} label={t("canvas.sidePanel.projectLibrary")} theme={theme} onClick={() => navigate("/canvas")} />
+                                <WorkspaceNavButton icon={<BookOpen className="size-4" />} label={t("canvas.tutorialTemplate")} theme={theme} onClick={createAndOpenTutorial} />
+                                <WorkspaceNavButton icon={<Sparkles className="size-4" />} label={t("canvas.sidePanel.skillsConnectors")} theme={theme} onClick={() => { openAgentPanel(); setAgentState({ activeTab: "skills" }); }} />
+                            </nav>
+
+                            <div className="mt-7 flex items-center gap-1 px-2 text-xs font-medium" style={{ color: theme.node.muted }}>
+                                <span>{t("canvas.sidePanel.projects")}</span>
+                                <ChevronDown className="size-3.5" />
+                            </div>
+                            <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+                                <div className="flex items-center gap-2 px-2 py-1.5 text-[13px] font-medium">
+                                    <FolderOpen className="size-4" />
+                                    <span className="truncate">{t("canvas.sidePanel.workspaceName")}</span>
+                                </div>
+                                <div className="mt-1 space-y-0.5 pl-4">
+                                    {ownedProjects.map((project) => (
+                                        <button
+                                            key={project.id}
+                                            type="button"
+                                            className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] transition"
+                                            style={project.id === projectId ? { background: theme.toolbar.activeBg, color: theme.toolbar.activeText } : { color: theme.node.muted }}
+                                            onClick={() => navigate(`/canvas/${project.id}`)}
+                                        >
+                                            <span className="grid size-6 shrink-0 place-items-center rounded-md" style={{ background: project.id === projectId ? theme.toolbar.itemHover : "transparent" }}><LayoutGrid className="size-3.5" /></span>
+                                            <span className="min-w-0 flex-1 truncate">{project.title}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1 border-t py-3" style={{ borderColor: theme.toolbar.border }}>
+                                <WorkspaceNavButton compact icon={<LayoutPanelTop className="size-4" />} label={t("canvas.sidePanel.canvas")} theme={theme} onClick={() => setTab("canvas")} />
+                                <WorkspaceNavButton compact icon={<ImageIcon className="size-4" />} label={t("canvas.sidePanel.assets")} theme={theme} onClick={() => setTab("assets")} />
+                            </div>
+                        </div>
                     ) : (
-                        <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
+                        <div className="flex h-full min-h-0 flex-col">
+                            <div className="flex h-11 shrink-0 items-center gap-2 px-3">
+                                <button type="button" className="grid size-8 place-items-center rounded-lg transition hover:bg-black/5 dark:hover:bg-white/10" onClick={() => setTab("workspace")} aria-label={t("common.back")}><ChevronLeft className="size-4" /></button>
+                                <span className="text-sm font-semibold">{t(tab === "canvas" ? "canvas.sidePanel.canvas" : "canvas.sidePanel.assets")}</span>
+                            </div>
+                            <div className="min-h-0 flex-1 overflow-hidden">
+                                {tab === "canvas" ? <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} theme={theme} /> : <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />}
+                            </div>
+                        </div>
                     )}
+                </div>
+                <div className="flex h-14 shrink-0 items-center gap-2 border-t px-4" style={{ borderColor: theme.toolbar.border }}>
+                    <span className="grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold" style={{ background: theme.toolbar.itemHover }}>{(user?.username || "T").slice(0, 1).toUpperCase()}</span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{user?.username || "test"}</span>
+                    <UserStatusActions showConfig={false} variant="canvas" />
                 </div>
                 <button type="button" className="absolute inset-y-0 right-0 z-40 w-4 translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("canvas.sidePanel.resize")} />
             </motion.aside>
@@ -119,11 +199,11 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
     );
 }
 
-function TabButton({ label, active, theme, onClick }: { label: string; active: boolean; theme: CanvasTheme; onClick: () => void }) {
+function WorkspaceNavButton({ icon, label, theme, compact, onClick }: { icon: ReactNode; label: string; theme: CanvasTheme; compact?: boolean; onClick: () => void }) {
     return (
-        <button type="button" onClick={onClick} className="relative pb-1.5 text-sm font-semibold transition-opacity" style={{ color: theme.node.text, opacity: active ? 1 : 0.45 }}>
-            {label}
-            {active ? <motion.span layoutId="sidePanelTabIndicator" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: theme.toolbar.activeText }} transition={{ type: "spring", stiffness: 500, damping: 34 }} /> : null}
+        <button type="button" className={`flex w-full items-center gap-2.5 rounded-lg text-left text-[13px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10 ${compact ? "h-9 px-2" : "h-10 px-2.5"}`} style={{ color: theme.node.text }} onClick={onClick}>
+            <span className="grid size-6 shrink-0 place-items-center">{icon}</span>
+            <span className="truncate">{label}</span>
         </button>
     );
 }
@@ -132,10 +212,11 @@ function TabButton({ label, active, theme, onClick }: { label: string; active: b
 // Canvas tab: list nodes and center, zoom, and select the clicked node.
 // ---------------------------------------------------------------------------
 
-const NODE_FILTER_VALUES = ["all", CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Text, CanvasNodeType.Audio, CanvasNodeType.Config, CanvasNodeType.Group];
+const NODE_FILTER_VALUES = ["all", ...RESEARCH_FLOW_NODE_TYPES];
 
 function nodePreviewText(node: CanvasNodeData) {
     if (node.type === CanvasNodeType.Text) return node.metadata?.content || node.metadata?.prompt || "";
+    if (node.metadata?.summary) return node.metadata.summary;
     return getNodeDefinition(node.type)?.title || node.type;
 }
 
@@ -152,7 +233,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
 
     const filtered = useMemo(() => {
         const query = keyword.trim().toLowerCase();
-        return nodes.filter((node) => (typeFilter === "all" || node.type === typeFilter) && (!query || [node.title, node.metadata?.content, node.metadata?.prompt].filter(Boolean).join(" ").toLowerCase().includes(query)));
+        return nodes.filter((node) => (typeFilter === "all" || node.type === typeFilter) && (!query || [node.title, node.metadata?.content, node.metadata?.prompt, node.metadata?.summary].filter(Boolean).join(" ").toLowerCase().includes(query)));
     }, [nodes, keyword, typeFilter]);
     const treeRows = useMemo(() => {
         const filteredIds = new Set(filtered.map((node) => node.id));
@@ -216,17 +297,26 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                     <ListChecks className="size-3.5" />
                     {selectMode ? t("common.cancel") : t("canvas.sidePanel.select")}
                 </button>
-                {selectMode ? null : <Select size="small" variant="borderless" className="w-20" value={typeFilter} onChange={setTypeFilter} options={NODE_FILTER_VALUES.map((value) => ({ value, label: value === "all" ? t("common.all") : t(`canvas.sidePanel.filter.${value}`) }))} />}
             </div>
             <div className="px-3 pb-2.5">
                 <Input size="small" allowClear prefix={<Search className="size-3.5 text-stone-400" />} placeholder={t("canvas.sidePanel.searchNodes")} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
             </div>
+            {selectMode ? null : (
+                <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
+                    {NODE_FILTER_VALUES.map((value) => (
+                        <Tag.CheckableTag key={value} checked={typeFilter === value} className={cn("prompt-filter-tag", typeFilter === value && "is-active")} onChange={() => setTypeFilter(value)}>
+                            {value === "all" ? t("common.all") : t(`canvas.sidePanel.filter.${value}`)}
+                        </Tag.CheckableTag>
+                    ))}
+                </div>
+            )}
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 {treeRows.length ? (
                     <div className="space-y-1.5">
                         {treeRows.map(({ node, depth, hasChildren }) => {
                             const Icon = NODE_TYPE_ICON[node.type] || FileText;
                             const isImage = node.type === CanvasNodeType.Image && node.metadata?.content;
+                            const accentColor = getNodeDefinition(node.type)?.minimapColor;
                             const isChecked = checked.has(node.id);
                             const active = selectMode ? isChecked : selectedNodeIds.has(node.id);
                             return (
@@ -239,8 +329,8 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                                     ) : null}
                                     <button type="button" onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))} className={cn("flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 text-left", node.type === CanvasNodeType.Group && hasChildren ? "pl-0" : "pl-2")} title={selectMode ? undefined : t("canvas.sidePanel.focusNode")}>
                                         {selectMode ? <CheckMark checked={isChecked} theme={theme} /> : null}
-                                        <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md">
-                                            {isImage ? <img src={previewUrlFor(node.metadata?.storageKey) || node.metadata?.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5 opacity-60" />}
+                                        <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md" style={!isImage && accentColor ? { background: `${accentColor}1f` } : undefined}>
+                                            {isImage ? <img src={previewUrlFor(node.metadata?.storageKey) || node.metadata?.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5" style={accentColor ? { color: accentColor } : undefined} />}
                                         </span>
                                         <span className="min-w-0 flex-1 space-y-0.5">
                                             <span className="block truncate text-sm font-medium leading-snug">{node.title || getNodeDefinition(node.type)?.title || t("canvas.node.untitled")}</span>
@@ -459,153 +549,4 @@ function AssetCover({ asset }: { asset: Asset }) {
         return <video src={`${asset.data.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
     }
     return <img src={asset.coverUrl || asset.data.dataUrl} alt="" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
-}
-
-// ---------------------------------------------------------------------------
-// Prompt library tab: collapsible source groups, lazy loading, and copy or text-node insertion actions.
-// ---------------------------------------------------------------------------
-
-const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { onInsert: (payload: InsertAssetPayload) => void; theme: CanvasTheme }) {
-    const { message } = App.useApp();
-    const { t } = useTranslation();
-    const sources = usePromptSourceStore((state) => state.sources);
-    const enabledSources = useMemo(() => sources.filter((source) => source.enabled), [sources]);
-    const [keyword, setKeyword] = useState("");
-    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-    const [detail, setDetail] = useState<Prompt | null>(null);
-
-    const copyPrompt = async (prompt: string) => {
-        try {
-            await navigator.clipboard.writeText(prompt);
-            message.success(t("canvas.sidePanel.promptCopied"));
-        } catch {
-            message.error(t("canvas.sidePanel.copyFailed"));
-        }
-    };
-
-    return (
-        <div className="flex h-full flex-col">
-            <div className="px-3 pb-2.5 pt-1">
-                <Input size="small" allowClear prefix={<Search className="size-3.5 text-stone-400" />} placeholder={t("canvas.sidePanel.searchPrompts")} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                <div className="space-y-1">
-                    {enabledSources.length ? enabledSources.map((source) => (
-                        <PromptSourceGroup
-                            key={source.id}
-                            sourceId={source.id}
-                            sourceName={source.name}
-                            keyword={keyword}
-                            open={!!expanded[source.id]}
-                            theme={theme}
-                            onToggle={() => setExpanded((prev) => ({ ...prev, [source.id]: !prev[source.id] }))}
-                            onInsert={onInsert}
-                            onView={setDetail}
-                        />
-                    )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("canvas.sidePanel.noPrompts")} className="pt-12" />}
-                </div>
-            </div>
-            <PromptDetailDialog prompt={detail} onClose={() => setDetail(null)} onCopy={(prompt) => void copyPrompt(prompt)} />
-        </div>
-    );
-});
-
-function PromptSourceGroup({
-    sourceId,
-    sourceName,
-    keyword,
-    open,
-    theme,
-    onToggle,
-    onInsert,
-    onView,
-}: {
-    sourceId: string;
-    sourceName: string;
-    keyword: string;
-    open: boolean;
-    theme: CanvasTheme;
-    onToggle: () => void;
-    onInsert: (payload: InsertAssetPayload) => void;
-    onView: (prompt: Prompt) => void;
-}) {
-    const { t } = useTranslation();
-    // Cache a source after its first expansion to avoid repeated requests; search results also need the data for counts.
-    const showResults = open || !!keyword.trim();
-    const query = useQuery({ queryKey: ["side-panel-prompts", sourceId], queryFn: () => fetchSourcePrompts(sourceId), enabled: showResults, staleTime: 1000 * 60 * 60 });
-
-    const filtered = useMemo(() => {
-        const items = query.data || [];
-        const q = keyword.trim().toLowerCase();
-        if (!q) return items;
-        return items.filter((item) => [item.title, item.prompt, ...item.tags].join(" ").toLowerCase().includes(q));
-    }, [query.data, keyword]);
-
-    const insertPrompt = (item: Prompt) => onInsert({ kind: "text", content: item.prompt, title: item.title });
-
-    return (
-        <div>
-            <button type="button" onClick={onToggle} className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs font-semibold opacity-75 transition hover:opacity-100">
-                <ChevronRight className={cn("size-3.5 transition-transform", showResults && "rotate-90")} />
-                <BookOpen className="size-3.5" />
-                <span className="min-w-0 flex-1 truncate">{sourceName}</span>
-                {showResults && query.isSuccess ? <span className="opacity-50">{filtered.length}</span> : null}
-            </button>
-            {showResults ? (
-                <div className="px-1 pb-2 pt-1">
-                    {query.isLoading ? (
-                        <div className="flex justify-center py-6">
-                            <Spin size="small" />
-                        </div>
-                    ) : query.isError ? (
-                        <button type="button" onClick={() => void query.refetch()} className="block w-full py-4 text-center text-xs text-red-500 opacity-80 transition hover:opacity-100">
-                            {t("canvas.sidePanel.loadFailedRetry")}
-                        </button>
-                    ) : filtered.length ? (
-                        <div className="space-y-1.5">
-                            {filtered.map((item) => (
-                                <PromptRow key={item.id} item={item} theme={theme} onInsert={() => insertPrompt(item)} onView={() => onView(item)} />
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="py-4 text-center text-xs opacity-40">{keyword.trim() ? t("canvas.sidePanel.noMatchingPrompts") : t("canvas.sidePanel.sourceEmpty")}</div>
-                    )}
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
-function PromptRow({ item, theme, onInsert, onView }: { item: Prompt; theme: CanvasTheme; onInsert: () => void; onView: () => void }) {
-    const { t } = useTranslation();
-    return (
-        <div className="group relative flex items-center gap-2.5 rounded-lg px-2 py-2 transition hover:bg-black/5 dark:hover:bg-white/5">
-            {item.coverUrl ? (
-                <img src={item.coverUrl} alt="" className="size-10 shrink-0 rounded-md object-cover" loading="lazy" />
-            ) : (
-                <span className="grid size-10 shrink-0 place-items-center rounded-md" style={{ background: theme.node.panel }}>
-                    <FileText className="size-4 opacity-50" />
-                </span>
-            )}
-            <button type="button" onClick={onView} className="min-w-0 flex-1 text-left">
-                <div className="truncate text-sm font-medium leading-snug">{item.title}</div>
-                <div className="mt-0.5 truncate text-xs leading-snug opacity-50">{item.prompt}</div>
-            </button>
-            <div className="flex shrink-0 flex-col items-center gap-0.5">
-                <button type="button" onClick={onView} className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.sidePanel.viewDetails")} title={t("canvas.sidePanel.viewDetails")}>
-                    <Eye className="size-3.5" />
-                </button>
-                <button
-                    type="button"
-                    onClick={onInsert}
-                    className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
-                    style={{ color: theme.toolbar.activeText }}
-                    aria-label={t("canvas.sidePanel.inserted")}
-                    title={t("canvas.sidePanel.inserted")}
-                >
-                    <Plus className="size-3.5" />
-                </button>
-            </div>
-        </div>
-    );
 }

@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
 declare const __APP_VERSION__: string;
-declare const __APP_RELEASES__: import("@/lib/release").ReleaseInfo[];
 
 interface ImportMetaEnv {
     // Comma-separated local development plugin URLs, refetched on every startup without caching or persistence.
@@ -11,4 +10,7 @@ interface ImportMetaEnv {
     readonly VITE_ANALYTICS_GA4_ID?: string;
     // Baidu Analytics site ID
     readonly VITE_ANALYTICS_BAIDU_ID?: string;
+    readonly VITE_SUPABASE_URL?: string;
+    readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
+    readonly VITE_AGENT_API_URL?: string;
 }

@@ -1,5 +1,5 @@
 {
-    "name": "infinite-canvas",
+    "name": "coresearch",
     "version": "0.1.0",
     "private": true,
     "type": "module",
@@ -17,6 +17,7 @@
         "@ant-design/pro-components": "3.0.0-beta.3",
         "@codemirror/lang-javascript": "^6.2.5",
         "@codemirror/lang-json": "^6.0.2",
+        "@supabase/supabase-js": "^2.57.4",
         "@tanstack/react-query": "^5.100.9",
         "@uiw/react-codemirror": "^4.25.9",
         "antd": "^6.4.2",

@@ -538,15 +538,12 @@ function toolHistorySummary(tool: string, item: unknown, input: unknown) {
         return Array.isArray(field(result, "nodes")) || Array.isArray(field(result, "connections")) ? canvasContentSummary(nodes, connections.length) : "已读取当前画布内容";
     }
     if (tool === "canvas_get_selection") return "已读取当前选中内容";
-    if (tool === "prompts_search") return `找到 ${numberValue(field(result, "total"))} 条提示词`;
     if (tool === "assets_list") return `共 ${numberValue(field(result, "total"))} 个资产`;
     if (tool === "assets_add") return "已加入我的素材";
     if (tool === "generation_get_status") {
         const summary = field(result, "summary");
         return `共 ${numberValue(field(result, "total"))} 个任务，排队 ${numberValue(field(summary, "queued"))}，运行中 ${numberValue(field(summary, "running"))}，成功 ${numberValue(field(summary, "succeeded"))}，失败 ${numberValue(field(summary, "failed"))}`;
     }
-    if (tool === "workbench_image_generate" || tool === "workbench_video_generate") return String(field(result, "note") || "已在工作台执行");
-    if (tool === "workbench_image_get_config" || tool === "workbench_video_get_config") return "已读取工作台配置";
     return "";
 }
 
@@ -589,7 +586,6 @@ function parseToolResult(result: unknown) {
 /** 提取工具参数中适合普通用户查看的信息。 */
 function toolInputRows(tool: string, input: unknown) {
     if (tool === "site_navigate") return [textRow("目标页面", routeName(String(field(input, "path") || "/")))].filter(Boolean);
-    if (tool === "prompts_search") return [textRow("搜索内容", field(input, "query"))].filter(Boolean);
     if (tool === "canvas_create_text_node") return [textRow("文本内容", field(input, "text"))].filter(Boolean);
     if (tool === "canvas_apply_ops") return [textRow("操作内容", summarizeCanvasOps(arrayValue(field(input, "ops"))))].filter(Boolean);
     if (tool === "canvas_create_attachment_nodes") return [textRow("图片数量", arrayValue(field(input, "attachmentIds")).length)].filter(Boolean);
@@ -689,7 +685,6 @@ function routeName(path: string) {
     if (path.startsWith("/canvas/")) return "指定画布";
     if (path.startsWith("/image")) return "生图工作台";
     if (path.startsWith("/video")) return "视频工作台";
-    if (path.startsWith("/prompts")) return "提示词中心";
     if (path.startsWith("/assets")) return "我的素材";
     if (path.startsWith("/config")) return "配置页面";
     return path;
@@ -728,11 +723,6 @@ function toolName(name: string) {
     if (name === "canvas_select_nodes") return "选择节点";
     if (name === "canvas_set_viewport") return "调整视口";
     if (name === "canvas_run_generation") return "触发生成";
-    if (name === "workbench_image_get_config") return "生图配置";
-    if (name === "workbench_image_generate") return "生图工作台生成";
-    if (name === "workbench_video_get_config") return "视频配置";
-    if (name === "workbench_video_generate") return "视频创作台生成";
-    if (name === "prompts_search") return "搜索提示词";
     if (name === "assets_list") return "资产列表";
     if (name === "assets_add") return "添加资产";
     if (name === "generation_get_status") return "生成任务状态";

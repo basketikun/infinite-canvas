@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 import { ModelPicker } from "@/components/model-picker";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
 import { ConfigLocalProxy } from "@/components/layout/config-local-proxy";
-import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
 import type { AppLocale } from "@/i18n";
 import { exportAppConfig, importAppConfig } from "@/services/config-file";
@@ -270,11 +269,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         ),
                     },
                     {
-                        key: "prompt-sources",
-                        label: t("config.tabs.promptSources"),
-                        children: <ConfigPromptSources />,
-                    },
-                    {
                         key: "webdav",
                         label: "WebDAV",
                         children: (
@@ -295,7 +289,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             <Input value={webdav.url} placeholder="https://nas.example.com/webdav" onChange={(event) => updateWebdavConfig("url", event.target.value)} />
                                         </Form.Item>
                                         <Form.Item label={t("config.webdav.directory")} extra={t("config.webdav.directoryDescription", { manifest: WEBDAV_MANIFEST_FILE_NAME })} className="mb-4">
-                                            <Input value={webdav.directory} placeholder="infinite-canvas" onChange={(event) => updateWebdavConfig("directory", event.target.value)} />
+                                            <Input value={webdav.directory} placeholder="coresearch" onChange={(event) => updateWebdavConfig("directory", event.target.value)} />
                                         </Form.Item>
                                         <Form.Item label={t("config.webdav.username")} className="mb-0">
                                             <Input value={webdav.username} autoComplete="username" onChange={(event) => updateWebdavConfig("username", event.target.value)} />

@@ -1,7 +1,7 @@
 {
   "name": "@basketikun/canvas-proxy",
   "version": "0.1.0",
-  "description": "Minimal local forwarding proxy that lets the Infinite Canvas web app call AI provider APIs without CORS restrictions.",
+  "description": "Minimal local forwarding proxy that lets the CoResearch web app call AI provider APIs without CORS restrictions.",
   "license": "MIT",
   "type": "module",
   "main": "./index.js",

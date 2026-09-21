@@ -33,6 +33,7 @@ import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
+import { CanvasNodeDocumentModal } from "@/components/canvas/canvas-node-document-modal";
 import { CanvasSelectionToolbar } from "@/components/canvas/canvas-selection-toolbar";
 import { InfiniteCanvas } from "@/components/canvas/infinite-canvas";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
@@ -44,6 +45,7 @@ import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -71,8 +73,8 @@ import {
 } from "@/lib/canvas/canvas-generation-helpers";
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
 import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
-import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
+import { CanvasEmptyState } from "@/components/canvas/canvas-empty-state";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
 import { ConnectionCreateMenu, NodeCreateMenu, type PendingConnectionCreate } from "@/components/canvas/canvas-create-menus";
 import {
@@ -164,10 +166,7 @@ function InfiniteCanvasPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const projectId = params.id || "";
-    const localAgentConnected = useAgentStore((state) => state.connected);
-    const localAgentActivity = useAgentStore((state) => state.activity);
-    const localAgentEnabled = useAgentStore((state) => state.enabled);
-    const fragmentBootstrap = useAgentStore((state) => state.fragmentBootstrap);
+    const ownerUserId = useUserStore((state) => state.user?.id);
     const agentPanelOpen = useAgentStore((state) => state.panelOpen);
     const toggleAgentPanel = useAgentStore((state) => state.togglePanel);
     const openAgentPanel = useAgentStore((state) => state.openPanel);
@@ -213,7 +212,7 @@ function InfiniteCanvasPage() {
     const updateProject = useCanvasStore((state) => state.updateProject);
     const renameProject = useCanvasStore((state) => state.renameProject);
     const deleteProjects = useCanvasStore((state) => state.deleteProjects);
-    const currentProject = useCanvasStore((state) => state.projects.find((project) => project.id === projectId));
+    const currentProject = useCanvasStore((state) => state.projects.find((project) => project.id === projectId && project.localOwnerUserId === ownerUserId));
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [nodes, setNodes] = useState<CanvasNodeData[]>([]);
     const [connections, setConnections] = useState<CanvasConnection[]>([]);
@@ -234,7 +233,7 @@ function InfiniteCanvasPage() {
     const [nodeCreatePosition, setNodeCreatePosition] = useState<Position | null>(null);
     const [runningNodeId, setRunningNodeId] = useState<string | null>(null);
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
-    const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
+    const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("dots");
     const [showImageInfo, setShowImageInfo] = useState(false);
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
@@ -243,7 +242,7 @@ function InfiniteCanvasPage() {
     const [nodeImageSettingsOpen, setNodeImageSettingsOpen] = useState(false);
     const [dialogNodeId, setDialogNodeId] = useState<string | null>(null);
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
-    const [pluginManagerOpen, setPluginManagerOpen] = useState(false);
+    const [documentNodeId, setDocumentNodeId] = useState<string | null>(null);
     const [cropNodeId, setCropNodeId] = useState<string | null>(null);
     const [maskEditNodeId, setMaskEditNodeId] = useState<string | null>(null);
     const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
@@ -472,9 +471,8 @@ function InfiniteCanvasPage() {
     }, [projectLoaded]);
 
     useEffect(() => {
-        if (!projectLoaded || !["new", "recent", "choose"].includes(searchParams.get("mode") || "")) return;
-        if (!searchParams.has("agentUrl") && !localAgentEnabled && !fragmentBootstrap) openAgentPanel();
-    }, [fragmentBootstrap, localAgentEnabled, openAgentPanel, projectLoaded, searchParams]);
+        if (projectLoaded) openAgentPanel();
+    }, [openAgentPanel, projectLoaded]);
 
     useEffect(() => {
         if (!projectLoaded || applyingHistoryRef.current || historyPausedRef.current) return;
@@ -620,7 +618,7 @@ function InfiniteCanvasPage() {
     );
 
     const createConnectedNode = useCallback(
-        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
+        (type: CanvasNodeTypeId, pending: PendingConnectionCreate) => {
             const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
@@ -632,7 +630,15 @@ function InfiniteCanvasPage() {
             setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
-            if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
+            const definition = getNodeDefinition(type);
+            const wantsPanel = definition?.hidePanel
+                ? false
+                : definition?.Panel
+                  ? Boolean(definition.autoOpenPanel)
+                  : definition?.useBuiltinPanel
+                    ? true
+                    : isBuiltinType(type) && type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio && type !== CanvasNodeType.Group;
+            if (wantsPanel) setDialogNodeId(newNode.id);
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
@@ -721,6 +727,7 @@ function InfiniteCanvasPage() {
     const singleSelectedNodeId = selectedNodeIds.size === 1 ? Array.from(selectedNodeIds)[0] : null;
     const toolbarNode = (toolbarNodeId ? nodeById.get(toolbarNodeId) || null : null) || (singleSelectedNodeId ? nodeById.get(singleSelectedNodeId) || null : null);
     const infoNode = infoNodeId ? nodeById.get(infoNodeId) || null : null;
+    const documentNode = documentNodeId ? nodeById.get(documentNodeId) || null : null;
     const cropNode = cropNodeId ? nodeById.get(cropNodeId) || null : null;
     const maskEditNode = maskEditNodeId ? nodeById.get(maskEditNodeId) || null : null;
     const splitNode = splitNodeId ? nodeById.get(splitNodeId) || null : null;
@@ -872,6 +879,7 @@ function InfiniteCanvasPage() {
             setToolbarNodeId((current) => (current && allIds.has(current) ? null : current));
             setDialogNodeId((current) => (current && allIds.has(current) ? null : current));
             setInfoNodeId((current) => (current && allIds.has(current) ? null : current));
+            setDocumentNodeId((current) => (current && allIds.has(current) ? null : current));
             setCropNodeId((current) => (current && allIds.has(current) ? null : current));
             setMaskEditNodeId((current) => (current && allIds.has(current) ? null : current));
             setAngleNodeId((current) => (current && allIds.has(current) ? null : current));
@@ -972,6 +980,7 @@ function InfiniteCanvasPage() {
         setNodes([]);
         setConnections([]);
         setInfoNodeId(null);
+        setDocumentNodeId(null);
         setCropNodeId(null);
         setMaskEditNodeId(null);
         setAngleNodeId(null);
@@ -1169,9 +1178,10 @@ function InfiniteCanvasPage() {
     }, [applyHistory]);
 
     const createAndOpenProject = useCallback(() => {
-        const id = createProject(t("canvas.defaultTitle", { count: useCanvasStore.getState().projects.length + 1 }));
+        const projectCount = useCanvasStore.getState().projects.filter((project) => project.localOwnerUserId === ownerUserId).length;
+        const id = createProject(t("canvas.defaultTitle", { count: projectCount + 1 }));
         navigate(`/canvas/${id}`);
-    }, [createProject, navigate, t]);
+    }, [createProject, navigate, ownerUserId, t]);
 
     const deleteCurrentProject = useCallback(() => {
         deleteProjects([projectId]);
@@ -1180,7 +1190,7 @@ function InfiniteCanvasPage() {
     }, [cleanupAssetImages, deleteProjects, navigate, projectId]);
 
     const exportCurrentProject = useCallback(async () => {
-        const project = useCanvasStore.getState().projects.find((item) => item.id === projectId);
+        const project = useCanvasStore.getState().projects.find((item) => item.id === projectId && item.localOwnerUserId === ownerUserId);
         if (!project) return message.error(t("canvas.projectPage.notFound"));
         const hide = message.loading(t("canvas.projectPage.exporting"), 0);
         try {
@@ -1192,7 +1202,7 @@ function InfiniteCanvasPage() {
         } finally {
             hide();
         }
-    }, [message, projectId, t]);
+    }, [message, ownerUserId, projectId, t]);
 
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -3126,11 +3136,9 @@ function InfiniteCanvasPage() {
                     onDeleteProject={deleteCurrentProject}
                     onExportProject={exportCurrentProject}
                     onImportImage={() => handleUploadRequest()}
-                    onOpenPlugins={() => setPluginManagerOpen(true)}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
                     agentOpen={agentPanelOpen}
-                    compactAgentStatus={{ connected: localAgentConnected, enabled: localAgentEnabled, activity: localAgentActivity }}
                     onToggleAgent={toggleAgentPanel}
                 />
 
@@ -3250,6 +3258,8 @@ function InfiniteCanvasPage() {
                     ) : null}
                 </InfiniteCanvas>
 
+                {!nodes.length ? <CanvasEmptyState onAddNode={createNode} onImport={handleUploadRequest} onOpenAgent={openAgentPanel} /> : null}
+
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || isNodeResizing || nodeImageSettingsOpen || expandedBatchNodeIds.has(toolbarNode?.id || "") ? null : toolbarNode}
                     viewport={viewport}
@@ -3257,6 +3267,7 @@ function InfiniteCanvasPage() {
                     onKeep={keepNodeToolbar}
                     onLeave={hideNodeToolbar}
                     onInfo={(node) => setInfoNodeId(node.id)}
+                    onDocument={(node) => setDocumentNodeId(node.id)}
                     onDecreaseFont={(node) => handleFontSizeChange(node.id, Math.max(10, (node.metadata?.fontSize || 14) - 2))}
                     onIncreaseFont={(node) => handleFontSizeChange(node.id, Math.min(32, (node.metadata?.fontSize || 14) + 2))}
                     onToggleDialog={(node) => setDialogNodeId((current) => (current === node.id ? null : node.id))}
@@ -3297,12 +3308,7 @@ function InfiniteCanvasPage() {
                     canRedo={historyState.canRedo}
                     backgroundMode={backgroundMode}
                     showImageInfo={showImageInfo}
-                    onAddImage={() => createNode(CanvasNodeType.Image)}
-                    onAddVideo={() => createNode(CanvasNodeType.Video)}
-                    onAddAudio={() => createNode(CanvasNodeType.Audio)}
-                    onAddText={() => createNode(CanvasNodeType.Text)}
-                    onAddConfig={() => createNode(CanvasNodeType.Config)}
-                    onAddGroup={() => createNode(CanvasNodeType.Group)}
+                    onAddNode={(type) => createNode(type)}
                     onAddExtensionNode={(type) => createNode(type)}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
@@ -3350,7 +3356,12 @@ function InfiniteCanvasPage() {
                 <input ref={imageInputRef} type="file" multiple accept="image/*,video/*,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" className="hidden" onChange={handleImageInputChange} />
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
-                <CanvasPluginManagerModal open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
+                <CanvasNodeDocumentModal
+                    node={documentNode}
+                    open={Boolean(documentNode)}
+                    onClose={() => setDocumentNodeId(null)}
+                    onSave={(nodeId, document) => setNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, document } } : node)))}
+                />
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 

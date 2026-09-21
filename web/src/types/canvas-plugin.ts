@@ -106,6 +106,7 @@ export type CanvasNodeDefinition = {
     defaultSize: { width: number; height: number };
     defaultMetadata?: CanvasNodeMetadata;
     minimapColor?: string;
+    hideTypeAccent?: boolean; // Skip the top type color strip when the card already encodes type identity.
     showInCreateMenu?: boolean; // Defaults to true.
     hasSourceHandle?: boolean; // Right-side output handle; defaults to true.
     hidePanel?: boolean; // Prevents click/create from opening a lower panel; intended for display-only nodes.

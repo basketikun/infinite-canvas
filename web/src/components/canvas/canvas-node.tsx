@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Puzzle, RefreshCw, Star, Trash2, Video } from "lucide-react";
+import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Plus, Puzzle, RefreshCw, Star, Trash2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -10,7 +10,8 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
-import { CanvasNodeType, type CanvasNodeData, type CanvasNodeImage, type CanvasNodeText, type Position } from "@/types/canvas";
+import { RESEARCH_FLOW_META } from "@/components/canvas/nodes/research-nodes";
+import { CanvasNodeType, RESEARCH_FLOW_NODE_TYPES, type CanvasNodeData, type CanvasNodeImage, type CanvasNodeText, type Position, type ResearchFlowNodeType } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasPluginHost } from "@/types/canvas-plugin";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { useTranslation } from "react-i18next";
@@ -146,6 +147,13 @@ export const CanvasNode = React.memo(function CanvasNode({
     const transparentBg = Boolean(definition?.transparentBackground);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const imageBorderColor = isActive ? selectionBlue : isRelated ? theme.node.muted : "transparent";
+    // Type accent strip: same per-type color used in the side panel and minimap, shown only where the
+    // node renders its neutral fill (media nodes with actual content stay edge-to-edge, uncolored).
+    // Research cards already show type via icon + label, so they skip this strip.
+    const showTypeAccent = !isGroup && !hasImageContent && !hasVideoContent && !transparentBg && Boolean(definition?.minimapColor) && !definition?.hideTypeAccent;
+    const isResearchFlow = RESEARCH_FLOW_NODE_TYPES.includes(data.type as ResearchFlowNodeType);
+    const researchMeta = isResearchFlow ? RESEARCH_FLOW_META[data.type as ResearchFlowNodeType] : null;
+    const ResearchIcon = researchMeta?.Icon;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const titleInputRef = useRef<HTMLInputElement>(null);
     const resizeRef = useRef({
@@ -226,8 +234,8 @@ export const CanvasNode = React.memo(function CanvasNode({
 
             const dx = (event.clientX - resizeRef.current.startX) / scale;
             const dy = (event.clientY - resizeRef.current.startY) / scale;
-            const minWidth = 220;
-            const minHeight = 160;
+            const minWidth = isResearchFlow ? 240 : 220;
+            const minHeight = isResearchFlow ? 280 : 160;
             const startRight = resizeRef.current.startLeft + resizeRef.current.startWidth;
             const startBottom = resizeRef.current.startTop + resizeRef.current.startHeight;
             const fromLeft = resizeRef.current.corner.includes("left");
@@ -258,7 +266,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 y: fromTop ? startBottom - height : resizeRef.current.startTop,
             });
         },
-        [data.id, onResize, scale],
+        [data.id, isResearchFlow, onResize, scale],
     );
 
     const handleResizeUp = useCallback(() => {
@@ -322,14 +330,14 @@ export const CanvasNode = React.memo(function CanvasNode({
                 else onContextMenu(event, data.id);
             }}
         >
-            {!referenceSelectionState && (isSelected || hovered || isEditingTitle) && (
-                <div className="absolute left-3 top-[-28px] z-[65] max-w-[calc(100%-24px)]" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+            {!referenceSelectionState && (isResearchFlow || isSelected || hovered || isEditingTitle) && (
+                <div className="absolute left-2 top-[-26px] z-[65] max-w-[calc(100%-16px)]" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
                     {isEditingTitle ? (
                         <input
                             ref={titleInputRef}
                             value={titleDraft}
                             maxLength={64}
-                            className="h-6 max-w-full border-0 border-b border-dashed bg-transparent px-0 text-left text-xs font-medium outline-none"
+                            className="h-5 max-w-full border-0 border-b border-dashed bg-transparent px-0 text-left text-xs font-medium outline-none"
                             style={{ borderColor: theme.node.muted, color: theme.node.text }}
                             onChange={(event) => setTitleDraft(event.target.value)}
                             onBlur={finishTitleEditing}
@@ -341,6 +349,20 @@ export const CanvasNode = React.memo(function CanvasNode({
                                 }
                             }}
                         />
+                    ) : isResearchFlow && ResearchIcon ? (
+                        <button
+                            type="button"
+                            className="flex max-w-full items-center gap-1.5 truncate px-0 py-0.5 text-left text-xs font-medium opacity-90 transition hover:opacity-100"
+                            style={{ color: theme.node.text }}
+                            title={t("canvas.node.renameHint")}
+                            onDoubleClick={(event) => {
+                                event.stopPropagation();
+                                setIsEditingTitle(true);
+                            }}
+                        >
+                            <ResearchIcon className="size-3.5 shrink-0 opacity-80" strokeWidth={1.75} style={{ color: theme.node.text }} />
+                            <span className="truncate opacity-90">{data.title || definition?.title || t("canvas.node.untitled")}</span>
+                        </button>
                     ) : (
                         <button
                             type="button"
@@ -359,12 +381,30 @@ export const CanvasNode = React.memo(function CanvasNode({
             )}
 
             <div
-                className="relative h-full w-full overflow-visible rounded-3xl border-2"
+                className={`relative h-full w-full overflow-visible ${isResearchFlow ? "rounded-2xl border" : "rounded-3xl border-2"}`}
                 style={{
                     background: isGroup ? "transparent" : hasImageContent || hasVideoContent || transparentBg ? "transparent" : theme.node.fill,
-                    borderColor: isGroup ? (isGroupDropTarget || isActive ? selectionBlue : theme.node.stroke) : hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : transparentBg ? "transparent" : theme.node.stroke,
+                    borderColor: isGroup
+                        ? (isGroupDropTarget || isActive ? selectionBlue : theme.node.stroke)
+                        : hasImageContent
+                          ? imageBorderColor
+                          : isActive
+                            ? isResearchFlow
+                              ? theme.node.activeStroke
+                              : selectionBlue
+                            : isRelated
+                              ? theme.node.muted
+                              : transparentBg
+                                ? "transparent"
+                                : theme.node.stroke,
                     borderStyle: isGroup ? "dashed" : "solid",
-                    boxShadow: isGroupDropTarget ? `0 0 0 2px ${selectionBlue}66, inset 0 0 0 999px ${selectionBlue}10` : isActive ? `0 0 0 1px ${selectionBlue}55` : isRelated ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)` : undefined,
+                    boxShadow: isGroupDropTarget
+                        ? `0 0 0 2px ${selectionBlue}66, inset 0 0 0 999px ${selectionBlue}10`
+                        : isActive && !isResearchFlow
+                          ? `0 0 0 1px ${selectionBlue}55`
+                          : isRelated
+                            ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)`
+                            : undefined,
                 }}
                 onMouseDown={(event) => {
                     if (!referenceSelectionState) onMouseDown(event, data.id);
@@ -392,6 +432,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     setIsEditingContent(true);
                 }}
             >
+                {showTypeAccent ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[3px] rounded-t-[22px]" style={{ background: definition?.minimapColor }} /> : null}
                 <div
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={
@@ -429,7 +470,7 @@ export const CanvasNode = React.memo(function CanvasNode({
 
                 {showImageInfo && hasImageContent ? <ImageInfoBar node={data} /> : null}
 
-                {!isGroup && !hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
+                {!isGroup && !hasImageContent && !hasVideoContent && !hasAudioContent && !isResearchFlow ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
 
                 {referenceSelectionState && (referenceSelectionState !== "available" || hovered) ? (
                     <div className="pointer-events-none absolute inset-0 z-[60] grid place-items-center rounded-[inherit]" style={{ background: `color-mix(in srgb, ${theme.canvas.background} ${referenceSelectionState === "target" ? 78 : referenceSelectionState === "disabled" ? 60 : 34}%, transparent)`, boxShadow: referenceSelectionState === "available" ? `inset 0 0 0 2px ${selectionBlue}` : undefined }}>
@@ -437,16 +478,16 @@ export const CanvasNode = React.memo(function CanvasNode({
                     </div>
                 ) : null}
 
-                {!referenceSelectionState ? <ResizeHandle corner="top-left" onMouseDown={handleResizeMouseDown} /> : null}
-                {!referenceSelectionState ? <ResizeHandle corner="top-right" onMouseDown={handleResizeMouseDown} /> : null}
-                {!referenceSelectionState ? <ResizeHandle corner="bottom-left" onMouseDown={handleResizeMouseDown} /> : null}
-                {!referenceSelectionState ? <ResizeHandle corner="bottom-right" onMouseDown={handleResizeMouseDown} /> : null}
+                {!referenceSelectionState ? <ResizeHandle corner="top-left" visible={isResearchFlow && isSelected} onMouseDown={handleResizeMouseDown} /> : null}
+                {!referenceSelectionState ? <ResizeHandle corner="top-right" visible={isResearchFlow && isSelected} onMouseDown={handleResizeMouseDown} /> : null}
+                {!referenceSelectionState ? <ResizeHandle corner="bottom-left" visible={isResearchFlow && isSelected} onMouseDown={handleResizeMouseDown} /> : null}
+                {!referenceSelectionState ? <ResizeHandle corner="bottom-right" visible={isResearchFlow && isSelected} onMouseDown={handleResizeMouseDown} /> : null}
             </div>
 
             {!referenceSelectionState && !isGroup ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}
             {!referenceSelectionState && (definition?.hasSourceHandle ?? true) && data.type !== CanvasNodeType.Config ? <ConnectionHandleDot side="right" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "source")} /> : null}
 
-            {showPanel && !isGroup && renderPanel ? <div className="absolute left-1/2 top-full z-[70] w-[600px] -translate-x-1/2 pt-4">{renderPanel(data)}</div> : null}
+            {showPanel && !isGroup && renderPanel ? <div className="absolute left-1/2 top-full z-[70] flex w-max -translate-x-1/2 justify-center pt-4">{renderPanel(data)}</div> : null}
         </div>
     );
 });
@@ -470,14 +511,14 @@ function NodeContent(props: NodeContentRendererProps) {
     return <MissingPluginContent theme={props.theme} type={props.node.type} />;
 }
 
-const nodeContentRenderers = {
+const nodeContentRenderers: Partial<Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>> = {
     [CanvasNodeType.Text]: TextContent,
     [CanvasNodeType.Image]: ImageNodeContent,
     [CanvasNodeType.Config]: EmptyImageContent,
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
     [CanvasNodeType.Group]: GroupNodeContent,
-} satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
+};
 
 function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererProps) {
     const { t } = useTranslation();
@@ -965,7 +1006,8 @@ function BatchFrame({ batchCount, batchExpanded, children }: { batchCount: numbe
         </div>
     );
 }
-function ResizeHandle({ corner, onMouseDown }: { corner: ResizeCorner; onMouseDown: (event: React.MouseEvent, corner: ResizeCorner) => void }) {
+function ResizeHandle({ corner, visible = false, onMouseDown }: { corner: ResizeCorner; visible?: boolean; onMouseDown: (event: React.MouseEvent, corner: ResizeCorner) => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const positionClass = {
         "top-left": "-left-[14px] -top-[14px] cursor-nwse-resize",
         "top-right": "-right-[14px] -top-[14px] cursor-nesw-resize",
@@ -973,7 +1015,16 @@ function ResizeHandle({ corner, onMouseDown }: { corner: ResizeCorner; onMouseDo
         "bottom-right": "-bottom-[14px] -right-[14px] cursor-nwse-resize",
     }[corner];
 
-    return <div className={`absolute z-50 size-7 ${positionClass}`} onMouseDown={(event) => onMouseDown(event, corner)} />;
+    return (
+        <div className={`absolute z-50 size-7 ${positionClass}`} onMouseDown={(event) => onMouseDown(event, corner)}>
+            {visible ? (
+                <span
+                    className="pointer-events-none absolute left-1/2 top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-[1px]"
+                    style={{ background: theme.node.activeStroke }}
+                />
+            ) : null}
+        </div>
+    );
 }
 
 function ConnectionHandleDot({ side, visible, onMouseDown }: { side: "left" | "right"; visible: boolean; onMouseDown: (event: React.MouseEvent) => void }) {
@@ -986,7 +1037,12 @@ function ConnectionHandleDot({ side, visible, onMouseDown }: { side: "left" | "r
             } ${visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
             onMouseDown={onMouseDown}
         >
-            <div className="size-3 rounded-full border-2 transition-all hover:scale-125" style={{ background: theme.node.panel, borderColor: theme.node.muted }} />
+            <div
+                className="grid size-6 place-items-center rounded-full border transition-all hover:scale-110"
+                style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.muted }}
+            >
+                <Plus className="size-3.5" strokeWidth={2} />
+            </div>
         </div>
     );
 }

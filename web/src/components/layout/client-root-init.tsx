@@ -4,7 +4,11 @@ import { App } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useConfigStore } from "@/stores/use-config-store";
-import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
+import { useUserStore } from "@/stores/use-user-store";
+import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { hostedAgentApi } from "@/services/api/hosted-agent";
+
+const deletingHostedProjects = new Set<string>();
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -12,8 +16,28 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const handledConfigParams = useRef(false);
     const importChannelCredentials = useConfigStore((state) => state.importChannelCredentials);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const initializeUser = useUserStore((state) => state.initialize);
+    const user = useUserStore((state) => state.user);
+    const accessToken = useUserStore((state) => state.accessToken);
+    const deletedProjects = useCanvasStore((state) => state.deletedProjects);
+    const markAgentProjectDeleted = useCanvasStore((state) => state.markAgentProjectDeleted);
 
-    usePromptSourceScheduler();
+    useEffect(() => {
+        void initializeUser();
+    }, [initializeUser]);
+
+    useEffect(() => {
+        if (!user || !accessToken) return;
+        deletedProjects.filter((item) => item.agentProjectId && item.agentOwnerUserId === user.id).forEach((item) => {
+            const agentProjectId = item.agentProjectId!;
+            if (deletingHostedProjects.has(agentProjectId)) return;
+            deletingHostedProjects.add(agentProjectId);
+            void hostedAgentApi.deleteProject(accessToken, agentProjectId).then(() => markAgentProjectDeleted(item.id)).catch((error) => {
+                deletingHostedProjects.delete(agentProjectId);
+                message.error(error instanceof Error ? error.message : "删除托管项目失败");
+            });
+        });
+    }, [accessToken, deletedProjects, markAgentProjectDeleted, message, user]);
 
     useEffect(() => {
         if (handledConfigParams.current) return;

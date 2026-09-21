@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import i18n from "@/i18n";
+import { isValidAgentEndpoint } from "@/lib/agent/agent-url-bootstrap";
 
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -40,6 +41,7 @@ export type AgentConversationState = {
 export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
 
 const CONNECT_TIMEOUT_MS = 6000;
+const AGENT_PANEL_WIDTH_KEY = "canvas-agent-panel-width-v2";
 let agentSource: EventSource | null = null;
 let connectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -58,6 +60,7 @@ type AgentStore = {
     prompt: string;
     attachments: AgentAttachment[];
     canvasReferences: CanvasResourceReference[];
+    pendingSend: number;
     sending: boolean;
     waiting: boolean;
     messages: AgentChatItem[];
@@ -96,7 +99,7 @@ type AgentStore = {
 export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
-    width: typeof window === "undefined" ? 440 : Number(localStorage.getItem("canvas-agent-panel-width")) || 440,
+    width: typeof window === "undefined" ? 400 : Number(localStorage.getItem(AGENT_PANEL_WIDTH_KEY)) || 400,
     panelOpen: false,
     panelMounted: true,
     panelClosing: false,
@@ -110,6 +113,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     prompt: "",
     attachments: [],
     canvasReferences: [],
+    pendingSend: 0,
     sending: false,
     waiting: false,
     messages: [],
@@ -149,12 +153,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const endpoint = get().url.trim().replace(/\/$/, "");
         const token = get().token.trim();
         if (!endpoint || !token) return set({ connectError: silent ? "" : i18n.t("agent.state.connectionRequired") });
-        try {
-            const parsed = new URL(endpoint);
-            if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
-        } catch {
-            return set({ connectError: silent ? "" : i18n.t("agent.state.invalidUrl") });
-        }
+        if (!isValidAgentEndpoint(endpoint)) return set({ connectError: silent ? "" : i18n.t("agent.state.invalidUrl") });
         localStorage.setItem("canvas-agent-url", endpoint);
         localStorage.setItem("canvas-agent-token", token);
         // Only set enabled here; LocalAgentPanel's effect owns SSE initialization.

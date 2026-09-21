@@ -335,15 +335,12 @@ function siteToolSummary(name: string, result: unknown, input: unknown) {
     const data = result && typeof result === "object" ? (result as Record<string, unknown>) : {};
     if (name === "site_navigate") return tr("openedRoute", { route: routeName(stringText(objectField(input, "path")) || "/") });
     if (name === "canvas_list_projects") return tr("canvasCount", { count: numberField(data, "total") });
-    if (name === "prompts_search") return tr("promptCount", { count: numberField(data, "total") });
     if (name === "assets_list") return tr("assetCount", { count: numberField(data, "total") });
     if (name === "assets_add") return tr("assetAdded");
     if (name === "generation_get_status") {
         const summary = data.summary && typeof data.summary === "object" ? (data.summary as Record<string, unknown>) : {};
         return tr("generationStatus", { total: numberField(data, "total"), queued: numberField(summary, "queued"), running: numberField(summary, "running"), succeeded: numberField(summary, "succeeded"), failed: numberField(summary, "failed") });
     }
-    if (name === "workbench_image_generate" || name === "workbench_video_generate") return typeof data.note === "string" ? data.note : tr("workbenchExecuted");
-    if (name === "workbench_image_get_config" || name === "workbench_video_get_config") return tr("workbenchConfigRead");
     return "";
 }
 
@@ -363,7 +360,6 @@ export function toolCallDetail(name: string, input: unknown, status: string, err
 function toolInputRows(name: string, input: unknown) {
     input = parseToolArguments(input);
     if (name === "site_navigate") return [detailRow(tr("targetPage"), routeName(stringText(objectField(input, "path")) || "/"))].flatMap((row) => (row ? [row] : []));
-    if (name === "prompts_search") return [detailRow(tr("searchContent"), objectField(input, "query"))].flatMap((row) => (row ? [row] : []));
     if (name === "canvas_create_text_node") return [detailRow(tr("textContent"), objectField(input, "text"))].flatMap((row) => (row ? [row] : []));
     if (name === "canvas_apply_ops") return [detailRow(tr("operationContent"), summarizeCanvasAgentOps((objectField(input, "ops") as CanvasAgentOp[] | undefined) || []))].flatMap((row) => (row ? [row] : []));
     if (name === "canvas_create_attachment_nodes") return [detailRow(tr("imageCount"), Array.isArray(objectField(input, "attachmentIds")) ? (objectField(input, "attachmentIds") as unknown[]).length : 0)].flatMap((row) => (row ? [row] : []));
@@ -415,7 +411,6 @@ export function routeName(path: string) {
     if (path.startsWith("/canvas/")) return tr("routes.canvasProject");
     if (path.startsWith("/image")) return tr("routes.image");
     if (path.startsWith("/video")) return tr("routes.video");
-    if (path.startsWith("/prompts")) return tr("routes.prompts");
     if (path.startsWith("/assets")) return tr("routes.assets");
     if (path.startsWith("/config")) return tr("routes.config");
     return path;
