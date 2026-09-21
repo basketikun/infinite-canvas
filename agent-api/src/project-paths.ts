@@ -1,13 +1,8 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { AppError } from "./errors.js";
 import type { RequestContext } from "./types.js";
-
-export function defaultRuntimeRoot() {
-    return process.env.AGENT_RUNTIME_ROOT || path.resolve(fileURLToPath(new URL("../runtime", import.meta.url)));
-}
 
 export function sanitizeUserId(userId: string) {
     const id = userId.trim();

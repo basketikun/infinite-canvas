@@ -53,7 +53,7 @@ VITE_AGENT_API_URL
 - 路由中的 `projectId` 每次都通过 RLS 和 Project owner 关系验证。
 - `canvasWorkspaceId` 由 Project 关系解析，客户端不能指定。
 - Pi 关闭全部内置工具，只注册读取当前画布和请求用户确认后修改当前画布两个工具。
-- Codex 适配器为每个 Project 启动隔离的 app-server；画布 MCP 使用 ephemeral runtime token 调用回环接口，工具参数不含 Project ID。
+- Codex 适配器为每个 Project 启动隔离的 app-server；画布 MCP 使用 ephemeral runtime token 调用仅本机可访问的回环接口，工具参数不含 Project ID。
 - 每个 Conversation 使用独立 `SessionManager`，session 通过 revision 比较并交换保存。
 - Agent 通信协议版本与 Pi session 存储版本独立记录；未知 session 存储版本会拒绝覆盖。
 - 事件流使用 `fetch` 和 `Authorization` header，JWT 不进入 URL。

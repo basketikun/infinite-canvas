@@ -38,13 +38,6 @@ export class SupabaseResearchStore implements ResearchStore {
         return canvas(row(data));
     }
 
-    async advanceCanvasRevision(ctx: RequestContext, revision: number) {
-        const data = await this.rpc("advance_canvas_revision", { target_project_id: ctx.projectId, target_revision: revision });
-        const value = first(data);
-        if (!value) throw new AppError("找不到画布工作区", 404, "canvas_not_found");
-        return canvas(row(value));
-    }
-
     async saveCanvasState(ctx: RequestContext, revision: number, snapshot: JsonObject) {
         const data = await this.rpc("save_canvas_state", { target_project_id: ctx.projectId, target_revision: revision, next_snapshot: snapshot });
         const value = first(data);

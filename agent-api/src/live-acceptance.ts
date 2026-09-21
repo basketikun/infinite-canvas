@@ -19,7 +19,7 @@ try {
     projectId = project.id;
     const clientId = "live-acceptance-browser";
     const initialSnapshot = { nodes: [{ id: "seed", type: "text", text: "Pi acceptance seed" }], edges: [] };
-    await request(`/v1/projects/${project.id}/canvas/snapshot`, { method: "POST", body: { clientId, revision: 1, snapshot: initialSnapshot } });
+    await request(`/v1/projects/${project.id}/canvas/state`, { method: "PUT", body: { clientId, revision: 1, snapshot: initialSnapshot } });
     await request(`/v1/projects/${project.id}/skills/live-acceptance`, {
         method: "PUT",
         body: { enabled: true, definition: "执行验收指令时必须调用用户明确指定的 Canvas 工具，不得只用文字描述工具结果。" },
@@ -44,9 +44,9 @@ try {
         if (event.type !== "canvas.tool.requested") return;
         const callId = String(event.payload.callId || "");
         assert.ok(callId);
-        await request(`/v1/projects/${project.id}/canvas/tool-results`, {
+        await request(`/v1/projects/${project.id}/canvas/tool-results/${callId}`, {
             method: "POST",
-            body: { callId, clientId, revision: 2, snapshot: updatedSnapshot, result: { approved: true, applied: true } },
+            body: { clientId, revision: 2, snapshot: updatedSnapshot, result: { approved: true, applied: true } },
         });
     });
     assertTerminal(writeEvents, writeRun.runId, "run.completed");

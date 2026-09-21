@@ -51,12 +51,6 @@ export class InMemoryResearchStore implements ResearchStore {
         return { ...canvas, snapshot: canvas.snapshot ? structuredClone(canvas.snapshot) : null };
     }
 
-    async advanceCanvasRevision(ctx: RequestContext, revision: number) {
-        const project = this.contextProject(ctx);
-        if (revision > project.canvas.revision) project.canvas = { ...project.canvas, revision, updatedAt: new Date().toISOString() };
-        return { ...project.canvas, snapshot: project.canvas.snapshot ? structuredClone(project.canvas.snapshot) : null };
-    }
-
     async saveCanvasState(ctx: RequestContext, revision: number, snapshot: JsonObject) {
         const project = this.contextProject(ctx);
         if (revision > project.canvas.revision) project.canvas = { ...project.canvas, revision, snapshot: structuredClone(snapshot), updatedAt: new Date().toISOString() };

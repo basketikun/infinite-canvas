@@ -26,14 +26,14 @@ export function createApp(config: AppConfig, deps: { canvas?: CanvasBridge; adap
 
     app.use(cors({ origin: (origin, callback) => callback(null, !origin || config.origins.includes(origin)) }));
     app.use(express.json());
-    app.get("/health", (_request, response) => response.json({ ok: true, runtime: config.runtime }));
+    app.get("/health", (_request, response) => response.json({ ok: true }));
 
-    app.post("/internal/runtime/canvas/read", asyncRoute(async (request, response) => {
+    app.post("/internal/runtime/canvas/read", requireLoopback, asyncRoute(async (request, response) => {
         if (!codex) throw new AppError("当前运行时不是 Codex", 409, "runtime_not_codex");
         const snapshot = await codex.readCanvas(runtimeToken(request));
         response.json(snapshot);
     }));
-    app.post("/internal/runtime/canvas/apply", asyncRoute(async (request, response) => {
+    app.post("/internal/runtime/canvas/apply", requireLoopback, asyncRoute(async (request, response) => {
         if (!codex) throw new AppError("当前运行时不是 Codex", 409, "runtime_not_codex");
         const operations = Array.isArray(request.body?.operations) ? request.body.operations : [];
         const summary = requiredText(request.body?.summary, "缺少画布修改说明");
@@ -74,9 +74,7 @@ export function createApp(config: AppConfig, deps: { canvas?: CanvasBridge; adap
         response.json(await scope.store.readCanvas(ctx));
     }));
     app.put("/v1/projects/:projectId/canvas/state", publishCanvas(canvas));
-    app.post("/v1/projects/:projectId/canvas/snapshot", publishCanvas(canvas));
     app.post("/v1/projects/:projectId/canvas/tool-results/:requestId", completeCanvasTool(canvas));
-    app.post("/v1/projects/:projectId/canvas/tool-results", completeCanvasTool(canvas));
 
     app.post("/v1/projects/:projectId/conversations", asyncRoute(async (request, response) => {
         const scope = requestScope(response);
@@ -214,9 +212,21 @@ function completeCanvasTool(canvas: CanvasBridge) {
             if (workspace.revision !== revision) throw new AppError("画布快照 revision 已过期", 409, "canvas_revision_conflict");
             canvas.publishSnapshot(ctx, clientId, revision, snapshot);
         }
-        canvas.completeMutation(ctx, requiredText(request.params.requestId || request.body?.callId, "缺少工具调用 ID"), result);
+        canvas.completeMutation(ctx, requiredText(request.params.requestId, "缺少工具调用 ID"), result);
         response.status(204).end();
     });
+}
+
+function requireLoopback(request: Request, _response: Response, next: NextFunction) {
+    if (!isLoopbackAddress(request.socket.remoteAddress)) {
+        next(new AppError("仅允许本机调用", 403, "loopback_only"));
+        return;
+    }
+    next();
+}
+
+function isLoopbackAddress(address: string | undefined) {
+    return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
 
 function runtimeToken(request: Request) {

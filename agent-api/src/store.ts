@@ -6,7 +6,6 @@ export interface ResearchStore {
     readProject(userId: string, projectId: string): Promise<Project>;
     deleteProject(userId: string, projectId: string): Promise<void>;
     readCanvas(ctx: RequestContext): Promise<CanvasWorkspace>;
-    advanceCanvasRevision(ctx: RequestContext, revision: number): Promise<CanvasWorkspace>;
     saveCanvasState(ctx: RequestContext, revision: number, snapshot: JsonObject): Promise<CanvasWorkspace>;
 
     createConversation(ctx: RequestContext, title: string): Promise<Conversation>;

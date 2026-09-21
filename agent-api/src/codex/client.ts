@@ -17,13 +17,15 @@ export interface CodexTransport {
 export class CodexJsonRpcClient {
     private nextId = 1;
     private buffer = "";
+    private closed = false;
     private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+    private readonly closeListeners = new Set<(error?: Error) => void>();
     private notificationHandler: ((method: string, params: unknown) => void) | null = null;
     private requestHandler: ((id: number, method: string, params: unknown) => void) | null = null;
 
     constructor(private readonly transport: CodexTransport) {
         transport.onData((chunk) => this.read(chunk));
-        transport.onExit((error) => this.failAll(error?.message || "Codex runtime 已退出"));
+        transport.onExit((error) => this.close(error?.message || "Codex runtime 已退出", error));
     }
 
     onNotification(handler: (method: string, params: unknown) => void) {
@@ -32,6 +34,11 @@ export class CodexJsonRpcClient {
 
     onServerRequest(handler: (id: number, method: string, params: unknown) => void) {
         this.requestHandler = handler;
+    }
+
+    onClosed(handler: (error?: Error) => void) {
+        this.closeListeners.add(handler);
+        return () => this.closeListeners.delete(handler);
     }
 
     notify(method: string, params: unknown = {}) {
@@ -51,7 +58,7 @@ export class CodexJsonRpcClient {
     }
 
     dispose() {
-        this.failAll("Codex runtime 已关闭");
+        this.close("Codex runtime 已关闭");
         this.transport.dispose();
     }
 
@@ -87,9 +94,12 @@ export class CodexJsonRpcClient {
         if (message.method) this.notificationHandler?.(message.method, message.params);
     }
 
-    private failAll(text: string) {
-        const error = new Error(text);
-        for (const pending of this.pending.values()) pending.reject(error);
+    private close(text: string, error?: Error) {
+        if (this.closed) return;
+        this.closed = true;
+        const closed = error || new Error(text);
+        for (const pending of this.pending.values()) pending.reject(closed);
         this.pending.clear();
+        for (const listener of this.closeListeners) listener(closed);
     }
 }

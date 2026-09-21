@@ -1,9 +1,9 @@
-import crypto from "node:crypto";
+import jwt from "jsonwebtoken";
 
 import { AppError } from "./errors.js";
 import type { RequestContext } from "./types.js";
 
-export type RuntimeTokenClaims = RequestContext & { runtimeId: string };
+export type RuntimeTokenClaims = RequestContext & { runtimeId: string; instanceId?: string; conversationId?: string };
 
 export class RuntimeTokenService {
     constructor(private readonly secret: string) {
@@ -11,17 +11,13 @@ export class RuntimeTokenService {
     }
 
     create(claims: RuntimeTokenClaims) {
-        const payload = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
-        return `${payload}.${sign(this.secret, payload)}`;
+        return jwt.sign(claims, this.secret, { algorithm: "HS256", noTimestamp: true });
     }
 
     parse(token: string): RuntimeTokenClaims {
-        const parts = token.trim().split(".");
-        if (parts.length !== 2 || !parts[0] || !parts[1]) throw new AppError("运行时 token 无效", 401, "invalid_runtime_token");
-        if (sign(this.secret, parts[0]) !== parts[1]) throw new AppError("运行时 token 无效", 401, "invalid_runtime_token");
         let parsed: unknown;
         try {
-            parsed = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+            parsed = jwt.verify(token, this.secret, { algorithms: ["HS256"] });
         } catch {
             throw new AppError("运行时 token 无效", 401, "invalid_runtime_token");
         }
@@ -30,12 +26,12 @@ export class RuntimeTokenService {
     }
 }
 
-function sign(secret: string, payload: string) {
-    return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
-}
-
 function isClaims(value: unknown): value is RuntimeTokenClaims {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     const record = value as Record<string, unknown>;
-    return [record.userId, record.projectId, record.canvasWorkspaceId, record.runtimeId].every((item) => typeof item === "string" && item.length > 0);
+    const required = [record.userId, record.projectId, record.canvasWorkspaceId, record.runtimeId].every((item) => typeof item === "string" && item.length > 0);
+    if (!required) return false;
+    if (record.conversationId !== undefined && (typeof record.conversationId !== "string" || !record.conversationId)) return false;
+    if (record.instanceId !== undefined && (typeof record.instanceId !== "string" || !record.instanceId)) return false;
+    return true;
 }

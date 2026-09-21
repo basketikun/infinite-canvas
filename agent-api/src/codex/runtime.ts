@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 
 import { CanvasBridge } from "../canvas-bridge.js";
 import { AppError } from "../errors.js";
@@ -35,9 +35,9 @@ export type CodexRuntimeConfig = {
 };
 
 type ActiveTurn = {
-    ctx: RequestContext;
     conversationId: string;
     runId: string;
+    threadId: string;
     signal: AbortSignal;
     emit: (event: AdapterEvent) => Promise<void>;
 };
@@ -47,6 +47,7 @@ type TurnResult = { turn?: { id?: string } };
 
 export class CodexRuntimeAdapter implements RuntimeAdapter {
     private readonly runtimes = new Map<string, Promise<CodexRuntime>>();
+    private readonly live = new Map<string, CodexRuntime>();
     private readonly createTransport: NonNullable<CodexRuntimeConfig["createTransport"]>;
 
     constructor(private readonly config: CodexRuntimeConfig) {
@@ -65,7 +66,8 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
 
     parseLiveToken(token: string) {
         const claims = this.config.tokens.parse(token);
-        if (claims.runtimeId !== runtimeKey(claims) || !this.runtimes.has(claims.runtimeId)) {
+        const runtime = this.live.get(claims.runtimeId);
+        if (!runtime || claims.runtimeId !== runtimeKey(claims) || runtime.instanceId !== claims.instanceId) {
             throw new AppError("运行时 token 无效", 401, "invalid_runtime_token");
         }
         return claims;
@@ -78,65 +80,81 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
 
     async applyCanvas(token: string, operations: unknown[], summary: string) {
         const claims = this.parseLiveToken(token);
-        const runtime = await this.runtimes.get(claims.runtimeId);
+        const runtime = this.live.get(claims.runtimeId);
         if (!runtime) throw new AppError("运行时 token 无效", 401, "invalid_runtime_token");
-        return runtime.applyCanvas(operations, summary);
+        return runtime.applyCanvas(claims, operations, summary);
     }
 
     private getOrCreate(ctx: RequestContext) {
         const id = runtimeKey(ctx);
         const existing = this.runtimes.get(id);
         if (existing) return existing;
-        const created = this.spawn(ctx).catch((error) => {
+        const created = this.spawn(ctx, id).catch((error) => {
             this.runtimes.delete(id);
+            this.live.delete(id);
             throw error;
         });
         this.runtimes.set(id, created);
         return created;
     }
 
-    private async spawn(ctx: RequestContext) {
+    private async spawn(ctx: RequestContext, id: string) {
         const paths = projectRuntimePaths(this.config.runtimeRoot, ctx);
         await mkdir(paths.workspace, { recursive: true });
         await mkdir(paths.codexHome, { recursive: true });
         await mkdir(paths.tmp, { recursive: true });
-        try {
-            await writeFile(path.join(paths.workspace, "AGENTS.md"), "You are the research Agent for the current Project. Use canvas tools. Do not guess userId, projectId, or file paths.\n", { flag: "wx" });
-        } catch {
-            // already initialized
-        }
-        const runtimeId = runtimeKey(ctx);
-        const token = this.config.tokens.create({ ...ctx, runtimeId });
-        const transport = await this.createTransport({ ctx, paths, token, runtimeId });
-        const runtime = new CodexRuntime(ctx, paths, this.config, token, transport);
+        const instanceId = randomUUID();
+        const token = this.config.tokens.create({ ...ctx, runtimeId: id, instanceId });
+        const transport = await this.createTransport({ ctx, paths, token, runtimeId: id });
+        const runtime = new CodexRuntime(ctx, paths, this.config, instanceId, transport);
+        runtime.onClosed(() => {
+            if (this.live.get(id) !== runtime) return;
+            this.live.delete(id);
+            this.runtimes.delete(id);
+        });
         await runtime.initialize();
+        this.live.set(id, runtime);
         return runtime;
     }
 }
 
 export class CodexRuntime {
     private readonly client: CodexJsonRpcClient;
-    private activeTurn: ActiveTurn | null = null;
-    private turnWaiter: ((method: string, params: unknown) => void) | null = null;
+    private readonly turns = new Map<string, ActiveTurn>();
+    private readonly turnsByThread = new Map<string, ActiveTurn>();
+    private readonly pendingTurns = new Map<string, (error?: Error) => void>();
+    private readonly completedTurns = new Map<string, Error | null>();
+    private closeHandler: (() => void) | null = null;
 
     constructor(
         readonly ctx: RequestContext,
         readonly paths: ProjectRuntimePaths,
         private readonly config: CodexRuntimeConfig,
-        private readonly token: string,
+        readonly instanceId: string,
         transport: CodexTransport,
     ) {
         this.client = new CodexJsonRpcClient(transport);
         this.client.onNotification((method, params) => {
-            if (this.activeTurn) {
+            const turn = turnForNotification(this.turns, this.turnsByThread, params);
+            if (turn) {
                 const event = mapCodexNotification(method, params);
-                if (event) void this.activeTurn.emit(event);
+                if (event) void turn.emit(event);
             }
-            this.turnWaiter?.(method, params);
+            this.dispatchTerminal(method, params);
         });
         this.client.onServerRequest((id, method) => {
             this.client.respond(id, { decision: /mcp/i.test(method) ? "approve" : "decline" });
         });
+        this.client.onClosed(() => {
+            for (const finish of [...this.pendingTurns.values()]) finish(new Error("Codex runtime 已退出"));
+            this.turns.clear();
+            this.turnsByThread.clear();
+            this.closeHandler?.();
+        });
+    }
+
+    onClosed(handler: () => void) {
+        this.closeHandler = handler;
     }
 
     async initialize() {
@@ -148,37 +166,39 @@ export class CodexRuntime {
     }
 
     async runTurn(input: RuntimeExecutionInput) {
-        this.activeTurn = { ctx: input.ctx, conversationId: input.conversationId, runId: input.runId, signal: input.signal, emit: input.emit };
-        let threadId = "";
+        const turn: ActiveTurn = { conversationId: input.conversationId, runId: input.runId, threadId: "", signal: input.signal, emit: input.emit };
+        this.turns.set(input.conversationId, turn);
         let turnId = "";
         const onAbort = () => {
-            if (threadId && turnId) void this.client.request("turn/interrupt", { threadId, turnId }).catch(() => {});
+            if (turn.threadId && turnId) void this.client.request("turn/interrupt", { threadId: turn.threadId, turnId }).catch(() => {});
         };
         input.signal.addEventListener("abort", onAbort, { once: true });
         try {
             const conversation = await input.store.readConversation(input.ctx, input.conversationId);
-            threadId = await this.ensureThread(input, conversation.codexThreadId);
+            turn.threadId = await this.ensureThread(input, conversation.codexThreadId);
+            this.turnsByThread.set(turn.threadId, turn);
             const started = await this.client.request("turn/start", {
-                threadId,
+                threadId: turn.threadId,
                 input: [{ type: "text", text: input.prompt, text_elements: [] }],
                 approvalPolicy: "on-request",
-                sandboxPolicy: { type: "readOnly", networkAccess: true },
+                sandboxPolicy: { type: "readOnly" },
             }) as TurnResult;
             turnId = started.turn?.id || "";
             if (!turnId) throw new Error("Codex 未返回 turn");
             await input.store.bindCodexTurn(input.ctx, input.conversationId, input.runId, turnId);
-            await this.waitForTurn(input.signal, threadId, turnId);
+            await this.waitForTurn(input.signal, turn.threadId, turnId);
         } finally {
             input.signal.removeEventListener("abort", onAbort);
-            this.activeTurn = null;
-            this.turnWaiter = null;
+            this.turns.delete(input.conversationId);
+            if (turn.threadId) this.turnsByThread.delete(turn.threadId);
         }
     }
 
-    async applyCanvas(operations: unknown[], summary: string) {
-        if (!this.activeTurn) throw new AppError("当前没有正在运行的 Agent turn", 409, "run_not_active");
-        const mutation = this.config.canvas.requestMutation(this.activeTurn.ctx, this.activeTurn.signal);
-        await this.activeTurn.emit({
+    async applyCanvas(claims: RuntimeTokenClaims, operations: unknown[], summary: string) {
+        const turn = claims.conversationId ? this.turns.get(claims.conversationId) : undefined;
+        if (!turn) throw new AppError("当前没有正在运行的 Agent turn", 409, "run_not_active");
+        const mutation = this.config.canvas.requestMutation(this.ctx, turn.signal);
+        await turn.emit({
             type: "canvas.tool.requested",
             itemId: mutation.callId,
             payload: { callId: mutation.callId, summary, operations },
@@ -187,15 +207,12 @@ export class CodexRuntime {
     }
 
     private async ensureThread(input: RuntimeExecutionInput, existing: string | null) {
+        const params = threadParams(this.paths.workspace, this.mcpConfig(input.conversationId), existing || undefined);
         if (existing) {
-            try {
-                const resumed = await this.client.request("thread/resume", threadParams(this.paths.workspace, this.mcpConfig(), existing)) as ThreadResult;
-                return resumed.thread?.id || existing;
-            } catch {
-                // start a replacement thread when resume fails
-            }
+            const resumed = await this.client.request("thread/resume", params) as ThreadResult;
+            return resumed.thread?.id || existing;
         }
-        const started = await this.client.request("thread/start", threadParams(this.paths.workspace, this.mcpConfig())) as ThreadResult;
+        const started = await this.client.request("thread/start", params) as ThreadResult;
         const id = started.thread?.id;
         if (!id) throw new Error("Codex 未返回 thread");
         await input.store.bindCodexThread(input.ctx, input.conversationId, id);
@@ -203,12 +220,13 @@ export class CodexRuntime {
     }
 
     private waitForTurn(signal: AbortSignal, threadId: string, turnId: string) {
+        const key = `${threadId}:${turnId}`;
         return new Promise<void>((resolve, reject) => {
             let settled = false;
             const finish = (error?: Error) => {
                 if (settled) return;
                 settled = true;
-                this.turnWaiter = null;
+                this.pendingTurns.delete(key);
                 signal.removeEventListener("abort", onAbort);
                 if (error) reject(error);
                 else if (signal.aborted) reject(new AppError("运行已停止", 409, "run_aborted"));
@@ -216,23 +234,32 @@ export class CodexRuntime {
             };
             const onAbort = () => finish();
             signal.addEventListener("abort", onAbort, { once: true });
-            this.turnWaiter = (method, params) => {
-                if (!isTurnTerminal(method, params, threadId, turnId)) return;
-                finish(method === "turn/failed" ? new Error("Agent 运行失败") : undefined);
-            };
+            if (this.completedTurns.has(key)) {
+                finish(this.completedTurns.get(key) || undefined);
+                return;
+            }
+            this.pendingTurns.set(key, finish);
         });
     }
 
-    private mcpConfig() {
+    private dispatchTerminal(method: string, params: unknown) {
+        const terminal = terminalTurn(method, params);
+        if (!terminal) return;
+        const key = `${terminal.threadId}:${terminal.turnId}`;
+        const error = method === "turn/failed" ? new Error("Agent 运行失败") : null;
+        this.completedTurns.set(key, error);
+        this.pendingTurns.get(key)?.(error || undefined);
+    }
+
+    private mcpConfig(conversationId: string) {
         return {
-            model_reasoning_summary: "auto",
             mcp_servers: {
                 "coresearch-canvas": {
                     command: this.config.mcp.command,
                     args: this.config.mcp.args,
                     env: {
                         CORESEARCH_RUNTIME_URL: this.config.mcp.loopbackUrl,
-                        CORESEARCH_RUNTIME_TOKEN: this.token,
+                        CORESEARCH_RUNTIME_TOKEN: this.config.tokens.create({ ...this.ctx, runtimeId: runtimeKey(this.ctx), instanceId: this.instanceId, conversationId }),
                     },
                     default_tools_approval_mode: "approve",
                 },
@@ -251,13 +278,22 @@ function threadParams(cwd: string, config: JsonObject, threadId?: string) {
     };
 }
 
-function isTurnTerminal(method: string, params: unknown, threadId: string, turnId: string) {
-    if (method !== "turn/completed" && method !== "turn/failed") return false;
+function terminalTurn(method: string, params: unknown) {
+    if (method !== "turn/completed" && method !== "turn/failed") return null;
     const value = params && typeof params === "object" ? params as JsonObject : {};
     const turn = value.turn && typeof value.turn === "object" ? value.turn as JsonObject : {};
-    const completedId = typeof turn.id === "string" ? turn.id : typeof value.turnId === "string" ? value.turnId : "";
-    const completedThread = typeof value.threadId === "string" ? value.threadId : threadId;
-    return completedThread === threadId && completedId === turnId;
+    const turnId = typeof turn.id === "string" ? turn.id : typeof value.turnId === "string" ? value.turnId : "";
+    const threadId = typeof value.threadId === "string" ? value.threadId : "";
+    if (!turnId || !threadId) return null;
+    return { threadId, turnId };
+}
+
+function turnForNotification(turns: Map<string, ActiveTurn>, byThread: Map<string, ActiveTurn>, params: unknown) {
+    const value = params && typeof params === "object" ? params as JsonObject : {};
+    const threadId = typeof value.threadId === "string" ? value.threadId : "";
+    if (threadId && byThread.has(threadId)) return byThread.get(threadId);
+    if (turns.size === 1) return [...turns.values()][0];
+    return undefined;
 }
 
 export function runtimeKey(ctx: Pick<RequestContext, "userId" | "projectId">) {
