@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Modal, Progress, Select, Tabs } from "antd";
+import { App, Button, Form, Input, Modal, Progress, Select, Switch, Tabs } from "antd";
 import type { TFunction } from "i18next";
 import { Cloud, Download, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -260,6 +260,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         />
                                     </Form.Item>
                                 </div>
+                                <Form.Item className="mb-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className="text-sm">{t("config.preferences.autoFocusOnSelect")}</span>
+                                        <Switch checked={config.autoFocusOnSelect} onChange={(checked) => updateConfig("autoFocusOnSelect", checked)} />
+                                    </div>
+                                </Form.Item>
                                 <Form.Item label={t("config.preferences.audioInstructions")} className="mb-4">
                                     <Input.TextArea rows={2} value={config.audioInstructions} placeholder={t("config.preferences.audioInstructionsPlaceholder")} onChange={(event) => updateConfig("audioInstructions", event.target.value)} />
                                 </Form.Item>
