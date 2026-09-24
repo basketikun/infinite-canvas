@@ -237,6 +237,18 @@ test("new clients receive the current Codex state and later updates", (t) => {
     assert.deepEqual(client.event("codex_state"), { busy: false, threadId: "thread-2", turnId: "turn-1" });
 });
 
+test("延迟恢复的历史会话在 Codex 准备完成前保持 idle", () => {
+    const session = new CanvasSession("thread-2", false);
+
+    assert.deepEqual(session.conversationStateSnapshot, {
+        revision: 1,
+        conversationId: "thread-2",
+        threadId: "thread-2",
+        status: "idle",
+        mcpStatuses: {},
+    });
+});
+
 test("对话 revision 单调递增且 MCP 全部进入终态前保持 preparing", () => {
     const session = new CanvasSession();
     const revisions = [session.conversationStateSnapshot.revision];

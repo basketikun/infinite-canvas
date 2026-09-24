@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { writeConfigFile, type CanvasAgentConfig } from "./config.js";
+import { configForPersistence, writeConfigFile, type CanvasAgentConfig } from "./config.js";
 
 const sample: CanvasAgentConfig = { url: "http://127.0.0.1:17371", token: "test-token" };
 
@@ -52,4 +52,9 @@ test("writeConfigFile persists the config content", () => {
     } finally {
         fs.rmSync(base, { recursive: true, force: true });
     }
+});
+
+test("desktop ephemeral tokens are omitted from persisted config", () => {
+    assert.deepEqual(configForPersistence(sample, true), { ...sample, token: "" });
+    assert.deepEqual(configForPersistence(sample, false), sample);
 });

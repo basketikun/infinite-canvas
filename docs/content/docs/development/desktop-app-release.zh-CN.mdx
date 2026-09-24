@@ -1,0 +1,32 @@
+---
+title: Windows 桌面版发布
+description: 通过 GitHub 与 R2 构建和发布本地桌面应用
+---
+
+# Windows 桌面版发布
+
+桌面版是 Windows x64 Tauri 应用，安装包内包含网页界面、固定版本的 Node.js 与 Canvas Agent。禁止在应用服务器上构建或打包，拉取请求验证与正式发布都只能使用 GitHub 托管的 Windows Runner。
+
+## 一次性配置
+
+1. 创建私有 R2 存储桶，将 `downloads.infinite.aiengine.cloud` 绑定为公开自定义域名，不要公开 `r2.dev` 开发地址。
+2. 创建只允许读写该存储桶对象的 R2 API Token。
+3. 在可信的管理员电脑上执行 `npm run tauri signer generate -- -w <私钥路径>` 生成 Tauri 更新密钥。私钥与密码不得放入仓库或应用服务器。
+4. 在 GitHub Actions 仓库 Secrets 中配置 `R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_BUCKET`、`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 和 `TAURI_UPDATER_PUBLIC_KEY`。
+
+更新密钥用于签名 Tauri 更新文件，防止客户端安装被篡改的更新，但它不会为 Windows 可执行文件添加 Authenticode 签名。在接入代码签名证书之前，首次安装可能显示未知发布者警告。
+
+## 拉取请求构建
+
+`Desktop Windows PR` 工作流会构建 Canvas Agent 与网页，将 Node.js 作为 Tauri Sidecar 一并打包，生成未签名的 NSIS 安装包，并作为保留 7 天的 GitHub Artifact 上传。该流程不会向 R2 发布文件。
+
+## 正式发布
+
+手动运行 `Desktop Windows Release`，填写 SemVer 版本号与更新说明；也可以推送匹配 `v*` 的 Tag。工作流会：
+
+1. 在 `windows-2022` Runner 上构建应用。
+2. 使用仓库更新私钥生成签名。
+3. 先把安装器及其更新签名 `.sig` 上传到 `releases/<版本号>/`，并设置不可变缓存。
+4. 最后上传使用 `no-store` 的 `/latest.json`，避免客户端发现尚未完整上传的版本。
+
+在当前 Tauri 2 版本中，同一个 NSIS `.exe` 同时用于首次安装和应用内更新，`latest.json` 会包含它独立的更新签名。桌面版会在后台检查该清单，显示更新说明，并只在用户确认后安装。更换更新密钥前，必须先发布一个信任新公钥的过渡版本。
