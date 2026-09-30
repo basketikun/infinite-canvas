@@ -6,7 +6,7 @@ import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, 
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
-import { getDefaultAgentEndpoint, resolveAgentEndpoint } from "@/lib/agent/agent-endpoint";
+import { getDefaultAgentEndpoint } from "@/lib/agent/agent-endpoint";
 import { readAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
@@ -912,9 +912,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
         const urlToken = searchParams.get("agentToken") || "";
         const urlEndpoint = searchParams.get("agentUrl") || "";
-        const nextEndpoint = urlEndpoint
-            ? urlEndpoint.trim().replace(/\/$/, "")
-            : resolveAgentEndpoint(endpoint || DEFAULT_AGENT_URL);
+        const nextEndpoint = (urlEndpoint || endpoint || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
         const discovered = urlToken || token.trim() ? null : await discoverAgentConfig(nextEndpoint);
         const nextToken = (urlToken || token.trim() || discovered?.token || "").trim();
         if (!nextEndpoint) {

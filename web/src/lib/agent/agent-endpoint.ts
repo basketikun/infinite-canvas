@@ -6,12 +6,6 @@ export function getAgentProxyEndpoint() {
     return `${window.location.origin}/canvas-agent`;
 }
 
-export function resolveAgentEndpoint(endpoint: string) {
-    const normalized = endpoint.trim().replace(/\/$/, "");
-    const proxyEndpoint = getAgentProxyEndpoint();
-    return proxyEndpoint && (!normalized || normalized === LOCAL_AGENT_ENDPOINT) ? proxyEndpoint : normalized;
-}
-
 export function getDefaultAgentEndpoint() {
     return getAgentProxyEndpoint() || LOCAL_AGENT_ENDPOINT;
 }
