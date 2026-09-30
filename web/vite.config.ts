@@ -41,6 +41,15 @@ function localPluginsManifest(): Plugin {
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
     plugins: [react(), localPluginsManifest()],
+    server: {
+        proxy: {
+            "/canvas-agent": {
+                target: "http://127.0.0.1:17371",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/canvas-agent/, ""),
+            },
+        },
+    },
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),

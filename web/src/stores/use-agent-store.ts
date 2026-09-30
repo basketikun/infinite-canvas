@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import i18n from "@/i18n";
 
+import { getDefaultAgentEndpoint, LOCAL_AGENT_ENDPOINT, resolveAgentEndpoint } from "@/lib/agent/agent-endpoint";
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 
@@ -101,7 +102,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     panelMounted: true,
     panelClosing: false,
     canvasContext: null,
-    url: typeof window === "undefined" ? "http://127.0.0.1:17371" : localStorage.getItem("canvas-agent-url") || "http://127.0.0.1:17371",
+    url: typeof window === "undefined" ? LOCAL_AGENT_ENDPOINT : resolveAgentEndpoint(localStorage.getItem("canvas-agent-url") || getDefaultAgentEndpoint()),
     token: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-token") || "",
     connected: false,
     enabled: false,
