@@ -68,8 +68,20 @@ export async function tripoRequest<T>(fallbackKey: string, run: () => Promise<T>
         return await run();
     } catch (error) {
         if (isTripoTaskFailed(error) || (error instanceof DOMException && error.name === "AbortError")) throw error;
-        throw new Error(readTripoError(error, fallbackKey));
+        const wrapped = new Error(readTripoError(error, fallbackKey));
+        // A dropped connection, 429 or 5xx (from Tripo or the proxy) says nothing about the task itself.
+        if (axios.isAxiosError(error) && !axios.isCancel(error) && (!error.response || error.response.status === 429 || error.response.status >= 500)) wrapped.name = "TripoTransient";
+        throw wrapped;
     }
+}
+
+/**
+ * Poll loops pass this to `.catch`: a transient failure skips one round instead of failing the task, which keeps
+ * running (and billing) server-side. The loop's deadline still bounds a long outage.
+ */
+export function skipTransientTripoError(error: unknown): null {
+    if (error instanceof Error && error.name === "TripoTransient") return null;
+    throw error;
 }
 
 /** Tripo answers with { code, data } and uses code 0 for success; any other code carries a readable message. */

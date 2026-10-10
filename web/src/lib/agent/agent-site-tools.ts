@@ -1,6 +1,10 @@
 import type { NavigateFunction } from "react-router-dom";
+import { saveAs } from "file-saver";
 
 import i18n from "@/i18n";
+import { audioExtension, imageExtension, model3dExtension } from "@/lib/canvas/canvas-generation-helpers";
+import { collectBlenderImportNodes, importModelsToBlender } from "@/services/api/blender-bridge";
+import { CanvasNodeType } from "@/types/canvas";
 import { fetchPrompts } from "@/services/api/prompts";
 import { uploadImage } from "@/services/image-storage";
 import { imageAspectOptions, imageQualityOptions, imageScaleOptions } from "@/components/image-settings-panel";
@@ -17,6 +21,8 @@ import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 
 export const SITE_TOOL_NAMES = [
     "canvas_list_projects",
+    "canvas_download_nodes",
+    "canvas_import_to_blender",
     "generation_get_status",
     "workbench_image_get_config",
     "workbench_image_generate",
@@ -39,6 +45,8 @@ function siteText(key: string, options?: Record<string, unknown>) {
 
 export const SITE_TOOL_LABELS: Record<SiteToolName, string> = {
     get canvas_list_projects() { return siteText("canvasList"); },
+    get canvas_download_nodes() { return siteText("downloadNodes"); },
+    get canvas_import_to_blender() { return siteText("importToBlender"); },
     get generation_get_status() { return siteText("generationStatus"); },
     get workbench_image_get_config() { return siteText("imageConfig"); },
     get workbench_image_generate() { return siteText("imageGenerate"); },
@@ -50,7 +58,7 @@ export const SITE_TOOL_LABELS: Record<SiteToolName, string> = {
 };
 
 type SiteToolInput = Record<string, unknown>;
-type SiteToolContext = { canvasSnapshot?: CanvasAgentSnapshot | null };
+type SiteToolContext = { canvasSnapshot?: CanvasAgentSnapshot | null; onBlenderImport?: (task: Promise<void>, count: number) => void };
 type GenerationStatus = "idle" | "queued" | "running" | "succeeded" | "failed";
 type GenerationStatusItem = { id: string; source: "canvas" | "image" | "video"; status: GenerationStatus; kind?: string; title?: string; prompt?: string; projectId?: string; createdAt?: string; updatedAt?: string; successCount?: number; failCount?: number; error?: string };
 
@@ -58,6 +66,10 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
     switch (name) {
         case "canvas_list_projects":
             return listCanvasProjects(input);
+        case "canvas_download_nodes":
+            return downloadCanvasNodes(input, context.canvasSnapshot);
+        case "canvas_import_to_blender":
+            return importCanvasNodesToBlender(input, context);
         case "generation_get_status":
             return getGenerationStatus(input, context.canvasSnapshot);
         case "workbench_image_get_config":
@@ -78,6 +90,41 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
             throw new Error(siteText("unknownTool", { name }));
     }
 }
+
+function downloadCanvasNodes(input: SiteToolInput, snapshot?: CanvasAgentSnapshot | null) {
+    if (!snapshot) throw new Error(siteText("openCanvasFirst"));
+    const ids = nodeIds(input, snapshot);
+    const targets = snapshot.nodes.filter((node) => ids.has(node.id));
+    const downloaded: Array<{ id: string; title: string; fileName: string }> = [];
+    targets.forEach((node) => {
+        const content = node.metadata?.content;
+        if (!content || (node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio && node.type !== CanvasNodeType.Model3d)) return;
+        const extension = node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata?.mimeType) : node.type === CanvasNodeType.Model3d ? model3dExtension(node.metadata?.mimeType) : imageExtension(content);
+        const fileName = `canvas-${node.type}-${node.id}.${extension}`;
+        saveAs(content, fileName);
+        downloaded.push({ id: node.id, title: node.title || node.id, fileName });
+    });
+    if (!downloaded.length) throw new Error(siteText("noDownloadableNodes"));
+    return { ok: true, status: "download_triggered", downloaded };
+}
+
+function importCanvasNodesToBlender(input: SiteToolInput, context: SiteToolContext) {
+    const snapshot = context.canvasSnapshot;
+    if (!snapshot) throw new Error(siteText("openCanvasFirst"));
+    const ids = nodeIds(input, snapshot);
+    const selected = snapshot.nodes.filter((node) => ids.has(node.id));
+    const models = collectBlenderImportNodes(selected, snapshot.nodes);
+    if (!models.length) throw new Error(siteText("noModel3dNodes"));
+    if (!context.onBlenderImport) throw new Error(siteText("unknownTool", { name: "canvas_import_to_blender" }));
+    context.onBlenderImport(importModelsToBlender(models), models.length);
+    return { ok: true, importing: true, count: models.length, titles: models.map((node) => node.title || node.id) };
+}
+
+function nodeIds(input: SiteToolInput, snapshot: CanvasAgentSnapshot) {
+    const ids = Array.isArray(input.nodeIds) ? input.nodeIds.filter((id): id is string => typeof id === "string") : snapshot.selectedNodeIds;
+    return new Set(ids);
+}
+
 
 function getGenerationStatus(input: SiteToolInput, canvasSnapshot?: CanvasAgentSnapshot | null) {
     const scope = input.scope === "canvas" || input.scope === "image" || input.scope === "video" ? input.scope : "all";

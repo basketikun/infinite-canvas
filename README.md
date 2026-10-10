@@ -85,10 +85,12 @@ AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器�
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
 cd infinite-canvas
-cd web
-bun install
-bun run dev
+cd web && bun install && cd ..
+node scripts/dev.mjs          # 一键启动前端 :3000 + 转发代理 :23210
+node scripts/dev.mjs --agent  # 同时启动本地 Canvas Agent
 ```
+
+一键启动会让前端默认走本地转发代理（Tripo 必需），Ctrl+C 一起退出；23210 已有代理在跑时直接复用。只想启动前端可在 `web` 目录执行 `bun run dev`。
 
 ### Docker 运行
 

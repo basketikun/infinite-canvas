@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [新增] 本地一键启动脚本 `node scripts/dev.mjs`：同时拉起前端和转发代理并默认开启代理，加 `--agent` 一并启动 Canvas Agent，Ctrl+C 统一退出。
++ [新增] Agent 支持触发画布媒体下载，并将选中的 3D 模型导入本机 Blender；下载与导入状态会明确区分“已启动”和“已完成”。
 + [调整] 首页标题改为「无限画布 × Tripo」并加上 Tripo 图标，新增副标题「Agent 驱动的 3D 创作工作流」；首页和 README 增加 Tripo API Key 购买入口（国内版 `.com` / 海外版 `.ai`）。
 + [新增] Codex / Canvas Agent 将 3D 注册为一等生成工具 `canvas_generate_model3d`，skill 与 Agent 说明书会按文生 3D / 图生 3D / 多视图生 3D 调用；读取画布摘要单独统计 3D 节点。
 + [新增] 画布可将选中的 3D 模型用 `bambustudio://open?file=` 唤起本机 Bambu Studio：悬停工具栏、右键菜单和多选工具栏提供「打开 Bambu Studio」。优先使用节点上仍有效的 3MF 转换地址；本地 3MF 经 Canvas Agent 临时托管后让 Studio 自行下载。需先转成 3MF；未安装 Studio 或未连接 Agent 时会给出可读提示。

@@ -1,0 +1,9 @@
+{
+    "name": "infinite-canvas-workspace",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "node scripts/dev.mjs",
+        "dev:agent": "node scripts/dev.mjs --agent"
+    }
+}

@@ -7,6 +7,7 @@ import {
     assertTripoProxy,
     detectModel3dMime,
     model3dMimeFromUrl,
+    skipTransientTripoError,
     TRIPO_FAILED_STATES,
     TRIPO_POLL_INTERVAL_MS,
     TRIPO_POLL_TIMEOUT_MS,
@@ -116,10 +117,10 @@ async function waitForOpTask(config: AiConfig, taskId: string, ready: (output: T
     const deadline = performance.now() + TRIPO_POLL_TIMEOUT_MS;
     for (;;) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        const task = await pollOpTask(config, taskId, options);
-        if (task.status === "success" && task.output && ready(task.output)) return task.output;
-        if (TRIPO_FAILED_STATES.includes(task.status || "")) throw tripoTaskFailed(task.error_message || apiText("model3dOpFailed"));
-        options?.onProgress?.(Number(task.progress) || 0);
+        const task = await pollOpTask(config, taskId, options).catch(skipTransientTripoError);
+        if (task?.status === "success" && task.output && ready(task.output)) return task.output;
+        if (task && TRIPO_FAILED_STATES.includes(task.status || "")) throw tripoTaskFailed(task.error_message || apiText("model3dOpFailed"));
+        if (task) options?.onProgress?.(Number(task.progress) || 0);
         if (performance.now() >= deadline) throw new Error(apiText("model3dOpTimeout"));
         await tripoDelay(TRIPO_POLL_INTERVAL_MS, options?.signal);
     }

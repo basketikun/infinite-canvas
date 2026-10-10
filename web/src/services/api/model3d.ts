@@ -4,6 +4,7 @@ import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { isModel3dFaceLimitAuto } from "@/lib/model3d-face-limit";
 import { modelOptionName, resolveModelRequestConfig, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import {
+    skipTransientTripoError,
     apiText,
     assertTripoProxy,
     isTripoTaskFailed,
@@ -132,10 +133,10 @@ export async function waitForModel3dTask(config: AiConfig, task: Model3dTask, op
     const deadline = performance.now() + TRIPO_POLL_TIMEOUT_MS;
     for (;;) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        const state = await pollModel3dTask(config, task, options);
-        if (state.status === "completed") return state.result;
-        if (state.status === "failed") throw tripoTaskFailed(state.error);
-        options?.onProgress?.(state.progress);
+        const state = await pollModel3dTask(config, task, options).catch(skipTransientTripoError);
+        if (state?.status === "completed") return state.result;
+        if (state?.status === "failed") throw tripoTaskFailed(state.error);
+        if (state) options?.onProgress?.(state.progress);
         if (performance.now() >= deadline) throw new Error(apiText("model3dTimeout"));
         await tripoDelay(TRIPO_POLL_INTERVAL_MS, options?.signal);
     }
@@ -147,8 +148,13 @@ export async function waitForModel3dTask(config: AiConfig, task: Model3dTask, op
  * reads, so it is fetched directly and handed to uploadMediaFile as a Blob to bypass the proxy.
  */
 export async function storeGeneratedModel3d(result: Model3dResult): Promise<UploadedFile> {
-    const response = await fetch(withLocalProxy(result.modelUrl));
-    if (!response.ok) throw new Error(apiText("model3dDownloadFailed"));
+    // The task is already paid for, so a flaky download is retried rather than discarding the result.
+    let response: Response | null = null;
+    for (let attempt = 0; attempt < 3 && !response?.ok; attempt++) {
+        if (attempt) await tripoDelay(TRIPO_POLL_INTERVAL_MS);
+        response = await fetch(withLocalProxy(result.modelUrl)).catch(() => null);
+    }
+    if (!response?.ok) throw new Error(apiText("model3dDownloadFailed"));
     const blob = await response.blob();
     // Quad output on the H series comes back as FBX, so the real format is detected rather than assumed:
     // the CDN serves octet-stream and the viewer picks its loader from this mime type.

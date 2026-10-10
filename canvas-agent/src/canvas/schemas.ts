@@ -10,6 +10,8 @@ const generationModeSchema = z.enum(["text", "image", "video", "audio", "model3d
 export const toolNames = [
     "site_navigate",
     "canvas_list_projects",
+    "canvas_download_nodes",
+    "canvas_import_to_blender",
     "canvas_get_state",
     "canvas_get_selection",
     "canvas_export_snapshot",
@@ -98,6 +100,8 @@ const generationFlowSchema = z.object({
 export const toolInputSchemas = {
     site_navigate: z.object({ path: z.string() }),
     canvas_list_projects: z.object({ keyword: z.string().optional(), page: z.number().optional(), pageSize: z.number().optional() }),
+    canvas_download_nodes: z.object({ nodeIds: z.array(z.string()).optional() }),
+    canvas_import_to_blender: z.object({ nodeIds: z.array(z.string()).optional() }),
     canvas_get_state: z.object({}).passthrough(),
     canvas_get_selection: z.object({}).passthrough(),
     canvas_export_snapshot: z.object({}).passthrough(),
@@ -136,6 +140,8 @@ export const toolInputSchemas = {
 export const toolDescriptions: Record<ToolName, string> = {
     site_navigate: "跳转网站页面。path 可为 / (首页)、/canvas (我的画布)、/canvas/:id (指定画布)、/image (生图工作台)、/video (视频创作台)、/prompts (提示词库)、/assets (我的素材)、/config (配置)。操作画布前若不在画布页，先用本工具打开画布。",
     canvas_list_projects: "列出用户全部画布（仅标题、创建/更新时间、节点数、连线数，不含完整数据），支持 keyword 搜索和 page/pageSize 分页。返回的 id 可配合 site_navigate 跳转到 /canvas/:id 打开对应画布。",
+    canvas_download_nodes: "触发浏览器下载当前画布的图片、视频、音频或 3D 节点原始文件。nodeIds 省略时使用当前选区；多图节点只下载当前主图。返回文件名及已触发状态，不代表文件已落盘，也不返回本地路径；浏览器可能要求允许多文件下载。",
+    canvas_import_to_blender: "将当前画布的 3D 节点导入本机 Blender，支持展开分组。nodeIds 省略时使用当前选区。需要本机 Blender 已开启画布 WebSocket 桥接（60600），不是 Blender MCP（9876）。立即返回已启动状态，不代表导入完成；最终成功或失败由网页提示与事件日志报告，不要据此重复导入。",
     canvas_get_state: "读取当前网页画布的节点、连线、选区和视口。",
     canvas_get_selection: "读取当前网页画布选中的节点。",
     canvas_export_snapshot: "导出当前画布快照，用于理解布局。",

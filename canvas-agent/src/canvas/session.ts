@@ -28,6 +28,8 @@ export const AGENT_PROTOCOL_VERSION = 6;
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
     "canvas_list_projects",
+    "canvas_download_nodes",
+    "canvas_import_to_blender",
     "workbench_image_get_config",
     "workbench_image_generate",
     "workbench_video_get_config",

@@ -808,7 +808,21 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (isSiteTool(payload.name)) {
             try {
                 addEventLog(toolName(payload.name), payload, payload);
-                const result = await runSiteTool(payload.name, payload.input || {}, navigate, { canvasSnapshot: canvasContextRef.current?.snapshot || null });
+                const result = await runSiteTool(payload.name, payload.input || {}, navigate, {
+                    canvasSnapshot: canvasContextRef.current?.snapshot || null,
+                    onBlenderImport: (task, count) => {
+                        const hide = message.loading(t("canvas.blenderBridge.importing", { count }), 0);
+                        void task.then(() => {
+                            const text = t("canvas.blenderBridge.imported", { count });
+                            message.success(text);
+                            addEventLog(text, { ...payload, status: "succeeded", count });
+                        }).catch((error) => {
+                            const text = error instanceof Error ? error.message : rt("toolExecutionFailed");
+                            message.error(text);
+                            addEventLog(text, { ...payload, status: "failed", error: text });
+                        }).finally(hide);
+                    },
+                });
                 await postToolResult(endpoint, token, clientIdRef.current, { requestId: payload.requestId, result });
                 addEventLog(rt("toolCompleted", { tool: toolName(payload.name) }), result, result);
             } catch (error) {

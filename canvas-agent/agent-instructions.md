@@ -4,6 +4,7 @@
 
 - 用户要求操作画布时，默认目标就是网页当前已经打开的画布。需要了解内容时先使用 `canvas_get_state`；读取成功后直接在该画布执行任务，不要调用 `canvas_list_projects`，也不要用 `site_navigate` 重复进入画布。
 - 只有用户明确要求查看、选择或切换其他画布，或者 `canvas_get_state` 明确提示当前没有已连接画布时，才使用 `canvas_list_projects` 和 `site_navigate`。`site_navigate` 可跳转 `/`、`/canvas`、`/canvas/:id`、`/image`、`/video`、`/prompts`、`/assets`、`/config`。
+- 下载画布媒体使用 `canvas_download_nodes`，导入本机 Blender 使用 `canvas_import_to_blender`；传 `nodeIds` 指定节点，省略则使用当前选区。下载只代表浏览器已触发，不保证落盘或返回本地路径；Blender 返回的是已启动，不代表已完成，最终结果在网页提示及事件日志中显示。Blender 需开启 60600 WebSocket 桥接，不能用 9876 MCP 连接代替；不要因为工具已返回就重复导入。
 - 修改当前画布时根据任务使用已配置的 infinite-canvas MCP 工具；复杂批量改动使用 `canvas_apply_ops`。
 - 用户要求把上传附件放入画布或作为生成参考图时，必须先用 `canvas_create_attachment_nodes` 创建真实图片节点，再把节点 ID 传给生成流程，不要创建空图片占位节点。
 - 生图与视频工作台分别使用 `workbench_image_*`、`workbench_video_*` 工具；提示词和素材分别使用 `prompts_search`、`assets_*` 工具。

@@ -5,6 +5,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+- 本地一键启动：在仓库根目录执行 `node scripts/dev.mjs`（或 `npm run dev`），应同时启动 Vite `:3000` 和 canvas-proxy `:23210`，日志带 `[web]` / `[proxy]` 前缀。「配置 → 本地代理」应默认开启（显示为内置转发代理，开关锁定），Tripo 生成无需再单独跑 npx。`:23210` 已有服务时应复用；`:3000` 被占用时应拒绝启动。加 `--agent` 应一并启动 Canvas Agent。Ctrl+C 或任一进程退出时应全部停止，两个端口都释放。
 - 首页 Tripo 联名：标题应为「无限画布 × [Tripo 图标]」，副标题为「Agent 驱动的 3D 创作工作流」；黄色图形保持原色，黑色折线和 TRIPO 字样跟随主题，深色模式仍可读。两个主按钮下方应有「获取 Tripo API Key」：国内版链到 `https://developers.tripo3d.com/zh`，海外版链到 `https://developers.tripo3d.ai/zh`。README 的 3D 与 Tripo 配置段应列出同样两个购买入口。
 - Tripo 3D 生成：配置弹窗新增渠道时，apiFormat 应可选「Tripo」，选中后 Base URL 自动填 `https://openapi.tripo3d.com`；模型能力列表应出现「3D」，模型选择应直接列出 `v3.1-20260211`、`v3.0-20250812`、`v2.5-20250123`、`P1-20260311`、`P2-20260801`（Tripo 无模型列表接口，不应发起 `/v1/models` 请求）。保存渠道并刷新页面后，该渠道的 apiFormat 应仍是 Tripo，不得变成 OpenAI。偏好设置应出现「默认 3D 模型」。
 - Tripo 3D 生成流程：Tripo 的 `/v3` 接口不返回 CORS 头，必须先开启「本地代理」；未开启时生成应报出可读错误而不是静默失败。生成配置节点的模式选择应出现「3D」，文本节点提示词面板与 3D 节点提示词面板都应显示 3D 模型选择和 3D 设置。仅有提示词时应走文生 3D；上游连接图片节点时应先上传图片再走图生 3D。生成中节点显示进度占位，成功后应显示可用鼠标拖拽旋转、滚轮缩放的 3D 模型（three.js 从 CDN 按需加载，需要联网）；预览图先于模型显示为占位。实测文生 3D 约 3 分钟、消耗 10–30 credits，图生 3D 约 80 秒、20 credits。
@@ -93,7 +94,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Agent 首次发送响应：在空白新对话中输入内容并按回车后，输入框应立即清空、用户消息应立即出现在对话中，再显示「正在思考」；线程创建或发送失败时，原输入和附件应恢复；任务运行期间输入的新草稿不应在请求成功后被清空。
 - Agent 动态工具信息：执行内置生图、查看图片、命令、文件修改或其他动态工具时，卡片标题应显示具体工具名称；执行失败时正文应显示真实错误原因，刷新并恢复历史对话后仍应保持一致，不再统一显示「工具操作已完成」。
 - 打开 Bambu Studio：悬停已有模型的 3D 节点，工具栏在「导入 Blender」旁应出现「打开 Bambu Studio」。节点上已有 3MF 转换结果（3D 操作 → 转换格式 → 3MF）且本机装了 Bambu Studio 时，点击应走 `bambustudio://open?file=` 唤起 Studio，由 Studio 自行下载 3MF。优先用转换时记下的 Tripo 签名地址（和 Tripo / MakerWorld 自己的打开链接同形）；地址失效时需已连接 Canvas Agent，把本地 3MF 临时挂到 `http://127.0.0.1:17371/share/file/...`。没有 3MF 时应提示先转换，不要把 GLB/FBX 送过去。右键和多选工具栏应有同一项；多个节点依次唤起。空 3D 节点、图片、视频不应出现该按钮。未安装 Studio 时系统处理不了 `bambustudio://`，画布应提示无法唤起。这条路径不经过 Blender 的 WebSocket。
-- Agent 画布生 3D：重启 Canvas Agent 后工作区 `AGENTS.md` 应包含 `canvas_generate_model3d`。输入「生成一个 3D 模型 / 椅子」时应调用该工具而不是 `canvas_generate_image`；对话卡片标题应为「生成 3D」。仅有提示词时应在画布上创建 3D 生成配置节点并立即运行（文生 3D）；先选中或提到已有图片节点时应把其 ID 放入 `referenceNodeIds`（1 张图生 3D，2–4 张多视图生 3D）。读取画布摘要应单独统计「N 个 3D」，不再把 3D 节点算进「其他」。导入 Blender 和打开 Bambu Studio 仍是画布 UI，Agent 不应声称能通过 MCP 完成。
+- Agent 画布生 3D：重启 Canvas Agent 后工作区 `AGENTS.md` 应包含 `canvas_generate_model3d`。输入「生成一个 3D 模型 / 椅子」时应调用该工具而不是 `canvas_generate_image`；对话卡片标题应为「生成 3D」。仅有提示词时应在画布上创建 3D 生成配置节点并立即运行（文生 3D）；先选中或提到已有图片节点时应把其 ID 放入 `referenceNodeIds`（1 张图生 3D，2–4 张多视图生 3D）。读取画布摘要应单独统计「N 个 3D」，不再把 3D 节点算进「其他」。Agent 应通过 `canvas_download_nodes` 触发画布媒体下载，并通过 `canvas_import_to_blender` 启动 Blender 导入；两者返回“已触发/已启动”而非虚构本地落盘路径或导入完成。
 - Agent 画布生图：重启 Canvas Agent 后，其自动生成的工作区 `AGENTS.md` 应同步为最新版指令（用户自行编写的其他 `AGENTS.md` 不应被覆盖）；输入“生成一张图片”时应调用 `canvas_generate_image`，通过当前画布节点创建并运行生成流程；只有明确输入“使用 Codex 内置生图/ImageGen 技能生成”时才允许调用内置能力，Codex App Server 返回的 `imageGeneration` 结果应显示在对话中并作为保持原比例的图片节点添加到当前画布；Agent 不应在没有生成结果时提前声称“已生成”。
 - Agent 顶部栏：在对话、历史和日志之间新增「技能」标签并显示已加载数量；连接状态应位于左侧 Agent 标题旁，并与右侧新对话使用相同规格的文字按钮，只有内容标签显示选中线；标签图标始终显示，中英文模式下都应按标签区域的实际可用宽度隐藏文字并保留小号数量，空间足够时显示图标和文字，拖动宽度时不应裁切、换行、横向滚动或错位。
 - Agent 输入框窄屏布局：底部上传、Skill、确认模式、权限模式、模型和思考程度控件在窄面板下应只显示图标，宽面板下恢复文字；所有纯图标操作悬停时应使用统一样式显示名称或当前状态，任意宽度都不出现横向溢出。
