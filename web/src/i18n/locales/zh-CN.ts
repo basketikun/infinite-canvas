@@ -368,9 +368,13 @@ export default {
     },
     home: {
         promptError: "获取提示词失败",
+        subtitle: "Agent 驱动的 3D 创作工作流",
         description: "在 <canvas>无限画布</canvas> 中生成、连接和重组 <content>图片、文字与图形</content>，让创作从单次生成变成连续推演。",
         start: "开始使用",
         openCanvas: "打开画布",
+        getApi: "获取 Tripo API Key",
+        getApiChina: "国内版",
+        getApiGlobal: "海外版",
         showcaseTitle: "沉淀每一次好结果",
         showcaseDescription: "收藏稳定出图的提示词、参考风格和结果图片，让下一次创作从已有经验开始。",
         viewPrompts: "查看提示词库",

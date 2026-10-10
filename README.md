@@ -46,6 +46,7 @@
 
 - 在配置弹窗新增渠道，`apiFormat` 选择 **Tripo**，并填入该区域的 API Key。
 - Tripo 分国内版（`openapi.tripo3d.com`）和海外版（`openapi.tripo3d.ai`）两个独立区域，选择 Tripo 后渠道编辑器会出现区域切换；两个区域是独立账号，需各自填写 Key。
+- API Key 购买入口：[国内版](https://developers.tripo3d.com/zh) · [海外版](https://developers.tripo3d.ai/zh)。
 - 必须开启 **本地代理**：Tripo 的 `/v3` 接口不返回 CORS 头，浏览器无法直连。
 - Tripo 渠道同时提供 3D 与图片生成能力，图片模型是它自己的一套（`seedream`、`banana`、`chat_image` 三个系列）。
 
@@ -107,20 +108,15 @@ docker compose up -d
 
 <table width="100%">
   <tr>
-    <td width="50%"><img src="https://i.ibb.co/TDFvGWDT/image.png" alt="image" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/zVwJq3YS/image.png" alt="image" border="0"></td>
+    <td width="50%"><img src="assets/showcase/cafe-concept.jpg" alt="咖啡馆概念图"></td>
+    <td width="50%"><img src="assets/showcase/cafe-canvas.jpg" alt="在画布中把概念图拆成部件并生成 3D 模型"></td>
   </tr>
   <tr>
-    <td width="50%"><img src="https://i.ibb.co/PvY3qhhK/image.png" alt="image" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/7D04LwN/image.png" alt="image" border="0"></td>
+    <td colspan="2"><img src="assets/showcase/cafe-blender.jpg" alt="导入 Blender 组装渲染的咖啡馆场景"></td>
   </tr>
   <tr>
-    <td width="50%"><img src="https://i.ibb.co/bj30FtS5/5.png" alt="5" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/hxRvjw51/image.png" alt="image" border="0"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="https://i.ibb.co/jkWsF8q1/image.png" alt="image" border="0"></td>
-    <td width="50%"><img src="https://i.ibb.co/XrnfXHx7/image.png" alt="image" border="0"></td>
+    <td width="50%"><img src="assets/showcase/village-canvas.jpg" alt="在画布中批量生成日式村落的建筑、人物与贴图"></td>
+    <td width="50%"><img src="assets/showcase/village-blender.jpg" alt="导入 Blender 组装的日式村落场景"></td>
   </tr>
 </table>
 

@@ -8,6 +8,7 @@ import { fetchPrompts, type Prompt } from "@/services/api/prompts";
 import { navigationTools } from "@/constant/navigation-tools";
 import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
+import { TripoLogo } from "@/pages/home/tripo-logo";
 
 function Highlighter({ action, color, children }: { action: "highlight" | "underline"; color: string; children?: ReactNode }) {
     return (
@@ -44,7 +45,12 @@ export default function IndexPage() {
                 <div className="pointer-events-none absolute right-[23%] top-[48%] size-20 rounded-full border border-dashed border-stone-200 dark:border-stone-800" />
 
                 <div className="relative flex min-h-[620px] flex-col items-center justify-center pt-10 text-center">
-                    <h1 className="ai-title-aurora max-w-5xl text-balance text-5xl font-semibold tracking-normal sm:text-7xl lg:text-8xl">{t("meta.title")}</h1>
+                    <h1 className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 text-5xl font-semibold tracking-normal sm:text-7xl lg:text-8xl">
+                        <span className="ai-title-aurora">{t("meta.title")}</span>
+                        <span className="font-light text-stone-400 dark:text-stone-500">×</span>
+                        <TripoLogo className="h-[0.8em] w-auto text-stone-950 dark:text-stone-100" />
+                    </h1>
+                    <p className="mt-6 text-balance text-2xl font-medium text-stone-700 sm:text-3xl dark:text-stone-300">{t("home.subtitle")}</p>
                     <p className="mt-8 max-w-3xl text-balance text-lg leading-8 text-stone-500 dark:text-stone-400">
                         <Trans i18nKey="home.description" components={{ canvas: <Highlighter action="underline" color="#FF9800" />, content: <Highlighter action="highlight" color="#87CEFA" /> }} />
                     </p>
@@ -56,6 +62,16 @@ export default function IndexPage() {
                             {t("home.openCanvas")}
                         </Button>
                     </div>
+                    <p className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-stone-500 dark:text-stone-400">
+                        <span>{t("home.getApi")}</span>
+                        <a href="https://developers.tripo3d.com/zh" target="_blank" rel="noreferrer" className="underline-offset-4 hover:text-stone-800 hover:underline dark:hover:text-stone-200">
+                            {t("home.getApiChina")}
+                        </a>
+                        <span className="text-stone-300 dark:text-stone-600">·</span>
+                        <a href="https://developers.tripo3d.ai/zh" target="_blank" rel="noreferrer" className="underline-offset-4 hover:text-stone-800 hover:underline dark:hover:text-stone-200">
+                            {t("home.getApiGlobal")}
+                        </a>
+                    </p>
                 </div>
 
                 <section className="relative mx-auto mb-20 max-w-6xl border-t border-stone-200 pt-12 dark:border-stone-800">
