@@ -5,6 +5,8 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+- `scene-build` Skill：提供一张场景参考图后，应自动分析并生成可编辑的对象清单，无需用户手写 JSON；建筑、道具、植物等对象生成独立单体图并按对应图片生成 3D，角色应先生成一致的前/左/后/右多视图再生成 3D；生成状态确认成功后调用 `canvas_import_to_blender`，等待导入完成，再通过 Blender MCP 按参考图摆放模型、设置相机和灯光、保存 `.blend`，并如实区分已启动、已完成和失败。不得误删用户已有 Blender 场景，也不得超出用户范围继续渲染。
+
 - 本地一键启动：在仓库根目录执行 `node scripts/dev.mjs`（或 `npm run dev`），应同时启动 Vite `:3000` 和 canvas-proxy `:23210`，日志带 `[web]` / `[proxy]` 前缀。「配置 → 本地代理」应默认开启（显示为内置转发代理，开关锁定），Tripo 生成无需再单独跑 npx。`:23210` 已有服务时应复用；`:3000` 被占用时应拒绝启动。加 `--agent` 应一并启动 Canvas Agent。Ctrl+C 或任一进程退出时应全部停止，两个端口都释放。
 - 首页 Tripo 联名：标题应为「无限画布 × [Tripo 图标]」，副标题为「Agent 驱动的 3D 创作工作流」；黄色图形保持原色，黑色折线和 TRIPO 字样跟随主题，深色模式仍可读。两个主按钮下方应有「获取 Tripo API Key」：国内版链到 `https://developers.tripo3d.com/zh`，海外版链到 `https://developers.tripo3d.ai/zh`。README 的 3D 与 Tripo 配置段应列出同样两个购买入口。
 - Tripo 3D 生成：配置弹窗新增渠道时，apiFormat 应可选「Tripo」，选中后 Base URL 自动填 `https://openapi.tripo3d.com`；模型能力列表应出现「3D」，模型选择应直接列出 `v3.1-20260211`、`v3.0-20250812`、`v2.5-20250123`、`P1-20260311`、`P2-20260801`（Tripo 无模型列表接口，不应发起 `/v1/models` 请求）。保存渠道并刷新页面后，该渠道的 apiFormat 应仍是 Tripo，不得变成 OpenAI。偏好设置应出现「默认 3D 模型」。

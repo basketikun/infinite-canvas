@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [新增] 新增 `scene-build` Skill，沉淀从场景参考图拆解、单体图与 3D 生成、角色多视图、导入 Blender 到场景布置与渲染的完整工作流。
 + [新增] 本地一键启动脚本 `node scripts/dev.mjs`：同时拉起前端和转发代理并默认开启代理，加 `--agent` 一并启动 Canvas Agent，Ctrl+C 统一退出。
 + [新增] Agent 支持触发画布媒体下载，并将选中的 3D 模型导入本机 Blender；下载与导入状态会明确区分“已启动”和“已完成”。
 + [调整] 首页标题改为「无限画布 × Tripo」并加上 Tripo 图标，新增副标题「Agent 驱动的 3D 创作工作流」；首页和 README 增加 Tripo API Key 购买入口（国内版 `.com` / 海外版 `.ai`）。
