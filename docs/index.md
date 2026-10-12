@@ -2,6 +2,9 @@
 
 ## Overview
 
+- [Blender MCP 安装连接说明（可直接发送文件给 AI）](setup-blender-mcp.md)
+- [AI 启动与连接说明（可直接发送文件给 AI）](setup-canvas.md)
+
 - [Quick Start](/docs/overview/quick-start)
 - [Features](/docs/overview/features)
 - [Deploy on Render](/docs/overview/render)

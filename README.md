@@ -80,6 +80,32 @@ Canvas Agent 把 3D 注册为一等生成工具 `canvas_generate_model3d`：仅�
 
 AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器本地。
 
+### 让 AI 帮你安装、启动和连接
+
+下载 [AI 启动连接说明](docs/setup-canvas.md)，把文件发给 Codex、Claude Code 等 AI，并附上：
+
+> 请按照这份说明，帮我检查依赖、启动 Infinite Canvas 并连接到当前 AI。能直接执行的步骤请直接执行，最后读取真实画布状态确认连接成功。本地项目目录是：`<你的项目目录>`。
+
+AI 会按说明启动或复用前端、转发代理和 Canvas Agent，打开画布，并通过 MCP 或鉴权 HTTP 验证连接。需要安装依赖或修改 MCP 配置时，请按客户端提示授权；不要把连接 token 发到聊天中。
+
+也可以使用 [setup-canvas Skill](plugins/infinite-canvas/skills/setup-canvas/SKILL.md)：在支持的客户端安装或加载后调用；已有 Codex 插件的用户可使用 `$open-canvas` 并明确要求启动本地项目。
+
+**需要 AI 具备你本机的终端权限。** 纯聊天 AI 或仅有云端终端的 AI 无法直接启动你的电脑，只能提供操作指导。API Key 配置与 Blender 连接需另行完成。
+
+### 让 AI 帮你安装 Blender MCP 与导入桥接
+
+把 [Blender MCP 与 Tripo Bridge 安装连接说明](docs/setup-blender-mcp.md) 发给有本机终端权限的 AI，并说：
+
+> 请按这份说明帮我安装并连接 Blender MCP 和画布需要的 Tripo DCC Bridge，只配置我正在使用的 AI 客户端，保留已有配置。先读取真实场景验证 MCP，再经我确认用一个现有模型验证导入，不要清空场景或渲染。
+
+[上游项目](https://github.com/ahujasid/mcp-for-blender) 提供自动配置命令（需先安装 uv）：
+
+```sh
+uvx mcp-for-blender setup
+```
+
+按提示选择客户端。AI 终端不支持交互时，可由用户运行此命令，或按说明分步安装。Blender MCP 能执行 Python，请先保存工作并确认安装权限；它使用的默认 `9876` 连接与画布导入模型所需的 `60600` Tripo Bridge 是两套独立配置。
+
 ### 本地开发
 
 ```bash
