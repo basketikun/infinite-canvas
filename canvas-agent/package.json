@@ -26,6 +26,7 @@
     "@openai/codex": "0.146.0",
     "express": "^5.1.0",
     "gray-matter": "^4.0.3",
+    "jose": "^5.10.0",
     "strip-ansi": "7.2.0",
     "winston": "^3.19.0",
     "yaml": "^2.9.0",

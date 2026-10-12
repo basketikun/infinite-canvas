@@ -90,9 +90,13 @@ export function useAgentBridge(params: AgentBridgeParams) {
     }, [agentUndoSnapshot, projectTitle, projectId]);
 
     useEffect(() => {
-        setAgentCanvasContext({ snapshot: agentSnapshot, applyOps: applyAgentOps, undoOps: undoAgentOps, canUndo: Boolean(agentUndoSnapshot) });
-        return () => setAgentCanvasContext(null);
+        const timer = window.setTimeout(() => {
+            setAgentCanvasContext({ snapshot: agentSnapshot, applyOps: applyAgentOps, undoOps: undoAgentOps, canUndo: Boolean(agentUndoSnapshot) });
+        }, 100);
+        return () => window.clearTimeout(timer);
     }, [agentSnapshot, applyAgentOps, agentUndoSnapshot, setAgentCanvasContext, undoAgentOps]);
+
+    useEffect(() => () => setAgentCanvasContext(null), [setAgentCanvasContext]);
 
     return { applyAgentOps };
 }

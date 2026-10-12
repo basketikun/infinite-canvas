@@ -86,6 +86,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 
     const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest("[data-canvas-scroll-region]")) return;
         if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
 
         const delta = -event.deltaY;
@@ -108,7 +109,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom]")) return;
+        if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
         if (target?.closest("[data-connection-create-menu]")) return;
         const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id]");
         const temporaryTool = event.ctrlKey || isSpacePressed;
@@ -196,6 +197,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
         // Prevent canvas scrolling from moving the page while preserving native scrolling inside overlays and dialogs.
         const preventWheelScroll = (event: WheelEvent) => {
             const target = event.target instanceof Element ? event.target : null;
+            if (target?.closest("[data-canvas-scroll-region]")) return;
             if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
             event.preventDefault();
         };

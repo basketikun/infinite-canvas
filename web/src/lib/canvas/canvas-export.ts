@@ -51,6 +51,7 @@ export async function exportCanvasNodes(nodes: CanvasNodeData[], fileName = i18n
                 if (blob) return void zipFiles.push({ name: uniqueName(title, fileExtension(blob.type, storageKey)), data: blob });
             }
             if (node.type === CanvasNodeType.Text) return void zipFiles.push({ name: uniqueName(title, "txt"), data: node.metadata?.content || node.metadata?.prompt || "" });
+            if (node.type === CanvasNodeType.Skill) return void zipFiles.push({ name: uniqueName(title, "txt"), data: node.metadata?.content || "" });
             const content = node.metadata?.content;
             if (content && content.startsWith("data:")) {
                 const blob = await (await fetch(content)).blob();

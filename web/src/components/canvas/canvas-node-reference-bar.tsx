@@ -53,5 +53,8 @@ function ReferencePreview({ node, content }: { node: CanvasNodeData; content?: s
     if ((resource?.kind === "image" || node.type === CanvasNodeType.Image) && content) return <img src={content} alt={node.title} className="max-h-52 w-72 rounded-lg object-contain" />;
     if ((resource?.kind === "video" || node.type === CanvasNodeType.Video) && content) return <video src={content} className="max-h-52 w-72 rounded-lg" muted controls />;
     if ((resource?.kind === "audio" || node.type === CanvasNodeType.Audio) && content) return <audio src={content} className="w-72" controls />;
-    return <div className="max-h-52 w-72 overflow-auto whitespace-pre-wrap text-sm">{resource?.text || node.metadata?.content || node.metadata?.prompt || node.title || t("canvas.references.empty")}</div>;
+    const text = node.type === CanvasNodeType.Skill
+        ? resource?.text || t("canvas.references.empty")
+        : resource?.text || node.metadata?.content || node.metadata?.prompt || node.title || t("canvas.references.empty");
+    return <div className="max-h-52 w-72 overflow-auto whitespace-pre-wrap text-sm">{text}</div>;
 }

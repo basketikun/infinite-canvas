@@ -8,6 +8,8 @@ import i18n from "@/i18n";
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
+export type CanvasVideoProvider = "api" | "dreamina" | "libtv";
+export type CanvasVideoCliSettings = Record<string, string | number | boolean>;
 
 export type ChannelModel = {
     name: string;
@@ -33,6 +35,7 @@ export type AiConfig = {
     model: string;
     imageModel: string;
     videoModel: string;
+    dreaminaModel: string;
     textModel: string;
     audioModel: string;
     audioVoice: string;
@@ -44,6 +47,10 @@ export type AiConfig = {
     videoGenerateAudio: string;
     videoWatermark: string;
     videoMode: string;
+    videoProvider: CanvasVideoProvider;
+    videoCliModel: string;
+    videoCliProjectId: string;
+    videoCliSettings: CanvasVideoCliSettings;
     systemPrompt: string;
     reasoningEffort: ReasoningEffort;
     models: string[];
@@ -100,6 +107,7 @@ export const defaultConfig: AiConfig = {
     model: "default::gpt-image-2",
     imageModel: "default::gpt-image-2",
     videoModel: "default::grok-imagine-video",
+    dreaminaModel: "",
     textModel: "default::gpt-5.5",
     audioModel: "default::gpt-4o-mini-tts",
     audioVoice: "alloy",
@@ -111,6 +119,10 @@ export const defaultConfig: AiConfig = {
     videoGenerateAudio: "true",
     videoWatermark: "false",
     videoMode: "frames",
+    videoProvider: "api",
+    videoCliModel: "",
+    videoCliProjectId: "",
+    videoCliSettings: {},
     systemPrompt: "",
     reasoningEffort: "auto",
     models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
@@ -183,8 +195,12 @@ export function modelMatchesCapability(config: AiConfig, value: string, capabili
 export function resolveModelForCapability(config: AiConfig, currentModel: string | undefined, capability: ModelCapability) {
     const defaultModel = capability === "image" ? config.imageModel : capability === "video" ? config.videoModel : capability === "audio" ? config.audioModel : config.textModel;
     const fallbackModel = capability === "image" ? defaultConfig.imageModel : capability === "video" ? defaultConfig.videoModel : capability === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
-    if (currentModel && modelMatchesCapability(config, currentModel, capability)) return currentModel;
-    if (defaultModel && modelMatchesCapability(config, defaultModel, capability)) return defaultModel;
+    for (const model of [currentModel, defaultModel]) {
+        if (!model) continue;
+        const configuredCapability = modelCapabilityOf(config, model);
+        // Keep unavailable selections visible so readiness blocks the request instead of silently using another model.
+        if (!configuredCapability || configuredCapability === capability) return model;
+    }
     return fallbackModel;
 }
 
@@ -199,8 +215,8 @@ export function resolveModelScript(config: AiConfig, value: string) {
 }
 
 function isAiConfigReady(config: AiConfig, model: string) {
-    const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
+    const match = findChannelModel(config, model);
+    return Boolean(match && match.channel.baseUrl.trim() && match.channel.apiKey.trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(

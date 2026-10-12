@@ -41,6 +41,9 @@ function localPluginsManifest(): Plugin {
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
     plugins: [react(), localPluginsManifest()],
+    optimizeDeps: {
+        exclude: ["@ffmpeg/ffmpeg"],
+    },
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),

@@ -12,8 +12,10 @@ export type ViewportTransform = {
 export enum CanvasNodeType {
     Image = "image",
     Text = "text",
+    Skill = "skill",
     Config = "config",
     Video = "video",
+    Dreamina = "dreamina",
     Audio = "audio",
     Group = "group",
 }
@@ -48,6 +50,10 @@ export type CanvasNodeMetadata = {
     content?: string;
     composerContent?: string;
     prompt?: string;
+    skillName?: string;
+    agentMode?: boolean;
+    agentProvider?: "openai-compatible" | "chatgpt-plan";
+    agentSkillName?: string;
     status?: CanvasNodeStatus;
     errorDetails?: string;
     fontSize?: number;
@@ -67,6 +73,10 @@ export type CanvasNodeMetadata = {
     generateAudio?: string;
     watermark?: string;
     videoMode?: string;
+    videoProvider?: "api" | "dreamina" | "libtv";
+    videoCliModel?: string;
+    videoCliProjectId?: string;
+    videoCliSettings?: Record<string, string | number | boolean>;
     audioVoice?: string;
     audioFormat?: string;
     audioSpeed?: string;
@@ -82,7 +92,17 @@ export type CanvasNodeMetadata = {
     bytes?: number;
     durationMs?: number;
     videoTaskId?: string;
-    videoTaskProvider?: "openai" | "gemini";
+    videoTaskProvider?: "openai" | "gemini" | "dreamina" | "dreamina-cli" | "libtv-cli";
+    dreaminaCommand?: "auto" | "text2video" | "image2video" | "frames2video" | "multiframe2video" | "multimodal2video";
+    dreaminaModel?: string;
+    dreaminaDuration?: number;
+    dreaminaRatio?: string;
+    dreaminaResolution?: string;
+    dreaminaGenerateAudio?: boolean;
+    dreaminaCreditsRemaining?: number;
+    dreaminaCreditRefreshDate?: string;
+    dreaminaCreditsBefore?: number;
+    dreaminaCreditsDelta?: number;
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
 };

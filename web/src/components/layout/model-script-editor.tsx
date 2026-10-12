@@ -55,7 +55,7 @@ export function ModelScriptEditor({ open, capability, modelName, value, onSave, 
             wrapClassName="[&_.ant-modal]:!inset-0 [&_.ant-modal]:!top-0 [&_.ant-modal]:!m-0 [&_.ant-modal]:!max-w-none [&_.ant-modal]:!h-dvh [&_.ant-modal]:!w-full [&_.ant-modal]:!p-0 [&_.ant-modal-container]:!h-dvh [&_.ant-modal-container]:!p-0 [&_.ant-modal-content]:!h-dvh [&_.ant-modal-content]:!max-h-dvh [&_.ant-modal-content]:!rounded-none [&_.ant-modal-content]:!overflow-hidden [&_.ant-modal-body]:!h-full [&_.ant-modal-body]:!max-h-full [&_.ant-modal-body]:!overflow-hidden [&_.ant-modal-body]:!p-0"
             styles={{
                 wrapper: { overflow: "hidden" },
-                content: { height: "100dvh", maxHeight: "100dvh", margin: 0, padding: 0, borderRadius: 0, overflow: "hidden" },
+                container: { height: "100dvh", maxHeight: "100dvh", margin: 0, padding: 0, borderRadius: 0, overflow: "hidden" },
                 body: { height: "100dvh", maxHeight: "100dvh", padding: 0, overflow: "hidden" },
             }}
             style={{ top: 0, margin: 0, paddingBottom: 0, maxWidth: "100vw" }}

@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Collapse, Dropdown, Form, Input, Modal, Select, Switch, Tooltip } from "antd";
 import type { MenuProps } from "antd";
-import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole, MessageSquareText, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow } from "lucide-react";
+import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole, MessageSquareText, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
+import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, fetchCodexSkills, postState, previewCodexSkillImport, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 type ScopeFilter = "all" | AgentSkillScope;
 type SkillDraftSource = "conversation" | "canvas";
-type SkillEditor = { mode: "create"; values?: SkillFormValues } | { mode: "edit"; detail: AgentSkillDetail };
+type SkillEditor = { mode: "create"; values?: SkillFormValues } | { mode: "edit"; detail: AgentSkillDetail; values?: SkillFormValues };
 type SkillFormValues = { name: string; description: string; instructions: string; displayName?: string; shortDescription?: string; defaultPrompt?: string };
 
 const skillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -46,11 +46,14 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const [scope, setScope] = useState<ScopeFilter>("all");
     const [editor, setEditor] = useState<SkillEditor | null>(null);
     const [saving, setSaving] = useState(false);
+    const [importing, setImporting] = useState(false);
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [createMenuOpen, setCreateMenuOpen] = useState(false);
     const [busySkill, setBusySkill] = useState("");
     const [errorsOpen, setErrorsOpen] = useState(false);
     const confirmRef = useRef<{ destroy: () => void } | null>(null);
+    const importConfirmRef = useRef<{ destroy: () => void } | null>(null);
+    const importInputRef = useRef<HTMLInputElement>(null);
     const [form] = Form.useForm<SkillFormValues>();
     const endpoint = url.trim().replace(/\/$/, "");
     const filteredSkills = useMemo(() => {
@@ -61,7 +64,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         });
     }, [query, scope, skills]);
 
-    const editorValues = editor?.mode === "edit" ? skillFormValues(editor.detail) : editor?.values;
+    const editorValues = editor?.mode === "edit" ? editor.values || skillFormValues(editor.detail) : editor?.values;
 
     const refresh = (forceReload = true) => loadSkills(endpoint, token, forceReload);
     const connectionIsCurrent = (revision: number) => {
@@ -76,8 +79,11 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         if (connected) return;
         confirmRef.current?.destroy();
         confirmRef.current = null;
+        importConfirmRef.current?.destroy();
+        importConfirmRef.current = null;
         setEditor(null);
         setSaving(false);
+        setImporting(false);
         setAdvancedOpen(false);
         setCreateMenuOpen(false);
         setBusySkill("");
@@ -132,6 +138,48 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
             if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.readFailed"));
         } finally {
             if (connectionIsCurrent(connectionRevision)) setBusySkill("");
+        }
+    };
+    const importSkill = async (file?: File) => {
+        if (!file) return;
+        if (!connected || !clientId || busySkill || saving || importing) return;
+        const connectionRevision = useAgentSkillStore.getState().connectionRevision;
+        setImporting(true);
+        try {
+            const response = await previewCodexSkillImport(endpoint, token, await file.text());
+            if (!connectionIsCurrent(connectionRevision)) return;
+            const imported = response.data;
+            if (!imported) throw new Error(t("agent.skillManager.importFailed"));
+            const listResponse = await fetchCodexSkills(endpoint, token, true);
+            if (!connectionIsCurrent(connectionRevision)) return;
+            if (!listResponse.data) throw new Error(t("agent.skillManager.readFailed"));
+            const existing = listResponse.data.find((skill) => skill.managed && skill.name === imported.name);
+            await refresh(true);
+            if (!connectionIsCurrent(connectionRevision)) return;
+            const importedValues: SkillFormValues = { name: imported.name, ...(imported.displayName ? { displayName: imported.displayName } : {}), description: imported.description, instructions: imported.instructions };
+            if (imported.nameAdjusted) message.info(t("agent.skillManager.importNameAdjusted"));
+            if (!existing) {
+                setEditor({ mode: "create", values: importedValues });
+                return;
+            }
+            const current = await fetchCodexSkill(endpoint, token, existing.name);
+            if (!connectionIsCurrent(connectionRevision)) return;
+            if (!current.data) throw new Error(t("agent.skillManager.contentMissing"));
+            importConfirmRef.current = modal.confirm({
+                title: t("agent.skillManager.replaceImportTitle", { name: imported.displayName || imported.name }),
+                content: t("agent.skillManager.replaceImportDescription", { name: imported.displayName || imported.name }),
+                okText: t("agent.skillManager.reviewImport"),
+                cancelText: t("common.cancel"),
+                onOk: () => {
+                    if (connectionIsCurrent(connectionRevision)) setEditor({ mode: "edit", detail: current.data!, values: { ...skillFormValues(current.data!), ...importedValues } });
+                },
+                afterClose: () => { importConfirmRef.current = null; },
+            });
+        } catch (error) {
+            if (connectionIsCurrent(connectionRevision)) message.error(error instanceof Error ? error.message : t("agent.skillManager.importFailed"));
+        } finally {
+            if (connectionIsCurrent(connectionRevision)) setImporting(false);
+            if (importInputRef.current) importInputRef.current.value = "";
         }
     };
     const saveSkill = async () => {
@@ -277,6 +325,10 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                         <div className="mt-0.5 text-xs" style={{ color: theme.node.muted }}>{t("agent.skillManager.localDescription")}</div>
                     </div>
                     <div className="flex items-center gap-1">
+                        <input ref={importInputRef} type="file" accept=".md,text/markdown,text/plain" className="hidden" aria-label={t("agent.skillManager.importSkill")} onChange={(event) => void importSkill(event.target.files?.[0])} />
+                        <Tooltip title={t("agent.skillManager.importSkill")}>
+                            <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" aria-label={t("agent.skillManager.importSkill")} disabled={!connected || !clientId || Boolean(busySkill) || saving || importing || Boolean(generatingSource)} loading={importing} icon={<Upload className="size-4" />} onClick={() => importInputRef.current?.click()} />
+                        </Tooltip>
                         <Tooltip title={t("agent.skillManager.reload")}>
                             <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" aria-label={t("agent.skillManager.reloadSkill")} disabled={!connected || loading} icon={<RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />} onClick={() => void refresh()} />
                         </Tooltip>
@@ -380,13 +432,13 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                 onOk={() => void saveSkill()}
             >
                 <div className="mb-5 text-xs" style={{ color: theme.node.muted }}>{t("agent.skillManager.saveLocation")} · <span className="font-mono">.agents/skills</span></div>
-                <Form key={editor?.mode === "edit" ? editor.detail.revision : `create:${editor?.values?.name || "blank"}`} form={form} initialValues={editorValues} layout="vertical" requiredMark="optional" preserve={false}>
+                <Form key={editor?.mode === "edit" ? `${editor.detail.revision}:${editor.values ? "import" : "saved"}` : `create:${editor?.values?.name || "blank"}`} form={form} initialValues={editorValues} layout="vertical" requiredMark="optional" preserve={false}>
                     <div className="mb-3 text-xs font-medium" style={{ color: theme.node.muted }}>{t("agent.skillManager.basicInfo")}</div>
                     <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                        <Form.Item name="displayName" label={t("agent.skillManager.displayName")} extra={t("agent.skillManager.displayNameExtra")} rules={[{ max: 64, message: t("agent.skillManager.displayNameMax") }]}><Input maxLength={64} placeholder={t("agent.skillManager.displayNamePlaceholder")} /></Form.Item>
                         <Form.Item name="name" label={t("agent.skillManager.identifier")} extra={t("agent.skillManager.identifierExtra")} rules={[{ required: true, message: t("agent.skillManager.identifierRequired") }, { max: 64, message: t("agent.skillManager.identifierMax") }, { pattern: skillNamePattern, message: t("agent.skillManager.identifierPattern") }]}>
                             <Input maxLength={64} disabled={editor?.mode === "edit"} placeholder={t("agent.skillManager.identifierPlaceholder")} />
                         </Form.Item>
-                        <Form.Item name="displayName" label={t("agent.skillManager.displayName")} rules={[{ max: 64, message: t("agent.skillManager.displayNameMax") }]}><Input maxLength={64} placeholder={t("agent.skillManager.displayNamePlaceholder")} /></Form.Item>
                     </div>
                     <Form.Item name="description" label={t("agent.skillManager.whenToUse")} extra={t("agent.skillManager.whenToUseExtra")} rules={[{ required: true, message: t("agent.skillManager.whenToUseRequired") }, { max: 1024, message: t("agent.skillManager.whenToUseMax") }, { validator: (_, value) => typeof value === "string" && /[<>]/.test(value) ? Promise.reject(new Error(t("agent.skillManager.noAngleBrackets"))) : Promise.resolve() }]}><Input.TextArea maxLength={1024} autoSize={{ minRows: 2, maxRows: 4 }} placeholder={t("agent.skillManager.whenToUsePlaceholder")} /></Form.Item>
                     <Form.Item name="instructions" label={t("agent.skillManager.instructions")} extra={t("agent.skillManager.instructionsExtra")} rules={[{ required: true, message: t("agent.skillManager.instructionsRequired") }]}><Input.TextArea className="!leading-6" autoSize={{ minRows: 6, maxRows: 10 }} placeholder={t("agent.skillManager.instructionsPlaceholder")} /></Form.Item>

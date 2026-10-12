@@ -140,6 +140,7 @@ export const useCanvasStore = create<CanvasStore>()(
                 }) as StorageValue<CanvasStore>["state"],
             onRehydrateStorage: () => () => {
                 useCanvasStore.setState({ hydrated: true });
+                void import("@/stores/use-asset-store").then(({ useAssetStore }) => useAssetStore.getState().cleanupImages());
             },
         },
     ),

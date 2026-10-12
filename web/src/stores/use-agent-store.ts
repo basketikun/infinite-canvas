@@ -38,6 +38,27 @@ export type AgentConversationState = {
     error?: string;
 };
 export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
+export type CanvasAgentProvider = "openai-compatible" | "chatgpt-plan";
+export type CanvasAgentDefaults = { provider: CanvasAgentProvider; models: Record<CanvasAgentProvider, string> };
+
+const CANVAS_AGENT_DEFAULTS_KEY = "canvas-agent-canvas-defaults";
+const EMPTY_CANVAS_AGENT_DEFAULTS: CanvasAgentDefaults = { provider: "openai-compatible", models: { "openai-compatible": "", "chatgpt-plan": "" } };
+
+function readCanvasAgentDefaults(): CanvasAgentDefaults {
+    if (typeof window === "undefined") return EMPTY_CANVAS_AGENT_DEFAULTS;
+    try {
+        const saved = JSON.parse(localStorage.getItem(CANVAS_AGENT_DEFAULTS_KEY) || "null") as Partial<CanvasAgentDefaults> | null;
+        return {
+            provider: saved?.provider === "chatgpt-plan" ? "chatgpt-plan" : "openai-compatible",
+            models: {
+                "openai-compatible": typeof saved?.models?.["openai-compatible"] === "string" ? saved.models["openai-compatible"] : "",
+                "chatgpt-plan": typeof saved?.models?.["chatgpt-plan"] === "string" ? saved.models["chatgpt-plan"] : "",
+            },
+        };
+    } catch {
+        return EMPTY_CANVAS_AGENT_DEFAULTS;
+    }
+}
 
 const CONNECT_TIMEOUT_MS = 6000;
 let agentSource: EventSource | null = null;
@@ -73,6 +94,7 @@ type AgentStore = {
     permissionMode: AgentPermissionMode;
     models: AgentModel[];
     model: string;
+    canvasAgentDefaults: CanvasAgentDefaults;
     reasoningEffort: AgentReasoningEffort | "";
     activity: string;
     conversation: AgentConversationState;
@@ -81,13 +103,15 @@ type AgentStore = {
     connectError: string;
     pendingTool: AgentPendingToolCall | null;
     pendingApprovals: AgentPendingApproval[];
-    setAgentState: (patch: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext">>) => void;
+    setAgentState: (patch: Partial<Omit<AgentStore, "setAgentState" | "setCanvasAgentDefaultProvider" | "setCanvasAgentDefaultModel" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext">>) => void;
+    setCanvasAgentDefaultProvider: (provider: CanvasAgentProvider) => void;
+    setCanvasAgentDefaultModel: (provider: CanvasAgentProvider, model: string) => void;
     openPanel: () => void;
     closePanel: () => void;
     togglePanel: () => void;
     setCanvasContext: (context: AgentCanvasContext | null) => void;
     connectAgent: (options?: { silent?: boolean }) => void;
-    disconnectAgent: (patch?: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext">>) => void;
+    disconnectAgent: (patch?: Partial<Omit<AgentStore, "setAgentState" | "setCanvasAgentDefaultProvider" | "setCanvasAgentDefaultModel" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext">>) => void;
     addMessage: (item: AgentChatItem) => void;
     addEventLog: (item: AgentEventLog) => void;
     clearEventLogs: () => void;
@@ -125,6 +149,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     permissionMode: typeof window === "undefined" ? "request" : (localStorage.getItem("canvas-agent-permission-mode") as AgentPermissionMode) || "request",
     models: [],
     model: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-model") || "",
+    canvasAgentDefaults: readCanvasAgentDefaults(),
     reasoningEffort: typeof window === "undefined" ? "" : (localStorage.getItem("canvas-agent-reasoning-effort") as AgentReasoningEffort) || "",
     activity: i18n.t("agent.state.ready"),
     conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} },
@@ -134,6 +159,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     pendingTool: null,
     pendingApprovals: [],
     setAgentState: (patch) => set(patch),
+    setCanvasAgentDefaultProvider: (provider) => set((state) => {
+        const canvasAgentDefaults = { ...state.canvasAgentDefaults, provider };
+        if (typeof window !== "undefined") localStorage.setItem(CANVAS_AGENT_DEFAULTS_KEY, JSON.stringify(canvasAgentDefaults));
+        return { canvasAgentDefaults };
+    }),
+    setCanvasAgentDefaultModel: (provider, model) => set((state) => {
+        const canvasAgentDefaults = { ...state.canvasAgentDefaults, models: { ...state.canvasAgentDefaults.models, [provider]: model } };
+        if (typeof window !== "undefined") localStorage.setItem(CANVAS_AGENT_DEFAULTS_KEY, JSON.stringify(canvasAgentDefaults));
+        return { canvasAgentDefaults };
+    }),
     openPanel: () => set({ panelOpen: true, panelMounted: true, panelClosing: false }),
     closePanel: () => {
         if (!get().panelMounted || get().panelClosing) return;
@@ -143,7 +178,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         }, CANVAS_AGENT_PANEL_MOTION_MS);
     },
     togglePanel: () => (get().panelOpen ? get().closePanel() : get().openPanel()),
-    setCanvasContext: (canvasContext) => set({ canvasContext }),
+    setCanvasContext: (canvasContext) => set((state) => state.canvasContext === canvasContext ? state : { canvasContext }),
     connectAgent: (options) => {
         const silent = options?.silent ?? false;
         const endpoint = get().url.trim().replace(/\/$/, "");

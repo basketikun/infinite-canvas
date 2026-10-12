@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { BookOpen, Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload, Workflow } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -8,6 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { DOCS_URL } from "@/constant/env";
+import { CanvasSaveWorkflowDialog } from "@/components/canvas/canvas-save-workflow-dialog";
 
 export function CanvasTopBar({
     title,
@@ -24,6 +25,8 @@ export function CanvasTopBar({
     onCreateProject,
     onDeleteProject,
     onExportProject,
+    onSaveWorkflow,
+    canSaveWorkflow,
     onImportImage,
     onOpenPlugins,
     onUndo,
@@ -46,6 +49,8 @@ export function CanvasTopBar({
     onCreateProject: () => void;
     onDeleteProject: () => void;
     onExportProject: () => void;
+    onSaveWorkflow: (title: string) => void;
+    canSaveWorkflow: boolean;
     onImportImage: () => void;
     onOpenPlugins: () => void;
     onUndo: () => void;
@@ -59,6 +64,7 @@ export function CanvasTopBar({
     const theme = canvasThemes[colorTheme];
     const titleRef = useRef<HTMLDivElement>(null);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
+    const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
     const sidePanelOpen = useCanvasSidePanelStore((state) => state.panelOpen);
     const toggleSidePanel = useCanvasSidePanelStore((state) => state.togglePanel);
 
@@ -99,6 +105,7 @@ export function CanvasTopBar({
                                 { type: "divider" },
                                 { key: "import", icon: <Upload className="size-4" />, label: t("canvas.importAsset"), onClick: onImportImage },
                                 { key: "export", icon: <Download className="size-4" />, label: t("canvas.exportCurrent"), onClick: onExportProject },
+                                { key: "workflow", disabled: !canSaveWorkflow, icon: <Workflow className="size-4" />, label: t("canvas.workflow.saveTitle"), onClick: () => setWorkflowDialogOpen(true) },
                                 { type: "divider" },
                                 { key: "undo", disabled: !canUndo, icon: <Undo2 className="size-4" />, label: <MenuLabel text={t("canvas.undo")} shortcut="⌘ Z" />, onClick: onUndo },
                                 { key: "redo", disabled: !canRedo, icon: <Redo2 className="size-4" />, label: <MenuLabel text={t("canvas.redo")} shortcut="⌘ ⇧ Z / ⌘ Y" />, onClick: onRedo },
@@ -171,6 +178,7 @@ export function CanvasTopBar({
                     <Shortcut keys={[t("canvas.shortcut.dropMedia")]} value={t("canvas.shortcut.upload")} />
                 </div>
             </Modal>
+            <CanvasSaveWorkflowDialog open={workflowDialogOpen} onCancel={() => setWorkflowDialogOpen(false)} onConfirm={(title) => { onSaveWorkflow(title); setWorkflowDialogOpen(false); }} />
         </>
     );
 }

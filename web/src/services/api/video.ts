@@ -6,6 +6,8 @@ import { dataUrlToFile, readFileAsDataUrl } from "@/lib/image-utils";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
+import { createVideoCliTask, fetchVideoCliFile, fetchVideoCliTask } from "@/services/api/canvas-agent";
+import { useAgentStore } from "@/stores/use-agent-store";
 import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
@@ -19,7 +21,7 @@ type VideoMediaOptions = RequestOptions & { videos?: ReferenceVideo[]; audios?: 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "plugin"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "plugin" | "dreamina-cli" | "libtv-cli"; model: string };
 type GeminiInlineData = { bytesBase64Encoded: string; mimeType: string };
 type GeminiVideoOperation = {
     name?: string;
@@ -70,6 +72,19 @@ function videoTaskFailed(message: string) {
 }
 
 export async function createVideoGenerationTask(config: AiConfig, prompt: string, references: ReferenceImage[] = [], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
+    if (config.videoProvider !== "api") {
+        if (references.length || options?.videos?.length || options?.audios?.length) throw new Error("本地 CLI 视频入口当前支持文生视频，请移除参考素材或改用 API 服务。");
+        const { endpoint, token } = videoCliAgentConfig();
+        const { data } = await createVideoCliTask(endpoint, token, {
+            provider: config.videoProvider,
+            prompt,
+            model: config.videoCliModel,
+            settings: config.videoCliSettings,
+            ...(config.videoProvider === "libtv" ? { projectId: config.videoCliProjectId } : {}),
+        });
+        if (!data?.id) throw new Error("本地 CLI 没有返回视频任务编号");
+        return { id: data.id, provider: config.videoProvider === "dreamina" ? "dreamina-cli" : "libtv-cli", model: config.videoCliModel };
+    }
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     const script = resolveModelScript(config, selectedModel);
@@ -84,10 +99,29 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
         const result = pluginVideoResults.get(task.id);
         return result ? { status: "completed", result } : { status: "failed", error: apiText("pluginVideoExpired") };
     }
+    if (task.provider === "dreamina-cli" || task.provider === "libtv-cli") {
+        const { endpoint, token } = videoCliAgentConfig();
+        const state = (await fetchVideoCliTask(endpoint, token, task.id, options?.signal)).data;
+        if (!state) return { status: "pending" };
+        if (state.status === "failed") return { status: "failed", error: state.error };
+        if (state.status === "completed") {
+            if (state.fileUrl) return { status: "completed", result: { blob: await fetchVideoCliFile(endpoint, token, state.fileUrl, options?.signal), mimeType: "video/mp4" } };
+            if (state.url) return { status: "completed", result: { url: state.url, mimeType: "video/mp4" } };
+            return { status: "failed", error: apiText("scriptNoVideo") };
+        }
+        return { status: "pending" };
+    }
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (task.provider === "gemini") return pollGeminiVideoTask(requestConfig, task, options);
     return pollOpenAIVideoTask(requestConfig, task, options);
+}
+
+function videoCliAgentConfig() {
+    const { url, token } = useAgentStore.getState();
+    const endpoint = url.trim().replace(/\/$/, "");
+    if (!endpoint || !token.trim()) throw new Error("请先连接本地 Canvas Agent，再使用 Dreamina 或 LibTV CLI。");
+    return { endpoint, token: token.trim() };
 }
 
 async function createPluginVideoTask(config: AiConfig, model: string, script: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
@@ -151,20 +185,33 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     const videos = await Promise.all((options?.videos || []).map((video) => referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options)));
     const audios = await Promise.all((options?.audios || []).map((audio) => referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options)));
     const mode = resolveVideoMode(config.videoMode, images.length);
+    const ratio = inferVideoRatio(config.size || "16:9");
     const body = new FormData();
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
     body.append("size", normalizeVideoSize(config.size, config.vquality) || "1280x720");
+    if (ratio && ratio !== "auto") {
+        body.append("ratio", ratio);
+    }
     body.append("resolution_name", normalizeVideoResolution(config.vquality));
     body.append("generate_audio", String(boolConfig(config.videoGenerateAudio, true)));
     body.append("watermark", String(boolConfig(config.videoWatermark, false)));
     body.append("mode", mode);
     if (mode === "frames") {
-        if (images[0]) body.append("first_frame", images[0], "first.png");
-        if (images[1]) body.append("last_frame", images[1], "last.png");
+        if (images[0]) {
+            body.append("first_frame", images[0], "first.png");
+            body.append("images", images[0], "first.png");
+        }
+        if (images[1]) {
+            body.append("last_frame", images[1], "last.png");
+            body.append("images", images[1], "last.png");
+        }
     } else {
-        images.forEach((file) => body.append("image[]", file, "ref.png"));
+        images.forEach((file, idx) => {
+            body.append("image[]", file, `ref_${idx + 1}.png`);
+            body.append("images", file, `ref_${idx + 1}.png`);
+        });
     }
     videos.forEach((file) => body.append("video[]", file));
     audios.forEach((file) => body.append("audio[]", file));

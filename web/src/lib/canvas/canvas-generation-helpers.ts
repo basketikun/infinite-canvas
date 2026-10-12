@@ -48,10 +48,10 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
             const metadata = node.metadata;
             const content = metadata?.content;
             if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && metadata?.storageKey) return { ...node, metadata: { ...metadata, content: await resolveMediaUrl(metadata.storageKey, content) } };
-            if (node.type !== CanvasNodeType.Image || !metadata || !content) return node;
+            if (node.type !== CanvasNodeType.Image || !metadata) return node;
             const images = await Promise.all(
                 (metadata.images || []).map(async (image) => {
-                    if (!image.content) return image;
+                    if (!image.content && !image.storageKey) return image;
                     void ensureImagePreview(image.storageKey);
                     return { ...image, content: await resolveImageUrl(image.storageKey, image.content) };
                 }),
@@ -60,6 +60,7 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
                 void ensureImagePreview(metadata.storageKey);
                 return { ...node, metadata: { ...metadata, content: await resolveImageUrl(metadata.storageKey, content), images } };
             }
+            if (!content) return { ...node, metadata: { ...metadata, images } };
             if (!content.startsWith("data:image/")) return node;
             return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)) } };
         }),
@@ -115,6 +116,10 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
         videoGenerateAudio: node?.metadata?.generateAudio || config.videoGenerateAudio || defaultConfig.videoGenerateAudio,
         videoWatermark: node?.metadata?.watermark || config.videoWatermark || defaultConfig.videoWatermark,
         videoMode: node?.metadata?.videoMode || config.videoMode || defaultConfig.videoMode,
+        videoProvider: node?.metadata?.videoProvider ?? config.videoProvider ?? defaultConfig.videoProvider,
+        videoCliModel: node?.metadata?.videoCliModel ?? config.videoCliModel ?? defaultConfig.videoCliModel,
+        videoCliProjectId: node?.metadata?.videoCliProjectId ?? config.videoCliProjectId ?? defaultConfig.videoCliProjectId,
+        videoCliSettings: node?.metadata?.videoCliSettings ?? config.videoCliSettings ?? defaultConfig.videoCliSettings,
         audioVoice: node?.metadata?.audioVoice || config.audioVoice || defaultConfig.audioVoice,
         audioFormat: node?.metadata?.audioFormat || config.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node?.metadata?.audioSpeed || config.audioSpeed || defaultConfig.audioSpeed,
@@ -158,7 +163,7 @@ export function findRetrySourceNode(nodeId: string, nodes: CanvasNodeData[], con
         if (visited.has(id)) continue;
         visited.add(id);
         const node = nodes.find((item) => item.id === id);
-        if (node?.type === CanvasNodeType.Config) return node;
+        if (node?.type === CanvasNodeType.Config || node?.type === CanvasNodeType.Dreamina) return node;
         connections.filter((connection) => connection.toNodeId === id).forEach((connection) => queue.push(connection.fromNodeId));
     }
     return null;
@@ -178,7 +183,7 @@ export function sourceNodeReferenceImages(node: CanvasNodeData | null) {
 }
 
 export function isAudioFile(file: File) {
-    return file.type.startsWith("audio/") || /\.(mp3|wav)$/i.test(file.name);
+    return file.type.startsWith("audio/") || /\.(mp3|wav|ogg|opus|m4a|aac)$/i.test(file.name);
 }
 
 export function buildAngleLabel(params: CanvasImageAngleParams) {

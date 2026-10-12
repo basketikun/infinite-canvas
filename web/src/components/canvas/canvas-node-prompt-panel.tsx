@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowUp, LoaderCircle, Maximize2, Square } from "lucide-react";
 import { Button, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
@@ -12,10 +12,12 @@ import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
 import { CanvasPromptChipInput } from "./canvas-prompt-chip-input";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
+import { CanvasVideoCliSettings } from "./canvas-video-cli-settings";
 import { CanvasTextSettingsPopover } from "./canvas-text-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { CanvasAgentStepSettings } from "./canvas-agent-step-settings";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -42,9 +44,15 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = modeOverride ?? defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode);
+    const isSkillNode = node.type === CanvasNodeType.Skill;
+    const agentModeEnabled = isSkillNode || node.metadata?.agentMode === true || (node.metadata?.agentMode == null && Boolean(node.metadata?.agentSkillName));
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
+    const hasConnectedNarration = mode === "video" && connectedNodes.some((item) => item.type === CanvasNodeType.Text && Boolean((item.metadata?.content || item.metadata?.prompt || "").trim()) || item.type === CanvasNodeType.Skill && Boolean(item.metadata?.content?.trim()));
+    const [cliVideoAvailability, setCliVideoAvailability] = useState({ key: "", ready: false });
+    const updateCliVideoAvailability = useCallback((key: string, ready: boolean) => setCliVideoAvailability({ key, ready }), []);
+    const cliVideoReady = config.videoProvider === "api" || Boolean(config.videoCliModel && cliVideoAvailability.key === `${config.videoProvider}:${config.videoCliModel}` && cliVideoAvailability.ready && (config.videoProvider !== "libtv" || config.videoCliProjectId));
     const [prompt, setPrompt] = useState(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
     const [expanded, setExpanded] = useState(false);
 
@@ -61,10 +69,11 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     };
 
     const submit = () => {
-        const text = prompt.trim();
-        if (!text || isRunning) return;
+        const text = isSkillNode ? "" : prompt.trim();
+        if ((!isSkillNode && !text && !hasConnectedNarration) || isRunning) return;
         onGenerate(node.id, mode, text);
     };
+    const promptPlaceholder = hasConnectedNarration ? t("canvas.videoCli.narrationHint") : t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`);
 
     const openExpandedEditor = () => {
         setExpanded(true);
@@ -80,22 +89,29 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             onWheel={(event) => event.stopPropagation()}
         >
             <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
-            <CanvasPromptChipInput
-                value={prompt}
-                references={mentionReferences}
-                onChange={updatePrompt}
-                onSubmit={submit}
-                className="thin-scrollbar h-40 w-full cursor-text resize-none rounded-xl px-3 py-2 text-sm leading-5 outline-none"
-                style={{ background: "transparent", color: theme.node.text }}
-                placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
-            />
+            {isSkillNode ? null : (
+                <CanvasPromptChipInput
+                    value={prompt}
+                    references={mentionReferences}
+                    onChange={updatePrompt}
+                    onSubmit={submit}
+                    className="thin-scrollbar h-40 w-full cursor-text resize-none rounded-xl px-3 py-2 text-sm leading-5 outline-none"
+                    style={{ background: "transparent", color: theme.node.text }}
+                    placeholder={promptPlaceholder}
+                />
+            )}
+            {node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Skill ? <CanvasAgentStepSettings node={node} onChange={(patch) => onConfigChange(node.id, patch)} /> : null}
 
             <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
-                    <Tooltip title={t("canvas.promptPanel.expandEditor")}>
-                        <Button type="text" className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0" style={{ color: theme.node.text }} icon={<Maximize2 className="size-3.5" />} onClick={openExpandedEditor} aria-label={t("canvas.promptPanel.expandEditor")} />
-                    </Tooltip>
-                    <CanvasPromptLibrary onSelect={updatePrompt} />
+                    {isSkillNode ? null : (
+                        <>
+                            <Tooltip title={t("canvas.promptPanel.expandEditor")}>
+                                <Button type="text" className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0" style={{ color: theme.node.text }} icon={<Maximize2 className="size-3.5" />} onClick={openExpandedEditor} aria-label={t("canvas.promptPanel.expandEditor")} />
+                            </Tooltip>
+                            <CanvasPromptLibrary onSelect={updatePrompt} />
+                        </>
+                    )}
                     {mode === "image" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
@@ -110,8 +126,11 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         </>
                     ) : mode === "video" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
-                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[220px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            <CanvasVideoCliSettings config={config} onAvailabilityChange={updateCliVideoAvailability} onConfigChange={(patch) => onConfigChange(node.id, patch)} />
+                            {config.videoProvider === "api" ? <>
+                                <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
+                                <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[220px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            </> : null}
                         </>
                     ) : mode === "audio" ? (
                         <>
@@ -120,8 +139,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         </>
                     ) : (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="text" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
-                            <CanvasTextSettingsPopover config={config} count={node.metadata?.textCount || 1} onConfigChange={(_, value) => onConfigChange(node.id, { reasoningEffort: value })} onCountChange={(textCount) => onConfigChange(node.id, { textCount })} />
+                            {!agentModeEnabled ? <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="text" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" /> : null}
+                            <CanvasTextSettingsPopover config={config} count={node.metadata?.textCount || 1} onConfigChange={(_, value) => onConfigChange(node.id, { reasoningEffort: value })} onCountChange={node.type === CanvasNodeType.Text ? (textCount) => onConfigChange(node.id, { textCount }) : undefined} />
                         </>
                     )}
                 </div>
@@ -129,7 +148,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     type="primary"
                     className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3"
                     danger={isRunning}
-                    disabled={!isRunning && !prompt.trim()}
+                    disabled={!isRunning && ((!isSkillNode && !prompt.trim() && !hasConnectedNarration) || (mode === "video" && !cliVideoReady))}
                     onClick={() => (isRunning ? onStop(node.id) : submit())}
                     aria-label={t(isRunning ? "canvas.promptPanel.stopGeneration" : "canvas.promptPanel.generate")}
                 >
@@ -155,7 +174,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         onChange={updatePrompt}
                         className="thin-scrollbar h-[52dvh] min-h-80 w-full cursor-text overflow-y-auto rounded-xl border p-4 text-[15px] leading-6 outline-none"
                         style={{ background: "transparent", borderColor: theme.toolbar.border, color: theme.node.text }}
-                        placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
+                        placeholder={promptPlaceholder}
                     />
                 </div>
             </Modal>
@@ -164,7 +183,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
 }
 
 function defaultMode(type: CanvasNodeData["type"]): CanvasNodeGenerationMode {
-    return type === CanvasNodeType.Text ? "text" : type === CanvasNodeType.Video ? "video" : type === CanvasNodeType.Audio ? "audio" : "image";
+    return type === CanvasNodeType.Text || type === CanvasNodeType.Skill ? "text" : type === CanvasNodeType.Video ? "video" : type === CanvasNodeType.Audio ? "audio" : "image";
 }
 
 function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: CanvasNodeGenerationMode): AiConfig {
@@ -180,6 +199,10 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         videoGenerateAudio: node.metadata?.generateAudio || globalConfig.videoGenerateAudio || defaultConfig.videoGenerateAudio,
         videoWatermark: node.metadata?.watermark || globalConfig.videoWatermark || defaultConfig.videoWatermark,
         videoMode: node.metadata?.videoMode || globalConfig.videoMode || defaultConfig.videoMode,
+        videoProvider: node.metadata?.videoProvider ?? globalConfig.videoProvider ?? defaultConfig.videoProvider,
+        videoCliModel: node.metadata?.videoCliModel ?? globalConfig.videoCliModel ?? defaultConfig.videoCliModel,
+        videoCliProjectId: node.metadata?.videoCliProjectId ?? globalConfig.videoCliProjectId ?? defaultConfig.videoCliProjectId,
+        videoCliSettings: node.metadata?.videoCliSettings ?? globalConfig.videoCliSettings ?? defaultConfig.videoCliSettings,
         audioVoice: node.metadata?.audioVoice || globalConfig.audioVoice || defaultConfig.audioVoice,
         audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,

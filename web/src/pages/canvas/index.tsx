@@ -14,9 +14,15 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { hasAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
+import { CanvasWorkflowTemplateCard } from "@/components/canvas/canvas-workflow-template-card";
+import { useCanvasWorkflowTemplateStore } from "@/stores/canvas/use-canvas-workflow-template-store";
+import { instantiateWorkflowTemplate } from "@/lib/canvas/workflow-template";
+import { decodeChannelModel, resolveModelForCapability, useConfigStore, type ModelCapability } from "@/stores/use-config-store";
+import { CanvasNodeType } from "@/types/canvas";
+import type { CanvasWorkflowTemplate } from "@/types/canvas-workflow-template";
 
 export default function CanvasPage() {
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -26,6 +32,10 @@ export default function CanvasPage() {
     const projects = useCanvasStore((state) => state.projects);
     const createProject = useCanvasStore((state) => state.createProject);
     const importProject = useCanvasStore((state) => state.importProject);
+    const workflowTemplates = useCanvasWorkflowTemplateStore((state) => state.templates);
+    const workflowTemplatesHydrated = useCanvasWorkflowTemplateStore((state) => state.hydrated);
+    const deleteWorkflowTemplate = useCanvasWorkflowTemplateStore((state) => state.deleteTemplate);
+    const config = useConfigStore((state) => state.config);
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
 
@@ -61,6 +71,55 @@ export default function CanvasPage() {
         } finally {
             if (inputRef.current) inputRef.current.value = "";
         }
+    };
+
+    const openWorkflowTemplate = (template: CanvasWorkflowTemplate, useCurrentConnection = false) => {
+        const project = instantiateWorkflowTemplate(template);
+        if (useCurrentConnection) {
+            project.nodes = (project.nodes || []).map((node) => {
+                const encodedModel = node.metadata?.model;
+                if (!encodedModel || !decodeChannelModel(encodedModel)) return node;
+                const capability: ModelCapability = node.type === CanvasNodeType.Config
+                    ? node.metadata?.generationMode || "image"
+                    : node.type === CanvasNodeType.Image ? "image"
+                      : node.type === CanvasNodeType.Video ? "video"
+                        : node.type === CanvasNodeType.Audio ? "audio" : "text";
+                return { ...node, metadata: { ...node.metadata, model: resolveModelForCapability(config, encodedModel, capability) } };
+            });
+        }
+        const id = importProject(project);
+        enterProject(id);
+        message.success(t("canvas.workflow.opened"));
+    };
+
+    const handleOpenWorkflow = (template: CanvasWorkflowTemplate) => {
+        const missingChannel = template.nodes.some((node) => {
+            const decoded = node.metadata?.model ? decodeChannelModel(node.metadata.model) : null;
+            const channel = decoded ? config.channels.find((item) => item.id === decoded.channelId) : undefined;
+            return Boolean(decoded && !channel?.models.some((item) => item.name === decoded.model));
+        });
+        if (!missingChannel) {
+            openWorkflowTemplate(template);
+            return;
+        }
+        modal.confirm({
+            title: t("canvas.workflow.missingChannelTitle"),
+            content: t("canvas.workflow.missingChannelDescription"),
+            okText: t("canvas.workflow.useCurrent"),
+            cancelText: t("canvas.workflow.cancel"),
+            onOk: () => openWorkflowTemplate(template, true),
+        });
+    };
+
+    const confirmDeleteWorkflow = (template: CanvasWorkflowTemplate) => {
+        modal.confirm({
+            title: t("canvas.workflow.deleteTitle"),
+            content: t("canvas.workflow.deleteDescription"),
+            okText: t("canvas.workflow.delete"),
+            okType: "danger",
+            cancelText: t("common.cancel"),
+            onOk: () => deleteWorkflowTemplate(template.id),
+        });
     };
 
     useEffect(() => {
@@ -104,7 +163,21 @@ export default function CanvasPage() {
                     </div>
                 </header>
 
-                {!hydrated ? (
+                {hydrated && workflowTemplatesHydrated ? (
+                    <section>
+                        <div className="mb-4">
+                            <h2 className="text-lg font-semibold">{t("canvas.workflow.sectionTitle")}</h2>
+                            <p className="mt-1 text-sm text-stone-500">{t("canvas.workflow.sectionDescription")}</p>
+                        </div>
+                        {workflowTemplates.length ? (
+                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                                {workflowTemplates.map((template) => <CanvasWorkflowTemplateCard key={template.id} template={template} onOpen={() => handleOpenWorkflow(template)} onDelete={() => confirmDeleteWorkflow(template)} />)}
+                            </div>
+                        ) : <p className="rounded-xl border border-dashed border-stone-300 px-4 py-6 text-sm text-stone-500 dark:border-stone-700">{t("canvas.workflow.empty")}</p>}
+                    </section>
+                ) : null}
+
+                {!hydrated || !workflowTemplatesHydrated ? (
                     <section className="flex min-h-[360px] items-center justify-center border-y border-stone-200 text-sm text-stone-500 dark:border-stone-800">{t("canvas.loading")}</section>
                 ) : projects.length ? (
                     <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">

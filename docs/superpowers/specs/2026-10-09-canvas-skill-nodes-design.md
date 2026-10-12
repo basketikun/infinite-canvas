@@ -14,7 +14,7 @@ Keep the implementation within the existing canvas and Canvas Agent. Do not add 
 
 - Add a built-in Skill node with one selected, locally managed Skill.
 - A Skill node calls the currently configured Canvas Agent provider and model. Reuse the existing provider/model selection and defaults; do not add another credential or model configuration system.
-- The node's user instruction stays in its prompt field. Text from incoming connections is passed separately as reference material. The selected Skill's instructions are fetched from Canvas Agent and used as system instructions.
+- A Skill node does not require a separate task prompt. Its selected Skill instructions define how to process text from incoming connections; connected text is sent as content to transform, not as instructions. The Skill instructions are fetched from Canvas Agent and used as system instructions.
 - The node writes its generated text into its own content and uses the existing loading, cancellation, and error behavior. Its content can be copied, scrolled, and connected as input to another node.
 - If the selected Skill is missing, disabled, or unavailable, show a visible warning and allow the user to choose another available Skill. Do not silently run without the selected Skill.
 - Ordinary Agent text nodes remain available for generation without a selected Skill. Newly created ordinary Agent text nodes do not offer a Skill selector.
@@ -23,16 +23,16 @@ Keep the implementation within the existing canvas and Canvas Agent. Do not add 
 ## Graph behavior and creation
 
 - Show Skill in the canvas node creation menu and the menu for creating a node from a connection.
-- Multiple Skill nodes may connect to the same source text. Each node executes independently with its own Skill and instruction.
+- Multiple Skill nodes may connect to the same source text. Each node executes independently with its own selected Skill and provider/model settings.
 - A Skill node may connect to another Skill node. The downstream node receives the upstream node's generated text as reference material.
 - Use the existing connection reference bar and graph connections; do not add a second reference mechanism.
-- The request must distinguish reference text from the user's instruction. Keep the instruction field limited to the user's instruction, consistent with ordinary text Agent nodes.
+- The request must distinguish the selected Skill's system instructions from the upstream text to process. Do not require the user to restate the task in an input field.
 
 ## Settings and persistence
 
 - Store only the selected Skill name and existing Agent provider/model settings on the node. Fetch Skill instructions at generation time through the existing Canvas Agent API; do not duplicate Skill bodies or credentials in canvas data.
 - Reuse existing canvas project storage and workflow-template storage.
-- A saved workflow keeps Skill selection, user instructions, Agent/model settings, and graph connections, while clearing generated text content when reopened, consistent with existing text-node template behavior.
+- A saved workflow keeps Skill selection, Agent/model settings, and graph connections, while clearing generated text content when reopened, consistent with existing text-node template behavior.
 - If a Skill referenced by a saved workflow is unavailable, retain the reference and show the missing-Skill warning until the user selects another Skill.
 
 ## Out of scope
@@ -46,18 +46,18 @@ Keep the implementation within the existing canvas and Canvas Agent. Do not add 
 
 1. A user can create a Skill node from either creation menu and choose an enabled local Skill.
 2. Given one source article connected to two Skill nodes, each can run independently with a different Skill and show its own result.
-3. Given Skill A connected to Skill B, running B sends A's generated text as reference material and keeps B's user instruction separate.
+3. Given Skill A connected to Skill B, running B sends A's generated text as content to process according to B's selected Skill, without requiring a separate user instruction.
 4. The selected Skill's instructions are sent as system instructions through the configured Agent provider and model.
 5. Missing or disabled Skills are visible and can be reassigned; generation does not silently proceed without the configured Skill.
 6. Skill-node content supports the existing text-node scroll and copy behavior and can be referenced by downstream nodes.
-7. Saving and reopening a workflow preserves Skill choice, instructions, model/provider settings, and connections while clearing generated result text.
+7. Saving and reopening a workflow preserves Skill choice, model/provider settings, and connections while clearing generated result text.
 8. Existing Agent text nodes with a saved Skill assignment continue to work without automatic migration.
 9. Ordinary Agent text generation without a Skill continues to work.
 
 ## Manual verification
 
 - Connect one text article to two Skill nodes, select different Skills, run both, and confirm both results are visible and use the same upstream article.
-- Connect the result of one Skill node to a second Skill node and confirm the second request receives the first result separately from its user instruction.
+- Connect the result of one Skill node to a second Skill node and confirm the second request receives the first result as content to process without requiring text in a prompt field.
 - Delete or disable a selected Skill in Canvas Agent and confirm the node warns instead of silently generating.
 - Save and reopen a workflow containing Skill nodes; confirm settings and connections remain while generated text is cleared.
 - Confirm ordinary Agent text generation and previously saved Agent nodes with a Skill assignment still behave as specified.

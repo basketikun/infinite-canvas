@@ -90,6 +90,28 @@ export class SkillStore {
         }
     }
 
+    /** Parse and validate an imported SKILL.md without changing the workspace. */
+    previewImport(document: string) {
+        let parsed: matter.GrayMatterFile<string>;
+        try {
+            parsed = matter(document.replace(/^\uFEFF/, "").replace(/^\s+/, ""));
+        } catch {
+            throw new SkillStoreError("SKILL.md frontmatter 格式无效", 400);
+        }
+        const frontmatter = recordValue(parsed.data);
+        const rawName = frontmatterValue(frontmatter, "name");
+        if (typeof rawName !== "string" || !rawName.trim()) {
+            const fields = Object.keys(frontmatter).join(", ") || "无";
+            throw new SkillStoreError(`SKILL.md 缺少有效的 name 字段（识别到的 frontmatter 字段：${fields}）。请确认文件开头包含 ---、name: 名称、description: 描述、---`, 400);
+        }
+        const identity = importedSkillIdentity(rawName);
+        return {
+            ...identity,
+            description: skillDescription(frontmatterValue(frontmatter, "description")),
+            instructions: skillInstructions(parsed.content),
+        };
+    }
+
     /** 创建新的画布专属 Skill。 */
     create(input: CreateManagedSkillInput) {
         return this.mutate(async () => {
@@ -263,6 +285,23 @@ export class SkillStore {
 
 function validName(value: string | undefined): value is string {
     return Boolean(value && value.length <= MAX_NAME_LENGTH && NAME_PATTERN.test(value));
+}
+
+function frontmatterValue(frontmatter: Record<string, unknown>, field: "name" | "description") {
+    const matches = Object.entries(frontmatter).filter(([key]) => key.toLowerCase() === field);
+    if (matches.length > 1) throw new SkillStoreError(`SKILL.md 的 ${field} 字段重复`, 400);
+    return matches[0]?.[1];
+}
+
+function importedSkillIdentity(value: unknown) {
+    const sourceName = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+    if (!sourceName) throw new SkillStoreError("SKILL.md 的 name 字段不能为空", 400);
+    if (validName(sourceName)) return { name: sourceName, nameAdjusted: false as const };
+
+    const readableName = sourceName.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-+/g, "-");
+    const suffix = crypto.createHash("sha256").update(sourceName).digest("hex").slice(0, 8);
+    const prefix = (readableName || "skill").slice(0, MAX_NAME_LENGTH - suffix.length - 1).replace(/-+$/g, "") || "skill";
+    return { name: `${prefix}-${suffix}`, displayName: sourceName.slice(0, MAX_DISPLAY_NAME_LENGTH), nameAdjusted: true as const };
 }
 
 function skillName(value: unknown) {

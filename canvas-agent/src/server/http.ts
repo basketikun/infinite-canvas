@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
@@ -13,6 +14,9 @@ import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWo
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { ChatGPTPlanError, completeChatGPTSignIn, disconnectChatGPTPlan, getChatGPTPlanSession, listChatGPTPlanModels, startChatGPTSignIn, streamChatGPTPlanResponse } from "../agent/chatgpt-plan.js";
+import { checkDreaminaLogin, deleteDreaminaAsset, deleteDreaminaTask, DreaminaError, getDreaminaCapabilities, getDreaminaStatus, getDreaminaTaskVideo, queryDreaminaTask, saveDreaminaAsset, startDreaminaLogin, submitDreaminaVideo, type DreaminaVideoInput } from "../dreamina/cli.js";
+import { deleteVideoCliTask, getVideoCliSchema, getVideoCliTask, listLibTvProjects, listVideoCliModels, readVideoCliTaskFile, startVideoCliTask } from "./video-cli.js";
 
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
 export function startHttpServer() {
@@ -114,6 +118,18 @@ export function startHttpServer() {
         });
         next();
     });
+    app.get("/auth/callback", route(async (req, res) => {
+        try {
+            await completeChatGPTSignIn(requestUrl(req, config).searchParams, `${config.url}/auth/callback`);
+            res.type("html").send("<!doctype html><meta charset=\"utf-8\"><title>Infinite Canvas</title><p>ChatGPT 已连接。请切回 Infinite Canvas；此页可以手动关闭。</p>");
+        } catch (error) {
+            const code = error instanceof ChatGPTPlanError ? error.code : "CHATGPT_SIGN_IN_FAILED";
+            const detail = error instanceof ChatGPTPlanError ? error.message : "请重新开始授权。";
+            logger.warn("ChatGPT sign-in callback failed", { code, statusCode: error instanceof ChatGPTPlanError ? error.statusCode : undefined });
+            const safeDetail = escapeHtml(detail);
+            res.status(400).type("html").send(`<!doctype html><meta charset="utf-8"><title>Infinite Canvas</title><p>ChatGPT 授权未完成（${code}）：${safeDetail} 请返回画布重试。</p>`);
+        }
+    }));
     app.use((req, res, next) => {
         const url = requestUrl(req, config);
         if (!setCors(req, res, url, config)) return void res.status(403).json({ ok: false, error: "origin not allowed" });
@@ -169,10 +185,73 @@ export function startHttpServer() {
         res.setHeader("Cache-Control", "no-store");
         res.type(path.extname(filePath)).send(await readFile(filePath));
     }));
+    app.get("/agent/dreamina/status", route(async (_req, res) => res.json({ ok: true, ...(await getDreaminaStatus()) })));
+    app.post("/agent/dreamina/login", route(async (_req, res) => res.json({ ok: true, ...(await startDreaminaLogin()) })));
+    app.post("/agent/dreamina/login/check", route(async (req, res) => res.json({ ok: true, ...(await checkDreaminaLogin(String(req.body?.deviceCode || ""))) })));
+    app.get("/agent/dreamina/capabilities", route(async (req, res) => res.json({ ok: true, data: await getDreaminaCapabilities(String(req.query.refresh || "") === "1") })));
+    app.post("/agent/dreamina/assets", route(async (req, res) => {
+        const fileName = decodeURIComponent(String(req.headers["x-filename"] || ""));
+        const asset = await saveDreaminaAsset(req, String(req.headers["content-type"] || ""), fileName);
+        res.json({ ok: true, data: asset });
+    }));
+    app.delete("/agent/dreamina/assets/:assetId", route(async (req, res) => {
+        await deleteDreaminaAsset(routeParam(req.params.assetId));
+        res.json({ ok: true });
+    }));
+    app.post("/agent/dreamina/tasks", route(async (req, res) => res.json({ ok: true, data: await submitDreaminaVideo(req.body as DreaminaVideoInput) })));
+    app.get("/agent/dreamina/tasks/:submitId", route(async (req, res) => res.json({ ok: true, ...(await queryDreaminaTask(routeParam(req.params.submitId))) })));
+    app.get("/agent/video-cli/models", route(async (req, res) => res.json({ ok: true, data: await listVideoCliModels(videoCliProvider(req.query.provider)) })));
+    app.get("/agent/video-cli/schema", route(async (req, res) => res.json({ ok: true, data: await getVideoCliSchema(videoCliProvider(req.query.provider), String(req.query.model || "")) })));
+    app.get("/agent/video-cli/projects", route(async (_req, res) => res.json({ ok: true, data: await listLibTvProjects() })));
+    app.post("/agent/video-cli/tasks", route(async (req, res) => {
+        const provider = videoCliProvider(req.body?.provider);
+        const data = await startVideoCliTask({ provider, prompt: String(req.body?.prompt || ""), model: String(req.body?.model || ""), settings: req.body?.settings && typeof req.body.settings === "object" ? req.body.settings : {}, projectId: String(req.body?.projectId || "") });
+        res.status(202).json({ ok: true, data });
+    }));
+    app.get("/agent/video-cli/tasks/:id", route(async (req, res) => res.json({ ok: true, data: await getVideoCliTask(routeParam(req.params.id)) })));
+    app.get("/agent/video-cli/tasks/:id/file", route(async (req, res) => {
+        res.setHeader("Cache-Control", "no-store");
+        res.once("finish", () => void deleteVideoCliTask(routeParam(req.params.id)).catch(() => undefined));
+        const file = await readVideoCliTaskFile(routeParam(req.params.id));
+        res.type(file.mimeType).send(file.data);
+    }));
+    app.get("/agent/dreamina/tasks/:submitId/video", (req, res, next) => {
+        void getDreaminaTaskVideo(routeParam(req.params.submitId)).then(({ file, fileName }) => {
+            res.type(path.extname(fileName));
+            res.sendFile(file, (error) => { if (error) next(error); });
+        }).catch(next);
+    });
+    app.delete("/agent/dreamina/tasks/:submitId", route(async (req, res) => {
+        await deleteDreaminaTask(routeParam(req.params.submitId));
+        res.json({ ok: true });
+    }));
     app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
     app.get("/agent/codex/workspace", (_req, res) => {
         const workspace = ensureSiteWorkspace(config);
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot });
+    });
+    app.get("/agent/chatgpt/session", route(async (_req, res) => res.json({ ok: true, ...(await getChatGPTPlanSession()) })));
+    app.post("/agent/chatgpt/sign-in", route(async (_req, res) => {
+        config.chatgptHostId ||= `urn:uuid:${randomUUID()}`;
+        saveConfig(config);
+        res.json({ ok: true, ...(await startChatGPTSignIn(`${config.url}/auth/callback`, config.chatgptHostId)) });
+    }));
+    app.delete("/agent/chatgpt/session", route(async (_req, res) => res.json({ ok: true, ...(await disconnectChatGPTPlan()) })));
+    app.get("/agent/chatgpt/models", route(async (_req, res) => res.json({ ok: true, ...(await listChatGPTPlanModels()) })));
+    app.post("/agent/chatgpt/responses", (req, res) => {
+        const controller = new AbortController();
+        res.on("close", () => { if (!res.writableEnded) controller.abort(); });
+        res.status(200).set({ "content-type": "text/event-stream", "cache-control": "no-cache, no-transform", connection: "keep-alive" });
+        res.flushHeaders();
+        void streamChatGPTPlanResponse({ model: String(req.body?.model || ""), instructions: String(req.body?.instructions || ""), userInput: String(req.body?.userInput || "") }, controller.signal, (delta) => {
+            res.write(`event: delta\ndata: ${JSON.stringify({ delta })}\n\n`);
+        }).then((text) => {
+            if (!res.destroyed) res.write(`event: done\ndata: ${JSON.stringify({ text })}\n\n`);
+        }).catch((error: unknown) => {
+            if (res.destroyed || controller.signal.aborted) return;
+            const planError = error instanceof ChatGPTPlanError ? error : new ChatGPTPlanError("CHATGPT_REQUEST_FAILED", 502, "ChatGPT request failed.");
+            res.write(`event: error\ndata: ${JSON.stringify({ code: planError.code, error: planError.message })}\n\n`);
+        }).finally(() => { if (!res.destroyed) res.end(); });
     });
     app.get("/agent/codex/models", route(async (_req, res) => res.json({ ok: true, ...(await listCodexModels(emit)) })));
     app.get("/agent/codex/skills", route(async (req, res) => {
@@ -215,6 +294,10 @@ export function startHttpServer() {
     }));
     app.get("/agent/codex/skills/:name", route(async (req, res) => {
         res.json({ ok: true, data: await skillStore.get(routeParam(req.params.name)) });
+    }));
+    app.post("/agent/codex/skills/import-preview", codexMutation(async (req, res) => {
+        const document = typeof req.body?.document === "string" ? req.body.document : "";
+        res.json({ ok: true, data: skillStore.previewImport(document) });
     }));
     app.post("/agent/codex/skills", codexMutation(async (req, res) => {
         const data = await skillStore.create(req.body);
@@ -428,6 +511,8 @@ export function startHttpServer() {
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
         logger.error("HTTP request failed", { method: req.method, path: req.path, error });
         if (error instanceof SkillStoreError || error instanceof CodexSkillLookupError) return void res.status(error.statusCode).json({ ok: false, error: error.message });
+        if (error instanceof ChatGPTPlanError) return void res.status(error.statusCode).json({ ok: false, code: error.code, error: error.message });
+        if (error instanceof DreaminaError) return void res.status(error.statusCode).json({ ok: false, code: error.code, error: error.message });
         res.status(500).json({ ok: false, error: error.message });
     });
 
@@ -494,6 +579,12 @@ function skillSelector(value: unknown): CodexSkillSelector {
     return { name, path: skillPath };
 }
 
+function videoCliProvider(value: unknown): "dreamina" | "libtv" {
+    const provider = String(value || "");
+    if (provider !== "dreamina" && provider !== "libtv") throw Object.assign(new Error("视频 CLI 服务来源无效"), { statusCode: 400 });
+    return provider;
+}
+
 /** 使用当前操作系统的文件管理器定位本地文件。 */
 function revealLocalFile(filePath: string, isDirectory: boolean) {
     const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer.exe" : "xdg-open";
@@ -517,12 +608,16 @@ function requestUrl(req: Request, config: CanvasAgentConfig) {
     return new URL(req.originalUrl || req.url || "/", config.url);
 }
 
+function escapeHtml(value: string) {
+    return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character] || character);
+}
+
 /** 设置跨域响应头并记录通过 token 授权的来源。 */
 function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfig) {
     const origin = req.headers.origin;
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
-    res.setHeader("Access-Control-Allow-Headers", "content-type,x-canvas-agent-token");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "content-type,x-canvas-agent-token,x-filename");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Private-Network", "true");
     if (!origin || req.method === "OPTIONS" || url.pathname === "/health" || url.pathname === "/config") return true;
     config.origins ||= [];

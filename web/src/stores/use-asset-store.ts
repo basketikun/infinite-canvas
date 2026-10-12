@@ -96,9 +96,16 @@ export const useAssetStore = create<AssetStore>()(
             replaceAssets: (assets) => set({ assets }),
             cleanupImages: (extra) => {
                 window.setTimeout(async () => {
-                    const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
-                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                    const [{ useCanvasStore }, { useCanvasWorkflowTemplateStore }] = await Promise.all([
+                        import("@/stores/canvas/use-canvas-store"),
+                        import("@/stores/canvas/use-canvas-workflow-template-store"),
+                    ]);
+                    const canvas = useCanvasStore.getState();
+                    const workflows = useCanvasWorkflowTemplateStore.getState();
+                    if (!get().hydrated || !canvas.hydrated || !workflows.hydrated) return;
+                    const usedData = { assets: get().assets, projects: canvas.projects, templates: workflows.templates, extra };
+                    await cleanupUnusedImages(usedData);
+                    await cleanupUnusedMedia(usedData);
                 }, 0);
             },
         }),
@@ -108,6 +115,7 @@ export const useAssetStore = create<AssetStore>()(
             partialize: (state) => ({ assets: state.assets }) as StorageValue<AssetStore>["state"],
             onRehydrateStorage: () => () => {
                 useAssetStore.setState({ hydrated: true });
+                useAssetStore.getState().cleanupImages();
             },
         },
     ),
