@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Group, Video } from "lucide-react";
-import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -31,6 +30,7 @@ import {
 } from "@/services/api/model3d-ops";
 import { collectBlenderImportNodes, importModelsToBlender } from "@/services/api/blender-bridge";
 import { collectBambuImportNodes, openModelsInBambuStudio } from "@/services/api/bambu-studio";
+import { downloadFile } from "@/services/api/canvas-agent";
 import { model3dOpDefinition, model3dOpLabel, type Model3dOpId } from "@/components/canvas/canvas-model3d-ops";
 import { CanvasModel3dOpDialog, type Model3dOpParams } from "@/components/canvas/canvas-model3d-op-dialog";
 import { CanvasMultiviewEditDialog } from "@/components/canvas/canvas-multiview-edit-dialog";
@@ -669,7 +669,13 @@ function InfiniteCanvasPage() {
     const pollModel3dConvertTask = useCallback(
         async (node: CanvasNodeData) => {
             const taskId = node.metadata?.model3dConvertTaskId;
-            const format = node.metadata?.model3dConvertedFormat;
+            const format = node.metadata?.model3dConvertedFormat || (() => {
+                try {
+                    return JSON.parse(node.metadata?.model3dOpParams || "{}").format as string | undefined;
+                } catch {
+                    return undefined;
+                }
+            })();
             if (!taskId || !format || node.metadata?.model3dConvertedKey || generationRequestsRef.current.has(node.id)) return;
             const generationConfig = nodeGenerationConfig(node, "model3d");
             if (!isAiConfigReady(generationConfig, generationConfig.model)) return;
@@ -678,7 +684,7 @@ function InfiniteCanvasPage() {
                 const result = await waitForModel3dOp(generationConfig, taskId, { signal: controller.signal });
                 const stored = await storeModel3dOpResult(result.modelUrl, "model3d-converted");
                 resolveHistoryByTaskId(taskId, { status: "success", storageKey: stored.storageKey, mimeType: stored.mimeType });
-                setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, model3dConvertTaskId: undefined, model3dConvertedKey: stored.storageKey, model3dConvertedMime: stored.mimeType, model3dConvertedUrl: result.modelUrl } } : item)));
+                setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_SUCCESS, model3dConvertTaskId: undefined, model3dConvertedKey: stored.storageKey, model3dConvertedMime: stored.mimeType, model3dConvertedUrl: result.modelUrl } } : item)));
             } catch (error) {
                 if (isGenerationCanceled(error)) return;
                 resolveHistoryByTaskId(taskId, { status: "error", error: error instanceof Error ? error.message : t("canvas.projectPage.generationFailed") });
@@ -734,7 +740,7 @@ function InfiniteCanvasPage() {
      * produces a new 3D node to the right, wired from the source.
      */
     const runModel3dOperation = useCallback(
-        async (sourceNode: CanvasNodeData, op: Model3dOpId, params: Model3dOpParams) => {
+        async (sourceNode: CanvasNodeData, op: Model3dOpId, params: Model3dOpParams, retryNodeId?: string) => {
             const generationConfig = nodeGenerationConfig(sourceNode, "model3d");
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
@@ -743,8 +749,12 @@ function InfiniteCanvasPage() {
 
             const writesBack = model3dOpDefinition(op).writesBack;
             const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Model3d];
-            const targetId = writesBack ? sourceNode.id : nanoid();
-            if (!writesBack) {
+            const targetId = retryNodeId || (writesBack ? sourceNode.id : nanoid());
+            if (generationRequestsRef.current.has(targetId)) return;
+            const taskField = writesBack ? "model3dConvertTaskId" : "model3dTaskId";
+            const existingTaskId = retryNodeId ? nodesRef.current.find((node) => node.id === retryNodeId)?.metadata?.[taskField] : undefined;
+            const operationMetadata = { model3dOpKind: op, model3dOpParams: JSON.stringify(params) };
+            if (!writesBack && !retryNodeId) {
                 const resultNode: CanvasNodeData = {
                     id: targetId,
                     type: CanvasNodeType.Model3d,
@@ -752,12 +762,12 @@ function InfiniteCanvasPage() {
                     position: { x: sourceNode.position.x + (sourceNode.width || spec.width) + 96, y: sourceNode.position.y },
                     width: spec.width,
                     height: spec.height,
-                    metadata: { status: NODE_STATUS_LOADING, model: generationConfig.model, prompt: model3dOpLabel(op) },
+                    metadata: { status: NODE_STATUS_LOADING, model: generationConfig.model, prompt: model3dOpLabel(op), ...operationMetadata },
                 };
                 setNodes((prev) => [...prev, resultNode]);
                 setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: sourceNode.id, toNodeId: targetId }]);
             } else {
-                setNodes((prev) => prev.map((node) => (node.id === targetId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : node)));
+                setNodes((prev) => prev.map((node) => (node.id === targetId ? { ...node, metadata: { ...node.metadata, ...operationMetadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : node)));
             }
 
             const controller = startGenerationRequest(targetId, sourceNode.id, sourceNode.id);
@@ -766,7 +776,7 @@ function InfiniteCanvasPage() {
             try {
                 const source = { taskId: sourceNode.metadata?.model3dSourceTaskId, storageKey: sourceNode.metadata?.storageKey, mimeType: sourceNode.metadata?.mimeType };
                 // Rigging is billed, so the free rig-check runs first and stops a model Tripo cannot rig.
-                if (op === "rig") {
+                if (op === "rig" && !existingTaskId) {
                     const input = await resolveOpInput(generationConfig, source, { signal: controller.signal });
                     const check = await requestRigCheck(generationConfig, input, { signal: controller.signal });
                     if (!check.riggable) throw new Error(t("canvas.model3dOps.notRiggable", { type: check.rigType || "unknown" }));
@@ -781,7 +791,9 @@ function InfiniteCanvasPage() {
                 const faceLimit = Number(params.faceLimit) || undefined;
                 let result;
 
-                if (op === "retarget") {
+                if (existingTaskId) {
+                    result = await waitForModel3dOp(generationConfig, existingTaskId, options);
+                } else if (op === "retarget") {
                     // Tripo only accepts the rig task id here; the menu blocks this op when the node has none.
                     result = await requestModel3dRetarget(generationConfig, String(sourceNode.metadata?.model3dSourceTaskId), { animation: String(params.animation), outFormat: String(params.outFormat), animateInPlace: Boolean(params.animateInPlace) }, options);
                 } else if (op === "complete") {
@@ -959,10 +971,23 @@ function InfiniteCanvasPage() {
         if (!projectLoaded) return;
         nodesRef.current.filter(hasResumableVideoTask).forEach((node) => void pollVideoNodeTask(node, true));
         nodesRef.current.filter(hasResumableModel3dTask).forEach((node) => void pollModel3dNodeTask(node, true));
+        nodesRef.current.filter((node) => Boolean(node.metadata?.model3dTaskId && node.metadata?.model3dOpKind)).forEach((node) => {
+            const sourceId = connectionsRef.current.find((connection) => connection.toNodeId === node.id)?.fromNodeId;
+            const sourceNode = sourceId ? nodesRef.current.find((item) => item.id === sourceId) : undefined;
+            const op = node.metadata?.model3dOpKind as Model3dOpId | undefined;
+            const rawParams = node.metadata?.model3dOpParams;
+            if (sourceNode && op && rawParams) {
+                try {
+                    void runModel3dOperation(sourceNode, op, JSON.parse(rawParams) as Model3dOpParams, node.id);
+                } catch {
+                    // Invalid persisted metadata remains available for a manual retry.
+                }
+            }
+        });
         nodesRef.current.filter(hasResumableModel3dConvertTask).forEach((node) => void pollModel3dConvertTask(node));
         // Resume once after the current canvas is restored, not on later config identity changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [projectLoaded]);
+    }, [projectLoaded, runModel3dOperation]);
 
     useEffect(() => {
         if (!projectLoaded || !["new", "recent", "choose"].includes(searchParams.get("mode") || "")) return;
@@ -2388,7 +2413,7 @@ function InfiniteCanvasPage() {
 
     const downloadNodeImage = useCallback((node: CanvasNodeData) => {
         if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio && node.type !== CanvasNodeType.Model3d) || !node.metadata?.content) return;
-        saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : node.type === CanvasNodeType.Model3d ? model3dExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
+        void downloadFile(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : node.type === CanvasNodeType.Model3d ? model3dExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
     }, []);
 
     /** The converted artifact lives only in local storage, so its blob URL is resolved on demand. */
@@ -2401,7 +2426,7 @@ function InfiniteCanvasPage() {
                 message.error(t("canvas.model3dOps.convertedMissing"));
                 return;
             }
-            saveAs(url, `canvas-model3d-${node.id}.${convertExtension(model3dConvertedFormat)}`);
+            await downloadFile(url, `canvas-model3d-${node.id}.${convertExtension(model3dConvertedFormat)}`);
         },
         [message, t],
     );
@@ -2524,7 +2549,7 @@ function InfiniteCanvasPage() {
     const downloadBatchImage = useCallback((node: CanvasNodeData, imageId: string) => {
         const image = node.metadata?.images?.find((item) => item.id === imageId);
         if (!image?.content) return;
-        saveAs(image.content, `canvas-image-${node.id}-${image.id}.${imageExtension(image.content)}`);
+        void downloadFile(image.content, `canvas-image-${node.id}-${image.id}.${imageExtension(image.content)}`);
     }, []);
 
     const captureVideoNodeFrame = useCallback(
@@ -4040,12 +4065,27 @@ function InfiniteCanvasPage() {
             // producing an image on a 3D node. The 3D generation path handles it correctly instead: the node is
             // empty, so it writes the result back onto itself rather than creating another node.
             if (node.type === CanvasNodeType.Model3d) {
+                const op = node.metadata?.model3dOpKind as Model3dOpId | undefined;
+                const rawParams = node.metadata?.model3dOpParams;
+                if (op && rawParams) {
+                    try {
+                        const params = JSON.parse(rawParams) as Model3dOpParams;
+                        const sourceId = connections.find((connection) => connection.toNodeId === node.id)?.fromNodeId;
+                        const sourceNode = model3dOpDefinition(op).writesBack ? node : sourceId ? nodes.find((item) => item.id === sourceId) : undefined;
+                        if (sourceNode) {
+                            void runModel3dOperation(sourceNode, op, params, node.id);
+                            return;
+                        }
+                    } catch {
+                        // Keep the ordinary retry fallback when persisted operation metadata is invalid.
+                    }
+                }
                 void generateNodeRef.current?.(node.id, "model3d", node.metadata?.prompt || "");
                 return;
             }
             void handleRetryNode(node);
         },
-        [handleRetryNode],
+        [connections, handleRetryNode, nodes, runModel3dOperation],
     );
     const handleNodeContextMenu = useCallback((event: ReactMouseEvent, nodeId: string) => {
         event.preventDefault();

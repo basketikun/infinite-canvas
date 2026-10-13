@@ -99,6 +99,9 @@ export type CanvasNodeMetadata = {
     // re-uploading the glb; model3dTaskId is cleared on success, so the id is stored separately here.
     model3dSourceTaskId?: string;
     model3dTaskKind?: Model3dTaskKind;
+    // Follow-up operation metadata is saved before the request starts so a failed node can retry the same operation.
+    model3dOpKind?: string;
+    model3dOpParams?: string;
     // Rig type this model was rigged with; the retarget animation list depends on it.
     model3dRigType?: string;
     // Format conversion output, stored on the source node rather than as a new node (it cannot be previewed).

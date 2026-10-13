@@ -199,7 +199,7 @@ export function hasResumableVideoTask(node: CanvasNodeData) {
 }
 
 export function hasResumableModel3dTask(node: CanvasNodeData) {
-    return node.type === CanvasNodeType.Model3d && Boolean(node.metadata?.model3dTaskId) && !node.metadata?.content;
+    return node.type === CanvasNodeType.Model3d && Boolean(node.metadata?.model3dTaskId) && !node.metadata?.content && !node.metadata?.model3dOpKind;
 }
 
 /**
@@ -207,7 +207,7 @@ export function hasResumableModel3dTask(node: CanvasNodeData) {
  * above (which requires an empty node). Conversions are billed, so a refresh mid-conversion resumes too.
  */
 export function hasResumableModel3dConvertTask(node: CanvasNodeData) {
-    return node.type === CanvasNodeType.Model3d && Boolean(node.metadata?.model3dConvertTaskId) && !node.metadata?.model3dConvertedKey;
+    return node.type === CanvasNodeType.Model3d && Boolean(node.metadata?.model3dConvertTaskId) && Boolean(node.metadata?.model3dConvertedFormat || node.metadata?.model3dOpParams) && !node.metadata?.model3dConvertedKey;
 }
 
 /**
@@ -271,7 +271,7 @@ export function resolveMultiviewAssignment(nodeId: string, nodes: CanvasNodeData
 export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
     return nodes.map((node) =>
         node.metadata?.status === "loading"
-            ? hasResumableVideoTask(node) || hasResumableModel3dTask(node)
+            ? hasResumableVideoTask(node) || hasResumableModel3dTask(node) || Boolean(node.metadata?.model3dOpKind && (node.metadata?.model3dTaskId || node.metadata?.model3dConvertTaskId))
                 ? node
                 : {
                       ...node,

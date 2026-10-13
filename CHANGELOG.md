@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [修复] 3D 后处理任务失败后重试会恢复原操作与参数，不再把「套用动画」等操作误提交为文生 3D；中断轮询的任务会复用已有任务 ID。
+
 + [新增] 提供可发送给 AI 的画布启动连接说明与 `setup-canvas` Skill，覆盖本机自动启动、MCP 注册说明、临时 HTTP 调用及连接验收。
 + [新增] 新增 `scene-build` Skill，沉淀从场景参考图拆解、单体图与 3D 生成、角色多视图、导入 Blender 到场景布置与渲染的完整工作流。
 + [新增] 本地一键启动脚本 `node scripts/dev.mjs`：同时拉起前端和转发代理并默认开启代理，加 `--agent` 一并启动 Canvas Agent，Ctrl+C 统一退出。

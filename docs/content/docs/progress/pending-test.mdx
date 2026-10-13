@@ -7,6 +7,8 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
+- 3D 后处理失败重试：对一个已有绑骨模型执行「套用动画」并让任务失败后点击重试，确认请求仍为 `/animations/retarget`，不会把「套用动画」作为文生 3D 提示词；重试应复用原失败节点而不是新增节点。刷新页面或网络中断后重试时，应继续查询已保存的任务 ID，不应重复创建付费任务。
+
 - Blender MCP setup guide: verify upstream interactive setup and manual installation in `docs/setup-blender-mcp.md`, preserving existing MCP entries and checking telemetry settings. Confirm a real read-only scene query from the client; installation alone must not imply that the separate 60600 import bridge is configured. Upstream documentation was reviewed, but local installation was not performed.
 
 - AI startup guide and setup-canvas Skill: send `docs/setup-canvas.md` to a local-shell AI and verify it starts or reuses the frontend, proxy and Canvas Agent, opens a connected browser tab without exposing the token, and reads real canvas state through MCP or authenticated HTTP. Check missing dependencies, occupied ports, unavailable MCP tools, remote-shell-only and chat-only environments; it must not kill existing processes or claim that configuration alone establishes a connection. No automated startup acceptance was run for this documentation change.
