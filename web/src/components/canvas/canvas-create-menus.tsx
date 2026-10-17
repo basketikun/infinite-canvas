@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { ImageIcon, List, Music2, Settings2, Video, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { canvasThemes } from "@/lib/canvas-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useCanvasTheme } from "@/hooks/use-canvas-theme";
+import type { CanvasTheme } from "@/lib/canvas-theme";
 import { listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
 import { getNodeSpec } from "@/constant/canvas";
 import { CanvasNodeType, type ConnectionHandle, type Position } from "@/types/canvas";
@@ -24,7 +24,7 @@ export function ConnectionCreateMenu({
     onCreate: (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio) => void;
     onClose: () => void;
 }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const { t } = useTranslation();
     return (
         <div
@@ -53,7 +53,7 @@ export function ConnectionCreateMenu({
     );
 }
 
-export function ConnectionCreateOption({ theme, icon, title, description, onClick }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; icon: React.ReactNode; title: string; description?: string; onClick?: () => void }) {
+export function ConnectionCreateOption({ theme, icon, title, description, onClick }: { theme: CanvasTheme; icon: React.ReactNode; title: string; description?: string; onClick?: () => void }) {
     return (
         <button
             type="button"
@@ -79,7 +79,7 @@ export function ConnectionCreateOption({ theme, icon, title, description, onClic
 }
 
 export function NodeCreateMenu({ position, scale = 1, onCreate, onClose }: { position: Position; scale?: number; onCreate: (type: string) => void; onClose: () => void }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const { t } = useTranslation();
     useNodeRegistryVersion();
     const menuRef = useRef<HTMLDivElement>(null);

@@ -3,9 +3,8 @@ import { Group, Ungroup } from "lucide-react";
 import { Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { canvasThemes } from "@/lib/canvas-theme";
+import { useCanvasTheme } from "@/hooks/use-canvas-theme";
 import { nodeBounds } from "@/lib/canvas/canvas-node-geometry";
-import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasNodeData, ViewportTransform } from "@/types/canvas";
 
 const SELECTION_PAD = 14;
@@ -28,7 +27,7 @@ export function CanvasSelectionToolbar({
     onUngroup: () => void;
 }) {
     const { t } = useTranslation();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     if (nodes.length < 2) return null;
 
     const bounds = nodeBounds(nodes);

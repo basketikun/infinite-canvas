@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
-import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useCanvasTheme } from "@/hooks/use-canvas-theme";
+import { type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import type { ViewportTransform } from "@/types/canvas";
 
 type InfiniteCanvasProps = {
@@ -19,7 +19,7 @@ type InfiniteCanvasProps = {
 };
 
 export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = "lines", onViewportChange, onCanvasMouseDown, onCanvasDeselect, onCanvasDoubleClick, onContextMenu, onDrop, children }: InfiniteCanvasProps) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const panState = useRef({
         isPanning: false,
         startX: 0,
@@ -233,7 +233,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 }
 
 function CanvasGrid({ viewport, mode }: { viewport: ViewportTransform; mode: CanvasBackgroundMode }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     if (mode === "blank") return null;
 
     const gridSize = 48 * viewport.k;

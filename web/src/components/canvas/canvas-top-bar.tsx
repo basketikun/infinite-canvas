@@ -3,8 +3,8 @@ import { BookOpen, Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftO
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { useCanvasTheme } from "@/hooks/use-canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
-import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { DOCS_URL } from "@/constant/env";
@@ -56,7 +56,7 @@ export function CanvasTopBar({
 }) {
     const colorTheme = useThemeStore((state) => state.theme);
     const { t } = useTranslation();
-    const theme = canvasThemes[colorTheme];
+    const theme = useCanvasTheme();
     const titleRef = useRef<HTMLDivElement>(null);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
     const sidePanelOpen = useCanvasSidePanelStore((state) => state.panelOpen);
@@ -186,7 +186,7 @@ function MenuLabel({ text, shortcut }: { text: string; shortcut: string }) {
 
 function CompactAgentStatus({ status, onClick }: { status: { connected: boolean; enabled: boolean; activity: string }; onClick: () => void }) {
     const colorTheme = useThemeStore((state) => state.theme);
-    const theme = canvasThemes[colorTheme];
+    const theme = useCanvasTheme();
     const { t } = useTranslation();
     const label = status.connected ? t("canvas.agentConnected") : status.enabled ? t("canvas.agentConnecting", { activity: status.activity || t("canvas.connecting") }) : t("canvas.agentDisconnected");
     const dotColor = status.connected ? "#22c55e" : status.enabled ? "#f59e0b" : theme.node.muted;

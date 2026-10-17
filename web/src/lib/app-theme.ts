@@ -1,6 +1,8 @@
 import type { ThemeConfig } from "antd";
 import { theme as antdTheme } from "antd";
 
+import { buildAntColors, isDefaultTheme, type ThemePreset } from "@/lib/theme-presets";
+
 const neutral = {
     light: {
         primary: "#171717",
@@ -28,13 +30,16 @@ const neutral = {
     },
 };
 
-export function getAntThemeConfig(dark: boolean): ThemeConfig {
-    const color = dark ? neutral.dark : neutral.light;
+export function getAntThemeConfig(dark: boolean, preset: ThemePreset): ThemeConfig {
+    const custom = isDefaultTheme(preset) ? null : buildAntColors(preset);
+    const color = custom || (dark ? neutral.dark : neutral.light);
 
     return {
         algorithm: dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         cssVar: { key: dark ? "infinite-canvas-dark" : "infinite-canvas-light" },
         token: {
+            // 非默认主题时让 antd 的底色、文字、边框也跟随主题。
+            ...(custom ? { colorBgBase: custom.bgBase, colorTextBase: custom.textBase, colorBgContainer: custom.containerBg, colorBgLayout: custom.bgBase, colorBorder: custom.border, colorBorderSecondary: custom.borderSecondary } : {}),
             colorPrimary: color.primary,
             colorInfo: color.primary,
             colorLink: color.primary,
@@ -63,10 +68,10 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
                 itemHoverBg: color.itemHoverBg,
                 itemSelectedBg: color.itemSelectedBg,
                 itemSelectedColor: color.itemText,
-                darkPopupBg: neutral.dark.elevatedBg,
-                darkItemHoverBg: neutral.dark.itemHoverBg,
-                darkItemSelectedBg: neutral.dark.itemSelectedBg,
-                darkItemSelectedColor: neutral.dark.itemText,
+                darkPopupBg: custom ? color.elevatedBg : neutral.dark.elevatedBg,
+                darkItemHoverBg: custom ? color.itemHoverBg : neutral.dark.itemHoverBg,
+                darkItemSelectedBg: custom ? color.itemSelectedBg : neutral.dark.itemSelectedBg,
+                darkItemSelectedColor: custom ? color.itemText : neutral.dark.itemText,
             },
             Select: {
                 optionActiveBg: color.itemHoverBg,

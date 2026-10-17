@@ -3,7 +3,7 @@ export default {
         title: "无限画布",
         description: "一个无限画布创作工具",
     },
-    theme: { toggle: "切换主题" },
+    theme: { toggle: "切换主题", defaultLight: "默认浅色", defaultDark: "默认深色" },
     common: {
         cancel: "取消",
         save: "保存",
@@ -254,7 +254,7 @@ export default {
         nodeTypes: { image: "图片", text: "文本", config: "生成配置", video: "视频", audio: "音频", group: "组" },
         toolbar: {
             select: "选择", pan: "移动", focus: "居中聚焦", text: "文本", image: "图片", video: "视频", audio: "音频", config: "生成配置", group: "组", extensions: "扩展节点", upload: "上传资产", appearance: "画布外观", clear: "清空画布",
-            themeMode: "主题模式", light: "浅色", dark: "深色", gridStyle: "网格样式", dots: "点", lines: "线", blank: "空白", imageInfo: "图片信息",
+            themeMode: "主题", manageThemes: "管理主题", light: "浅色", dark: "深色", gridStyle: "网格样式", dots: "点", lines: "线", blank: "空白", imageInfo: "图片信息",
         },
         project: {
             untitled: "未命名画布", imported: "导入画布",
@@ -380,6 +380,22 @@ export default {
             preferences: "偏好设置",
             promptSources: "提示词来源",
             localStorage: "本地存储",
+            appearance: "外观",
+        },
+        appearance: {
+            title: "主题",
+            description: "切换后画布、页面和弹窗一起换色。也可以导入 Ghostty 主题文件（Ghostty 自带的主题在 Ghostty.app/Contents/Resources/ghostty/themes 目录下）。",
+            import: "导入 Ghostty 主题",
+            importTitle: "导入 Ghostty 主题",
+            chooseFile: "选择主题文件",
+            name: "主题名称",
+            namePlaceholder: "例如 Catppuccin Frappe",
+            content: "主题内容",
+            contentPlaceholder: "粘贴 Ghostty 主题文件内容，至少包含 background 和 foreground，例如：\nbackground = #303446\nforeground = #c6d0f5\npalette = 4=#8caaee",
+            imported: "已导入并启用主题「{{name}}」",
+            invalid: "无法识别主题：缺少 background 或 foreground",
+            custom: "已导入",
+            delete: "删除主题",
         },
         proxy: {
             title: "本地代理",

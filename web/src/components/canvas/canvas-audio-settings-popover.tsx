@@ -3,10 +3,10 @@ import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
+import { useCanvasTheme } from "@/hooks/use-canvas-theme";
+import type { CanvasTheme } from "@/lib/canvas-theme";
 import { AudioSettingsPanel } from "@/components/audio-settings-panel";
 import { audioFormatLabel, audioSpeedLabel, audioVoiceLabel } from "@/lib/audio-generation";
-import { canvasThemes } from "@/lib/canvas-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
 export type CanvasAudioSettingKey = "audioVoice" | "audioFormat" | "audioSpeed" | "audioInstructions";
@@ -19,7 +19,7 @@ type CanvasAudioSettingsPopoverProps = {
 };
 
 export function CanvasAudioSettingsPopover({ config, onConfigChange, buttonClassName, placement = "topLeft" }: CanvasAudioSettingsPopoverProps) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
@@ -73,7 +73,7 @@ function AudioSettingsPortal({
     buttonRect: DOMRect;
     panelRef: RefObject<HTMLDivElement | null>;
     placement: CanvasAudioSettingsPopoverProps["placement"];
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     config: AiConfig;
     onConfigChange: (key: CanvasAudioSettingKey, value: string) => void;
 }) {

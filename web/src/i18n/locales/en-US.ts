@@ -3,7 +3,7 @@ export default {
         title: "Infinite Canvas",
         description: "An infinite canvas creation tool",
     },
-    theme: { toggle: "Toggle theme" },
+    theme: { toggle: "Toggle theme", defaultLight: "Default Light", defaultDark: "Default Dark" },
     common: {
         cancel: "Cancel",
         save: "Save",
@@ -254,7 +254,7 @@ export default {
         nodeTypes: { image: "Image", text: "Text", config: "Generation config", video: "Video", audio: "Audio", group: "Group" },
         toolbar: {
             select: "Select", pan: "Move", focus: "Center focus", text: "Text", image: "Image", video: "Video", audio: "Audio", config: "Generation config", group: "Group", extensions: "Extension nodes", upload: "Upload assets", appearance: "Canvas appearance", clear: "Clear canvas",
-            themeMode: "Theme", light: "Light", dark: "Dark", gridStyle: "Grid style", dots: "Dots", lines: "Lines", blank: "Blank", imageInfo: "Image info",
+            themeMode: "Theme", manageThemes: "Manage themes", light: "Light", dark: "Dark", gridStyle: "Grid style", dots: "Dots", lines: "Lines", blank: "Blank", imageInfo: "Image info",
         },
         project: {
             untitled: "Untitled canvas", imported: "Imported canvas",
@@ -380,6 +380,22 @@ export default {
             preferences: "Preferences",
             promptSources: "Prompt sources",
             localStorage: "Local storage",
+            appearance: "Appearance",
+        },
+        appearance: {
+            title: "Theme",
+            description: "Switching recolors the canvas, pages and dialogs together. You can also import Ghostty theme files (Ghostty's bundled themes live in Ghostty.app/Contents/Resources/ghostty/themes).",
+            import: "Import Ghostty theme",
+            importTitle: "Import Ghostty theme",
+            chooseFile: "Choose theme file",
+            name: "Theme name",
+            namePlaceholder: "e.g. Catppuccin Frappe",
+            content: "Theme content",
+            contentPlaceholder: "Paste the Ghostty theme file. It needs at least background and foreground, e.g.:\nbackground = #303446\nforeground = #c6d0f5\npalette = 4=#8caaee",
+            imported: "Imported and applied theme \"{{name}}\"",
+            invalid: "Unrecognized theme: background or foreground is missing",
+            custom: "Imported",
+            delete: "Delete theme",
         },
         proxy: {
             title: "Local proxy",

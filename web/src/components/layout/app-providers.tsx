@@ -12,7 +12,8 @@ import { useTranslation } from "react-i18next";
 import { ClientRootInit } from "@/components/layout/client-root-init";
 import type { AppLocale } from "@/i18n";
 import { getAntThemeConfig } from "@/lib/app-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { buildThemeCssVars } from "@/lib/theme-presets";
+import { useActiveTheme, useThemeStore } from "@/stores/use-theme-store";
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -27,6 +28,7 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
     const { i18n, t } = useTranslation();
     const theme = useThemeStore((state) => state.theme);
+    const preset = useActiveTheme();
     const dark = theme === "dark";
     const locale = i18n.resolvedLanguage as AppLocale;
 
@@ -34,6 +36,14 @@ export function AppProviders({ children }: { children: ReactNode }) {
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = theme;
     }, [dark, theme]);
+
+    // 把主题推导出的 CSS 变量写到 <html> 上，切换时先清掉上一个主题的变量。
+    useEffect(() => {
+        const vars = Object.entries(buildThemeCssVars(preset));
+        const style = document.documentElement.style;
+        vars.forEach(([name, value]) => style.setProperty(name, value));
+        return () => vars.forEach(([name]) => style.removeProperty(name));
+    }, [preset]);
 
     useEffect(() => {
         document.documentElement.lang = locale;
@@ -43,7 +53,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }, [locale, t]);
 
     return (
-        <ConfigProvider locale={locale === "zh-CN" ? zhCN : enUS} theme={getAntThemeConfig(dark)}>
+        <ConfigProvider locale={locale === "zh-CN" ? zhCN : enUS} theme={getAntThemeConfig(dark, preset)}>
             <ProConfigProvider dark={dark}>
                 <App>
                     <QueryClientProvider client={queryClient}>

@@ -58,6 +58,6 @@ export const canvasThemes = {
             activeText: "#f5f5f4",
         },
     },
-} as const;
+};
 
 export type CanvasTheme = (typeof canvasThemes)[CanvasColorTheme];

@@ -4,11 +4,10 @@ import type { MenuProps } from "antd";
 import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole, MessageSquareText, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { canvasThemes } from "@/lib/canvas-theme";
+import { useCanvasTheme } from "@/hooks/use-canvas-theme";
 import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
-import { useThemeStore } from "@/stores/use-theme-store";
 
 type ScopeFilter = "all" | AgentSkillScope;
 type SkillDraftSource = "conversation" | "canvas";
@@ -19,7 +18,7 @@ const skillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function AgentSkillsView({ clientId }: { clientId: string }) {
     const { t } = useTranslation();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const { message, modal } = App.useApp();
     const connected = useAgentStore((state) => state.connected);
     const url = useAgentStore((state) => state.url);
