@@ -1,11 +1,13 @@
-import { useState, type PointerEvent as ReactPointerEvent } from "react";
+import { lazy, Suspense, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
-import { LocalAgentPanel } from "./local-agent-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { CANVAS_AGENT_PANEL_MOTION_MS, useAgentStore } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+
+// 面板内容（含 Markdown 渲染）首次打开时再加载
+const LocalAgentPanel = lazy(() => import("./local-agent-panel").then((module) => ({ default: module.LocalAgentPanel })));
 
 const PANEL_MOTION_SECONDS = CANVAS_AGENT_PANEL_MOTION_MS / 1000;
 
@@ -57,7 +59,9 @@ export function AgentPanel() {
                 style={{ width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
             >
                 <button type="button" className="absolute inset-y-0 left-0 z-40 w-4 -translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("agent.panel.resize")} />
-                <LocalAgentPanel embedded />
+                <Suspense fallback={null}>
+                    <LocalAgentPanel embedded />
+                </Suspense>
             </motion.aside>
         </motion.div>
     );

@@ -1,16 +1,12 @@
+import type { ComponentType } from "react";
 import { createBrowserRouter, Outlet } from "react-router-dom";
 
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import UserLayout from "@/layouts/user-layout";
-import AssetsPage from "@/pages/assets";
-import CanvasPage from "@/pages/canvas";
-import CanvasProjectPage from "@/pages/canvas/project";
-import ConfigPage from "@/pages/config";
-import HomePage from "@/pages/home";
-import ImagePage from "@/pages/image";
 import NotFound from "@/pages/not-found";
-import PromptsPage from "@/pages/prompts";
-import VideoPage from "@/pages/video";
+
+// 页面按路由懒加载，避免所有页面打进首屏包
+const page = (load: () => Promise<{ default: ComponentType }>) => async () => ({ Component: (await load()).default });
 
 export const router = createBrowserRouter([
     {
@@ -21,14 +17,14 @@ export const router = createBrowserRouter([
             </UserLayout>
         ),
         children: [
-            { path: "/", element: <HomePage /> },
-            { path: "/image", element: <ImagePage /> },
-            { path: "/video", element: <VideoPage /> },
-            { path: "/assets", element: <AssetsPage /> },
-            { path: "/prompts", element: <PromptsPage /> },
-            { path: "/canvas", element: <CanvasPage /> },
-            { path: "/canvas/:id", element: <CanvasProjectPage /> },
-            { path: "/config", element: <ConfigPage /> },
+            { path: "/", lazy: page(() => import("@/pages/home")) },
+            { path: "/image", lazy: page(() => import("@/pages/image")) },
+            { path: "/video", lazy: page(() => import("@/pages/video")) },
+            { path: "/assets", lazy: page(() => import("@/pages/assets")) },
+            { path: "/prompts", lazy: page(() => import("@/pages/prompts")) },
+            { path: "/canvas", lazy: page(() => import("@/pages/canvas")) },
+            { path: "/canvas/:id", lazy: page(() => import("@/pages/canvas/project")) },
+            { path: "/config", lazy: page(() => import("@/pages/config")) },
         ],
     },
     { path: "*", element: <NotFound /> },
