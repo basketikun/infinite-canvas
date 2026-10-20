@@ -76,6 +76,24 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+export const MINIMAX_TEXT_MODELS = ["MiniMax-M3.1-Flash", "MiniMax-M3"] as const;
+export const MINIMAX_CHANNEL_PRESETS = [
+    { name: "MiniMax Global", baseUrl: "https://api.minimax.io/v1" },
+    { name: "MiniMax China", baseUrl: "https://api.minimaxi.com/v1" },
+] as const;
+
+export function isMiniMaxBaseUrl(baseUrl: string) {
+    try {
+        const url = new URL(baseUrl.trim());
+        return url.protocol === "https:" && !url.port && ["api.minimax.io", "api.minimaxi.com"].includes(url.hostname) && ["", "/", "/v1", "/v1/"].includes(url.pathname);
+    } catch {
+        return false;
+    }
+}
+
+export function createMiniMaxChannel(preset: (typeof MINIMAX_CHANNEL_PRESETS)[number]) {
+    return createModelChannel({ ...preset, apiFormat: "openai", models: MINIMAX_TEXT_MODELS.map((name) => ({ name, capability: "text" })) });
+}
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
@@ -198,8 +216,15 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
 }
 
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
-    if (!capability) return config.models;
-    return config.channels.flatMap((channel) => channel.models.filter((model) => model.capability === capability).map((model) => encodeChannelModel(channel.id, model.name)));
+    const hidden = new Set(
+        config.channels.flatMap((channel) =>
+            isMiniMaxBaseUrl(channel.baseUrl) && channel.apiFormat === "openai"
+                ? channel.models.filter((model) => model.capability === "text" && !model.script && /^MiniMax-M\d/i.test(model.name) && !MINIMAX_TEXT_MODELS.some((name) => name === model.name)).map((model) => encodeChannelModel(channel.id, model.name))
+                : [],
+        ),
+    );
+    const models = capability ? config.channels.flatMap((channel) => channel.models.filter((model) => model.capability === capability).map((model) => encodeChannelModel(channel.id, model.name))) : config.models;
+    return models.filter((model) => !hidden.has(model));
 }
 
 /** The user script (if any) attached to a model; empty string means use the system default call. */

@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import i18n from "@/i18n";
-import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, isMiniMaxBaseUrl, MINIMAX_TEXT_MODELS, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -818,6 +818,27 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     }
 }
 
+async function requestMiniMaxText(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
+    const response = await fetch(aiApiUrl(config, "/chat/completions"), {
+        method: "POST",
+        headers: aiHeaders(config, "application/json"),
+        signal: options?.signal,
+        body: JSON.stringify({
+            model: config.model,
+            messages: withSystemMessage(config, messages),
+            stream: false,
+            ...(config.model === "MiniMax-M3.1-Flash" && config.reasoningEffort !== "auto" ? { reasoning_effort: config.reasoningEffort } : {}),
+        }),
+    });
+    if (!response.ok) throw new Error(await readFetchError(response, apiText("requestFailed")));
+    const payload = await response.json();
+    validateResponsePayload(payload);
+    const text = payload.choices?.[0]?.message?.content;
+    if (typeof text !== "string" || !text.trim()) throw new Error(apiText("noContent"));
+    onDelta(text);
+    return text;
+}
+
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
     const script = resolveModelScript(config, config.model || config.textModel);
@@ -844,6 +865,7 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
             if (answer === apiText("noContent")) onDelta(answer);
             return answer;
         }
+        if (isMiniMaxBaseUrl(requestConfig.baseUrl)) return await requestMiniMaxText(requestConfig, messages, onDelta, options);
         const answer = (await requestStreamingResponse(requestConfig, {
             model: requestConfig.model,
             input: toResponseInput(withSystemMessage(requestConfig, messages)),
@@ -881,6 +903,7 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
 }
 
 export async function fetchChannelModels(channel: ModelChannel) {
+    if (channel.apiFormat === "openai" && isMiniMaxBaseUrl(channel.baseUrl)) return [...MINIMAX_TEXT_MODELS];
     return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat });
 }
 

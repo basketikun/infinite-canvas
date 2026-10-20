@@ -16,7 +16,21 @@ import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent }
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import {
+    createMiniMaxChannel,
+    MINIMAX_CHANNEL_PRESETS,
+    createModelChannel,
+    modelOptionsFromChannels,
+    modelCapabilityOf,
+    normalizeModelOptionValue,
+    selectableModelsByCapability,
+    useConfigStore,
+    type AiConfig,
+    type ApiCallFormat,
+    type ConfigTabKey,
+    type ModelCapability,
+    type ModelChannel,
+} from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -100,6 +114,13 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const addChannel = () => {
         const channel = createModelChannel({ name: t("config.channels.numberedName", { count: config.channels.length + 1 }) });
         updateChannels([...config.channels, channel]);
+        setEditingChannelId(channel.id);
+    };
+
+    const addMiniMaxChannel = (preset: (typeof MINIMAX_CHANNEL_PRESETS)[number]) => {
+        const existing = config.channels.find((channel) => channel.apiFormat === "openai" && channel.baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/, "") === preset.baseUrl.replace(/\/v1$/, ""));
+        const channel = existing || createMiniMaxChannel(preset);
+        if (!existing) updateChannels([...config.channels, channel]);
         setEditingChannelId(channel.id);
     };
 
@@ -190,6 +211,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                             <div>
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                     <div className="text-xs text-stone-500">{t("config.channels.description")}</div>
+                                    {MINIMAX_CHANNEL_PRESETS.map((preset) => (
+                                        <Button key={preset.baseUrl} icon={<Plus className="size-4" />} onClick={() => addMiniMaxChannel(preset)}>
+                                            {preset.name}
+                                        </Button>
+                                    ))}
                                     <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
                                         {t("config.channels.add")}
                                     </Button>
@@ -410,7 +436,7 @@ function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
 function pickDefaultModel(config: AiConfig, capability: ModelCapability, current: string) {
     const options = selectableModelsByCapability(config, capability);
     const normalized = normalizeModelOptionValue(current, config.channels);
-    return options.includes(normalized) ? normalized : options[0] || "";
+    return modelCapabilityOf(config, normalized) === capability ? normalized : options[0] || "";
 }
 
 function normalizeImageCount(value: string) {

@@ -7,6 +7,8 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
+- MiniMax text: add either regional preset and confirm MiniMax-M3.1-Flash appears before MiniMax-M3. Repeating the action should open the existing regional channel without changing its key, models, scripts, or the app's current defaults. Select the desired text model in Preferences before generating. Text requests use Chat Completions and display the completed answer in one update; Flash uses the chosen reasoning effort, while Auto leaves its default maximum effort to the service. M3 omits reasoning effort. Check saved legacy/custom text selections and custom scripts still work, and media generation remains unchanged. If the browser origin cannot call the API directly, enable the existing Local proxy; direct browser CORS support has not been verified. No live inference was run during automated validation.
+
 - Saved model selection: save a canvas node with a model, then remove its provider or remove that model while another video model remains the default. Generation, retry and pending-video recovery should keep the unavailable model selected and open configuration instead of sending a request to the default or first provider. Re-selecting a valid model should allow generation. Changing only the API key on the same provider should preserve the model; switching a config node from a valid image model to video should still use the video default.
 
 - Local storage usage on HTTP deployments: opening the Local storage settings tab at an HTTP origin without `navigator.storage.estimate` should still show IndexedDB content statistics, display an unavailable quota instead of an error, and keep the canvas data unchanged.

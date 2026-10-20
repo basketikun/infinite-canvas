@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [Added] MiniMax regional text presets with MiniMax-M3.1-Flash first, MiniMax-M3, and native Chat Completions requests.
+
 ## v0.20.0 - 2026-10-10
 
 + [修复] 已选模型或所属渠道被移除时保留原选择并阻止生成及视频任务查询，避免静默切换到默认模型或其他渠道。
