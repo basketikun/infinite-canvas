@@ -212,6 +212,21 @@ function isAiConfigReady(config: AiConfig, model: string) {
     return Boolean(match && match.channel.baseUrl.trim() && match.channel.apiKey.trim());
 }
 
+/**
+ * Default model for a capability after channels change. Keeps the current choice while it is usable;
+ * if it sits on a channel without a base URL or API key (e.g. the built-in default channel) and another
+ * channel offering this capability is fully configured, moves to that channel's first model so a newly
+ * imported or configured channel works right away. With no usable option the previous behaviour applies.
+ */
+export function pickDefaultModel(config: AiConfig, capability: ModelCapability, current: string) {
+    const options = selectableModelsByCapability(config, capability);
+    const normalized = normalizeModelOptionValue(current, config.channels);
+    if (options.includes(normalized) && isAiConfigReady(config, normalized)) return normalized;
+    const usable = options.find((option) => isAiConfigReady(config, option));
+    if (usable) return usable;
+    return options.includes(normalized) ? normalized : options[0] || "";
+}
+
 export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({

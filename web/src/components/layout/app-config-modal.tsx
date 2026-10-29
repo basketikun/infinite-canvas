@@ -16,7 +16,7 @@ import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent }
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { pickDefaultModel, createModelChannel, modelOptionsFromChannels, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -405,12 +405,6 @@ function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
         textModel: pickDefaultModel(next, "text", config.textModel),
         audioModel: pickDefaultModel(next, "audio", config.audioModel),
     };
-}
-
-function pickDefaultModel(config: AiConfig, capability: ModelCapability, current: string) {
-    const options = selectableModelsByCapability(config, capability);
-    const normalized = normalizeModelOptionValue(current, config.channels);
-    return options.includes(normalized) ? normalized : options[0] || "";
 }
 
 function normalizeImageCount(value: string) {
