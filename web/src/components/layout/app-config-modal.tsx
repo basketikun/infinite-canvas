@@ -167,6 +167,13 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     return (
         <>
+            <div className="mb-4 flex items-center justify-between gap-4 py-3">
+                <div>
+                    <div className="font-medium">Codex 內建 ImageGen</div>
+                    <p className="mt-1 text-xs opacity-70">開啟：所有圖片生成及編輯只使用本地 Codex，不回退其他 API。關閉：恢復原有渠道設定。尺寸與品質以 Codex 支援為準；影片及文字設定不受影響。</p>
+                </div>
+                <Switch aria-label="Codex 內建 ImageGen" checked={Boolean(config.codexImageGen)} onChange={(value) => updateConfig("codexImageGen", value)} />
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3 dark:border-stone-800">
                 <div className="text-xs text-stone-500">{t("config.fileSecurity")}</div>
                 <div className="flex gap-2">

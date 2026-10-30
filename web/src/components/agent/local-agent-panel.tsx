@@ -1,3 +1,4 @@
+import { useConfigStore } from "@/stores/use-config-store";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Tooltip } from "antd";
@@ -689,7 +690,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
-                    prompt: requestPrompt,
+                    prompt: useConfigStore.getState().config.codexImageGen
+                        ? "圖片生成模式：所有生圖及修圖只准使用 Codex 內建 imagegen。禁止圖片 API、shell 生圖、canvas_generate_image 及 workbench_image_generate；不可用時直接說明錯誤，不得替代。\n" + requestPrompt
+                        : requestPrompt,
                     messageText: userText,
                     messageId,
                     clientId: clientIdRef.current,

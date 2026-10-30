@@ -25,6 +25,7 @@ export type ModelChannel = {
 };
 
 export type AiConfig = {
+    codexImageGen?: boolean;
     channelMode: "remote" | "local";
     baseUrl: string;
     apiKey: string;

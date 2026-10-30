@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Codex ImageGen toggle: verify persisted on/off state, canvas generation/regeneration, masks, angles, plugin image generation, Image Studio, and Agent chat. On uses the local Agent `/agent/codex/images` endpoint with ChatGPT sign-in and native image-generation output only; no API fallback. Off preserves existing channels. Check reference edits and cancellation, and confirm final dimensions/quality rather than assuming exact API parameter parity. Requires a local Agent built with this endpoint and Codex signed in with ChatGPT. An older Agent or unavailable native tool must report failure. Image generation runs in a separate Codex thread; the Agent chat receives a native-only instruction. Local native generation and routing regression tests passed.
+
 The current release needs manual verification in these areas:
 
 - Saved model selection: save a canvas node with a model, then remove its provider or remove that model while another video model remains the default. Generation, retry and pending-video recovery should keep the unavailable model selected and open configuration instead of sending a request to the default or first provider. Re-selecting a valid model should allow generation. Changing only the API key on the same provider should preserve the model; switching a config node from a valid image model to video should still use the video default.

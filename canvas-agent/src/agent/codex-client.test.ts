@@ -940,3 +940,37 @@ function eventScope(payload: unknown) {
 function eventType(payload: unknown) {
     return payload && typeof payload === "object" ? (payload as Record<string, unknown>).type : undefined;
 }
+
+
+test("内建生图拒绝 API Key 登录，不创建线程", async () => {
+    const client = Reflect.construct(CodexAppClient, [{}, () => undefined, emptyEventHistory]) as CodexAppClient;
+    const calls: string[] = [];
+    Reflect.set(client, "request", async (method: string) => {
+        calls.push(method);
+        return { account: { type: "apiKey" } };
+    });
+    await assert.rejects(client.startImageThread("/tmp/image-test"), /ChatGPT/);
+    assert.deepEqual(calls, ["account/read"]);
+});
+
+test("内建生图线程停用已配置 MCP、shell 和网页搜索", async () => {
+    const client = Reflect.construct(CodexAppClient, [{}, () => undefined, emptyEventHistory]) as CodexAppClient;
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    Reflect.set(client, "request", async (method: string, params: Record<string, unknown>) => {
+        calls.push({ method, params });
+        if (method === "account/read") return { account: { type: "chatgpt" } };
+        if (method === "config/read") return { config: { mcp_servers: { canvas: {}, other: {} } } };
+        return { thread: { id: "image-thread" } };
+    });
+    assert.equal((await client.startImageThread("/tmp/image-test")).id, "image-thread");
+    const settings = calls.find((call) => call.method === "thread/start")?.params;
+    assert.equal(settings?.approvalPolicy, "never");
+    assert.equal(settings?.sandbox, "read-only");
+    assert.deepEqual(settings?.config, {
+        mcp_servers: { canvas: { enabled: false }, other: { enabled: false } },
+        "features.shell_tool": false,
+        "features.unified_exec": false,
+        "features.image_generation": true,
+        web_search: "disabled",
+    });
+});

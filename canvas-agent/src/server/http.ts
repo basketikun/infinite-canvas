@@ -1,3 +1,4 @@
+import { generateNativeImages } from "../agent/native-image.js";
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
@@ -126,6 +127,21 @@ export function startHttpServer() {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });
     });
+    app.post(
+        "/agent/codex/images",
+        route(async (req, res) => {
+            const controller = new AbortController();
+            const cancel = () => {
+                if (!res.writableEnded) controller.abort();
+            };
+            res.on("close", cancel);
+            try {
+                res.json({ ok: true, images: await generateNativeImages(req.body, controller.signal) });
+            } finally {
+                res.off("close", cancel);
+            }
+        }),
+    );
     app.get("/events", (req, res) => {
         session.openEvents(requestUrl(req, config), res, ensureSiteWorkspace(config).activeThreadId || "");
     });

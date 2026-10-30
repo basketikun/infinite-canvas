@@ -156,7 +156,7 @@ export default function ImagePage() {
             if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: t("imageWorkbench.promptRequired") });
             return;
         }
-        if (!isAiConfigReady(effectiveConfig, model)) {
+        if (!config.codexImageGen && !isAiConfigReady(effectiveConfig, model)) {
             message.warning(t("workbench.configFirst"));
             openConfigDialog(true);
             if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: t("imageWorkbench.configIncomplete") });
@@ -310,7 +310,7 @@ export default function ImagePage() {
             message.error(t("imageWorkbench.promptRequired"));
             return null;
         }
-        if (!isAiConfigReady(effectiveConfig, model)) {
+        if (!config.codexImageGen && !isAiConfigReady(effectiveConfig, model)) {
             message.warning(t("workbench.configFirst"));
             openConfigDialog(true);
             return null;

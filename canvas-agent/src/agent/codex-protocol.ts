@@ -58,6 +58,8 @@ type ThreadOptions = {
 };
 
 type CodexRequestSpec = {
+    "account/read": { params: { refreshToken: boolean }; result: { account: { type: string } | null } };
+    "config/read": { params: { includeLayers: boolean }; result: { config: JsonRecord } };
     initialize: {
         params: {
             clientInfo: { name: string; title: string; version: string };

@@ -34,6 +34,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
         return () => window.removeEventListener("model-picker-open", closeOtherPicker);
     }, [pickerId]);
 
+    if (capability === "image" && config.codexImageGen) return <span className="text-sm">Codex 內建 ImageGen</span>;
     return (
         <Select
             open={open}
