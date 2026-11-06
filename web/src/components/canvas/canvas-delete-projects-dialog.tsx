@@ -5,7 +5,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 
-export function CanvasDeleteProjectsDialog() {
+export function CanvasDeleteProjectsDialog({ onDeleted }: { onDeleted?: () => void }) {
     const { t } = useTranslation();
     const ids = useCanvasUiStore((state) => state.deleteProjectIds);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
@@ -17,6 +17,7 @@ export function CanvasDeleteProjectsDialog() {
         cleanupImages();
         removeSelectedIds(ids);
         setDeleteIds([]);
+        onDeleted?.();
     };
 
     return (
