@@ -7,6 +7,14 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
+- Bulk group dragging: positions now use a transient preview and commit once on release. Confirm node/edge alignment when nodes enter the viewport, group snapping and membership, minimap geometry, concurrent content updates, blur completion, save/reload, and undo/redo. A 4539-node development copy passed the core drag and persistence checks; real media, plugin UI, and minimap-open performance still need verification. History, save, polling, and retry intervals are unchanged.
+
+- Large-canvas sidebar: list and grid views mount visible rows, while search, selection, and export still cover all matching nodes. Confirm filtered children retain their group heading, collapse/expand, reaching the last entry, panel resizing, off-screen focus, preview cleanup on scroll, and both themes. The 4539-node copy passed these checks and exported all 4539 selected entries; real-media previews and prolonged use still need verification.
+
+- Indexed references: node, adjacency, group-member, and resource indexes are shared within the current committed graph. Confirm prompt updates, text-to-video fan-out, first-config priority, duplicate-input ordering, disconnection/deletion, plugin registration/unloading, committed geometry updates, and locale changes. Indexes retain references rather than media copies; empty results are omitted and single-source arrays are shared only within that snapshot.
+
+- Canvas rendering: edge/sidebar memoization and stable callbacks reduce repeated rendering; the connection SVG no longer forces a compositor layer. Confirm panning/zooming, connection selection/context menus, sidebar content updates, and reload in both themes. The development-mode measurements are not generation or simultaneous-video-playback benchmarks.
+
 - Saved model selection: save a canvas node with a model, then remove its provider or remove that model while another video model remains the default. Generation, retry and pending-video recovery should keep the unavailable model selected and open configuration instead of sending a request to the default or first provider. Re-selecting a valid model should allow generation. Changing only the API key on the same provider should preserve the model; switching a config node from a valid image model to video should still use the video default.
 
 - Local storage usage on HTTP deployments: opening the Local storage settings tab at an HTTP origin without `navigator.storage.estimate` should still show IndexedDB content statistics, display an unavailable quota instead of an error, and keep the canvas data unchanged.

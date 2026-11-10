@@ -3,7 +3,9 @@ import i18n from "@/i18n";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { imageToDataUrl } from "@/services/image-storage";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import type { CanvasGraphIndex } from "./canvas-graph-index";
+import { createCanvasResourceIndex, getIndexedMentionResourceNodes, type CanvasResourceIndex } from "./canvas-resource-index";
 
 export type CanvasResourceKind = "image" | "video" | "audio" | "text";
 
@@ -18,8 +20,23 @@ export type CanvasResourceReference = {
     active: boolean;
 };
 
-export function buildNodeMentionReferences(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    return labelResourceNodes(getMentionResourceNodes(node.id, nodes, connections), true);
+export function createCanvasReferenceIndex(graph: CanvasGraphIndex) {
+    return createCanvasResourceIndex(graph, isResourceNode);
+}
+
+// Build once per graph, not once per node. R includes the resources expanded from groups.
+export function buildIndexedCanvasMentionReferences(index: CanvasResourceIndex) {
+    const references = new Map<string, CanvasResourceReference[]>();
+    const singleResourceReferences = new Map<string, CanvasResourceReference[]>();
+    for (const nodeId of index.graph.nodeById.keys()) {
+        const resources = getIndexedMentionResourceNodes(index, nodeId);
+        if (!resources.length) continue;
+        const shared = resources.length === 1 ? singleResourceReferences.get(resources[0].id) : undefined;
+        const labeled = shared || labelResourceNodes(resources, true);
+        references.set(nodeId, labeled);
+        if (resources.length === 1 && !shared) singleResourceReferences.set(resources[0].id, labeled);
+    }
+    return references;
 }
 
 export function buildCanvasResourceReferences(nodes: CanvasNodeData[]) {
@@ -50,36 +67,6 @@ export async function resolveCanvasReferenceImages(references: CanvasResourceRef
     }));
 }
 
-export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const configInputs = expandGroupResourceNodes(getConnectedConfigInputNodes(nodeId, nodes, connections), nodes);
-    if (configInputs.length) return configInputs;
-    const ownInputs = expandGroupResourceNodes(getContextInputNodes(nodeId, nodes, connections), nodes);
-    if (ownInputs.length) return ownInputs;
-    const node = nodes.find((item) => item.id === nodeId);
-    return node && isResourceNode(node) ? [node] : [];
-}
-
-export function getGenerationResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const configInputs = getConnectedConfigInputNodes(nodeId, nodes, connections);
-    if (configInputs.length) return configInputs;
-    const ownInputs = getContextInputNodes(nodeId, nodes, connections);
-    if (ownInputs.length) return ownInputs;
-    return [];
-}
-
-function getContextInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    return connections
-        .filter((connection) => connection.toNodeId === nodeId)
-        .map((connection) => nodes.find((node) => node.id === connection.fromNodeId))
-        .filter((node): node is CanvasNodeData => Boolean(node && isCanvasReferenceNode(node, nodes)));
-}
-
-function getConnectedConfigInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const configConnection = connections.find((connection) => connection.fromNodeId === nodeId && nodes.find((node) => node.id === connection.toNodeId)?.type === CanvasNodeType.Config);
-    if (!configConnection) return [];
-    return getContextInputNodes(configConnection.toNodeId, nodes, connections).filter((node) => node.id !== nodeId);
-}
-
 function hasGroupResources(node: CanvasNodeData, nodes: CanvasNodeData[]) {
     return node.type === CanvasNodeType.Group && getGroupResourceNodes(node.id, nodes).length > 0;
 }
@@ -88,16 +75,11 @@ export function isCanvasReferenceNode(node: CanvasNodeData, nodes: CanvasNodeDat
     return isResourceNode(node) || hasGroupResources(node, nodes);
 }
 
-function expandGroupResourceNodes(inputNodes: CanvasNodeData[], nodes: CanvasNodeData[]) {
-    const resources = inputNodes.flatMap((node) => (node.type === CanvasNodeType.Group ? getGroupResourceNodes(node.id, nodes) : [node]));
-    return [...new Map(resources.map((node) => [node.id, node])).values()];
-}
-
 export function getGroupResourceNodes(groupId: string, nodes: CanvasNodeData[]) {
     return nodes.filter((node) => node.metadata?.groupId === groupId && isResourceNode(node));
 }
 
-function labelResourceNodes(nodes: CanvasNodeData[], active: boolean) {
+function labelResourceNodes(nodes: readonly CanvasNodeData[], active: boolean) {
     const counts: Record<CanvasResourceKind, number> = { image: 0, video: 0, audio: 0, text: 0 };
     return nodes.flatMap((node): CanvasResourceReference[] => {
         const kind = resourceKind(node);
