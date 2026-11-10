@@ -7,9 +7,13 @@ description: Implemented changes that still need manual verification
 
 The current release needs manual verification in these areas:
 
-- 引用计算与空间优化：按当前图版本建立节点、入边、出边、组成员及资源索引，普通提示词矩阵全图引用计算从二次扫描降为线性遍历；空引用不进入结果 Map，共用一个上游资源的节点共享同一份引用数组。继续确认共享提示词修改、文字输出扇出、首个配置节点优先、分组移动、重复输入去重、断连/删节点、插件注册/卸载及语言切换后结果立即更新。索引只持有当前图的数据引用，不复制媒体内容、不跨图版本累计缓存；插件资源仍按新位置重算，未用忽略几何变化的缓存代替正确性。
+- Bulk group dragging: positions now use a transient preview and commit once on release. Confirm node/edge alignment when nodes enter the viewport, group snapping and membership, minimap geometry, concurrent content updates, blur completion, save/reload, and undo/redo. A 4539-node development copy passed the core drag and persistence checks; real media, plugin UI, and minimap-open performance still need verification. History, save, polling, and retry intervals are unchanged.
 
-- 大型画布交互性能：449 个节点、448 条连线的测试副本中，移除连线 SVG 的强制图层提升，缓存侧栏及连线渲染，并稳定视口回调；普通视图与全景的平移、缩放均已做相同操作的前后采样。继续确认两种主题下的连线选中和右键菜单、节点拖动后的连线跟随、侧栏搜索/聚焦/内容更新及刷新保存。当前测量是 Vite 开发模式下的空输出节点，不代表大量视频生成或同时播放的性能；未调整轮询、重试或保存间隔。
+- Large-canvas sidebar: list and grid views mount visible rows, while search, selection, and export still cover all matching nodes. Confirm filtered children retain their group heading, collapse/expand, reaching the last entry, panel resizing, off-screen focus, preview cleanup on scroll, and both themes. The 4539-node copy passed these checks and exported all 4539 selected entries; real-media previews and prolonged use still need verification.
+
+- Indexed references: node, adjacency, group-member, and resource indexes are shared within the current committed graph. Confirm prompt updates, text-to-video fan-out, first-config priority, duplicate-input ordering, disconnection/deletion, plugin registration/unloading, committed geometry updates, and locale changes. Indexes retain references rather than media copies; empty results are omitted and single-source arrays are shared only within that snapshot.
+
+- Canvas rendering: edge/sidebar memoization and stable callbacks reduce repeated rendering; the connection SVG no longer forces a compositor layer. Confirm panning/zooming, connection selection/context menus, sidebar content updates, and reload in both themes. The development-mode measurements are not generation or simultaneous-video-playback benchmarks.
 
 - Saved model selection: save a canvas node with a model, then remove its provider or remove that model while another video model remains the default. Generation, retry and pending-video recovery should keep the unavailable model selected and open configuration instead of sending a request to the default or first provider. Re-selecting a valid model should allow generation. Changing only the API key on the same provider should preserve the model; switching a config node from a valid image model to video should still use the video default.
 

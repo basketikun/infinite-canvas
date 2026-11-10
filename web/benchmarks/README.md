@@ -23,10 +23,14 @@ construction, resource eligibility, group indexing, and reference labeling.
   or all intermediate allocations. Wall-clock values vary with runtime and load.
 
 The page rebuilds indexes after nodes, connections, or plugin registration change.
-Geometry-dependent plugin resources still see position updates. Localized labels
+Geometry-dependent plugin resources see committed position updates; in-flight
+dragging uses a separate geometry preview. Localized labels
 are rebuilt when the translation function changes. Rendering changes separately
 remove forced SVG layer promotion and stabilize memoized edge/sidebar props.
 
 Algorithm timings do not measure browser frame times, API generation latency, or
 decoding/playback of hundreds of real videos. Validate panning, zooming, dragging,
 selection/context menus, sidebar updates, and both themes in a real browser.
+
+See [browser interaction measurements](canvas-interactions.md) for the sidebar
+and group-drag scenarios, observed results, regression checks, and limitations.

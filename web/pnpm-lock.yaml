@@ -20,6 +20,9 @@ importers:
       '@codemirror/lang-json':
         specifier: ^6.0.2
         version: 6.0.2
+      '@rc-component/virtual-list':
+        specifier: ^1.0.2
+        version: 1.5.2(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@tanstack/react-query':
         specifier: ^5.100.9
         version: 5.104.1(react@19.2.5)
