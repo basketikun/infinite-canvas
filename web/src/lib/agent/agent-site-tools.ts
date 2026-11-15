@@ -2,9 +2,14 @@ import type { NavigateFunction } from "react-router-dom";
 
 import i18n from "@/i18n";
 import { fetchPrompts } from "@/services/api/prompts";
+import { requestImageQuestion } from "@/services/api/image";
+import { getMediaBlob, uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { imageAspectOptions, imageQualityOptions, imageScaleOptions } from "@/components/image-settings-panel";
 import { videoResolutionOptions, videoSecondsRange, videoSizeOptions } from "@/components/video-settings-panel";
+import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
+import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { nanoid } from "nanoid";
 import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { clampVideoSeconds } from "@/lib/media-size";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -22,6 +27,9 @@ export const SITE_TOOL_NAMES = [
     "workbench_image_generate",
     "workbench_video_get_config",
     "workbench_video_generate",
+    "canvas_video_analyze",
+    "canvas_video_trim",
+    "canvas_video_stitch",
     "prompts_search",
     "assets_list",
     "assets_add",
@@ -44,6 +52,9 @@ export const SITE_TOOL_LABELS: Record<SiteToolName, string> = {
     get workbench_image_generate() { return siteText("imageGenerate"); },
     get workbench_video_get_config() { return siteText("videoConfig"); },
     get workbench_video_generate() { return siteText("videoGenerate"); },
+    get canvas_video_analyze() { return siteText("videoAnalyze"); },
+    get canvas_video_trim() { return siteText("videoTrim"); },
+    get canvas_video_stitch() { return siteText("videoStitch"); },
     get prompts_search() { return siteText("promptSearch"); },
     get assets_list() { return siteText("assetList"); },
     get assets_add() { return siteText("assetAdd"); },
@@ -68,6 +79,12 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
             return getVideoConfig();
         case "workbench_video_generate":
             return runVideoWorkbench(input, navigate);
+        case "canvas_video_analyze":
+            return analyzeCanvasVideo(input, context.canvasSnapshot);
+        case "canvas_video_trim":
+            return trimCanvasVideo(input, context.canvasSnapshot);
+        case "canvas_video_stitch":
+            return stitchCanvasVideos(input, context.canvasSnapshot);
         case "prompts_search":
             return searchPrompts(input);
         case "assets_list":
@@ -77,6 +94,91 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
         default:
             throw new Error(siteText("unknownTool", { name }));
     }
+}
+
+function videoToolUrl(path: string) {
+    return `${window.location.pathname.startsWith("/canvas2/") ? "/canvas2" : ""}/api/video/${path}`;
+}
+
+async function videoNodeBlob(node: CanvasNodeData) {
+    if (node.type !== CanvasNodeType.Video || !node.metadata?.content) throw new Error(siteText("videoNodeRequired"));
+    const stored = node.metadata.storageKey ? await getMediaBlob(node.metadata.storageKey) : null;
+    if (stored) return stored;
+    const response = await fetch(node.metadata.content);
+    if (!response.ok) throw new Error(siteText("videoReadFailed"));
+    return response.blob();
+}
+
+async function postVideoTool(path: string, files: Array<{ name: string; blob: Blob }>, fields: Record<string, string> = {}) {
+    const form = new FormData();
+    files.forEach(({ name, blob }) => form.append("files", blob, name));
+    Object.entries(fields).forEach(([name, value]) => form.append(name, value));
+    const response = await fetch(videoToolUrl(path), { method: "POST", body: form });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(typeof error.error === "string" ? error.error : siteText("videoToolFailed"));
+    }
+    return response;
+}
+
+function appendCanvasResult(snapshot: CanvasAgentSnapshot, node: CanvasNodeData, sourceIds: string[]) {
+    const state = useCanvasStore.getState();
+    const project = state.projects.find((item) => item.id === snapshot.projectId);
+    if (!project) throw new Error(siteText("canvasLoading"));
+    const connections = sourceIds.map((fromNodeId) => ({ id: nanoid(), fromNodeId, toNodeId: node.id }));
+    state.updateProject(project.id, { nodes: [...project.nodes, node], connections: [...project.connections, ...connections] });
+    return { projectId: project.id, nodeId: node.id, title: node.title, connectedFrom: sourceIds };
+}
+
+function nextCanvasPosition(snapshot: CanvasAgentSnapshot) {
+    return { x: Math.max(0, ...snapshot.nodes.map((node) => node.position.x + node.width)) + 240, y: 80 };
+}
+
+async function trimCanvasVideo(input: SiteToolInput, snapshot?: CanvasAgentSnapshot | null) {
+    if (!snapshot) throw new Error(siteText("openCanvasFirst"));
+    const nodeId = String(input.nodeId || "");
+    const source = snapshot.nodes.find((node) => node.id === nodeId);
+    if (!source) throw new Error(siteText("videoNodeRequired"));
+    const blob = await videoNodeBlob(source);
+    const response = await postVideoTool("trim", [{ name: `${source.title || "video"}.mp4`, blob }], { start: String(input.start), duration: String(input.duration) });
+    const stored = await uploadMediaFile(await response.blob(), "video");
+    const node = createCanvasNode(CanvasNodeType.Video, nextCanvasPosition(snapshot), videoMetadata(stored));
+    node.title = `${source.title || siteText("videoResultTitle")} · ${siteText("videoTrim")}`;
+    return appendCanvasResult(snapshot, node, [source.id]);
+}
+
+async function stitchCanvasVideos(input: SiteToolInput, snapshot?: CanvasAgentSnapshot | null) {
+    if (!snapshot) throw new Error(siteText("openCanvasFirst"));
+    const ids = Array.isArray(input.nodeIds) ? input.nodeIds.map(String) : [];
+    const sources = ids.map((id) => snapshot.nodes.find((node) => node.id === id)).filter((node): node is CanvasNodeData => Boolean(node));
+    if (sources.length < 2) throw new Error(siteText("videoStitchNeedsTwo"));
+    const files = await Promise.all(sources.map(async (node) => ({ name: `${node.title || node.id}.mp4`, blob: await videoNodeBlob(node) })));
+    const response = await postVideoTool("stitch", files);
+    const stored = await uploadMediaFile(await response.blob(), "video");
+    const node = createCanvasNode(CanvasNodeType.Video, nextCanvasPosition(snapshot), videoMetadata(stored));
+    node.title = siteText("videoStitchedTitle");
+    return appendCanvasResult(snapshot, node, sources.map((source) => source.id));
+}
+
+async function analyzeCanvasVideo(input: SiteToolInput, snapshot?: CanvasAgentSnapshot | null) {
+    if (!snapshot) throw new Error(siteText("openCanvasFirst"));
+    const source = snapshot.nodes.find((node) => node.id === String(input.nodeId || ""));
+    if (!source) throw new Error(siteText("videoNodeRequired"));
+    const blob = await videoNodeBlob(source);
+    const response = await postVideoTool("frames", [{ name: `${source.title || "video"}.mp4`, blob }]);
+    const data = (await response.json()) as { frames: Array<{ time: number; dataUrl: string }> };
+    if (!data.frames?.length) throw new Error(siteText("videoFramesFailed"));
+    const content = [{ type: "text" as const, text: siteText("videoAnalyzePrompt", { title: source.title, count: data.frames.length }) }, ...data.frames.flatMap((frame) => [
+        { type: "text" as const, text: siteText("videoFrameTime", { time: frame.time.toFixed(2) }) },
+        { type: "image_url" as const, image_url: { url: frame.dataUrl } },
+    ])];
+    let text = "";
+    const answer = await requestImageQuestion(useConfigStore.getState().config, [{ role: "user", content }], (delta) => { text += delta; });
+    if (!text.trim()) text = answer;
+    if (!text.trim()) throw new Error(siteText("videoAnalysisEmpty"));
+    const node = createCanvasNode(CanvasNodeType.Text, nextCanvasPosition(snapshot), { content: text.trim() });
+    node.title = siteText("videoAnalysisTitle", { title: source.title || source.id });
+    return { ...appendCanvasResult(snapshot, node, [source.id]), scenes: text.trim(), keyframes: data.frames.map(({ time }) => time) };
 }
 
 function getGenerationStatus(input: SiteToolInput, canvasSnapshot?: CanvasAgentSnapshot | null) {
