@@ -9,10 +9,10 @@ import { imageAspectOptions, imageQualityOptions, imageScaleOptions } from "@/co
 import { videoResolutionOptions, videoSecondsRange, videoSizeOptions } from "@/components/video-settings-panel";
 import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { nanoid } from "nanoid";
-import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { clampVideoSeconds } from "@/lib/media-size";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useAgentStore } from "@/stores/use-agent-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionLabel, modelOptionName, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
@@ -97,7 +97,7 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
 }
 
 function videoToolUrl(path: string) {
-    return `${window.location.pathname.startsWith("/canvas2/") ? "/canvas2" : ""}/api/video/${path}`;
+    return `${import.meta.env.BASE_URL}api/video/${path}`;
 }
 
 async function videoNodeBlob(node: CanvasNodeData) {
@@ -122,12 +122,15 @@ async function postVideoTool(path: string, files: Array<{ name: string; blob: Bl
 }
 
 function appendCanvasResult(snapshot: CanvasAgentSnapshot, node: CanvasNodeData, sourceIds: string[]) {
-    const state = useCanvasStore.getState();
-    const project = state.projects.find((item) => item.id === snapshot.projectId);
-    if (!project) throw new Error(siteText("canvasLoading"));
-    const connections = sourceIds.map((fromNodeId) => ({ id: nanoid(), fromNodeId, toNodeId: node.id }));
-    state.updateProject(project.id, { nodes: [...project.nodes, node], connections: [...project.connections, ...connections] });
-    return { projectId: project.id, nodeId: node.id, title: node.title, connectedFrom: sourceIds };
+    const context = useAgentStore.getState().canvasContext;
+    if (!context || context.snapshot.projectId !== snapshot.projectId) throw new Error(siteText("videoCanvasChanged"));
+    if (sourceIds.some((id) => !context.snapshot.nodes.some((item) => item.id === id))) throw new Error(siteText("videoNodeRequired"));
+    const ops: CanvasAgentOp[] = [
+        { type: "add_node", nodeType: node.type, id: node.id, title: node.title, position: node.position, width: node.width, height: node.height, metadata: node.metadata },
+        ...sourceIds.map((fromNodeId) => ({ type: "connect_nodes" as const, fromNodeId, toNodeId: node.id })),
+    ];
+    context.applyOps(ops);
+    return { projectId: snapshot.projectId, nodeId: node.id, title: node.title, connectedFrom: sourceIds };
 }
 
 function nextCanvasPosition(snapshot: CanvasAgentSnapshot) {
@@ -150,8 +153,12 @@ async function trimCanvasVideo(input: SiteToolInput, snapshot?: CanvasAgentSnaps
 async function stitchCanvasVideos(input: SiteToolInput, snapshot?: CanvasAgentSnapshot | null) {
     if (!snapshot) throw new Error(siteText("openCanvasFirst"));
     const ids = Array.isArray(input.nodeIds) ? input.nodeIds.map(String) : [];
-    const sources = ids.map((id) => snapshot.nodes.find((node) => node.id === id)).filter((node): node is CanvasNodeData => Boolean(node));
-    if (sources.length < 2) throw new Error(siteText("videoStitchNeedsTwo"));
+    if (ids.length < 2) throw new Error(siteText("videoStitchNeedsTwo"));
+    const sources = ids.map((id) => {
+        const source = snapshot.nodes.find((node) => node.id === id);
+        if (!source) throw new Error(siteText("videoNodeRequired"));
+        return source;
+    });
     const files = await Promise.all(sources.map(async (node) => ({ name: `${node.title || node.id}.mp4`, blob: await videoNodeBlob(node) })));
     const response = await postVideoTool("stitch", files);
     const stored = await uploadMediaFile(await response.blob(), "video");

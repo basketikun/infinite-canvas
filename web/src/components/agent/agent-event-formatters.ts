@@ -505,7 +505,7 @@ export function formatBytes(bytes: number) {
 }
 
 export function isCanvasWriteTool(name: string) {
-    return name === "canvas_apply_ops" || name === "canvas_create_attachment_nodes";
+    return ["canvas_apply_ops", "canvas_create_attachment_nodes", "canvas_video_analyze", "canvas_video_trim", "canvas_video_stitch"].includes(name);
 }
 
 function parseToolArguments(value: unknown) {
