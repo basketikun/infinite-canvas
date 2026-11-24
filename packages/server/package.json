@@ -1,0 +1,35 @@
+{
+  "name": "@infinite-canvas/server",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts",
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --import tsx --test src/plugins/*.test.ts"
+  },
+  "dependencies": {
+    "@infinite-canvas/model-runtime": "workspace:*",
+    "@infinite-canvas/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "axios": "^1.16.0",
+    "eventsource-parser": "^3.1.0",
+    "express": "^5.1.0",
+    "fs-native-extensions": "^1.5.3",
+    "modern-tar": "^0.8.0",
+    "npm-package-arg": "^13.0.0",
+    "winston": "^3.19.0",
+    "ws": "^8.18.3",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/npm-package-arg": "^6.1.4",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

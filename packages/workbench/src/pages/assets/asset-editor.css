@@ -1,0 +1,37 @@
+.asset-dialog-overlay { padding-top: 100px; }
+.asset-dialog-body { width: calc(100% - 16px); }
+.asset-field { position: relative; margin-bottom: 24px; }
+.asset-field > label { display: block; padding-bottom: 8px; }
+.asset-field [role="alert"] { position: absolute; top: 100%; color: var(--workbench-message-error); }
+.asset-dialog-body :is([data-slot="input"], [data-slot="textarea"]) {
+    height: 32px;
+    padding: 4px 11px;
+    border: 1px solid var(--asset-border);
+    border-radius: 6px;
+    color: inherit;
+    background: var(--asset-control);
+    box-shadow: none;
+    line-height: 22px;
+    font-size: 14px;
+}
+.asset-dialog-body .asset-input-large { height: 40px; padding: 7px 11px; border-radius: 8px; font-size: 16px; line-height: 24px; }
+.asset-dialog-body .asset-editor-textarea { height: 100% !important; resize: none; }
+.asset-editor-body .asset-field { margin-bottom: 0; }
+.asset-dialog-body [data-slot="textarea"] { height: auto; field-sizing: fixed; resize: vertical; }
+.asset-dialog-body :is(input, textarea)::placeholder { color: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%)); }
+.asset-dialog-body :is([data-slot="input"], [data-slot="textarea"]):is(:hover, :focus, :focus-within) { border-color: var(--asset-accent); }
+.asset-dialog-body [aria-invalid="true"] { border-color: var(--workbench-message-error); }
+.asset-dialog-body [data-slot="button"] { color: inherit; height: 32px; padding: 0 15px; gap: 8px; font-size: 14px; line-height: 22px; font-weight: 400; border-radius: 6px; box-shadow: none; cursor: pointer; }
+.asset-dialog-body [data-variant="outline"] { border: 1px solid var(--asset-border); background: var(--asset-control); }
+.asset-dialog-body [data-variant="default"] { border: 1px solid transparent; background: var(--asset-accent); color: var(--asset-accent-text); }
+.asset-dialog-body [data-variant="destructive"] { border: 1px solid transparent; background: var(--workbench-message-error); color: var(--asset-accent-text); }
+.asset-dialog-body [data-variant="destructive"]:hover { background: light-dark(#ff7875, #e84749); }
+.asset-dialog-body [data-variant="outline"]:hover { border-color: var(--asset-accent); color: var(--asset-accent); }
+.asset-dialog-body fieldset:disabled { opacity: .6; }
+@media (max-width: 767px) {
+    .asset-dialog-overlay { padding-top: 108px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+    .asset-dialog-overlay[data-state="open"] { animation: enter .3s both; --tw-enter-opacity: 0; }
+    .asset-dialog-overlay[data-state="closed"] { animation: exit .3s both; --tw-exit-opacity: 0; }
+}

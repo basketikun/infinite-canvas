@@ -8,7 +8,7 @@
       "name": "infinite-canvas",
       "source": {
         "source": "local",
-        "path": "./plugins/infinite-canvas"
+        "path": "./agent-plugins/infinite-canvas"
       },
       "policy": {
         "installation": "AVAILABLE",

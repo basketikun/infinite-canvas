@@ -20,26 +20,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        working-directory: web
-        run: bun install
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build
-        working-directory: web
+        working-directory: apps/web
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
-        run: bun run build
+        run: pnpm run build
 
       - name: Add SPA fallback
-        run: cp web/dist/index.html web/dist/404.html
+        run: cp apps/web/dist/index.html apps/web/dist/404.html
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: apps/web/dist
 
   deploy:
     needs: build

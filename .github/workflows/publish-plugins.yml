@@ -1,47 +1,59 @@
-name: Publish Official Plugins
+name: Publish Plugins
 
-# 构建官方插件并把产物(bundle + 清单)强推到孤儿分支 plugins-dist。
-# 与 github-pages.yml 一致,在打版本 tag 时触发 —— 发版时 web 与官方插件一起发布。
-# 前端经 jsDelivr 从该分支远程拉取;构建产物不进 main、不进 git。
+# 构建插件并发布到 plugins-dist-v1 分支（插件源，分支只保留一个提交）；由维护者手动触发。
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
-
 permissions:
   contents: write
-
-concurrency:
-  group: publish-plugins
-  cancel-in-progress: false
-
+concurrency: plugins-dist
 jobs:
-  publish:
+  package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Install build dependencies
-        working-directory: plugins/canvas/registry
-        run: npm install --no-audit --no-fund
-
-      - name: Build official plugins
-        working-directory: plugins/canvas/registry
-        run: npm run build
-
-      - name: Publish to plugins-dist branch
-        working-directory: plugins/canvas/registry/dist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm lint:plugins
+      - name: Build and pack release plugins
         run: |
-          git init -q
+          mkdir -p artifacts
+          for dir in packages/{shared,plugin-sdk}; do
+            pnpm --dir "$dir" pack --pack-destination "$GITHUB_WORKSPACE/artifacts"
+          done
+          for dir in plugins/{multi-format-renderer,panorama,themes,api-stats,director-desk,webdav-sync}; do
+            pnpm --dir "$dir" run build
+            pnpm --dir "$dir" pack --pack-destination "$GITHUB_WORKSPACE/artifacts"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-plugins
+          path: artifacts/*.tgz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-template
+          path: plugins/template/
+          if-no-files-found: error
+      - name: Publish plugin source
+        run: |
+          if git ls-remote --exit-code --heads "https://github.com/$GITHUB_REPOSITORY.git" plugins-dist-v1 > /dev/null; then
+            git clone --branch plugins-dist-v1 --single-branch "https://github.com/$GITHUB_REPOSITORY.git" plugin-source
+          else
+            [ $? -eq 2 ] || exit 1
+            mkdir plugin-source
+          fi
+          node scripts/publish-plugin-index.mjs artifacts plugin-source plugins/{multi-format-renderer,panorama,themes,api-stats,director-desk,webdav-sync}
+          cd plugin-source
+          rm -rf .git
+          git init -q -b plugins-dist-v1
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -q -b plugins-dist
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -q -m "publish official plugins @ ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" plugins-dist
+          git commit -q -m "plugins: publish"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/$GITHUB_REPOSITORY.git" plugins-dist-v1

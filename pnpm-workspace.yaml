@@ -1,0 +1,18 @@
+packages:
+  - apps/*
+  - packages/*
+  - plugins/*
+overrides:
+  # Fumadocs 16.9.3 包装 Markdown 处理器时会丢失 2.2 的强调标记，导致文档页递归报错。
+  'fumadocs-core@16.9.3>mdast-util-to-markdown': 2.1.2
+allowBuilds:
+  pnpm: false
+  esbuild: true
+  sharp: true
+minimumReleaseAgeExclude:
+  - '@ai-sdk/anthropic@4.0.90'
+  - '@ai-sdk/gateway@4.0.128'
+  - '@ai-sdk/google@4.0.107'
+  - '@ai-sdk/openai@4.0.104'
+  - '@ai-sdk/provider-utils@5.0.70'
+  - ai@7.0.155

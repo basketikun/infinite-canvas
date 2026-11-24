@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "infinite-canvas": {
+      "command": "npx",
+      "args": ["-y", "@basketikun/infinite-canvas@latest", "mcp"],
+      "startup_timeout_sec": 20,
+      "tool_timeout_sec": 90
+    }
+  }
+}

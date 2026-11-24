@@ -1,0 +1,347 @@
+---
+title: 调用脚本开发
+description: 从零写一个调用脚本，把任意模型服务接入无限画布
+---
+
+# 调用脚本开发
+
+调用脚本决定「一次生成请求怎么发给模型服务、结果怎么读回来」。内置脚本覆盖了 OpenAI 兼容、Gemini、Grok、Seedance 等常见协议（见[内置调用方式](/docs/development/builtin-call-scripts)）；遇到字段不同的中转站、自建服务或新厂商，自己写一个脚本即可接入，不需要改项目代码。
+
+## 工作方式
+
+```text
+渠道（服务地址）
+  └─ 分组（API Key）
+       └─ 模型（名称 + 用途 + 调用方式）  ← 调用方式就是一个调用脚本
+```
+
+发起生成时，应用负责界面、参数收集、参考素材整理、视频轮询和结果保存；脚本只做两件事：
+
+1. 把 `params`（模型、提示词、参考素材、生成设置）翻译成服务需要的请求；
+2. 把服务返回的内容翻译成应用能识别的结果。
+
+每个脚本只对应一种用途：`image`（生图）、`video`（视频）、`text`（文本）、`audio`（音频）。同一个服务有多种用途时，分别写多个脚本。
+
+### 执行位置
+
+| 模式 | 脚本运行在 | 说明 |
+| --- | --- | --- |
+| 纯 Web | 当前页面 | 浏览器直接请求模型服务，服务需允许跨域，或在设置中开启本地代理 |
+| CLI / 桌面版 | 本地服务进程（Node.js） | 由服务读取密钥并发送请求，没有跨域限制 |
+
+源码通过 `new Function` 执行：不能使用 `import`、`require` 和 Node 专有接口，只能用标准 JavaScript 与 `params` 提供的能力。脚本没有沙箱隔离，可以读取所选渠道的密钥并访问网络，请只运行你信任的脚本。
+
+## 快速开始
+
+1. 打开「设置 → 渠道」，新增渠道并填写服务地址，在分组中填写 API Key，添加模型并选好用途。
+2. 点模型的「调用方式」打开选择面板，点「新增脚本」。想在内置脚本基础上改，选中内置脚本后点「另存修改」。
+3. 编辑器中填写名称、说明（建议写请求方法与路径），选择用途。源码区会填入该用途的初始模板，注释列出全部可用参数、生成设置、辅助方法和返回要求。
+4. 在 `main(params)` 中写调用逻辑，删除模板里的 `throw new Error("SCRIPT_NOT_IMPLEMENTED")`，保存。
+5. 为模型选择这个脚本，保存渠道，回到创作页或画布发起一次生成验证。
+
+不知道怎么写时，点编辑器里的「复制说明」，把说明和服务的接口文档一起发给你的 AI，让它按模板写出脚本。
+
+保存后，所有使用该脚本的模型立即生效。改了脚本的用途后，用途不一致的模型需要重新选择调用方式。
+
+## 脚本结构
+
+源码只定义一个异步函数 `main`，由应用传入参数并调用：
+
+```js
+async function main(params) {
+    const { model, prompt, options, utils } = params;
+    // 调用服务，并 return 结果
+}
+```
+
+- 不要在文件末尾自己调用 `main`，也不要写顶层 `return`、`import` 或 Markdown 代码围栏。
+- 只解构需要的字段；应用以后新增参数时，已有脚本无需修改。
+- 失败时直接 `throw new Error("原因")`，应用会统一转成用户提示。
+
+## 通用参数
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `capability` | `string` | 当前用途：`image`、`video`、`text`、`audio` |
+| `model` | `string` | 模型名称，不含渠道前缀 |
+| `baseUrl` | `string` | 渠道服务地址，原样传入 |
+| `apiKey` | `string` | 所选分组的密钥；不要写死在源码中 |
+| `prompt` | `string` | 本次提示词；生图时已拼入系统提示词。文本用途为空字符串，请读 `messages` |
+| `systemPrompt` | `string` | 原始系统提示词 |
+| `reasoningEffort` | `string` | 文本思考程度，`auto` 表示由服务决定 |
+| `images` / `videos` / `audios` | `string[]` | 参考素材原始链接，按输入顺序排列；可能是 HTTP 地址、`blob:` 或 `data:` URL，没有时为空数组 |
+| `messages` | `Array` | 文本对话消息，已包含系统消息 |
+| `tools` | `object \| undefined` | 仅文本用途：画布聊天时存在，见下文「支持画布聊天」 |
+| `taskId` | `string \| undefined` | 仅视频：创建时为空，查询时为创建返回的 `id` |
+| `signal` | `AbortSignal` | 取消信号；`utils` 发出的请求已自动携带 |
+| `options` | `object` | 当前用途的生成设置，见下表；视频查询时为空 |
+| `utils` | `object` | 辅助方法，见「辅助方法」 |
+
+参考素材不会预先下载或转换。需要文件时调用 `await utils.toBlob(url)`，需要 Base64 时调用 `await utils.toDataUrl(url)`，服务只接受公网链接时调用 `await utils.toPublicUrl(url)`。
+
+## 各用途的生成设置
+
+未设置的字段为 `undefined`，脚本按服务能力自行转换或忽略。
+
+**image**
+
+| 字段 | 说明 |
+| --- | --- |
+| `size` | 像素尺寸，如 `1024x1024`；选「自动」时未设置 |
+| `ratio` | 原始比例，如 `16:9` |
+| `resolution` | 预设档位，如 `1K`、`2K`、`4K`；自定义尺寸时未设置 |
+| `quality` | 图片质量 |
+| `count` | 生成数量 |
+| `background` | `transparent` 表示透明背景 |
+
+**video**
+
+| 字段 | 说明 |
+| --- | --- |
+| `mode` | `frames` 首尾帧；`reference` 多素材参考 |
+| `seconds` | 时长（秒，字符串） |
+| `size` | 像素尺寸；自动时为 `null` |
+| `resolution` | 如 `720p`、`1080p` |
+| `ratio` | 如 `16:9` |
+| `generateAudio` | 是否生成声音 |
+| `watermark` | 是否添加水印 |
+
+**audio**
+
+| 字段 | 说明 |
+| --- | --- |
+| `voice` | 音色 |
+| `format` | 音频格式 |
+| `speed` | 语速 |
+| `instructions` | 朗读风格要求 |
+
+**text** 没有 `options`，使用 `messages`、`systemPrompt`、`reasoningEffort`。`messages` 中每条为 `{ role, content }`，`content` 是字符串，或由 `{ type: "text", text }` 与 `{ type: "image_url", image_url: { url } }` 组成的数组。
+
+## 辅助方法
+
+所有请求自动使用渠道代理设置与取消信号。
+
+| 方法 | 用法 |
+| --- | --- |
+| `utils.http.post(path, body, options)` | 自动加 `Authorization: Bearer <apiKey>`，相对路径拼接到 `baseUrl` 并补 `/v1`，返回响应内容；`options` 支持 `headers`、`params`、`responseType` |
+| `utils.http.get(path, options)` | 同上，GET 请求 |
+| `utils.http.url(path)` | 生成带 `/v1` 的完整地址；`baseUrl` 已以 `/v1` 结尾时不重复追加 |
+| `utils.request(options)` | 自行设置鉴权：`{ method, url, headers, data, params, responseType, timeout }`；相对地址不加 `/v1` |
+| `utils.stream(options, onEvent)` | POST 并逐个读取 SSE 或 JSON 事件：`{ url, headers, data }`；需自行设置鉴权；事件中带 `error` 会自动按失败处理 |
+| `utils.onDelta(text)` | 文本用途推送截至目前的**完整**文本（不是增量） |
+| `utils.poll(request, extract, options)` | 循环请求，`extract` 返回 `null`、`undefined` 或 `false` 时继续；`options` 支持 `intervalMs`（默认 2500）、`timeoutMs`（默认 300000） |
+| `utils.sleep(ms)` | 可取消的等待 |
+| `utils.toBlob(source)` | URL、data URL、File 转 Blob |
+| `utils.toDataUrl(source)` | URL、Blob、File 转 data URL |
+| `utils.toPublicUrl(source)` | 公网链接原样返回；其他素材上传到「设置 → 对象存储」配置的 S3 兼容存储，返回公开链接 |
+| `utils.markdownImages(text)` | 提取 Markdown 中的图片链接 |
+| `utils.markdownLinks(text)` | 提取 Markdown 中的普通链接 |
+| `utils.runTextAgent(protocol, settings)` | 仅文本用途，画布聊天时使用，见下文 |
+
+## 返回值
+
+| 用途 | 返回 |
+| --- | --- |
+| image | 数组，元素是 URL、data URL，或 `{ url }` / `{ b64_json }`；至少一张 |
+| text | 完整文本字符串；画布聊天时返回 `utils.runTextAgent` 的结果 |
+| audio | Blob、URL、data URL、Base64，或 `{ url }` / `{ b64_json }` |
+| video | 创建：`{ id }`；查询：`{ status: "pending" }`、`{ status: "failed", message }` 或 `{ status: "completed", result: { url } }`；服务同步完成时也可直接返回 URL、Blob 或 `{ url }` |
+
+返回空值或类型不对时，界面会提示未能读取生成结果。
+
+## 示例：图片
+
+对接一个 OpenAI Images 风格的服务，有参考图时走编辑接口：
+
+```js
+async function main(params) {
+    const { model, prompt, images, apiKey, options, utils } = params;
+    const { size, count } = options;
+    let data;
+    if (images.length) {
+        const form = new FormData();
+        form.set("model", model);
+        form.set("prompt", prompt);
+        form.set("n", String(count));
+        for (const image of images) {
+            form.append("image[]", await utils.toBlob(image), "ref.png");
+        }
+        data = await utils.request({
+            method: "post",
+            url: utils.http.url("/images/edits"),
+            headers: {
+                Authorization: "Bearer " + apiKey,
+            },
+            data: form,
+            timeout: 600000,
+        });
+    } else {
+        data = await utils.http.post("/images/generations", {
+            model,
+            prompt,
+            n: count,
+            ...(size ? { size } : {}),
+            response_format: "b64_json",
+        });
+    }
+    return data.data;
+}
+```
+
+`data.data` 是 `[{ b64_json }]` 或 `[{ url }]`，可以直接返回。
+
+## 示例：流式文本
+
+对接 Chat Completions 风格的服务，边生成边显示：
+
+```js
+async function main(params) {
+    const { model, messages, apiKey, utils } = params;
+    let text = "";
+    await utils.stream(
+        {
+            url: utils.http.url("/chat/completions"),
+            headers: {
+                Authorization: "Bearer " + apiKey,
+            },
+            data: {
+                model,
+                messages,
+                stream: true,
+            },
+        },
+        (event) => {
+            const delta = event.choices?.[0]?.delta?.content;
+            if (delta) {
+                text += delta;
+                utils.onDelta(text);
+            }
+        },
+    );
+    if (!text) {
+        throw new Error("模型没有返回内容");
+    }
+    return text;
+}
+```
+
+- `utils.stream` 的 `url` 是相对地址时直接拼到 `baseUrl` 后，不会补 `/v1`，所以示例用 `utils.http.url` 生成完整地址。
+- 消息里的图片可能是 `blob:` 地址，服务不认时先用 `utils.toDataUrl` 转换。
+- 服务不支持流式时，用 `utils.http.post` 取完整结果后直接 `return`。
+
+### 支持画布聊天
+
+画布右侧聊天和创作页 Agent 会以「工具模式」调用文本脚本，此时 `params.tools` 存在，`messages` 使用 AI SDK 的消息格式。不要自己拼工具调用，交给 `utils.runTextAgent`：
+
+```js
+async function main(params) {
+    if (params.tools) {
+        return params.utils.runTextAgent("chat-completions");
+    }
+    // 普通文本生成……
+}
+```
+
+协议可选 `responses`、`chat-completions`、`anthropic`、`gemini`。第二个参数可传 `{ providerOptions, maxOutputTokens }` 设置协议专属选项。不需要支持画布聊天时可以忽略这一分支，但选择该模型的聊天将无法操作画布。
+
+## 示例：异步视频
+
+视频是异步任务。应用先调用一次脚本创建任务，再按间隔反复调用脚本查询，直到完成或失败；刷新页面或重启本地服务后也能继续查询。
+
+```js
+async function main(params) {
+    const { model, prompt, images, taskId, options, utils } = params;
+    if (taskId) {
+        const task = await utils.http.get("/videos/" + taskId);
+        if (task.status === "completed") {
+            return {
+                status: "completed",
+                result: {
+                    url: task.video_url,
+                },
+            };
+        }
+        if (task.status === "failed") {
+            return {
+                status: "failed",
+                message: task.error?.message || "视频生成失败",
+            };
+        }
+        return { status: "pending" };
+    }
+    const created = await utils.http.post("/videos", {
+        model,
+        prompt,
+        seconds: options.seconds,
+        size: options.size || undefined,
+        ...(images.length ? { image: await utils.toDataUrl(images[0]) } : {}),
+    });
+    return { id: created.id };
+}
+```
+
+- 有 `taskId` 时只查询一次，不要在脚本里循环等待，轮询由应用负责。
+- 创建返回的 `id` 必须是非空字符串；查询需要额外信息时，可以把它编码进 `id`。
+- 查询阶段 `options` 为空，需要的信息请在创建时编码进 `id`。
+
+## 示例：音频
+
+```js
+async function main(params) {
+    const { model, prompt, options, utils } = params;
+    return utils.http.post(
+        "/audio/speech",
+        {
+            model,
+            input: prompt,
+            voice: options.voice,
+            response_format: options.format,
+            speed: Number(options.speed),
+        },
+        {
+            responseType: "blob",
+        },
+    );
+}
+```
+
+## 错误处理
+
+- 主动失败直接 `throw new Error("原因")`。
+- `utils` 发出的请求失败时，应用会尽量展示服务返回的原始报错：依次取错误说明、纯文本响应、请求失败原因（如 `Network Error`），都拿不到时才显示固定提示。
+- 服务以 HTTP 200 返回 `error` 对象时，`utils.stream` 会按失败处理；普通请求需要脚本自己判断并抛出。
+- 用户取消生成时，`signal` 会中止进行中的请求，脚本不需要额外处理。
+
+## 调试
+
+- 安装「调用统计」插件并开启「记录请求与返回内容」，在调用详情的「实际请求」中查看脚本发给服务的地址、请求头、请求体和返回内容，密钥已打码。
+- 纯 Web 模式的 `console.log` 输出在浏览器开发者工具中，本地模式输出在启动服务的终端中。
+- 纯 Web 直连报 `Network Error` 多半是服务不允许跨域，可在设置中开启本地代理，或改用 CLI 本地版。
+
+## 书写规范
+
+请求配置、请求体等多字段对象逐字段换行，嵌套内容分层缩进；长条件、循环和链式处理展开书写，不为减少行数压缩源码。内置脚本、初始模板与「复制说明」均遵循这一排版。
+
+## 分享与分发
+
+- 导出为脚本包发给别人，见[脚本包与分享](/docs/development/call-script-packages)。
+- 随插件一起分发（用户启用插件即可在「插件」分类中选用），见[插件开发](/docs/development/plugin-development)中的「贡献调用脚本」。
+
+## 增加内置脚本
+
+向仓库贡献内置脚本时：
+
+1. 在 `packages/model-runtime/src/call-scripts/` 新增定义文件，按 `CallScript` 类型填写唯一 `id`、`name`、`description`、`logo`、`capability` 和 `source`。
+2. `source` 使用 `createCallScriptSource(用途, 函数体)` 生成，自动带上完整参数注释与 `main(params)` 入口；视频协议可用 `createVideoProtocolScript`。
+3. 加入同目录 `builtin.ts` 的列表。请求层和选择面板不需要增加厂商判断。
+4. 在 `packages/workbench/tests/call-scripts.test.ts` 补充样例。
+
+### 输入输出测试
+
+`call-scripts.test.ts` 覆盖全部内置脚本，直接执行实际 `main(params)` 源码，网络响应、流式事件和素材转换使用固定样例，无需 API Key，也不消耗额度：
+
+```bash
+pnpm --dir packages/workbench exec node --import tsx --test tests/call-scripts.test.ts
+```
+
+按脚本 ID 查找样例：`input` 是传给脚本的输入，`steps` 是预期请求序列（`data` 为请求正文、`response` 为模拟响应），`result` 是脚本应返回的结果。视频的创建、查询和下载样例集中在 `videoFixtures`。新增或移除内置脚本时，覆盖检查会要求同步维护样例。样例通过只说明输入输出符合预期，真实账号的权限、跨域与生成效果仍需实际验证。

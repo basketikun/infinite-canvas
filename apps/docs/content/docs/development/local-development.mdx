@@ -1,0 +1,79 @@
+---
+title: 本地开发
+description: pnpm 工作区、Web 与本地服务开发方式
+---
+
+# 本地开发
+
+使用 Node.js 22+ 与 pnpm，从仓库根目录安装依赖；整个工作区只维护根目录 `pnpm-lock.yaml`。
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev --data-dir ~/Canvas --open
+```
+
+`pnpm dev` 默认开发 CLI 本地工作台。直接运行源码，无需先构建：修改 `apps/cli/ui/src` 或 `packages/workbench/src` 后页面热更新，修改服务源码由 tsx watch 自动重启。页面、热更新与业务请求共用 `127.0.0.1:17371`，打开终端显示的地址即可。不要同时让两个进程写同一个工作区。
+
+## 桌面版开发
+
+```bash
+pnpm dev:desktop --data-dir ~/Canvas
+```
+
+Electron 在独立窗口打开 CLI 的本地界面。请先退出占用同一工作区的 CLI；关闭桌面版后可再用 CLI 打开。两端都支持 `--data-dir` 和 `--port`。构建当前系统的桌面应用使用 `pnpm build:desktop`，输出目录为 `apps/desktop/dist/`。
+
+## 纯 Web 开发
+
+```bash
+pnpm dev:web
+```
+
+纯 Web 默认访问 `http://localhost:3000`，业务数据、渠道与凭据保存在当前浏览器。AI 请求由浏览器发送，不支持外部 Agent 连接。
+
+## 插件预览与安装验收
+
+复制仓库中的 `plugins/template/` 到仓库外可以开发自己的插件，步骤见该目录 README；也可参考 `plugins/` 下的现有插件。
+
+修改客户端插件时，可在独立终端运行 `pnpm --dir plugins/themes dev` 或 `pnpm --dir plugins/api-stats dev`。打开工作台开发页的「设置 → 插件」，启用插件后用「重新加载」查看修改。同一插件已经通过 npm 安装时，工作台优先使用安装版本。
+
+插件源是仓库的 `plugins-dist-v1` 分支（永远只有一个提交），根目录 `index.json` 列出插件、各版本的包路径、校验值、适用软件版本 `host` 与插件 API 版本 `pluginApi`；「Publish Plugins」工作流构建六个插件并由 `scripts/publish-plugin-index.mjs` 更新该分支，同一版本号不能重复发布。测试安装、更新和卸载时，可以在「设置 → 插件 → 下载源设置」改成本地目录起的静态服务，目录结构同上；也可以执行 `pnpm pack`，在「设置 → 插件」点「上传插件包」直接选择生成的 `.tgz`，无需发布。
+
+## 本地数据与打包
+
+本地工作台的渠道及模型密钥保存到所选目录的 `private/channels/`，网页只读取密钥是否已配置；WebDAV 和对象存储配置保存在 `private/config/`，界面偏好仍在浏览器。服务不可用时不会退回浏览器存储。
+
+本地模式不显示「本地代理」，也不需要启动 `@basketikun/canvas-proxy`。模型请求使用专用服务，WebDAV、远程素材和资源下载通过同源网络入口完成；浏览器代理开关只影响纯 Web。
+
+```bash
+pnpm build:cli
+pnpm build:web
+```
+
+两种产品独立构建：CLI 产物在 `apps/cli/dist`，包含自身 `ui/` 的界面和本地服务；Web 静态产物在 `apps/web/dist`。只有打包或部署才需要构建，CLI 源码开发不读取任何 `dist`。详细选项见 [CLI 说明](https://github.com/basketikun/infinite-canvas/blob/main/apps/cli/README.md)。
+
+## 文档与测试
+
+```bash
+pnpm dev:docs
+pnpm test
+pnpm lint:boundaries
+```
+
+测试使用 Node.js 原生测试运行器。shared 的导入与全局依赖由根目录 ESLint 约束，TypeScript 配置不加载 DOM 或 Node 全局类型；画布纯操作测试通过 `pnpm --filter @infinite-canvas/shared test` 运行。
+
+## 代码位置
+
+| 改动 | 位置 |
+| --- | --- |
+| 共用页面、组件、hooks、store、adapter | `packages/workbench/src/` |
+| Web 入口、首页、路由、导航 | `apps/web/src/` |
+| CLI 界面入口、路由、导航 | `apps/cli/ui/src/` |
+| 运行配置、存储契约、模型脚本类型、插件元信息 | `packages/shared/src/` |
+| 共用脚本运行器、内置调用脚本、媒体与对象存储处理 | `packages/model-runtime/src/` |
+| 文档 schema、纯文档 ops、工具定义 | `packages/shared/src/canvas/` |
+| 本地 HTTP、WebSocket 推送、MCP、磁盘存储、模型执行与渠道管理 | `packages/server/src/` |
+| 命令解析与启动 | `apps/cli/src/` |
+| 节点插件 SDK | `packages/plugin-sdk/` |
+| 文档站 | `apps/docs/` |
+
+整体架构见 [Web 与 CLI 产品架构](/docs/development/local-server-architecture)。

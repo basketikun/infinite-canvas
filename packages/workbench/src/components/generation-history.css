@@ -1,0 +1,23 @@
+.generation-history-tag {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    padding: 0 7px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--workbench-elevated-text);
+    background: light-dark(color-mix(in srgb, var(--generation-control) 96%, black), color-mix(in srgb, var(--generation-control) 92%, white));
+    font: 12px/20px -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.generation-history-tag[data-tone="pending"] { background: color-mix(in srgb, var(--generation-control) 88%, var(--workbench-elevated-text)); }
+.generation-history-tag[data-tone="blue"] { color: light-dark(#0958d9, #3c89e8); background: light-dark(#e6f4ff, #111a2c); }
+.generation-history-tag[data-tone="red"] { color: light-dark(#cf1322, #e84749); background: light-dark(#fff1f0, #2a1215); }
+.generation-history-tag[data-tone="green"] { color: light-dark(#389e0d, #6abe39); background: light-dark(#f6ffed, #162312); }
+.generation-workspace-controls .generation-history-delete:enabled { color: var(--workbench-message-error); border-color: var(--workbench-message-error); }
+.generation-history-overlay { padding-top: 100px; }
+.generation-history-sheet { font: 14px/1.5 -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+.generation-history-confirm [data-variant="destructive"] { color: var(--generation-primary-text); background: var(--workbench-message-error); }
+.generation-history-confirm [data-variant="destructive"]:disabled { color: var(--muted-foreground); background: var(--muted); }
+@media (max-width: 767px) {
+    .generation-history-overlay { padding-top: 108px; }
+}

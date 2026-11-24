@@ -1,0 +1,15 @@
+{
+  "title": "开发文档",
+  "root": true,
+  "defaultOpen": true,
+  "pages": [
+    "local-development",
+    "local-server-architecture",
+    "canvas-data-structure",
+    "canvas-mcp",
+    "call-scripts",
+    "call-script-packages",
+    "builtin-call-scripts",
+    "plugin-development"
+  ]
+}

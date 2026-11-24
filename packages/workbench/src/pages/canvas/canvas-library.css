@@ -1,0 +1,19 @@
+.canvas-library [data-variant="default"] {
+    border: 1px solid transparent;
+    background: var(--generation-primary);
+    color: var(--generation-primary-text);
+}
+.canvas-library [data-variant="default"]:enabled:hover { background: var(--workbench-button-hover); }
+.canvas-library button[data-variant="ghost"] { background: transparent; box-shadow: none; }
+.canvas-library button[data-variant="ghost"]:enabled:hover { background: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 8%)); }
+.canvas-library [data-slot="input"] {
+    height: 32px;
+    padding: 4px 11px;
+    background: var(--generation-control);
+    border-color: var(--generation-border);
+    color: var(--workbench-elevated-text);
+    font-size: 14px;
+    box-shadow: none;
+}
+.canvas-library [data-slot="input"]:hover { border-color: var(--generation-input-hover); }
+.canvas-library [data-slot="input"]:focus { border-color: var(--generation-input-focus); outline: 2px solid var(--workbench-button-focus); }

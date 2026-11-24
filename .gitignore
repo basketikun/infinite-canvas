@@ -1,6 +1,7 @@
 .next/
 out/
 node_modules/
+.pnpm-store/
 .env*
 !.env.example
 data/
@@ -8,10 +9,8 @@ data/
 *.tsbuildinfo
 .DS_Store
 .idea
-web/dist
+apps/web/dist
 
 **/dist
-web/public/plugins
-plugins/canvas/*/dist
-plugins/canvas/*/node_modules
-web/public/plugins
+packages/workbench/public/plugins
+apps/cli/agent-instructions.md

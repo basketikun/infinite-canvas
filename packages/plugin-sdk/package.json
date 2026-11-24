@@ -1,0 +1,87 @@
+{
+  "name": "@infinite-canvas/plugin-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "功能、UI、节点及本地插件的公共契约、React 桥接与构建助手",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tsconfig.client.json": "./tsconfig.client.json",
+    "./build": "./build.mjs",
+    "./scope": "./src/scope.ts",
+    "./readonly-snapshot": "./src/readonly-snapshot.ts",
+    "./runtime": "./src/runtime/index.ts",
+    "./builtin": "./src/builtin.ts",
+    "./ui/utils": "./src/ui/utils.ts",
+    "./ui/*": "./src/ui/*.tsx"
+  },
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "prepack": "tsc -p tsconfig.pack.json && esbuild src/index.ts src/scope.ts src/readonly-snapshot.ts src/runtime/index.ts src/builtin.ts \"src/ui/*\" --bundle --splitting --packages=external --format=esm --jsx=automatic --target=es2022 --outbase=src --outdir=dist"
+  },
+  "peerDependencies": {
+    "@types/react": ">=18",
+    "react": ">=19",
+    "react-dom": ">=19"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.12",
+    "@types/react-is": "^19.0.0",
+    "typescript": "^5",
+    "tsx": "^4.19.0"
+  },
+  "dependencies": {
+    "@infinite-canvas/shared": "workspace:*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.7.0",
+    "lucide-react": "^1.59.0",
+    "radix-ui": "^1.7.0",
+    "react-is": "^19.0.0",
+    "react-day-picker": "^9",
+    "zod": "^3.25.76",
+    "esbuild": "^0.25.0"
+  },
+  "files": [
+    "dist",
+    "build.mjs",
+    "client-css.d.ts",
+    "tsconfig.client.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./tsconfig.client.json": "./tsconfig.client.json",
+      "./build": "./build.mjs",
+      "./scope": {
+        "types": "./dist/scope.d.ts",
+        "import": "./dist/scope.js"
+      },
+      "./readonly-snapshot": {
+        "types": "./dist/readonly-snapshot.d.ts",
+        "import": "./dist/readonly-snapshot.js"
+      },
+      "./runtime": {
+        "types": "./dist/runtime/index.d.ts",
+        "import": "./dist/runtime/index.js"
+      },
+      "./builtin": {
+        "types": "./dist/builtin.d.ts",
+        "import": "./dist/builtin.js"
+      },
+      "./ui/utils": {
+        "types": "./dist/ui/utils.d.ts",
+        "import": "./dist/ui/utils.js"
+      },
+      "./ui/*": {
+        "types": "./dist/ui/*.d.ts",
+        "import": "./dist/ui/*.js"
+      }
+    }
+  }
+}

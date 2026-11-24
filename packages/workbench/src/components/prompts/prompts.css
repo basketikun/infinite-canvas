@@ -1,0 +1,66 @@
+:is(.prompt-filter-tag, .prompt-card, .prompt-search, .prompt-detail) {
+    --prompt-accent: light-dark(#171717, #d8d8d8);
+    --prompt-accent-text: light-dark(#fff, #171717);
+    --prompt-accent-hover: light-dark(#242424, #e8e8e8);
+    --prompt-panel: light-dark(#fff, #141414);
+    --prompt-border: light-dark(#d9d9d9, #424242);
+    --prompt-card-border: light-dark(#f0f0f0, #303030);
+}
+
+:root[data-workbench-palette] :is(.prompt-filter-tag, .prompt-card, .prompt-search, .prompt-detail) {
+    --prompt-accent: var(--primary);
+    --prompt-accent-text: var(--primary-foreground);
+    --prompt-accent-hover: color-mix(in srgb, var(--primary) 85%, var(--card));
+    --prompt-panel: var(--card);
+    --prompt-border: var(--border);
+    --prompt-card-border: var(--border);
+}
+
+.prompt-card, .prompt-search {
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.prompt-card {
+    border: 1px solid var(--prompt-card-border);
+    border-radius: 8px;
+    background: var(--prompt-panel);
+    color: var(--workbench-elevated-text);
+    font-size: 14px;
+    line-height: 22px;
+}
+
+.prompt-card:hover {
+    box-shadow: 0 1px 2px -2px rgb(0 0 0 / 16%), 0 3px 6px rgb(0 0 0 / 12%), 0 5px 12px 4px rgb(0 0 0 / 9%);
+}
+
+.dark .prompt-card:hover { box-shadow: 0 1px 2px -2px rgb(255 255 255 / 3%), 0 3px 6px rgb(255 255 255 / 2.4%), 0 5px 12px 4px rgb(255 255 255 / 2%); }
+
+.prompt-card-cover {
+    width: calc(100% + 2px);
+    margin: -1px -1px 0;
+    border-radius: 8px 8px 0 0;
+}
+
+.prompt-detail-tag {
+    padding: 0 7px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--prompt-panel) 96%, black);
+    font-size: 12px;
+    line-height: 20px;
+    white-space: nowrap;
+}
+
+.dark .prompt-detail-tag { background: color-mix(in srgb, var(--prompt-panel) 92%, white); }
+.prompt-detail [data-slot="button"] { gap: 8px; padding: 0 15px; border: 1px solid transparent; border-radius: 6px; font: inherit; cursor: pointer; }
+.prompt-detail [data-variant="default"] { color: var(--prompt-accent-text); background: var(--prompt-accent); }
+.prompt-detail [data-variant="default"]:hover { background: var(--prompt-accent-hover); }
+.prompt-detail [data-variant="outline"] { border-color: var(--prompt-border); color: inherit; background: var(--prompt-panel); }
+.prompt-detail [data-variant="outline"]:hover { border-color: var(--prompt-accent-hover); color: var(--prompt-accent-hover); }
+.prompt-card [data-slot="button"] { gap: 8px; padding: 0 7px; border: 1px solid transparent; border-radius: 4px; font-size: 14px; font-weight: 400; line-height: 22px; cursor: pointer; }
+.prompt-search { border-color: var(--prompt-border); background: var(--prompt-panel); color: var(--workbench-elevated-text); }
+.prompt-search:hover { border-color: light-dark(rgb(23 23 23 / 24%), rgb(250 250 249 / 24%)); }
+.prompt-search:focus-within { border-color: light-dark(rgb(23 23 23 / 38%), rgb(250 250 249 / 38%)); }
+:root[data-workbench-palette] .prompt-search:is(:hover, :focus-within) { border-color: var(--border); }
+.prompt-search input { height: 24px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 16px; line-height: 24px; box-shadow: none; }
+.prompt-search input::placeholder { color: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%)); }

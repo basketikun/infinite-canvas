@@ -1,7 +1,7 @@
 {
   "framework": "vite",
-  "installCommand": "cd web && bun install",
-  "buildCommand": "cd web && bun run build",
-  "outputDirectory": "web/dist",
+  "installCommand": "pnpm install --frozen-lockfile --ignore-scripts",
+  "buildCommand": "cd apps/web && pnpm run build",
+  "outputDirectory": "apps/web/dist",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }

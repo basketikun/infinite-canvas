@@ -1,0 +1,35 @@
+.prompt-content-overlay { padding-top: 100px; }
+.prompt-content {
+    --prompt-table-line: light-dark(#f0f0f0, #303030);
+    --prompt-table-head: light-dark(#fafafa, #1d1d1d);
+}
+:root[data-workbench-palette] .prompt-content {
+    --prompt-table-line: var(--border);
+    --prompt-table-head: var(--muted);
+}
+.prompt-content [data-slot="table-container"] { max-height: calc(56vh + 39px); overflow: auto; }
+.prompt-content-table { border-collapse: separate; border-spacing: 0; color: var(--workbench-elevated-text); }
+.prompt-content-table th { height: 39px; background: var(--prompt-table-head); color: inherit; font-weight: 600; }
+.prompt-content-table th:first-child { border-start-start-radius: 8px; }
+.prompt-content-table th:last-child { border-start-end-radius: 8px; }
+.prompt-content-table :is(th, td) { border-bottom: 1px solid var(--prompt-table-line); }
+.prompt-content-table td { padding: 9px 8px; }
+.prompt-content-table .generation-wait-tag { font-size: 12px; }
+.prompt-content-pages { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 4px; }
+.prompt-content-pages li { display: grid; min-width: 24px; height: 24px; place-items: center; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+.prompt-content-pages li:focus-visible { outline: 3px solid var(--workbench-button-focus); outline-offset: 1px; }
+.prompt-content-pages li:not(.prompt-content-pages-disabled):hover { background: var(--muted); }
+.prompt-content-pages .prompt-content-pages-item-active { color: var(--generation-primary); border-color: currentColor; font-weight: 600; }
+.prompt-content-pages .prompt-content-pages-disabled { opacity: .3; cursor: not-allowed; }
+.prompt-content-pages li button { display: grid; width: 100%; height: 100%; place-items: center; cursor: inherit; }
+.prompt-content-pages svg { width: 14px; height: 14px; }
+@media (max-width: 639px) {
+    .prompt-content-overlay { padding-top: 8px; }
+    .prompt-content-table, .prompt-content-table tbody { display: block; }
+    .prompt-content-table colgroup { display: none; }
+    .prompt-content-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .prompt-content-table tbody tr { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--prompt-table-line); }
+    .prompt-content-table td { min-width: 0; border: 0; padding: 0; }
+    .prompt-content-table td:nth-child(3) { grid-column: 2; }
+    .prompt-content-table td:last-child { grid-column: 1 / -1; }
+}

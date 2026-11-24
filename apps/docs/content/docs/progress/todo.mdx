@@ -1,0 +1,29 @@
+---
+title: TODO
+description: 尚未实施的开发事项
+---
+
+# TODO
+
+## 发布
+
+- 自动发布 CLI 到 npm：`@basketikun/infinite-canvas` 尚未发布，网页版「Agent配置」中的 `npx` 命令在发布后才可用。
+- Windows 桌面发行包待验：启动、CLI 与桌面版交接同一作品、关闭释放目录锁，以及 `--skip-plugins` 恢复。
+- 核实 Docker 部署的静态资源路径，从实际入口验证页面和资源可加载。
+
+## 功能
+
+- 渠道新增页的赞助商列表目前是示例数据，待替换为真实赞助商的名称、服务地址、说明和图标。
+- 资产文件夹树目前只保存在浏览器或本地工作区，WebDAV 资产同步尚未携带文件夹结构，后续补齐同步合并规则。
+- 将提示词来源列表、启停状态和刷新周期接入现有工作区配置。下载缓存继续留在浏览器。
+
+## 代码整理
+
+只搬运和合并，不改变页面行为。
+
+- 画布参数弹窗合一：图片、视频、音频、文本四个设置弹窗合成一个通用弹窗，按模式放入对应参数面板（`components/canvas/canvas-*-settings-popover.tsx`）。
+- 参考素材合一：创作页、Agent 对话与画布三套参考素材逻辑合成一个模块（`hooks/use-reference-images.ts`、`components/agent/use-agent-images.ts`、`lib/canvas/media-import.ts`）。
+- 结果保存合一：创作页结果保存与画布结果入图统一为一个函数，返回存储键与尺寸、时长等信息（`pages/create/*-result.ts`、`lib/canvas/canvas-session*.ts`）。
+- 拆分大文件：`pages/canvas/project.tsx` 与 `pages/canvas/hooks/use-node-generation.ts`。
+- 核实创作页 Agent 与画布聊天的对话循环、工具注册重复程度，重复多则合并。
+- 清理 workbench 类型检查错误与 `lint:boundaries` 报错。

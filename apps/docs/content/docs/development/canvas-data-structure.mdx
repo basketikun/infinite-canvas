@@ -1,0 +1,234 @@
+---
+title: 画布数据结构
+description: 画布本地存储、节点结构、媒体文件与清理机制
+---
+
+# 画布数据结构
+
+本文档说明画布文档与浏览器媒体表示，两种运行模式的整体架构见 [架构文档](/docs/development/local-server-architecture)。
+
+## 当前存储位置
+
+纯 Web 模式使用浏览器存储；CLI 模式通过同源服务写入磁盘。浏览器布局如下：
+
+- 画布项目 JSON：`localForage`，数据库名 `infinite-canvas-v1`，storeName `projects_v1`，每个项目 ID 对应一份文档。
+- 我的素材 JSON：`localForage`，数据库名 `infinite-canvas-v1`，storeName `app_state`，key 为 `infinite-canvas:asset_store`。
+- 图片 Blob：单独存到 `localForage` 实例，数据库名 `infinite-canvas-v1`，storeName `image_files`。
+- 视频等媒体 Blob：单独存到 `localForage` 实例，数据库名 `infinite-canvas-v1`，storeName `media_files`。
+
+画布 JSON 不直接长期保存大体积 base64 图片或视频。图片节点、视频节点、助手图片和素材媒体持久化时保存 `storageKey`、远程链接和元信息，`blob:` 展示地址在读取后重建，真实 Blob 通过 `storageKey` 读取。
+
+## 画布项目结构
+
+每个画布项目是一个 `CanvasProject`：
+
+```ts
+type CanvasProject = {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  nodes: CanvasNodeData[];
+  connections: CanvasConnection[];
+  chatSessions: CanvasAssistantSession[];
+  activeChatId: string | null;
+  backgroundMode: "lines" | "dots" | "blank";
+  viewport: { x: number; y: number; k: number };
+};
+```
+
+字段说明：
+
+- `schemaVersion`：文档格式版本，与服务每次保存的 `revision` 分开。
+- `id`：画布项目 ID，由网页生成。
+- `title`：画布名称。
+- `createdAt` / `updatedAt`：ISO 字符串。
+- `nodes`：画布节点列表。
+- `connections`：节点连线列表。
+- `chatSessions`：右侧画布助手会话。
+- `activeChatId`：当前选中的助手会话 ID。
+- `backgroundMode`、`showImageInfo`、`viewport`：设备偏好，单独写入浏览器 `device_preferences`，不参与共享文档修订。
+- `viewport`：视口变换，`x/y` 是屏幕平移，`k` 是缩放比例。
+
+## 节点结构
+
+每个节点是一个 `CanvasNodeData`：
+
+```ts
+type CanvasNodeData = {
+  id: string;
+  type: "image" | "text" | "video" | "audio" | "group" | string;
+  title: string;
+  position: { x: number; y: number };
+  width: number;
+  height: number;
+  metadata?: CanvasNodeMetadata;
+};
+```
+
+通用字段：
+
+- `id`：节点 ID。
+- `type`：节点类型，内置类型为文本、图片、视频、音频和组。
+- `title`：节点标题。
+- `position`：画布世界坐标，不是屏幕坐标。
+- `width` / `height`：画布世界坐标下的节点尺寸。
+- `metadata`：节点内容和业务状态。
+
+`metadata` 当前常用字段：
+
+```ts
+type CanvasNodeImage = {
+  id: string;
+  status: "idle" | "success" | "loading" | "error";
+  errorDetails?: string;
+  content: string;
+  storageKey: string;
+  naturalWidth: number;
+  naturalHeight: number;
+  bytes: number;
+  mimeType: string;
+};
+
+type CanvasNodeMetadata = {
+  content?: string;
+  prompt?: string;
+  status?: "idle" | "success" | "loading" | "error";
+  errorDetails?: string;
+  fontSize?: number;
+  model?: string;
+  size?: string;
+  count?: number;
+  naturalWidth?: number;
+  naturalHeight?: number;
+  freeResize?: boolean;
+  images?: CanvasNodeImage[];
+  primaryImageId?: string;
+  storageKey?: string;
+  mimeType?: string;
+  bytes?: number;
+  webVideoSubmissionId?: string;
+  webVideoTask?: {
+    projectId: string;
+    nodeId: string;
+    sourceId: string;
+    runId: string;
+    id: string;
+    model: string;
+    scriptId: string;
+    script: string;
+    paused: boolean;
+  };
+};
+```
+
+不同节点的使用方式：
+
+- 图片节点：`content` 是当前可展示的图片 URL，成功保存本地时通常是 `blob:` URL，因 CORS 无法读取但仍可显示时也可能保留远程 URL；`storageKey` 仅在图片已经写入本地 Blob 时存在；`naturalWidth/naturalHeight/bytes/mimeType` 保存原图信息。
+- 视频节点用 `storageKey` 定位已保存的视频，`bytes/mimeType` 记录文件信息，只有远程地址时通过 `content` 播放。纯 Web 提交期间由 `webVideoSubmissionId` 标识当前请求。收到远端编号后，`webVideoTask` 随项目保存原节点、运行标识、远端编号和提交时的分组模型与脚本。即时文件直接写入原节点。手动停止查询会保存 `paused`，再次查询继续同一任务。CLI/Desktop 的任务由本地服务管理，画布通过 `tasks` 绑定结果目标。
+- 文本节点：`content` 保存文本内容；`fontSize` 保存字体大小；`prompt/status/errorDetails` 保存生成状态。
+- 文本、图片、视频和音频节点按各自的类型生成。`model` 保存本节点模型，`connections` 决定上游参考。
+- 多图图片节点：批量生成仍只保存为一个图片节点，请求开始前会在 `images` 中创建全部图片槽位，每个槽位通过 `status/errorDetails` 独立记录实时状态，成功后补充图片数据；最先成功的槽位会立即写入 `primaryImageId`，并由节点级 `content` 和图片元数据展示；展开状态仅属于当前界面，不写入项目数据。
+
+## 连线结构
+
+每条连线是一个 `CanvasConnection`：
+
+```ts
+type CanvasConnection = {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+};
+```
+
+连线只保存节点 ID，不保存端口坐标。渲染时根据节点位置和尺寸计算路径。
+
+删除节点时会同步删除以该节点为起点或终点的连线。删除图片组根节点时，会把对应子节点一起删除。
+
+## 助手会话结构
+
+助手会话保存在画布项目内：
+
+```ts
+type CanvasAssistantSession = {
+  id: string;
+  title: string;
+  messages: CanvasAssistantMessage[];
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+消息结构：
+
+```ts
+type CanvasAssistantMessage = {
+  id: string;
+  role: "user" | "assistant";
+  mode: "ask" | "image";
+  text: string;
+  isLoading?: boolean;
+  references?: CanvasAssistantReference[];
+  images?: CanvasAssistantImage[];
+};
+```
+
+图片引用和助手生成图片也遵循同一套图片存储规则：
+
+- `dataUrl` 字段可能是 `blob:` URL 或 `data:image/...`。
+- `storageKey` 存在时，以 `storageKey` 为准读取图片 Blob。
+- 发送到 AI 接口前，如果接口需要 base64，会通过 `imageToDataUrl` 临时把 Blob URL 转成 data URL。
+
+## 图片写入流程
+
+所有新增图片应通过 `uploadImage(input)` 写入：
+
+1. 传入 `Blob` 或 data URL。
+2. 内部转成 `Blob`。
+3. 生成 `storageKey`，格式为 `image:<id>`。
+4. 把 Blob 写入 `image_files`。
+5. 创建 `blob:` URL，并缓存在内存 `objectUrls`。
+6. 读取图片宽高，返回：
+
+```ts
+type UploadedImage = {
+  url: string;
+  storageKey: string;
+  width: number;
+  height: number;
+  bytes: number;
+  mimeType: string;
+};
+```
+
+图片节点会通过 `imageMetadata(image)` 写入：
+
+```ts
+{
+  content: image.url,
+  ...(image.storageKey ? { storageKey: image.storageKey } : {}),
+  status: "success",
+  naturalWidth: image.width,
+  naturalHeight: image.height,
+  bytes: image.bytes,
+  mimeType: image.mimeType
+}
+```
+
+因此，已保存图片的 `content` 只适合当前浏览器会话展示，长期标识是 `storageKey`。如果跨域限制导致图片无法读取，节点会保留可能过期的远程 `content`，并且没有 `storageKey`，不能视为已经完成本地持久化。
+
+## 图片按需读取
+
+画布、素材库和生成历史保留图片的 `storageKey` 与元信息，打开时不补读原图。被动展示只使用已有预览或用户设置的封面；没有预览时显示占位。
+
+明确查看、下载、编辑或模型执行时读取指定原文件。有存储标识却缺少文件时明确失败，不转用备用 URL；无存储标识的远程输入沿对应调用链处理。查看期间的对象 URL 由当前打开记录持有，关闭、换源或卸载后释放。
+
+## 图片移除和清理
+
+删除节点、清空画布、删除画布、资产、生成记录或聊天记录时，原文件保留，由用户在「设置 → 本地存储」主动清理未被任何记录引用的文件。单个画布的快照不能覆盖所有生成历史、撤销记录和插件引用，因此不在业务删除时自动清理。
+
+上传、导入、截帧或编辑失败和取消时，仍精确清理本次新建且未提交的文件，保留原素材和已提交结果。临时展示地址的释放不代表删除对应持久文件。
+
+记录删除后占用空间不会立即减少。本地模式的项目文档在 `projects/<id>.json`，原始媒体在 `assets/files/`，目录结构与修订语义见架构文档。

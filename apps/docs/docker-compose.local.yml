@@ -1,0 +1,8 @@
+services:
+  docs:
+    build:
+      context: ../..
+      dockerfile: apps/docs/Dockerfile
+    ports:
+      - "3001:3000"
+    restart: unless-stopped

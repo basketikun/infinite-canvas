@@ -1,0 +1,35 @@
+{
+  "name": "@infinite-canvas/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Web、本地服务与插件 SDK 共用的纯数据契约与画布基础操作",
+  "exports": {
+    "./canvas/*": "./src/canvas/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "prepack": "tsc -p tsconfig.json --noEmit false --declaration --noCheck --rootDir src --outDir dist"
+  },
+  "dependencies": {
+    "fast-json-stable-stringify": "2.1.0",
+    "fflate": "^0.8.3",
+    "semver": "^7.7.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/semver": "^7.7.0",
+    "typescript": "^5"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "exports": {
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    }
+  }
+}

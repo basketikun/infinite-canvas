@@ -1,0 +1,85 @@
+---
+title: 脚本包与分享
+description: 导出、导入和手工打包调用脚本
+---
+
+# 脚本包与分享
+
+脚本包是一个 ZIP 文件，用来在不同浏览器、工作区或用户之间分享调用脚本。它只包含脚本本身，不包含渠道地址、API Key 等配置。写脚本见[调用脚本开发](/docs/development/call-scripts)。
+
+## 导出与导入
+
+1. 打开「设置 → 渠道」，在任一模型的「调用方式」中打开脚本选择面板。
+2. 点卡片上的「导出」分享单个脚本，点「导出全部」分享整个脚本库。
+3. 接收者在同一面板点「导入脚本包」，确认来源可信后选择 ZIP。
+4. 导入后为模型选择导入的脚本，保存渠道即可使用。
+
+导入规则：
+
+- 导入总是创建独立副本，重名自动编号，不覆盖已有脚本。
+- 导入只读取文件，选择模型并发起生成时才执行脚本。执行时使用所选分组的凭据和所属渠道的服务地址。
+- 格式错误时整包拒绝，已有脚本保持不变。
+- 只接受当前格式版本 3：每个脚本只对应一种用途，源码使用 `main(params)` 写法。
+
+## 安全提醒
+
+调用脚本不在沙箱中运行：纯 Web 运行在页面里，本地模式运行在本地服务进程里。脚本可以读取所选渠道的密钥、访问网络，本地模式还能访问本机文件。只导入来源可信的脚本包，导入前界面会再次提醒。
+
+分享自己的脚本时，源码应通过 `params.apiKey` 读取密钥，不要把个人密钥写进源码。
+
+## 手工打包
+
+不需要安装工具或编译。ZIP 根目录必须有 `manifest.json`，其余文件按清单中的路径放置：
+
+```text
+manifest.json
+scripts/my-image/main.js
+scripts/my-text/main.js
+scripts/logo.svg
+```
+
+```json
+{
+  "format": "infinite-canvas-call-scripts",
+  "version": 3,
+  "scripts": [
+    {
+      "id": "my-image",
+      "name": "我的生图",
+      "description": "生图：POST /v1/images/generations",
+      "logo": { "path": "scripts/logo.svg", "mimeType": "image/svg+xml" },
+      "capability": "image",
+      "source": "scripts/my-image/main.js"
+    },
+    {
+      "id": "my-text",
+      "name": "我的文本",
+      "description": "POST /v1/chat/completions",
+      "capability": "text",
+      "source": "scripts/my-text/main.js"
+    }
+  ]
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `format`、`version` | 固定为 `infinite-canvas-call-scripts` 和 `3` |
+| `id` | 包内唯一标识；导入后会生成新的脚本 ID |
+| `name` | 选择面板中显示的名称 |
+| `description` | 卡片说明，建议写请求方法和路径，可多行 |
+| `logo` | 可选，包内图片路径与类型；单色 Logo 可加 `"invertInDark": true` 在深色主题下反色 |
+| `capability` | `image`、`video`、`text`、`audio` 之一 |
+| `source` | 包内源码文件路径，文件内容为完整的 `async function main(params) { ... }` |
+
+一个包可以包含不同用途的多个脚本。
+
+## 与配置备份的区别
+
+| | 脚本包 | 完整配置备份 |
+| --- | --- | --- |
+| 入口 | 调用方式选择面板 | 设置窗口顶部的「导入」「导出」 |
+| 内容 | 只有脚本 | 渠道、Key 分组、脚本库、对象存储和同步连接 |
+| 密钥 | 不包含 | 纯 Web 包含；本地模式不导出已保管的模型密钥，导入其他工作区后需重新填写 |
+
+纯 Web 的脚本保存在浏览器，本地模式保存在工作区。想把脚本随插件一起分发，见[插件开发](/docs/development/plugin-development)中的「贡献调用脚本」。

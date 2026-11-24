@@ -1,0 +1,4 @@
+{
+  "extends": "@infinite-canvas/plugin-sdk/tsconfig.client.json",
+  "include": ["src"]
+}

@@ -1,0 +1,58 @@
+{
+  "name": "@basketikun/infinite-canvas",
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "infinite-canvas": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "agent-instructions.md",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false --exclude \"ui/**\" --exclude \"../../packages/workbench/src/**\" src/dev.ts serve",
+    "debug": "tsx watch --clear-screen=false --exclude \"ui/**\" --exclude \"../../packages/workbench/src/**\" src/dev.ts serve --debug",
+    "build": "vite build --config ui/vite.config.ts && node build.mjs",
+    "start": "node dist/index.js",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "axios": "^1.16.0",
+    "express": "^5.1.0",
+    "fs-native-extensions": "^1.5.3",
+    "npm-package-arg": "^13.0.0",
+    "open": "^11.0.4",
+    "semver": "^7.7.0",
+    "winston": "^3.19.0",
+    "ws": "^8.18.3",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@infinite-canvas/server": "workspace:*",
+    "@infinite-canvas/shared": "workspace:*",
+    "@infinite-canvas/workbench": "workspace:*",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "esbuild": "^0.28.2",
+    "lucide-react": "^1.16.0",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "react-router-dom": "^7.12.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vite": "^7.3.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@12.6.0"
+}

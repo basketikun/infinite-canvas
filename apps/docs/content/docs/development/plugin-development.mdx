@@ -1,0 +1,466 @@
+---
+title: 插件开发
+description: 从零开发、调试、打包和发布一个工作台插件
+---
+
+# 插件开发
+
+插件可以给工作台增加画布节点、节点按钮、菜单、面板、页面、设置、主题、布局、模型调用方式、同步方式和 Agent 工具。官方的主题、调用统计、WebDAV 同步、多格式渲染器、3D 全景和 3D 导演台都是插件，源码在仓库 `plugins/` 下，可作为参考。
+
+## 两种写法
+
+| | 单文件插件 | 构建版插件 |
+| --- | --- | --- |
+| 形式 | 一个 `client.js`，不需要构建 | TypeScript + React 工程，用 SDK 构建出 `dist/client.js` |
+| 适合 | 加一个菜单、节点按钮、调用脚本、主题等轻量功能 | 复杂界面、命令、Agent 工具、自定义扩展点 |
+| 能用的能力 | 除 `commands`、`agentTools` 外的扩展点；界面只能用 `React.createElement` 写 | 全部扩展点、SDK 界面控件、`lucide-react` 图标 |
+| 安装方式 | 放进 CLI 工作区的 `plugins/<插件id>/` | 插件市场、上传 `.tgz`、`infinite-canvas plugin add` |
+| 运行模式 | 仅 CLI 本地版和桌面版 | 纯 Web 与本地版都可用 |
+
+## 插件身份与文件
+
+插件是一个目录，目录名就是插件 id。
+
+| 内容 | 位置与规则 |
+| --- | --- |
+| 插件 id | 小写字母、数字和连字符；`data`、`files`、`builtin`、`plugin-manager` 不可用。npm 包的 id 取包名去掉 `@作用域/` 和 `canvas-plugin-` 前缀，例如 `@acme/canvas-plugin-video` → `video` |
+| 入口 | `dist/client.js`，没有时用根目录 `client.js` |
+| 名称与版本 | `plugin.json`：`{ "name": "中文名称", "description": "一句话说明", "version": "1.0.0", "author": "作者" }`；不启用也能在「设置 → 插件」显示。没有时回退到 `package.json` 的 `version`、`description`、`author` |
+| 图标 | `icon.svg`、`icon.png` 或 `icon.webp` |
+| 使用说明 | `GUIDE.md` 或 `README.md`，显示在插件详情中 |
+
+所有贡献的 `id` 都必须以「插件 id:」开头，例如插件 `polish` 的贡献写作 `polish:button`。
+
+## 快速开始：单文件插件
+
+适合 CLI 本地版。以「给文本节点加一个润色按钮」为例：
+
+1. 用 CLI 启动工作台，记下终端显示的数据目录（默认 `~/.infinite-canvas/workspace`）。
+2. 新建 `<数据目录>/plugins/polish/client.js`：
+
+```js
+const React = globalThis.InfiniteCanvasRuntime.React;
+
+export default {
+    contributions: [
+        {
+            point: { id: "builtin:node-tools" },
+            id: "polish:button",
+            value: {
+                resolve(ctx) {
+                    if (ctx.node.type !== "text") {
+                        return null;
+                    }
+                    return {
+                        title: "润色文本",
+                        label: "润色",
+                        icon: React.createElement("span", null, "润"),
+                        async run() {
+                            const result = await ctx.models.generateText({
+                                prompt: "请润色以下文字，只返回结果：\n" + ctx.node.metadata.content,
+                            });
+                            await ctx.updateMetadata({ content: result.text });
+                        },
+                    };
+                },
+            },
+        },
+    ],
+};
+```
+
+3. 同目录写 `plugin.json` 和 `GUIDE.md`：
+
+```json
+{
+  "name": "一键润色",
+  "description": "在文本节点上增加润色按钮",
+  "version": "1.0.0",
+  "author": "你的名字"
+}
+```
+
+4. 打开「设置 → 插件」，点右上角「重新加载本地插件」，在列表中启用「一键润色」。
+5. 选中一个文本节点，悬浮工具条上出现「润色」按钮。
+
+单文件插件的规则：
+
+- 默认导出对象只能有 `contributions`、`setup`、`css` 三个字段，多写其他字段会加载失败。名称、说明写在 `plugin.json`。
+- 文件以独立 ES 模块加载，不能 `import` 相对路径、npm 包或 SDK，也不能写 JSX。界面用 `globalThis.InfiniteCanvasRuntime.React` 的 `createElement` 和 hooks。
+- 贡献写法为 `{ point: { id: "builtin:<扩展点>" }, id: "<插件id>:<名称>", value }`，宿主按 `point.id` 查找扩展点并校验 `value`；字段写错的贡献会被跳过，浏览器控制台输出以 `[plugins]` 开头的日志。
+- 改文件后点「重新加载本地插件」生效。
+
+不想手写时，在「设置 → 插件」点「让 AI 帮我写插件」，发给你的 AI 并说明想要的功能，它会按完整规范写出 `client.js`、`plugin.json` 和 `GUIDE.md`。
+
+## 快速开始：构建版插件
+
+### 在仓库内开发
+
+1. 复制 `plugins/template/` 为 `plugins/<插件id>/`，修改 `package.json` 的 `name`（如 `canvas-plugin-<插件id>`）、`plugin.json` 和 `GUIDE.md`。
+2. 在仓库根目录执行 `pnpm install`。
+3. 一个终端运行工作台：`pnpm dev`（CLI）或 `pnpm dev:web`（纯 Web）。
+4. 另一个终端运行 `pnpm --dir plugins/<插件id> dev`，监听源码并持续构建。
+5. 打开「设置 → 插件」启用插件；之后每次修改，点该插件行上的「重新加载」按钮（仅源码开发模式显示）查看效果。
+
+同一插件已经通过 npm 安装时，工作台优先使用安装版本，开发前先卸载。
+
+### 在仓库外开发
+
+复制 `plugins/template/` 到任意目录，使用 Node.js 22+ 和 pnpm。SDK 尚未发布到公共 npm，需要先在仓库根目录打出 SDK 与 shared 的压缩包：
+
+```bash
+mkdir -p /tmp/canvas-sdk
+pnpm --dir packages/shared pack --pack-destination /tmp/canvas-sdk
+pnpm --dir packages/plugin-sdk pack --pack-destination /tmp/canvas-sdk
+```
+
+把压缩包放进插件目录的 `packages/`，新建 `pnpm-workspace.yaml`：
+
+```yaml
+packages: ["."]
+overrides:
+  '@infinite-canvas/plugin-sdk': file:./packages/infinite-canvas-plugin-sdk-1.0.0.tgz
+  '@infinite-canvas/shared': file:./packages/infinite-canvas-shared-1.0.0.tgz
+```
+
+然后执行 `pnpm install`、`pnpm build`、`pnpm pack`，在「设置 → 插件」点「上传插件包」选择生成的 `.tgz` 安装。
+
+### 工程结构
+
+```text
+plugins/<插件id>/
+  package.json        包名、版本、files（需包含 dist、plugin.json、图标、GUIDE.md）
+  plugin.json         名称、说明、版本、作者
+  icon.svg
+  GUIDE.md
+  build.mjs           import { buildPlugin } from "@infinite-canvas/plugin-sdk/build"; await buildPlugin(import.meta.url);
+  src/
+    plugin.ts         入口，只放导入和 export default definePlugin({...})
+    setup.ts          启动与清理逻辑（可选）
+    nodes/            画布节点
+    nodeTools/        节点工具条按钮
+    commands/         命令
+    pages/ settings/ layouts/ ...   按实际用到的扩展点建目录
+    api/              提供给其他插件的扩展点与能力契约（可选）
+```
+
+`pnpm dev` 监听构建，`pnpm build` 打包，`pnpm pack` 生成可安装的 `.tgz`。仓库根目录的 `pnpm lint:plugins` 会检查入口文件只包含导入与 `definePlugin({...})`。
+
+## 入口：definePlugin
+
+```ts
+import { contribute, definePlugin } from "@infinite-canvas/plugin-sdk";
+import { nodes, settings } from "@infinite-canvas/plugin-sdk/builtin";
+import { note } from "./nodes/note";
+import { overview } from "./settings/overview";
+import { setup } from "./setup";
+
+export default definePlugin({
+    setup,                 // 可选：(ctx) => 清理函数 | void，插件启用时执行
+    contributions: [
+        contribute(nodes, { id: note.type, value: note }),
+        contribute(settings, { id: overview.id, value: overview }),
+    ],
+});
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `contributions` | 静态贡献列表，`contribute(扩展点, { id, value })` |
+| `setup(ctx)` | 启用时执行，可返回清理函数，停用时调用 |
+| `css` | 样式字符串；构建版直接 `import "./styles/xxx.css"` 即可 |
+| `extensionPoints` | 本插件开放给其他插件的扩展点 |
+
+启用即加载，停用即撤销全部贡献。需要按条件登记时，在 `setup` 中用 `ctx.extensions.contribute(point, { id, value })`，返回撤销函数，插件停用时自动撤销。校验失败或回调出错的贡献会被跳过并记录，不影响其他贡献。
+
+## 扩展点
+
+从 `@infinite-canvas/plugin-sdk/builtin` 导入。单文件插件中的 `point.id` 为 `builtin:` 加括号中的名称。
+
+### 界面挂载
+
+| 扩展点 | 贡献值 |
+| --- | --- |
+| `nodes`（`nodes`） | 画布节点定义，见下文 |
+| `nodeTools`（`node-tools`） | `{ resolve(ctx) => { title, label, icon, run, active?, danger?, disabled?, defaultVisible? } \| null }`，节点悬浮工具条按钮；不适用的节点返回 `null` |
+| `nodeResources`（`node-resources`） | `{ resolve(node, slotId?) => { kind, text?, url?, storageKey? } \| null }`，自定义节点作为上游时输出给下游的内容 |
+| `panels`（`panels`） | `{ id, title, Content }`，从画布底栏扩展菜单打开的面板，`Content` 接收 `{ ctx, canvas, onClose }` |
+| `canvasSideTabs`（`canvas-side-tabs`） | `{ title, icon?, hidden?, Content }`，画布左侧面板标签，`Content` 接收 `{ ctx, view }` |
+| `pages`（`pages`） | `{ id, title, icon?, navigation?, Content }`，独立页面；`navigation: true` 时进入主导航 |
+| `settings`（`settings`） | `{ id, title, Content }`，显示在「设置 → 插件 → 插件详情」，多个贡献即多个标签 |
+
+### 列表改写
+
+`transform` 必须是同步纯函数，返回新数组，可以追加、隐藏（`hidden: true`）和重排；出错时跳过该变换。
+
+| 扩展点 | 贡献值 |
+| --- | --- |
+| `menus`（`menus`） | `{ id, locations, transform({ ctx, canvas, target, items }) => items }` |
+| `navigation`（`navigation`） | `{ transform({ ctx, items }) => items }`，条目 `{ id, title, hidden? }` |
+| `applicationActions`（`application-actions`） | `{ transform({ ctx, target, items }) => items }`，条目类型为 `action`、`route`、`external` 或 `content` |
+
+菜单位置：`canvas.projectMenu`、`canvas.toolbar`、`canvas.extensions`（底栏扩展菜单，插件入口首选）、`canvas.zoomControls`、`canvas.nodeToolbar`、`canvas.selectionToolbar`、`canvas.create`、`canvas.connectionCreate`、`canvas.nodeContext`、`canvas.connectionContext`。`target.location` 标明当前位置，节点相关位置带 `nodeId` 或 `nodeIds`，创建和右键类位置带画布坐标 `position`。
+
+菜单项：`{ id, type: "action", title, icon?, description?, tooltip?, disabled?, danger?, run }`、`{ id, type: "separator" }` 或 `{ id, type: "content", title, Content }`。
+
+### 用户选择
+
+登记后出现在「设置 → 外观」，由用户选择。
+
+| 扩展点 | 贡献值 |
+| --- | --- |
+| `themes`（`themes`） | `{ id, name, description, mode, background, panel, surface, text, muted, border, accent, accentText, canvasTheme? }`，`id` 与贡献 ID 相同 |
+| `layouts`（`layouts`） | `{ id, name, description, Frame }`，`Frame` 接收导航项、`Link`、`brand`、`actions`、`navigation` 与 `children` |
+
+### 服务与数据
+
+| 扩展点 | 贡献值 |
+| --- | --- |
+| `callScripts`（`call-scripts`） | `{ name, description, capability, source, logo?, invertInDark? }`，模型调用脚本 |
+| `commands` | `{ command, title, locations?, enabled?, run }`，本插件的命令（仅构建版） |
+| `agentTools` | `{ description, command, readOnly? }`，向画布聊天和外部 MCP 提供工具（仅构建版） |
+| `syncTransports`（`sync-transports`） | `{ title, defaultDirectory?, fields, test(context), open(context) }`，同步连接方式，参考 `plugins/webdav-sync` |
+| `projectData`（`project-data`） | `{ id, dataVersion }`，声明可用 `ctx.projectData` 保存的项目数据域 |
+
+## 自定义画布节点
+
+```tsx
+import { FileText } from "lucide-react";
+import type { CanvasNodeDefinition } from "@infinite-canvas/plugin-sdk";
+import { Textarea } from "@infinite-canvas/plugin-sdk/ui/textarea";
+
+export const note: CanvasNodeDefinition = {
+    type: "template:note",                 // 与贡献 ID 相同
+    title: "模板笔记",
+    icon: <FileText size={16} />,
+    description: "编辑一段可连接到下游的文字",
+    defaultSize: { width: 240, height: 120 },
+    defaultMetadata: { content: "" },
+    Content: ({ ctx }) => <p style={{ color: ctx.theme.node.text }}>{ctx.node.metadata?.content || "双击编辑笔记"}</p>,
+    Panel: ({ ctx, onClose }) => <div data-canvas-no-zoom>
+        <Textarea value={ctx.node.metadata?.content ?? ""} onChange={({ currentTarget }) => void ctx.updateMetadata({ content: currentTarget.value })} />
+        <button type="button" onClick={onClose}>完成</button>
+    </div>,
+    onDoubleClick: (ctx) => { ctx.openPanel(); return true; },
+};
+```
+
+- `Content` 是节点主体，`Panel` 是节点下方的面板；不需要面板时设 `hidePanel: true`。
+- `useBuiltinPanel: { mode: "image" | "video" | "text" | "audio" }` 可复用内置生成面板。
+- 节点状态存在 `metadata` 中，用 `ctx.updateMetadata(patch)` 修改，会进入撤销历史并随画布保存。
+- 颜色使用 `ctx.theme`（如 `ctx.theme.node.text`、`ctx.theme.node.muted`、`ctx.theme.node.stroke`），不要写死黑白，保证浅色和深色主题都正常。
+- 其他可选字段：`showInCreateMenu`、`hasSourceHandle`、`minimapColor` 等，见 SDK 中的 `CanvasNodeDefinition` 类型。
+
+节点上下文 `ctx` 提供：`node`、`theme`、`isSelected`、`updateMetadata`、`updateNode({ title, width, height })`、`transact(ops)`、`getUpstream()`、`getDownstream()`、`getNodes()`、`openPanel()`、`closePanel()`、`models`、`storage`。
+
+想让节点内容能被下游节点作为参考，再贡献一个 `nodeResources`：
+
+```ts
+import type { NodeResourceContribution } from "@infinite-canvas/plugin-sdk";
+
+export const noteResource: NodeResourceContribution = {
+    resolve: (node) => node.type === "template:note" ? { kind: "text", text: node.metadata?.content } : null,
+};
+```
+
+## 菜单示例
+
+在底栏扩展菜单加一项，给选中的文本节点末尾追加签名：
+
+```ts
+import type { PluginMenu } from "@infinite-canvas/plugin-sdk";
+
+export const signMenu: PluginMenu = {
+    id: "sign:menu",
+    locations: ["canvas.extensions"],
+    transform: ({ canvas, items }) => [
+        ...items,
+        {
+            id: "sign:append",
+            type: "action",
+            title: "追加签名",
+            run: async () => {
+                const ids = canvas.getSelectedIds();
+                await canvas.transact(canvas.getNodes()
+                    .filter((node) => ids.includes(node.id) && node.type === "text")
+                    .map((node) => ({ type: "update_node", id: node.id, metadata: { content: node.metadata?.content + "\n—— 签名" } })));
+            },
+        },
+    ],
+};
+```
+
+在 `plugin.ts` 中 `contribute(menus, { id: signMenu.id, value: signMenu })`。
+
+## 操作画布
+
+菜单收到的 `canvas`、面板收到的 `canvas`、节点上下文都可以读写当前画布：`getNodes()`、`getConnections()`、`getSelectedIds()`、`getSnapshot()`、`transact(ops)`、`undo()`、`redo()`、`setSelection({ nodeIds, connectionId })`、`setViewport({ x, y, k })`。`setup` 阶段没有当前画布，不要在其中直接调用 `ctx.canvas()`。
+
+节点结构为 `{ id, type, title, position: { x, y }, width, height, metadata }`，`type` 为 `text`、`image`、`video`、`audio`、`group` 或插件自定义类型。文本内容在 `metadata.content`。
+
+`transact(ops)` 一次提交多个操作，任一失败则全部不生效，返回提交后的快照；**依赖这次写入的后续操作必须等待它完成**。
+
+| 操作 | 写法 |
+| --- | --- |
+| 新增节点 | `{ type: "add_node", node: { id, type: "text", title, position, width, height, metadata: { content, status: "success" } } }` |
+| 更新节点 | `{ type: "update_node", id, patch?: { title?, position?, width?, height? }, metadata? }`，`metadata` 只合并传入的字段 |
+| 移动 | `{ type: "move_nodes", items: [{ id, x?, y?, dx?, dy? }] }` |
+| 删除 | `{ type: "delete_node", ids }` |
+| 连线 | `{ type: "connect_nodes", connection: { id, fromNodeId, toNodeId } }` |
+| 删线 | `{ type: "delete_connections", ids, all? }` |
+| 分组 | `{ type: "group_nodes", ids, id, title }`、`{ type: "ungroup_nodes", ids }`、`{ type: "set_group_members", groupId, nodeIds }` |
+
+新节点的 `id` 自己生成且不能重复；先用 `getNodes()` 算出空位，避免与已有节点重叠。
+
+构建版还可以通过 `ctx.commands.execute(command, input, { scope, signal })` 调用公开命令（从 `builtin` 导入）：`canvasApply`、`canvasUndo`、`canvasRedo`、`canvasSelect`、`canvasViewport`、`canvasFocusNode`、`canvasDeleteNodes`、`canvasClear`、`canvasGroupNodes`、`canvasUngroupNodes`、`canvasInsertAsset`、`canvasImportMedia`、`nodeCreate`、`nodeDuplicate`、`nodeGenerate`、`nodeRetry`、`nodeStop`、`nodeSetTextContent`、`nodeOpenPanel`、`nodePreviewImage`。
+
+## 调用模型
+
+`ctx.models` 使用宿主已配置的渠道与密钥，插件不需要也不应该保存密钥。每个方法接收一个对象参数：
+
+| 方法 | 说明 |
+| --- | --- |
+| `generateText({ prompt, system?, model?, onDelta? })` | 返回 `{ text }` |
+| `generateImage({ prompt, references?, count?, size?, model? })` | 返回 `{ images }` |
+| `generateVideo(...)` / `submitVideo(...)` | 生成视频，或只提交任务 |
+| `listModels({ capability? })` | 可选模型列表 |
+| `defaultModel({ capability })` | 默认模型 ID |
+
+用户没有配置模型时会抛错，用 `try/catch` 给出提示。
+
+## 保存数据
+
+| 成员 | 用途 |
+| --- | --- |
+| `ctx.storage` | `get / set / remove`，插件私有 JSON 数据 |
+| `ctx.files` | `read / write / remove`，插件私有文件（Blob） |
+| `ctx.images`、`ctx.media` | `images.store / preview / read`、`media.read`，按 `storageKey` 存取素材 |
+| `ctx.projectData` | 按画布项目保存的数据，需先贡献 `projectData` 声明数据域 |
+| 节点 `metadata` | 节点自身的状态，随画布保存与撤销 |
+
+纯 Web 保存在浏览器，本地版保存在工作区。不要直接访问宿主内部 store、DOM 结构或 `localStorage`。
+
+## 事件
+
+`ctx.on(event, handler)` 返回取消函数，插件停用时自动取消。
+
+| 事件 | 载荷 |
+| --- | --- |
+| `document.committed` | `{ projectId, revision, source, operation, removedNodeIds? }` |
+| `document.saved` / `document.saveFailed` | 保存成功或失败（含 `code`） |
+| `selection.changed` | `{ projectId, selection, source }` |
+| `viewport.changed` | `{ projectId, viewport, source }` |
+| `result.applied` | 生成结果写入节点 `{ projectId, kind, nodeIds, taskId? }` |
+| `model.call.started` / `model.call.finished` | 模型调用开始与结束，含类型、模型、耗时与用量摘要；结束事件的 `upstream` 为实际请求，密钥已打码 |
+
+在事件回调里写画布时注意避免循环触发，可用 `source` 区分来源。
+
+## 贡献调用脚本
+
+插件可以附带模型调用脚本，用户启用插件后在渠道「调用方式」的「插件」分类中选用。脚本写法与[调用脚本开发](/docs/development/call-scripts)完全相同：
+
+```ts
+import { contribute, definePlugin } from "@infinite-canvas/plugin-sdk";
+import { callScripts } from "@infinite-canvas/plugin-sdk/builtin";
+
+const source = `async function main(params) {
+    const { model, prompt, options, utils } = params;
+    const data = await utils.http.post("/images/generations", {
+        model,
+        prompt,
+        n: options.count,
+    });
+    return data.data;
+}`;
+
+export default definePlugin({
+    contributions: [
+        contribute(callScripts, {
+            id: "acme:image",
+            value: {
+                name: "Acme 生图",
+                description: "POST /v1/images/generations",
+                capability: "image",
+                source,
+            },
+        }),
+    ],
+});
+```
+
+- 贡献 ID 就是脚本 ID，可以贡献多条。
+- 插件脚本在「调用方式」中只读，用户可「另存修改」为自己的脚本。
+- 停用插件后，引用它的模型会提示调用方式不可用，重新启用后恢复。
+
+## 命令与 Agent 工具
+
+构建版插件可以登记命令，并把命令开放给画布聊天和外部 MCP：
+
+```ts
+import { z } from "zod";
+import { defineCommand } from "@infinite-canvas/plugin-sdk";
+import type { PluginAgentTool, PluginCommand } from "@infinite-canvas/plugin-sdk";
+
+export const countNodes = defineCommand({
+    id: "stats:count-nodes",
+    scope: "project",
+    input: z.object({}).strict(),
+    output: z.object({ count: z.number() }).strict(),
+});
+
+export const countCommand: PluginCommand<{}, { count: number }> = {
+    command: countNodes,
+    title: "统计节点数",
+    run: (_, { canvas }) => ({ count: canvas!.getNodes().length }),
+};
+
+export const countTool: PluginAgentTool = {
+    command: countNodes,
+    readOnly: true,
+    description: "返回当前画布的节点数量。",
+};
+```
+
+`run` 的第二个参数提供 `scope`、`signal` 和当前画布 `canvas`（`scope` 为 `project` 的命令才有画布）。在 `plugin.ts` 中分别 `contribute(commands, { id: countNodes.id, value: countCommand })` 和 `contribute(agentTools, { id: countNodes.id, value: countTool })`。完整示例见 `plugins/director-desk`。`description` 会交给模型阅读，写清楚工具做什么、需要先调用什么。
+
+## 开放自己的扩展点
+
+插件可以让其他插件扩展自己，例如导演台开放「镜头布局」：
+
+```ts
+import { defineExtensionPoint } from "@infinite-canvas/plugin-sdk";
+
+export const tips = defineExtensionPoint<{ text: string }>({ id: "example:tips", schema });
+```
+
+在 `definePlugin({ extensionPoints: [tips] })` 中声明，用 `ctx.extensions.query(tips, ctx.scope)` 读取、`subscribe` 监听变化。其他插件用 `contribute(tips, ...)` 扩展；提供方未启用时这些贡献静置，启用后自动生效。公开契约放在 `src/api/`。
+
+## 调试
+
+- 加载或校验失败的信息输出在浏览器控制台，以 `[plugins]` 开头。
+- 本地版启动被插件卡住时，停止服务后加 `--skip-plugins` 重新启动，再在「设置 → 插件」逐个启用排查。
+- 每次重新构建后点插件的「重新加载」按钮，确保使用最新产物。
+- 异步操作检查 `ctx.signal`，插件停用后不再写入。
+
+## 打包与发布
+
+1. `package.json` 的 `name` 使用 `canvas-plugin-<插件id>` 或 `@作用域/canvas-plugin-<插件id>`，`files` 包含 `dist`、`plugin.json`、图标和 `GUIDE.md`。
+2. 执行 `pnpm pack` 生成 `.tgz`。
+
+分发方式：
+
+| 方式 | 操作 |
+| --- | --- |
+| 直接发文件 | 用户在「设置 → 插件」点「上传插件包」选择 `.tgz` |
+| npm | 发布到 npm 后，用户在 CLI 运行 `infinite-canvas plugin add <包名>@<版本>` |
+| 软件源 | 自建插件源：静态目录根部放 `index.json`，列出插件、各版本的包路径、校验值、适用软件版本 `host` 与插件 API 版本 `pluginApi`；用户在「设置 → 插件 → 下载源设置」或 `infinite-canvas plugin registry <地址>` 中填写 |
+
+官方插件源是仓库的 `plugins-dist-v1` 分支，由「Publish Plugins」工作流构建并通过 `scripts/publish-plugin-index.mjs` 更新；同一版本号不能重复发布。安装时不执行包的生命周期脚本，插件解压到工作区 `plugins/<插件id>/`。
+
+## 规范
+
+- 面向用户的文案使用中文业务语言，不出现「接口」「后端」等技术术语。
+- 失败提示：上游服务返回了错误说明时直接展示，没有说明时显示固定文案；不展示本地程序地址、堆栈与内部异常。
+- 图标使用 `lucide-react`，不用 emoji 或文字符号充当图标（单文件插件除外）。
+- 界面控件从 `@infinite-canvas/plugin-sdk/ui/<组件名>` 导入，颜色跟随主题。
+- 插件代码与调用脚本视为用户信任的代码，不做沙箱隔离；不要在源码中写入任何密钥。

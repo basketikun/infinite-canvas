@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="web/public/logo.svg" width="96" alt="infinite-canvas logo">
+  <img src="packages/workbench/public/logo.svg" width="96" alt="infinite-canvas logo">
 </p>
 
 <h1 align="center">无限画布 (infinite-canvas)</h1>
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/content/docs/overview/quick-start.mdx">快速开始</a> · <a href="docs/content/docs/overview/features.mdx">功能介绍</a> · <a href="docs/content/docs/overview/render.mdx">Render 部署</a> · <a href="docs/content/docs/overview/docker.mdx">Docker 部署</a> · <a href="docs/content/docs/canvas/canvas-node-manual.mdx">画布节点操作手册</a> · <a href="docs/content/docs/canvas/canvas-shortcuts.mdx">画布快捷键</a> · <a href="SECURITY.md">漏洞提交</a> · <a href="docs/content/docs/progress/todo.mdx">待办事项</a> · <a href="canvas-agent/README.md">本地 Canvas Agent</a> · <a href="plugins/infinite-canvas">Codex app 插件</a>
+  <a href="apps/docs/content/docs/overview/quick-start.mdx">快速开始</a> · <a href="apps/docs/content/docs/overview/features.mdx">功能介绍</a> · <a href="apps/docs/content/docs/overview/render.mdx">Render 部署</a> · <a href="apps/docs/content/docs/overview/docker.mdx">Docker 部署</a> · <a href="apps/docs/content/docs/canvas/canvas-node-manual.mdx">画布节点操作手册</a> · <a href="apps/docs/content/docs/canvas/canvas-shortcuts.mdx">画布快捷键</a> · <a href="SECURITY.md">漏洞提交</a> · <a href="apps/docs/content/docs/progress/todo.mdx">待办事项</a> · <a href="apps/cli/README.md">CLI 本地版</a> · <a href="agent-plugins/infinite-canvas">Codex / ZCode 插件</a>
 </p>
 
 无限画布是一款面向图片创作的开源工作台。它把画布编排、AI 图片生成、参考图编辑、对话助手、提示词库和素材沉淀放在同一个界面里，适合用来探索视觉方案并连续迭代图片结果。
@@ -114,33 +114,59 @@
 ## 核心功能
 
 - 无限画布：多画布项目、节点拖拽缩放、连线、小地图、撤销重做、导入导出。
-- AI 创作：浏览器前台直连你配置的 OpenAI 兼容接口，支持文生图、图生图、参考图编辑、文本问答、音频和视频生成。
+- AI 创作：使用你配置的模型渠道，支持文生图、图生图、参考图编辑、文本问答、音频和视频生成。
 - 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回画布。
-- 本地 Agent：通过本机 Canvas Agent 连接 Codex / Claude Code，让 Agent 通过 MCP 操作当前画布；
-- Codex App 插件：提供 Codex app 插件，安装后会自动注册 MCP 并尝试拉起本地 Agent。
-- 插件系统：支持通过 URL 动态安装 / 启用 / 更新 / 卸载远程节点插件，并提供 TypeScript SDK 自行开发画布节点插件。
+- MCP 画布工具：CLI 本地版向 Codex、Claude Code 等外部 Agent 开放画布操作；右侧聊天使用渠道文本模型直接调用同一套工具。
+- Codex App 插件：安装后会自动注册 MCP 并启动本地版画布。
+- 插件系统内置插件市场，可一键安装、更新和管理插件，也支持上传插件包。开发自己的工作台页面、导航、布局或画布节点，可从[最小插件模板](plugins/template/)开始。
 - 自定义接口调用：可自定义生图 / 视频接口的调用方式，灵活适配各类中转站与自建服务。
-- 提示词库：内置 7 个开源提示词来源并支持自定义标准 JSON 来源，由浏览器前端直连并缓存到 IndexedDB。
+- 提示词库：内置 7 个开源提示词来源并支持自定义标准 JSON 来源，由浏览器直连拉取并缓存在本地。
 
-完整功能说明见 [功能介绍](docs/content/docs/overview/features.mdx)。
+完整功能说明见 [功能介绍](apps/docs/content/docs/overview/features.mdx)。
 
 如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
 
 ## 快速开始
 
-AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器本地。
+项目提供两种运行方式：
+
+- **CLI 本地版（推荐）**：功能完整，作品和渠道凭据保存在本机目录，支持插件命令行管理，并可通过 MCP 让 Codex、Claude Code 等 AI 助手操作画布。
+- **纯 Web 版**：纯静态站点，数据保存在浏览器，不支持外部 AI 助手连接，适合部署静态站点或做二次开发。
+- **桌面版**：用 Electron 窗口打开 CLI 本地版，功能与 CLI 相同，适合自行构建后分发。项目不提供桌面版安装包，需要自己构建。
+
+### 本地启动
+
+> CLI 本地版仅适用于个人在本机使用，请不要部署到服务器或开放给他人访问。本地版没有登录保护，开放后任何能访问的人都可以查看作品、使用你的模型密钥，并在这台电脑上运行代码。需要多人访问请二次开发或者部署纯 Web 版。
+
+需要 Node.js 22 或更高版本：
+
+```bash
+npx -y @basketikun/infinite-canvas@latest serve --open
+```
+
+启动后打开终端显示的地址（默认 `http://localhost:17371`），作品默认保存在 `~/.infinite-canvas/workspace`，可用 `--data-dir` 指定其他目录。连接 AI 助手请在页面「设置 → Agent配置」中复制 MCP 配置。
 
 ### 本地开发
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
 cd infinite-canvas
-cd web
-bun install
-bun run dev
+pnpm install --frozen-lockfile
+pnpm dev --open
 ```
 
-### Docker 运行
+默认启动 CLI 本地工作台，支持源码热更新，无需先构建。桌面版使用 `pnpm dev:desktop`，与 CLI 共用工作区和插件；纯 Web 使用 `pnpm dev:web`。CLI 选项与数据目录见 [本地开发文档](apps/docs/content/docs/development/local-development.mdx)。
+
+### 构建桌面版
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build:desktop
+```
+
+会为当前系统和架构打包应用到 `apps/desktop/dist/`，与 CLI 共用 `~/.infinite-canvas/workspace` 工作区。签名、安装程序和自动更新需要自行处理，详见 [桌面版说明](apps/desktop/README.md)。
+
+### Docker 运行（纯 Web 版）
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git

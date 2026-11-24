@@ -1,0 +1,59 @@
+.generation-workspace-controls {
+    --generation-control: light-dark(#fff, #141414);
+    --generation-border: light-dark(#d9d9d9, #424242);
+    --generation-primary: light-dark(#171717, #d8d8d8);
+    --generation-primary-text: light-dark(white, #171717);
+    --generation-input-hover: light-dark(rgb(23 23 23 / 24%), rgb(250 250 249 / 24%));
+    --generation-input-focus: light-dark(rgb(23 23 23 / 38%), rgb(250 250 249 / 38%));
+}
+:root[data-workbench-palette] .generation-workspace-controls {
+    --generation-control: var(--card);
+    --generation-border: var(--border);
+    --generation-primary: var(--primary);
+    --generation-primary-text: var(--primary-foreground);
+    --generation-input-hover: var(--border);
+    --generation-input-focus: var(--border);
+}
+.generation-workspace-controls :is([data-slot="textarea"], :where(button)[data-variant]) {
+    color: var(--workbench-elevated-text);
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 22px;
+}
+.generation-workspace-controls [data-slot="textarea"] {
+    height: auto;
+    field-sizing: fixed;
+    resize: vertical;
+    padding: 4px 11px;
+    background: var(--generation-control);
+    border: 1px solid var(--generation-border);
+    border-radius: 6px;
+    box-shadow: none;
+}
+.generation-workspace-controls textarea::placeholder { color: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%)); }
+.generation-workspace-controls textarea:hover { border-color: var(--generation-input-hover); }
+.generation-workspace-controls textarea:focus { border-color: var(--generation-input-focus); }
+.generation-workspace-controls :where(button)[data-variant] { height: 32px; border-radius: 6px; padding: 0 15px; gap: 8px; cursor: pointer; }
+.generation-workspace-controls [data-variant="outline"] {
+    border: 1px solid var(--generation-border);
+    background: var(--generation-control);
+    box-shadow: 0 2px 0 light-dark(rgb(0 0 0 / 2%), rgb(255 255 255 / 4%));
+}
+.generation-workspace-controls [data-variant="outline"]:enabled:hover { border-color: var(--workbench-button-hover); color: var(--workbench-button-hover); }
+.generation-workspace-controls :where(button)[data-variant]:focus-visible { outline: 3px solid var(--workbench-button-focus); outline-offset: 1px; }
+.generation-workspace-controls [data-size="xs"] { height: 24px; padding: 0 7px; border-radius: 4px; }
+.workbench-checkbox { appearance: none; cursor: pointer; border: 1px solid var(--generation-border); border-radius: 4px; background: var(--generation-control); }
+.workbench-checkbox:checked { border-color: var(--generation-primary); background: var(--generation-primary); }
+.workbench-checkbox:checked::before { content: ""; display: block; width: 5px; height: 9px; margin: 1px 0 0 5px; border: solid var(--generation-primary-text); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.workbench-checkbox:focus-visible { outline: 3px solid var(--workbench-button-focus); outline-offset: 1px; }
+.workbench-checkbox:disabled { opacity: .5; cursor: not-allowed; }
+.generation-workspace-controls [data-size="lg"] { height: 40px; font-size: 16px; line-height: 1.57143; border-radius: 8px; border: 1px solid transparent; background: var(--generation-primary); color: var(--generation-primary-text); box-shadow: none; }
+.generation-workspace-controls [data-size="lg"]:enabled:hover { background: var(--workbench-button-hover); }
+.generation-workspace-controls [data-size="icon-xs"] { width: 24px; height: 24px; padding: 0; border-radius: 100%; background: rgb(255 255 255 / 85%); box-shadow: var(--shadow-sm); }
+.generation-workspace-controls :where(button)[data-variant]:disabled { opacity: 1; color: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%)); border-color: var(--workbench-button-disabled-border); cursor: not-allowed; }
+.generation-workspace-controls [data-size="lg"]:disabled { background: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 8%)); }
+.generation-wait-tag { padding: 0 7px; border: 1px solid transparent; border-radius: 4px; background: color-mix(in srgb, var(--generation-control) 96%, black); color: var(--workbench-elevated-text); font-size: 12px; line-height: 20px; }
+.dark .generation-wait-tag { background: color-mix(in srgb, var(--generation-control) 92%, white); }
+.generation-workspace-controls .generation-result-retry:enabled { border-color: var(--workbench-message-error); color: var(--workbench-message-error); }
+.generation-workspace-controls .generation-result-retry:enabled:hover { border-color: light-dark(#ff7875, #e84749); color: light-dark(#ff7875, #e84749); }

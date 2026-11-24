@@ -1,0 +1,42 @@
+.workbench-image-preview {
+    --preview-ink: light-dark(#fff, #171717);
+    z-index: 1080;
+    text-align: center;
+    font: 14px/1.5 -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+
+:root[data-workbench-palette] .workbench-image-preview { --preview-ink: var(--primary-foreground); }
+.workbench-image-preview .rc-image-preview-mask { background: rgb(0 0 0 / 45%); }
+.workbench-image-preview .rc-image-preview-img { transition: transform .3s ease-out; }
+.workbench-image-preview.rc-image-preview-movable .rc-image-preview-img { cursor: grab; }
+.workbench-image-preview.rc-image-preview-moving .rc-image-preview-img { cursor: grabbing; }
+
+.workbench-image-preview :is(.rc-image-preview-close, .rc-image-preview-switch) {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 12px;
+    color: var(--preview-ink);
+    background: rgb(0 0 0 / 10%);
+}
+
+.workbench-image-preview .rc-image-preview-close { top: 12px; right: 12px; }
+.workbench-image-preview .rc-image-preview-switch-prev { inset-inline-start: 12px; }
+.workbench-image-preview .rc-image-preview-switch-next { inset-inline-end: 12px; }
+.workbench-image-preview :is(.rc-image-preview-close, .rc-image-preview-switch):enabled:hover { background: rgb(0 0 0 / 20%); }
+.workbench-image-preview .rc-image-preview-switch:disabled { opacity: 1; background: transparent; color: color-mix(in srgb, var(--preview-ink) 25%, transparent); }
+.workbench-image-preview svg { width: 18px; height: 18px; }
+
+.workbench-image-preview .rc-image-preview-footer { bottom: 32px; }
+.workbench-image-preview :is(.rc-image-preview-progress, .rc-image-preview-actions-action) { color: color-mix(in srgb, var(--preview-ink) 65%, transparent); }
+.workbench-image-preview .rc-image-preview-actions { gap: 12px; padding: 0 24px; border-radius: 100px; background: rgb(0 0 0 / 10%); }
+.workbench-image-preview .rc-image-preview-actions-action { display: flex; padding: 12px; }
+.workbench-image-preview .rc-image-preview-actions-action:enabled:hover { color: color-mix(in srgb, var(--preview-ink) 85%, transparent); }
+.workbench-image-preview .rc-image-preview-actions-action:disabled { opacity: 1; color: color-mix(in srgb, var(--preview-ink) 25%, transparent); cursor: not-allowed; }
+.workbench-image-preview button:focus-visible {
+    outline: 3px solid light-dark(#3d3d3d, #595959);
+    outline-offset: 1px;
+}
+
+:root[data-workbench-palette] .workbench-image-preview button:focus-visible { outline-color: var(--ring); }

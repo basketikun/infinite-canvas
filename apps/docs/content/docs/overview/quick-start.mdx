@@ -1,0 +1,56 @@
+---
+title: 快速开始
+description: 用最少步骤把无限画布跑起来
+---
+
+# 快速开始
+
+无限画布有三种运行方式：
+
+| 方式 | 适合 | 数据位置 |
+| --- | --- | --- |
+| CLI 本地版（推荐） | 日常使用，功能完整，支持外部 Agent 通过 MCP 操作画布 | 启动时选定的本机目录 |
+| 桌面版 | 自行构建后分发，功能与 CLI 相同；项目不提供安装包 | 与 CLI 共用工作区 |
+| 纯 Web 版 | 部署静态站点或二次开发，不支持外部 Agent 连接 | 当前浏览器 |
+
+## CLI 本地版
+
+> CLI 本地版仅适用于个人在本机使用，请不要部署到服务器或开放给他人访问。本地版没有登录保护，开放后任何能访问的人都可以查看作品、使用你的模型密钥，并在这台电脑上运行代码。需要多人访问请二次开发或者部署纯 Web 版。
+
+需要 Node.js 22 或更高版本：
+
+```bash
+npx -y @basketikun/infinite-canvas@latest serve --open
+```
+
+默认地址为 `http://localhost:17371`，作品保存在 `~/.infinite-canvas/workspace`，可用 `--data-dir` 指定其他目录、`--port` 指定端口。按 Ctrl+C 停止。连接 Codex、Claude Code 等外部 Agent，在页面「设置 → Agent配置」中复制 MCP 配置。
+
+从源码启动：
+
+```bash
+git clone git@github.com:basketikun/infinite-canvas.git
+cd infinite-canvas
+pnpm install --frozen-lockfile
+pnpm dev --open
+```
+
+## 桌面版
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build:desktop
+```
+
+为当前系统和架构打包到 `apps/desktop/dist/`。签名、安装程序和自动更新需要自行处理。
+
+## 纯 Web 版
+
+- 源码开发：`pnpm dev:web`，访问 `http://localhost:3000`。
+- Vercel：导入仓库即可，根目录 `vercel.json` 会构建 `apps/web/`。
+- [Docker 部署](/docs/overview/docker)、[Render 部署](/docs/overview/render)。
+
+## 首次使用建议
+
+- 先打开右上角设置，新增渠道并填写服务地址，再为不同 `API Key` 新增分组，在各分组中拉取或添加模型并选择调用方式。
+- 打开「素材」页会由浏览器直连拉取提示词库并缓存在本地。
+- 需要跨设备同步画布、素材和生成记录时，启用 WebDAV 同步插件，在「设置 → 插件 → WebDAV 同步」中填写连接信息。

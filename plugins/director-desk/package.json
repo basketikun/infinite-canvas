@@ -1,0 +1,49 @@
+{
+  "name": "canvas-plugin-director-desk",
+  "version": "1.0.0",
+  "type": "module",
+  "files": [
+    "dist",
+    "plugin.json",
+    "src/api",
+    "icon.svg",
+    "GUIDE.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./api/camera-layouts": {
+      "types": "./src/api/camera-layouts.ts",
+      "development": "./src/api/camera-layouts.ts",
+      "import": "./dist/api/camera-layouts.js"
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm run build",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "react-is": "^19.0.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@infinite-canvas/plugin-sdk": "workspace:*",
+    "@types/react": "19.1.12",
+    "@types/react-is": "^19.0.0",
+    "typescript": "^5",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "@types/react-dom": "19.1.9",
+    "@react-three/fiber": "^9.4.0",
+    "@react-three/drei": "^10.7.0",
+    "three": "0.180.0",
+    "three-stdlib": "^2.36.0",
+    "@types/three": "0.180.0",
+    "lucide-react": "^1.16.0",
+    "zustand": "^5",
+    "esbuild": "^0.25.0"
+  },
+  "license": "MIT"
+}

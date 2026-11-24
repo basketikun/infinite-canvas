@@ -1,0 +1,28 @@
+{
+  "name": "canvas-plugin-multi-format-renderer",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@infinite-canvas/plugin-sdk": "workspace:*",
+    "@types/react": "19.1.12",
+    "typescript": "^5",
+    "marked": "^18.1.0",
+    "lucide-react": "^1.16.0",
+    "dompurify": "^3.4.18"
+  },
+  "files": [
+    "dist",
+    "plugin.json",
+    "icon.svg",
+    "GUIDE.md"
+  ],
+  "exports": {
+    "./client": "./dist/client.js"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,124 @@
+---
+title: MCP 连接与画布聊天
+description: 外部 Agent 和渠道文本模型共用画布工具
+---
+
+# MCP 连接与画布聊天
+
+CLI 启动同源网页、磁盘存储与 MCP 连接服务，其中 MCP 部分为外部 Agent 提供工具和网页连接，不运行 Codex、Claude Code 或其他 Agent 进程。画布右侧聊天使用渠道设置中的文本模型，在网页中直接执行工具。两种入口共用一份工具定义和画布执行逻辑，内置聊天无需本地服务。
+
+## 调用路径
+
+```text
+内置聊天 → 渠道文本模型 → AI SDK ToolLoopAgent → 网页画布工具
+外部 Agent → stdio MCP → 本机 /api/tools → CanvasSession → 网页画布工具
+
+两条路径共用 packages/shared/src/canvas/tools/ 中的工具定义与编排逻辑
+```
+
+右侧聊天只在 `/canvas/:id` 显示，保留聊天、历史和新对话。外部连接统一放在顶部「设置 → Agent配置」，直接展示手动配置步骤与「复制配置说明」入口，可将完整说明交给 AI 协助连接。首页和其他页面不显示聊天面板；已经建立的网页连接仍可服务外部 Agent 的页面导航、素材及工作台工具。
+
+## 启动
+
+只使用内置聊天时，安装网页依赖并启动网页，配置支持工具调用的渠道文本模型即可：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev:web
+```
+
+接入外部 Agent 时，改用本地版启动（需要 Node.js 22 或更高版本）：
+
+```bash
+pnpm dev --open
+```
+
+本地服务托管的网页自动连接同一服务，默认地址为 `http://127.0.0.1:17371`。外部 Agent 只能操作本地服务打开的网页；纯 Web 的「设置 → Agent配置」只提示改用本地版。
+
+外部客户端注册 stdio MCP：
+
+```json
+{
+  "mcpServers": {
+    "infinite-canvas": {
+      "command": "npx",
+      "args": ["-y", "@basketikun/infinite-canvas@latest", "mcp"]
+    }
+  }
+}
+```
+
+开发源码时，复制 `pnpm dev` 控制台输出的完整 JSON 配置；命令使用启动服务时的 Node 路径，参数包含本地 tsx 与 `src/dev.ts` 的绝对路径，可从任意工作目录启动。安装版控制台输出已安装入口的绝对路径。各客户端仅需接入标准 MCP，无需为 Codex、Claude Code 或 WorkBuddy 实现转发适配器。
+
+Codex / ZCode 插件启动本地服务后打开 `<打开地址>/canvas?mode=new`。
+
+## 工具执行与项目归属
+
+网页通过同源 `/events` 建立 WebSocket 连接；推送通道不占浏览器对同一地址的普通连接名额，多开页面不会互相阻塞。`/canvas/state` 只同步 `{ snapshot: { projectId, title } }`，未打开具体画布时为 `{ snapshot: null }`，不传节点、媒体内容或完整快照。项目或标题改变时才更新这份定位信息。每次工具调用直接发送到目标网页，由网页读取实时状态、校验项目、转换并执行操作，通过 `/canvas/result` 返回结果；一次调用只需一次网页往返，不依赖本地服务缓存的节点状态。
+
+- `canvas_get_state` 返回 `projectId`，外部 Agent 后续调用应传入；工具固定作用于最近聚焦的画布，不提供跨项目、多网页定位或页面跳转工具。网页执行前检查实时项目，不能改投切换后的项目。
+- 未指定网页时使用最近聚焦的已连接页面。明确指定的网页失联后拒绝调用，不会把请求转交另一画布。
+- 外部 Streamable HTTP MCP 也可使用 `/mcp`，通过 `x-canvas-client-id` 和 `x-canvas-project-id` 固定目标。模型参数不能覆盖固定目标，本地服务传递固定标识，网页校验实时项目。
+- 内置聊天直接绑定发起对话的项目，每次模型请求和工具执行前检查当前项目；切换项目会取消后续处理，不会把操作改投其他画布。
+- 结果必须由目标网页回传。生成提交与生成完成分开处理，使用 `generation_get_status` 查询实际状态。工作台返回的 `taskId` 定位保存的生成记录。批量生图用一个编号查询整批，结果中的 `taskIds` 列出关联的本地调用。CLI 和 Desktop 重开同一工作区后可重新连接并查询。
+- 工具失败返回固定 `code` 和中文 `message`，区分目标断开、项目切换、节点不存在、组成员无效等情况；详细诊断留在网页控制台与本地服务，不能透传内部错误原文。MCP 清单为读取工具标记 `readOnlyHint`。
+
+本地服务只监听回环地址，网页连接与工具请求只接受同源页面。服务地址保存到 `~/.infinite-canvas/canvas-mcp.json`，普通启动写入，stdio MCP 读取；文件只保存服务地址，不保存模型密钥、聊天记录或 Agent 工作目录。
+
+## 精简读取与操作回执
+
+工具清单精简为 13 个，只面向当前画布，不保留重复入口；增删改、移动、分组、连线、视口与提交生成统一由 `canvas_apply_ops` 完成。`canvas_get_state` 一次最多返回 200 个节点，用 `offset` 翻页；`canvas_get_nodes` 最多 50 个 ID。`canvas_get_state` 默认返回布局、状态、组成员、带截断标记的文本预览、选区、视口及连线，支持按 `ids`、`types`、`selectedOnly`、`groupId`、`keyword` 组合筛选；`includeConnections: false` 可省略连线。`canvas_get_nodes` 按明确 ID 返回完整文本与生成参数，并列出 `missingIds`。两者都只输出允许字段，不返回媒体编码、临时 URL、原始错误、执行脚本或整份 metadata。
+
+写操作只返回项目 ID 和有变化的字段：`createdNodeIds`、变化节点 `nodes`、`deletedNodeIds`、`addedConnections`、`deletedConnectionIds`、选区、视口及 `submittedNodeIds`。未返回的原有节点不代表删除；提交生成也不代表成功，应按节点查询 `generation_get_status`。组成员归属变化会同时反映在相关组摘要中。
+
+`canvas_list_models` 按用途和关键字查询模型，只返回可调用 ID、用途、标签与默认选择，不包含密钥或渠道地址。素材列表默认返回摘要，按 ID 传 `includeContent: true` 才返回文本原文或图片存储标识和尺寸。生成状态省略重复提示词和原始错误；聊天图片引用按存储标识去重。
+
+## 组节点协议
+
+组是 `type: "group"` 的真实节点。`canvas_get_state` 和 `canvas_get_nodes` 返回组的 `memberIds`；成员的 `metadata.groupId` 指向所属组。组与成员都使用画布绝对坐标，不使用父组相对坐标，也不支持嵌套组。
+
+| `canvas_apply_ops` 操作 | 入参 | 行为 |
+| --- | --- | --- |
+| `group_nodes` | `ids`、可选 `title`、`id` | 将已有节点打组，自动包围至少两个成员；传入组时展开成员合并，新组 ID 在 `createdNodeIds` 中，也可指定 `id` 供同批后续操作引用 |
+| `ungroup_nodes` | `ids` | 解散指定组，或将指定成员移出所属组 |
+| `set_group_members` | `groupId`、`nodeIds` | 替换完整成员列表，可跨组转移；空列表保留目标组框 |
+| `add_node` | `nodeType: "group"` 及位置、尺寸等 | 创建空组框，之后通过成员操作填充 |
+
+打组和调整成员保留成员内容、绝对位置、尺寸与成员之间的连线；合并的旧组和因转移而变空的原组会连同其连线一起移除，无关空组保留。`move_nodes` 或更新组的 `position` 会同步移动成员；同一次 `move_nodes` 中显式指定成员时，以该成员参数为准，不叠加组位移。调整组尺寸只改变组框。删除或解散组保留成员，删除内容必须显式列出成员 ID。
+
+组可作为生成工具的 `referenceNodeIds` 或连线来源，生成时按已有规则展开其中有效素材并去重；组不能作为连线目标。`canvas_apply_ops` 同时支持 `group_nodes`、`ungroup_nodes`、`set_group_members`、`move_nodes`；`group_nodes` 可指定 `id` 供同批后续操作引用，同批移动组与成员应放在一个 `move_nodes` 操作中。
+
+这些工具共用于内置助手和外部 MCP。更新源码后需重启本地服务、重新加载客户端 MCP 并刷新网页。
+
+## 内置聊天
+
+`agent-chat.ts` 负责会话、流式展示、取消与历史保存；`text-agent.ts` 使用 AI SDK `ToolLoopAgent` 管理连续模型请求和工具执行，不再手写循环。工具由 `packages/workbench/src/lib/agent/canvas-tools.ts` 创建，直接调用网页操作，无需读取 MCP 清单或连接本机服务。右侧聊天只操作当前画布，不提供跨项目导航或工作台工具。
+
+AI SDK 处理 Responses、Chat Completions、Anthropic 和 Gemini 的流式工具参数及消息结构，Agnes 使用 Chat Completions。既有普通文本生成保留原脚本路径；收到 `params.tools` 工具对象时，内置文本脚本调用 `params.utils.runTextAgent(protocol)`，返回 `{ text, messages }`。`messages` 包含所有已完成轮次的工具调用与结果，自定义文本脚本可使用同一辅助方法。工具仍串行执行，沿用无额外轮次上限的行为，模型不再调用工具时结束，用户可随时停止。
+
+纯 Web 的模型密钥保存在浏览器，由浏览器直接请求渠道，启用已有请求转发设置时沿用该设置。本地模式由同源服务读取工作区密钥并发送模型请求；AI SDK 工具循环和画布工具仍在网页执行，只传递可序列化的模型消息与工具描述。只有选择支持工具调用的模型和调用方式，才能执行画布操作。
+
+聊天通过 StorageAdapter 按项目和会话逐条保存：纯 Web 使用 localforage 的 `agent_chat`，本地模式写入工作区 `chats/`。每条会话包含可展示消息和模型上下文。流式增量保存在内存，完整工具轮次完成后落盘；刷新会停止当前回复，已保存会话可从历史中继续。读取失败时禁止新建和发送，不用空历史覆盖原数据。不同会话分别保存，避免多个标签页覆盖整份记录。
+
+每个 `finish-step` 事件保存 AI SDK 标准化的输入、输出、思考和缓存命中 Token，用量随消息保存在本地。聊天区累计当前会话已返回的用量，包括工具调用期间的模型请求；缓存率按累计命中量除以累计输入量计算，不平均各轮百分比，不将思考或缓存重复加入输出与输入。未知字段保持未知，不以零代替；中断后保留已经返回的用量，不推算未返回部分。
+
+助手设置保存在渠道具体模型的 `agentSettings` 中，包含手动填写的上下文 Token 上限、思考强度及自动压缩开关，不按模型名称推测容量。普通节点生成不使用助手的思考强度。内置聊天使用所选协议的 SDK 推理选项；实际支持哪些档位由渠道模型决定，Gemini 不提供极高档位。
+
+`contextTokens` 使用最近一步返回的输入加输出用量，和会话累计用量分开。自动压缩在 `prepareStep` 中判断是否达到已填写上限的 80%，包括连续工具调用之间；没有用量时不能自动判断，新内容与切换模型后的差异未预估。`agent-context.ts` 用同一模型总结较早消息，保留最近两个用户轮次和对应工具调用、结果，当前新输入也算一轮。完整历史在 `messages` 中保留，摘要及保留原文单独写入 `contextMessages`；手动压缩复用同一流程，不新增用户消息。摘要为空、未完成、没有缩减、取消或调用失败时停止，不替换原上下文；压缩用量保存在通知条目中。
+
+`canvas_list_references` 返回当前项目聊天中的图片引用。`canvas_insert_media` 按 `storageKey` 在同一项目的聊天记录中查找图片，或按 `assetId` 读取「我的素材」中的文本、图片、视频、音频，用记录里的尺寸创建等比例节点。`canvas_view_image` 按节点或 `storageKey` 返回长边 1024 以内的图片：外部 MCP 以图片内容返回，内置聊天在发送给模型时才读取，不写入对话记录。工具在聊天记录就绪后和画布写入完成后检查项目与取消状态，切换画布不会把节点写到新项目。找不到本项目的引用时，插入失败。
+
+插入只使用引用信息。打开原图预览或用该节点生成时才读取图片，原文件缺失会在该操作中提示。聊天模型发送图片时，通过 `experimental_download` 读取 SDK 文件片段引用的 `image:` 地址。图片理解需要所选模型支持图片输入。这些画布工具共用于内置聊天和外部 MCP。
+
+点击停止或切换项目会中断本轮请求；外部 MCP 断开不影响内置聊天。已完成的画布修改、已提交的生成任务不会回滚，继续对话时应重新确认画布状态。
+
+## 扩展工具
+
+1. 在 `packages/shared/src/canvas/tools/schemas.ts` 维护工具描述与 Zod 入参。
+2. 在同目录 `operations.ts` 将节点工具转换为 `canvas_apply_ops`；内置聊天与外部 MCP 都由网页 `canvas-tools.ts` 调用共用模块，本地服务只转发请求。
+3. 在 `packages/workbench/src/lib/canvas/canvas-agent-ops.ts` 或 `packages/workbench/src/lib/agent/agent-site-tools.ts` 实现网页操作。
+4. 补充已有测试中的输入输出用例，并将用户可感知变更加入待测试清单和更新日志。
+
+共用模块不依赖 Node.js 或 React。CLI 发布时由 esbuild 将它们打入 `dist/index.js`，npm 包无需携带网页工程。不要增加 Agent 专用会话、进程启动或旧版本适配层。外部 Agent 的工具审批由其客户端管理。
+
+协议依据：[MCP TypeScript SDK](https://ts.sdk.modelcontextprotocol.io/)；内置聊天依据：[AI SDK ToolLoopAgent](https://ai-sdk.dev/docs/reference/ai-sdk-core/tool-loop-agent)。

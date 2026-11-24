@@ -1,0 +1,17 @@
+{
+  "name": "@infinite-canvas/desktop",
+  "version": "0.6.0",
+  "private": true,
+  "productName": "无限画布",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "dev": "electron .",
+    "build": "pnpm --filter @basketikun/infinite-canvas build && node build.mjs"
+  },
+  "devDependencies": {
+    "@basketikun/infinite-canvas": "workspace:*",
+    "@electron/packager": "20.3.0",
+    "electron": "45.2.1"
+  }
+}

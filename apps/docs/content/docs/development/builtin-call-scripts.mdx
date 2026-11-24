@@ -1,0 +1,156 @@
+---
+title: 内置调用方式
+description: 内置调用脚本覆盖的协议、渠道填写方式与限制
+---
+
+# 内置调用方式
+
+本文说明项目自带的调用脚本分别对接哪些服务、渠道怎么填、有哪些限制。想自己写一个调用脚本，见[调用脚本开发](/docs/development/call-scripts)。
+
+## 选择调用方式
+
+渠道保存共用的服务地址；渠道下每个分组独立保存名称、API Key 和模型列表，模型各自选择用途与调用脚本。在分组中拉取模型时只使用该分组的 Key；同名模型可以位于多个分组，选择器显示「渠道 / 分组」用于区分。
+
+在渠道模型的「调用方式」中选择脚本。内置脚本按「协议名＋用途」命名，例如「Responses 协议生图」「Responses 协议文本」，每个脚本只适用生图、视频、文本或音频中的一种类型。拉取并加入模型时自动填写类型和调用方式：Gemini、Nano Banana 生图选择 Gemini，Grok 生图和视频选择对应 Grok 脚本，其他生图选择 Images、视频选择 Videos（包括 Veo），文本选择 Responses，音频选择 Chat Completions。普通 Gemini 文本模型仍识别为文本，已有手工选择保留；在渠道编辑器改类型时重新预选对应脚本。选择面板默认显示当前模型类型，也可以切换为其他类型；点击脚本卡片后，模型类型与调用方式一起更新，保存渠道后生效。仅切换类型后取消，不改变原设置。
+
+卡片说明仅保留请求方法、实际路径和必要的模型要求或限制；生成、参考图编辑及视频任务查询分别列出。例如「Images 协议生图」使用 `POST /v1/images/generations`，参考图编辑使用 `POST /v1/images/edits`；「Agnes 协议生图」均使用 `POST /v1/images/generations`。可以直接搜索路径查找调用方式。「说明与调用路径」支持多行编辑，修改源码中的调用路径时应同步更新说明，分享包会保留这些内容。
+
+内置脚本通过「另存修改」创建自定义副本，原脚本保持不变。自定义脚本可以继续编辑。编辑器只选择一种类型并维护一份源码，新增时默认使用选择面板中的模型类型。切换类型会更新尚未修改的初始模板，已编辑源码会保留；需要替换时使用「重置为初始模板」。保存立即影响所有引用该脚本的模型；取消保留原内容。编辑已有脚本的类型后，如果与引用它的模型用途不一致，需要为这些模型重新选择调用方式。
+
+视频脚本使用本地 `packages/workbench/public/icons/` 品牌图标。豆包、可灵、Vidu、海螺图标来自 [Lobe Icons](https://github.com/lobehub/lobe-icons/tree/8a1b2821bb768c484fe8da20c5e1838b6bf551a9/packages/static-svg/icons)，许可随资源保存在 `LICENSE-lobe-icons.txt`；万相图标使用 [Wan 官网](https://wan.video/) 的站点图标，Grok 复用项目已有资源并在深色主题下反色。
+
+各类型脚本可独立编辑、恢复和删除，不影响同服务的其他类型。使用中的脚本删除后，模型保留原选择并显示不可用；已隐藏的内置脚本可通过「恢复已隐藏的内置脚本」重新显示，完整配置备份保留隐藏状态。已提交任务继续使用提交时的脚本快照。
+
+## OpenAI 兼容调用与 Anthropic 文本
+
+按服务提供的调用路径选择脚本，模型名称仍使用渠道中配置的值：
+
+| 类型 | 调用脚本 | 请求路径 |
+| --- | --- | --- |
+| 生图 | Images 协议生图 | `POST /v1/images/generations`；有参考图时 `POST /v1/images/edits` |
+| 生图 | Chat Completions 协议生图 | `POST /v1/chat/completions` |
+| 生图 | Responses 协议生图 | `POST /v1/responses`，调用 `image_generation` 工具 |
+| 文本 | Responses 协议文本 | `POST /v1/responses` |
+| 文本 | Chat Completions 协议文本 | `POST /v1/chat/completions` |
+| 文本 | Messages 协议文本 | `POST /v1/messages` |
+| 音频 | Speech 协议音频 | `POST /v1/audio/speech` |
+| 音频 | Chat Completions 协议音频 | `POST /v1/chat/completions` |
+
+Chat Completions 生图用于支持聊天生图的兼容服务，发送 `messages` 和 `modalities: ["text", "image"]`。比例、分辨率通过 `image_config.aspect_ratio`、`image_config.image_size` 传递；这是服务扩展字段，具体支持范围以渠道为准。若渠道文档使用其他字段，可直接编辑脚本。结果支持 `message.images`、`message.content` 中的 `image_url`，以及正文中的 Markdown 图片链接；只返回普通文字不算生图成功。该脚本不发送 Images 专用的像素尺寸、质量和透明背景字段。
+
+Responses 生图使用配置的主模型调用 `image_generation`，需选支持该工具的主模型；不会根据名称自动替换模型。参考图片放入 `input_image`，尺寸、质量、透明背景放入图片工具，输出为 PNG。工具使用服务默认的生图模型，可在脚本的 `tool` 对象中明确设置 `model`。Chat Completions 与 Responses 两个生图脚本都按生成数量发起请求，沿用现有生图请求的 10 分钟超时；参考图保留公开链接和 data URL，浏览器临时图片才转换为 Base64。Responses 的工具参数依据 [OpenAI 图片工具文档](https://developers.openai.com/api/docs/guides/tools-image-generation)。
+
+Chat Completions 与 Messages 两个文本脚本都支持流式正文、多轮对话、系统提示词和图片输入，也能读取完整 JSON 响应。Chat Completions 在思考程度为「自动」时不发送 `reasoning_effort`，其他选择按原值传入。Anthropic 将系统消息移到 `system`，使用 `x-api-key`、`anthropic-version: 2023-06-01` 以及浏览器直连所需请求头；输出上限固定为已确认的 `max_tokens: 16384`，思考模式使用服务默认值。达到输出上限或流式连接提前结束时提示「文本尚未生成完整」，不自动续写；不展示思考内容；服务失败时保留其错误说明。格式依据 [OpenAI Chat Completions 文档](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Anthropic Messages 文档](https://platform.claude.com/docs/en/api/messages/create)及[流式事件文档](https://platform.claude.com/docs/en/build-with-claude/streaming)。
+
+Chat Completions 音频需使用支持音频输出的模型。脚本请求 `modalities: ["text", "audio"]`，传递音色和格式，读取 `message.audio.data` 保存音频；PCM 对应 `pcm16`。音频内容通过朗读指令生成，风格指令及语速写入系统消息，语速精度由模型决定；需要精确的 `speed` 参数时使用 Speech 脚本。可用音色及格式取决于所选模型和渠道，依据 [OpenAI 音频对话文档](https://developers.openai.com/api/docs/guides/audio-chat-completions)。
+
+兼容服务也可在 `message.content` 中返回 Markdown 音频链接，例如 `[生成音频](<https://example.com/result.mp3>)`。脚本优先读取音频数据，再通过 `utils.markdownLinks` 提取正文中的 HTTP(S) 音频地址，按路径中的 MP3、WAV、Opus、Ogg、AAC、FLAC、PCM、M4A 或 WebM 后缀识别，不受查询参数影响。下载使用当前代理配置与取消信号，不携带渠道密钥；没有音频时明确提示，下载失败、空内容及 HTML / JSON 内容不会保存为音频。此返回形式按兼容服务样例处理，不属于所有音频模型的统一格式。
+
+脚本继续使用所选渠道的地址与分组的密钥，支持本地代理及取消操作。Anthropic 渠道可填写 `https://api.anthropic.com` 或其兼容服务地址；模型列表拉取只有 OpenAI / Gemini 两种格式，Anthropic 模型可手动添加。
+
+## 使用 Grok
+
+渠道地址填写 `https://api.x.ai`（也可带 `/v1`），密钥填写 xAI API Key，模型列表格式选择 OpenAI。新增 Grok 图片或视频模型后，会预选对应 Grok 调用方式；已有模型的手工选择保持原样，可在「调用方式」中更换。
+
+| 用途 | 模型示例 | 调用方式 |
+| --- | --- | --- |
+| 文生图、单图与多图编辑 | `grok-imagine-image-2.0` | Grok 协议生图 |
+| 文生视频、图生视频 | `grok-imagine-video-1.5`、`grok-imagine-video-1.5-lite` | Grok 协议视频 |
+| 首尾帧、多图参考视频 | `grok-imagine-video-1.5` | Grok 协议视频 |
+
+生图使用 `POST /v1/images/generations`，有参考图时使用 `POST /v1/images/edits`，两者均提交 JSON。单图编辑使用 `image`，多图编辑使用 `images`；公开链接和 data URL 保留原值，本地图片转为 Base64。脚本同步接收图片 URL，再交给应用现有图片保存流程。不会提交通用 Images 的 `size`、`output_format` 或透明背景字段。
+
+图片设置建议选 1K 或 2K、质量自动/低/中；`quality` 仅用于支持它的 `grok-imagine-image-2.0`。生成数量为 1–10，编辑最多使用 5 张参考图。比例与分辨率分别提交为 `aspect_ratio` 和小写 `resolution`，不静默降低用户选择的档位或截断参考图；其他设置是否支持由所选模型决定。依据：[图片生成](https://docs.x.ai/developers/model-capabilities/images/generation)、[图片编辑](https://docs.x.ai/developers/model-capabilities/images/editing)、[多图编辑](https://docs.x.ai/developers/model-capabilities/images/multi-image-editing)和[图片 REST 文档](https://docs.x.ai/developers/rest-api-reference/inference/images)。
+
+视频仅保留生成入口，使用 `POST /v1/videos/generations`。创建返回 `request_id`，随后通过 `GET /v1/videos/{request_id}` 查询；`pending` 继续等待，`done` 且成品通过审核才返回视频，失败或过期结束任务。应用负责轮询和刷新恢复，脚本不另设轮询时限或自动重试。
+
+视频「首尾帧」模式将图片依次放入 `image`、`last_frame`，「全能参考」模式使用 `reference_images`。连接音频不会改变首尾帧的用途，音频放入 `reference_audios`；自有音频文件参考需服务额外开通权限，当前面板未提供预设音色或中间关键帧时间设置。公开链接与 data URL 直接使用，本地图片、音频转为 Base64，无需对象存储。
+
+视频生成时长为 1–15 秒；1.5 模型的文生和图生视频支持原生 1080p，多图参考最高 720p。音频开关使用 `generate_audio`，不发送水印开关。具体模型差异与素材要求见[视频能力概览](https://docs.x.ai/developers/model-capabilities/video/overview)、[视频生成](https://docs.x.ai/developers/model-capabilities/video/generation)和[参考素材与首尾帧](https://docs.x.ai/developers/model-capabilities/video/reference-to-video)。
+
+生图需渠道支持上述 JSON 编辑格式。
+
+## 使用 Grok2API
+
+对接 [chenyme/grok2api](https://github.com/chenyme/grok2api) 时，渠道地址填写部署的服务根地址或带 `/v1` 的地址，密钥填写该服务的客户端 API Key，模型名称使用其模型列表中的实际名称。在视频模型的「调用方式」中手工选择「Grok2API 协议视频」；同名 Grok 模型可能自动预选官方脚本，需要自行更换。
+
+脚本通过 `POST /v1/videos/generations` 提交 JSON，发送 `model`、`prompt`、`duration`、`aspect_ratio`、`resolution`。无参考图时文生视频；「首尾帧」模式只支持单张首帧，使用 `image`；「全能参考」模式使用 `reference_images`，保留图片顺序。公开链接和 data URL 原样使用，本地图片转为 Base64。图生与多图参考需要服务中对应的 Build 或 Console 视频模型支持，Web 来源当前只支持文生视频。
+
+该版本严格校验视频字段，不接受 `generate_audio`、`watermark`、`last_frame`。声音和水印由服务决定，面板开关不生效；连接尾帧、视频或音频文件时脚本会明确提示不支持。服务的 `reference_audios` 使用预设 `voice_id`，当前画布的音频文件参考不适用。时长、比例和分辨率原样提交，由服务按模型能力校验，脚本不自动改写。
+
+创建后保存 `request_id`，通过 `GET /v1/videos/{request_id}` 查询：`pending` 继续等待，`done` 且 `video.respect_moderation` 为 true 时返回 `video.url`，其余失败或无成品状态结束任务。沿用应用现有的取消、轮询和刷新恢复流程。请求与返回结构依据 [Grok2API 视频实现](https://github.com/chenyme/grok2api/blob/e2fd7ab481a30a1965bb61395d437154cf247c92/backend/internal/transport/http/inference/handler.go#L179)。
+
+## 使用 Agnes
+
+渠道地址填写 `https://apihub.agnes-ai.com`（也可带 `/v1`），密钥填写 Agnes 的 API Key。添加模型后选择对应用途，并将「调用方式」设为「Agnes 协议生图」「Agnes 协议视频」或「Agnes 协议文本」，例如：
+
+| 模型 | 用途 |
+| --- | --- |
+| `agnes-image-2.5-flash` | 生图与参考图编辑 |
+| `agnes-video-2.5` / `agnes-video-2.5-flash` | 视频 |
+| `agnes-3.0-flash` | 文本 |
+
+生图需要指定尺寸。预设分辨率按档位和比例提交，最终像素尺寸由服务决定。视频参考图片、视频和音频必须是公开可访问的链接，本地文件或浏览器临时链接不能直接提交；图片编辑则支持本地参考图。
+
+视频会根据素材自动采用文生视频、首尾帧或多素材参考模式。普通视频模型支持 4–12 秒；Flash 视频仅支持 720P，不支持参考视频。脚本按用户选择提交参数，不会静默改动时长、分辨率或删除参考素材。视频任务保存 `video_id`，刷新后继续查询同一任务。
+
+接入依据：[Agnes 生图文档](https://wiki.agnes-ai.com/en/docs/agnes-image-25-flash)、[视频文档](https://wiki.agnes-ai.com/en/docs/agnes-video-25)、[Flash 视频文档](https://wiki.agnes-ai.com/en/docs/agnes-video-25-flash)、[文本模型文档](https://wiki.agnes-ai.com/en/docs/agnes-30-flash)。
+
+## 视频协议
+
+内置视频共 11 个独立脚本，源码位于 `packages/model-runtime/src/call-scripts/`。同一协议的生成模式合并为一个条目，按模型与参考素材选择；每个条目可单独编辑和导出，导出的源码可独立运行。
+
+| 协议 | 创建路径（原生） | 素材与模型要求 |
+| --- | --- | --- |
+| Seedance | `/api/v3/contents/generations/tasks` | 豆包 / 火山方舟；文生、首尾帧、图片/视频/音频参考；模型填 Model ID 或 `ep-...` |
+| Wan | `/api/v1/services/aigc/{video-generation,image2video}/video-synthesis` | 一个脚本按模型选择文生、图生、首尾帧、音频驱动或多素材格式 |
+| Kling | `/v1/videos/text2video`、`/v1/videos/image2video` | 无图片时文生，有图片时图生；支持首帧与可选尾帧，分组密钥填写已签发的 JWT |
+| Vidu | `/ent/v2/text2video`、`img2video`、`start-end2video`、`reference2video` | 按图片数量和参考模式选择路径；使用 Token 鉴权 |
+| MiniMax | `/v1/video_generation` | 海螺 01 / 02 / 2.3；首尾帧能力取决于具体模型，不适用于 H3 v2 路径 |
+| Grok 生成 | `/v1/videos/generations` | 文生、图生、多图参考；首尾帧需 `grok-imagine-video-1.5`，音频文件参考需额外权限 |
+
+Wan 只选择「Wan 协议视频」：`kf2v` 模型使用首尾帧字段，`s2v` 模型使用图片与音频字段；Wan 3.0、Wan 2.7 的 `i2v` / `r2v` 使用 `input.media`，其中 `r2v` 的图片按参考素材提交。Wan 2.7 `t2v` 使用分辨率与比例，其他文生型号沿用尺寸字段。脚本不替换所选模型。格式参考[万相 3.0](https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference)、[Wan 2.7 图生](https://www.alibabacloud.com/help/en/model-studio/image-to-video-general-api-reference)、[文生](https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference)和[首尾帧](https://help.aliyun.com/zh/model-studio/legacy-image-to-video-by-first-and-last-frame-api-reference)文档。
+
+Kling 只选择「Kling 协议视频」，由是否连接图片决定创建路径。返回给应用的任务标识保存创建类型和编码后的任务 ID，恢复查询时使用保存的类型，不依赖当时的参考图片或生成设置。
+
+另有以下通用或专用入口：
+
+- `Grok2API 协议视频`：`POST /v1/videos/generations`，用于 chenyme/grok2api；文生、单张首帧或多图参考，使用 `GET /v1/videos/{request_id}` 查询。
+- `Videos 协议视频`：`POST /v1/videos`，使用标准 `input_reference` 上传一张参考图；`GET /v1/videos/{id}` 查询，必要时从 `/{id}/content` 下载。适用于提供该格式的服务。
+- `Videos 扩展协议视频`：同为 `/v1/videos`，使用 `first_frame`、`image[]`、`video[]`、`audio[]` 等扩展文件字段，仅用于明确支持这些字段的服务。
+- 保留 Gemini 原生 Veo 和 Agnes 视频脚本；Agnes 的本地参考素材同样可通过对象存储转成公开链接。
+
+原生查询使用各自约定：Seedance 在创建路径后加 `/{id}`；Wan 使用 `/api/v1/tasks/{id}`；Kling 在对应创建路径后加 `/{id}`；Vidu 使用 `/ent/v2/tasks/{id}/creations`；Grok 使用 `/v1/videos/{id}`；MiniMax 先查询 `/v1/query/video_generation?task_id={id}`，成功后通过 `/v1/files/retrieve?file_id=...` 获取下载链接。
+
+渠道填写服务根地址，例如方舟 `https://ark.cn-beijing.volces.com`、百炼 `https://dashscope.aliyuncs.com`；支持保留部署子目录。通用模型拉取默认走 `/v1/models`，服务没有该列表时，可在模型选择窗口手工填入模型 ID，并按服务支持的格式选择调用方式。
+
+时长、比例、分辨率、素材组合按所选模型填写。脚本不擅自替换模型、不自动降档、不重试创建请求；未新增轮询时限。未知、失败、取消、过期或无成品的终态不会当作生成成功。通用视频设置不能表达的专用参数，可在独立脚本中按服务文档调整。
+
+Seedance 参数参考[火山方舟视频生成文档](https://console.volcengine.com/ark/region%3Acn-beijing/docs/create-video-generation-task-api)。
+
+## 为本地参考素材提供公开链接
+
+在「设置 → 对象存储」填写 S3 兼容上传地址、区域、存储桶、Access Key ID、Secret Access Key、公开访问地址及桶地址方式。支持 S3 兼容服务；TOS 应使用其 S3 兼容入口，R2 区域按服务要求填写 `auto`，MinIO 按实际区域和地址填写。
+
+`utils.toPublicUrl(source)` 的行为：
+
+1. 已有公网 HTTP(S) 链接原样返回，保留签名参数，不下载、不重复上传；域名是否实际可达由用户配置的服务保证，不进行 DNS 探测。
+2. Blob、File、data URL、浏览器临时链接和内网链接读取后上传至桶内 `references/`，使用随机文件名与媒体类型，并返回公开访问地址下的同一对象路径。
+3. 使用 `aws4fetch` 签名 PUT，不自动设置 ACL、不创建桶、不更改公开读取权限，也不生成带固定有效期的临时链接。需由用户配置桶或 CDN 的读取策略；公共访问地址必须允许模型服务访问。
+4. 未配置时提示填写对象存储；上传失败使用固定提示，取消生成会中止读取或上传，不自动重试。服务支持 data URL 的素材仍可直接用 `utils.toDataUrl()`，无需上传。
+
+纯 Web 的签名及素材上传在浏览器进行，使用全局代理与取消信号；直连时存储服务需允许当前站点的跨域 PUT，以及 `Authorization`、`Content-Type`、`X-Amz-Date`、`X-Amz-Content-Sha256` 请求头。开启本地代理时请求通过代理转发。本地模式由服务读取工作区配置并签名上传，模型请求和视频任务快照不携带对象存储凭据。纯 Web 的配置保存在浏览器 localforage，本地模式保存在工作区 `private/config/`；完整配置备份包含这些密钥，脚本 ZIP 不包含密钥。
+
+公开访问地址需指向对象所在目录，例如上传桶为 `media`，公开地址填写 `https://cdn.example.com`，上传后的地址为 `https://cdn.example.com/references/文件名`。上传成功只保证写入成功，公开可读权限与模型能否读取仍需实际验证。取消或生成结束不会删除已经上传的文件；素材清理由用户在存储服务管理。
+
+## 渠道存储与执行位置
+
+渠道通过 `packages/workbench/src/services/channels/` 的 adapter 读写，浏览器偏好存储不包含渠道。纯 Web 使用独立 localforage 存储；本地模式使用工作区私有目录，网页不会读回已保存的 API Key。密钥输入失焦后保存，可显式清除；模型列表也由相应 adapter 使用所选分组读取。
+
+模型选择值使用 `groupId::modelName`。分组或模型失效时保留原选择并提示重新选择，不自动使用另一个分组的 Key。保存渠道和脚本完成后才发起模型调用；本地服务核对请求与已保存脚本，读取密钥并执行，生成素材落盘后返回引用。视频查询绑定提交时的分组、模型、地址和脚本快照。
+
+共用运行器在 `packages/model-runtime/`，通过宿主提供素材读取和上传能力。纯 Web 脚本运行在浏览器，本地脚本运行在 Node.js，当前没有独立沙箱。Agent 脚本使用 `utils.runTextAgent(protocol)` 进入网页工具循环，本地模式只将模型请求交给服务；自定义脚本不要依赖网页能读取已保管的密钥。
+
+## 错误说明
+
+运行器识别 `error.message`、字符串 `error` 或顶层 `message`；HTTP 200 错误对象及流式错误事件同样视为失败。视频查询收到 HTTP 200 错误对象时结束任务，HTTP 请求失败仍按查询失败处理。两种模式统一由 `packages/model-runtime/src/execute.ts` 的 `toModelError` 映射：依次展示模型服务的错误说明、纯文本响应、请求失败原因（如 `Network Error`），都拿不到时才显示固定提示；本地程序的地址、堆栈与内部异常不展示。连接失败或流缺少终态不会切换执行方式，也不会自动重试提交。

@@ -1,0 +1,22 @@
+{
+  "name": "canvas-plugin-webdav-sync",
+  "version": "1.0.0",
+  "type": "module",
+  "files": [
+    "dist",
+    "plugin.json",
+    "icon.svg",
+    "GUIDE.md"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@infinite-canvas/plugin-sdk": "workspace:*",
+    "typescript": "^5"
+  },
+  "license": "MIT"
+}

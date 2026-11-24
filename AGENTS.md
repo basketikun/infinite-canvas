@@ -10,8 +10,11 @@
 - 不要为了“兼容更多场景”写大量分支，只实现当前明确需要的功能。
 - 项目尚未上线，不需要兼容旧数据；本地存储结构调整时直接按新设计修改，不写旧字段兼容或数据迁移兜底，除非用户明确要求。
 - 每次写完代码，不需要检查语法，不需要执行构建，用户会自己做。
+- 自动化测试只覆盖插件体系（SDK、宿主加载与安装、各插件）和模型调用协议（调用脚本）；其他功能不新增测试，改动导致其他测试过期时直接删除。
+- 自动运行包含工作台插件测试的 Node 行为回归时，使用 `--test-skip-pattern="构建后的插件共享宿主"` 显式跳过临时插件打包，并核对日志中的实际执行项后再报告数量。
 - 不要改无关文件，不要顺手重构。
 - 如果工作区已有用户改动，不要回滚，不要覆盖；只在必要范围内追加修改。
+- 多项改造按可独立审阅的阶段分别提交 Git，不把不同阶段混成一个提交。
 
 ## 反复提醒沉淀
 
@@ -21,23 +24,33 @@
 
 ## 前端规范
 
-- 前端使用 Vite、React、React Router、TypeScript、Ant Design、Tailwind、Zustand。
-- 编写 Ant Design 相关代码时，参考 https://ant.design/llms-full.txt 理解组件 API、示例和设计规范，并优先结合项目当前 antd 版本与既有写法。
-- 外部服务请求统一放在 `web/src/services/api/`，由浏览器前端直连，不假设存在项目后端。
-- 全局或跨页面状态优先放在 `web/src/stores/`。
+- UI 重构按区域交付，开发者根据改动核对浅深主题、键盘、焦点、提示和关闭行为。用户指定统一验收时，记录待确认项后继续下一项。
+
+- 主应用、文档站和 Canvas Agent 统一使用 pnpm 安装依赖和运行脚本，只维护 pnpm 锁文件；前端测试使用 Node.js 原生测试运行器，不依赖 Bun。
+- 前端使用 Vite、React、React Router、TypeScript、Tailwind CSS 和 Zustand。
+- 工作台和插件共用 SDK 的 shadcn/ui 控件，按需从 `@infinite-canvas/plugin-sdk/ui/<组件名>` 导入。菜单、弹窗等需要直接组合底层交互时，沿用项目现有的 `radix-ui` 用法。
+- 图片、视频、音频和普通文本生成通过 ModelAdapter，渠道保存与模型列表通过 ChannelAdapter；两个启动入口分别注入浏览器或 HTTP 实现。共用脚本执行和内置调用脚本放在 `packages/model-runtime/`（内置调用脚本在 `packages/model-runtime/src/call-scripts/`），本地模型服务放在 `packages/server/src/models/`。业务存储统一通过 StorageAdapter，不在业务模块直接绑定 IndexedDB 或磁盘。
+- 渠道设置的新建渠道视图只按当前渠道是否已有模型判断：没有模型时始终展示赞助商卡片和拉取入口，修改渠道名称、服务地址、API Key 或列表格式都不能切换布局或隐藏赞助商；只有实际拉取或手动添加模型后才显示分组和模型列表。
+- 浏览器专用的本地代理设置只在纯 Web 展示；CLI/Desktop 自动使用自身服务，不读取该代理开关或要求另启代理。WebDAV、远程素材和资源下载通过 NetworkAdapter 选择请求路径，不能只隐藏入口却保留浏览器跨域请求；界面仅对确实不同的设置项按运行环境展示，不新增通用功能装配框架。
+- WebDAV 与对象存储配置通过 WorkspaceConfigAdapter 和独立 store 保存，纯 Web 使用 localforage，本地模式使用工作区私有配置；浏览器偏好不重复持久化这些字段。使用、导入和导出配置前等待保存回执，本地模型执行直接读取工作区配置。
+- 存储统计与内容浏览通过 StorageInspectionAdapter，页面使用业务分类，不绑定表名或磁盘路径；本地模式区分工作区文件大小与所在磁盘空间，私有配置只汇总占用，缺少图片预览时不自动读取原图。
+- shared 放跨端公共契约，包括运行配置、通用存储、模型脚本与插件元信息；`shared/src/canvas/` 放画布 schema、工具定义与纯文档操作。shared 禁止 React、DOM、Node 和应用状态依赖；调用方按需显式声明工作区依赖，不跨应用目录引用源码，不保留旧路径转发文件。
+- 工作台插件放在 `plugins/<插件名>/`；面向 Codex、ZCode 等外部 Agent 的插件放在 `agent-plugins/<插件名>/`。
+- 工作台插件使用 API v3；插件或节点通过事务写画布时，等待或返回写入回执，再执行依赖该写入的操作。客户端统一用 `src/plugin.ts` 注册，只放导入和 `export default definePlugin({...})`，通过 `contribute(point, { id, value })` 拼装贡献。命令、节点、页面、侧栏、设置与布局各放同名贡献目录，启动清理放 `src/setup.ts`，公开扩展点与能力契约放 `src/api/`；按实际能力建目录。新增业务扩展点不修改宿主类别白名单，静态与动态注册共用 SDK runtime。详细约定见 `apps/docs/content/docs/development/plugin-development.mdx`。
+- 全局或跨页面状态优先放在 `packages/workbench/src/stores/`。
 - 已经放在全局 store 或全局 hook 中的状态/动作，组件需要时直接使用对应 store/hook，不要为了“纯组件”层层透传 props；避免一个组件传递过多参数。
 - 全局组件、全局常量、全局配置等全局性质的内容不要作为 props 或参数层层传递；哪里需要就在哪里直接从对应全局入口获取。
-- 多个页面重复出现的 UI 副作用动作，例如复制文本并提示、下载并提示、统一确认弹窗，优先抽成 `web/src/hooks/` 下的全局 hook；不要放进 store，除非它确实是需要共享/订阅的状态。
-- 路由页面放在 `web/src/pages/`，页面布局放在 `web/src/layouts/`，路由配置放在 `web/src/router.tsx`。
-- 画布页面放在 `web/src/pages/canvas/`，画布组件放在 `web/src/components/canvas/`，画布状态放在 `web/src/stores/canvas/`，画布工具函数放在 `web/src/lib/canvas/`。
-- 页面按目录组织，例如 `web/src/pages/image/index.tsx`；页面里只有一个主业务组件时直接写在对应页面入口中，不要单独拆 `Manager` 组件再传一堆 props。
+- 多个页面重复出现的 UI 副作用动作，例如复制文本并提示、下载并提示、统一确认弹窗，优先抽成 `packages/workbench/src/hooks/` 下的全局 hook；不要放进 store，除非它确实是需要共享/订阅的状态。
+- Web 与 CLI 是独立产品，分别在 `apps/web/src/` 和 `apps/cli/ui/src/` 维护入口、路由、导航及产品页面；共用业务页面、布局、组件和 adapter 放在 `packages/workbench/src/`。CLI 不依赖 Web 的源码目录或构建产物；CLI 日常开发直接运行源码并支持热更新，不能要求先构建，发行时才打包界面。shared 继续保持纯数据与纯逻辑边界。
+- 画布页面放在 `packages/workbench/src/pages/canvas/`，画布组件放在 `packages/workbench/src/components/canvas/`，画布状态放在 `packages/workbench/src/stores/canvas/`，画布工具函数放在 `packages/workbench/src/lib/canvas/`。
+- 页面按目录组织，例如 `packages/workbench/src/pages/image/index.tsx`；页面里只有一个主业务组件时直接写在对应页面入口中，不要单独拆 `Manager` 组件再传一堆 props。
 - 不要新增只做简单转发的组件，例如只 `return <X>{children}</X>` 或只换个名字透传 props；直接在使用处使用真实组件或把逻辑写进当前文件。
 - 页面私有 hook 放在对应页面目录下，例如 `admin/assets/use-admin-assets.ts`；只有多个页面真实复用的 hook 才放到外层 `hooks/`。
 - 管理后台页面私有组件放到各自页面目录的 `components/` 下，例如 `admin/assets/components/`、`admin/prompts/components/`；不要为了单页面使用放到 `admin/components/` 共享目录。
-- 管理后台主题、背景、卡片阴影、表格配色等统一在 `web/src/lib/app-theme.ts`、`AppProviders` 或必要的全局 CSS 作用域中配置；页面私有组件不要自己写 `dark ? ...` 主题分支。
-- Ant Design 的 Dropdown、Menu、Select、Cascader、TreeSelect 等弹层背景、悬停态和选中态颜色统一通过 `web/src/lib/app-theme.ts` 的全局 Alias Token 与组件 Token 配置；不要在业务组件内为单个弹层覆盖颜色。
+- 工作台默认亮暗配色集中在 `packages/workbench/src/styles/globals.css`。主题插件的配色由 `AppProviders` 通过 `appearanceVariables` 应用到文档根元素。
+- 管理页面、表格以及菜单、选择器等浮层共享宿主语义色，如 `bg-popover`、`text-popover-foreground` 和 `bg-accent`，悬停与选中状态沿用对应控件的样式。
 - 组件优先使用函数组件和现有 hooks，不新增大型状态管理方案。
-- UI 图标优先使用 `lucide-react` 或项目已经使用的 Ant Design 图标。
+- UI 图标优先使用 `lucide-react`，包括插件的节点、工具条与按钮图标；不要用 emoji 或文字符号（如 ✎、↔）充当图标。
 - 页面文案保持中文。
 - 不要在组件里堆太多无关逻辑；复杂逻辑优先抽成同目录工具函数或小组件。
 - 样式优先由组件自己管理；组件私有样式优先使用 Tailwind className 或少量内联 style，不要为单个组件新增大量全局 CSS。
@@ -48,10 +61,12 @@
 ## 画布 UI 规范
 
 - 做 canvas 前端 UI 时必须遵循当前画布主题。
-- 优先使用 `canvasThemes`、`useThemeStore` 或 Ant Design `ConfigProvider` token。
+- 画布控件从 `useThemeStore` 读取当前模式，使用 `canvasThemes` 提供的画布配色。插件节点使用宿主传入的 `theme`。
 - 不要硬编码黑白、stone、slate 等颜色导致浅色/深色主题不一致。
-- 新增画布按钮、弹窗、浮层时，尽量复用已有工具栏、节点面板、Modal 的视觉风格。
+- 新增画布按钮、弹窗、浮层时，优先复用已有工具栏、节点面板和 `CanvasDialog`。
 - 画布顶部工具栏和状态信息优先采用极简扁平风格：无边框、无阴影、无胶囊背景，融入整体背景，弱化按钮感，仅保留轻微 hover 反馈，保持简洁现代、低视觉重量。
+- 画布底栏左侧放上传等画布操作，节点区放内置节点和扩展菜单。插件操作收进扩展菜单，不在底栏常驻长文字按钮。
+- 紧凑状态栏只常驻关键指标并保持单行居中，细分统计和完整数值放入悬停提示，不用额外一行重复展示总量与占比。
 - 左侧画布面板等列表里的节点/元素缩略图容器，非图片类型（文本、配置、视频、音频等）不要使用 `theme.node.fill`（`#e7e5df`/`#292524`）这类灰色背景，图标直接无背景展示，尽量不要给多余底色，保持干净。
 - 画布内的操作按钮（如面板里的「添加」「导出」「选择」等）默认用扁平无底色样式：透明背景、仅 `hover:bg-black/5 dark:hover:bg-white/10` 轻微反馈，靠图标+文字表达，不要用 `theme.toolbar.activeBg`（`#e7e5df`/`#3a3631`）或 `theme.node.fill` 之类的灰色作为按钮填充底色。灰色 `activeBg` 只允许用于「选中态」等需要表达状态的高亮，不要当普通装饰底色。
 - 图片节点尺寸逻辑要尊重原始比例，除非功能明确要求自由变形。
@@ -60,14 +75,15 @@
 ## 文档规范
 
 - README 保持简洁，只放项目介绍、核心功能、快速开始和文档入口。
-- `docs/index.md` 放给 AI 使用的文档索引，不要再放到 `docs/content/docs/` 内容目录里。
-- 详细功能介绍写到 `docs/content/docs/overview/features.mdx`。
-- 后续待办写到 `docs/content/docs/progress/todo.mdx`。
-- 已实现但还需要用户测试确认的事项写到 `docs/content/docs/progress/pending-test.mdx`。
-- `docs/content/docs/progress/pending-test.mdx` 用来记录这个版本实际做了哪些可测试变更；`CHANGELOG.md` 的 `Unreleased` 只保留对这些变更的版本级归纳，避免逐条照搬实现细节。
+- `apps/docs/index.md` 放给 AI 使用的文档索引，不要再放到 `apps/docs/content/docs/` 内容目录里。
+- 详细功能介绍写到 `apps/docs/content/docs/overview/features.mdx`。
+- 后续待办写到 `apps/docs/content/docs/progress/todo.mdx`。
+- 已实现但还需要用户测试确认的事项写到 `apps/docs/content/docs/progress/pending-test.mdx`。
+- `apps/docs/content/docs/progress/pending-test.mdx` 用来记录这个版本实际做了哪些可测试变更；`CHANGELOG.md` 的 `Unreleased` 只保留对这些变更的版本级归纳，避免逐条照搬实现细节。
+- `CHANGELOG.md` 同一版本的条目逐行排列，条目之间不留空行；版本标题前后保留空行。
 - 每次重大改动（新增/调整/删除功能、接口或工具，影响用户可感知行为）完成后，都要在 `CHANGELOG.md` 的 `Unreleased` 追加一条记录，按 `[新增]` / `[调整]` / `[修复]` / `[优化]` 前缀分类，用一句中文归纳；纯内部重构、格式化、无用户可感知影响的小改动可不记。
-- 每次 todo 事项完成后，先从 `docs/content/docs/progress/todo.mdx` 移到 `docs/content/docs/progress/pending-test.mdx`，不要直接写进正式功能说明；用户确认测试通过后再更新 `docs/content/docs/overview/features.mdx`。
-- 每次任务完成前，都要根据实际变更检查并更新 `docs/content/docs/progress/todo.mdx` 和 `docs/content/docs/progress/pending-test.mdx`；如果功能或待办没有变化，也要确认无需修改。
+- 每次 todo 事项完成后，先从 `apps/docs/content/docs/progress/todo.mdx` 移到 `apps/docs/content/docs/progress/pending-test.mdx`。用户确认验收后再更新 `apps/docs/content/docs/overview/features.mdx`。
+- 每次任务完成前，都要根据实际变更检查并更新 `apps/docs/content/docs/progress/todo.mdx` 和 `apps/docs/content/docs/progress/pending-test.mdx`；如果功能或待办没有变化，也要确认无需修改。
 - 文档不要写过期日期；除非用户明确要求记录具体时间。
 
 ## 发版本流程
@@ -89,10 +105,15 @@
 
 ## 项目注意事项
 
+- 项目不考虑多人或多窗口协作，不引入 CRDT、Yjs 或为协作迁移画布状态权威；网页持有实时编辑状态，本地服务负责持久化，保留 MCP 网页/项目绑定。允许多个窗口打开，当前按最后保存的内容生效，不做覆盖拦截，不因其他窗口的普通保存弹出内容更新提示。
+- 内置视频脚本默认每种协议保留一个入口，文生、图生、首尾帧等在脚本内按模型与参考素材选择，不按模型版本或输入组合拆分卡片；编辑、延长等独立操作按用户明确需求提供。
+- 模型调用失败在网页与本地模式统一由 `packages/model-runtime/src/execute.ts` 的 `toModelError` 映射：尽可能展示上游原始报错，依次取模型服务的错误说明、纯文本响应、请求失败原因（如 `Network Error`、`Request failed with status code 502`），都拿不到时才按 shared 中的错误码显示固定提示，不再额外包装中文说明；本地程序的地址、堆栈与内部异常不展示，诊断写入私有日志。
+- 调用脚本以可读性优先：请求配置、请求体等多字段对象逐字段换行，嵌套内容分层缩进；长条件和链式调用分行，条件与循环使用代码块，不为减少行数压缩源码。内置脚本、新建模板与写脚本说明保持一致。
 - 新增或调整超时、重试次数、大小限制、并发上限等会改变实际行为的边界值前，必须先向用户说明适用环节、默认值和失败后的处理方式，并取得确认；不要把经验值当成纯内部实现静默加入。
-- 当前画布项目和“我的素材”主要保存在浏览器本地，不要在文档中误写成已支持云同步。
-- 当前 AI API Key 存在浏览器本地，并由前端直接请求 OpenAI 兼容接口；涉及安全说明时要写清楚。
+- 纯 Web 模式的业务数据保存在浏览器，CLI server 模式保存在启动时选定的目录；模型渠道凭据分别由浏览器渠道 adapter 或本地私有配置保存。两种模式都不能误写成已支持云同步，断线不能静默切换存储。
+- 纯 Web 的模型密钥在浏览器，由浏览器直接请求模型服务；本地模式由服务保存模型密钥并执行请求，页面只读取模型密钥的配置状态。WebDAV 和对象存储凭据按运行模式保存，认证页面会在内存中读取使用，完整配置备份包含它们；普通画布导出、WebDAV 业务同步和插件包不包含配置凭据。
 - Docker 静态资源路径目前仍是待办项，文档中不要过度承诺生产部署已经完全验证。
-- Agent 对话消息必须同时按 `threadId`、`turnId` 和 `itemId` 归属；实时事件只用于补充未物化的 turn，历史快照成为权威后不得重复合并同一条消息。
-- Agent 通信协议版本与消息存储版本必须独立管理；消息存储格式升级时必须先备份再迁移，遇到未知版本、损坏清单或冲突备份时拒绝覆盖原文件，不得按记录数量或文件大小静默裁剪历史元数据。
+- 内置聊天使用渠道文本模型和 AI SDK Agent Loop 执行网页画布工具；纯 Web 直连模型，本地模式通过服务传输模型请求，工具函数不发送给服务；外部 Agent 通过 MCP 复用同一套工具定义与操作逻辑，不启动或转发本地 Agent 会话，不保留旧 CLI 兼容层。外部连接统一放在顶部设置的「Agent配置」页，不另设连接弹窗。
+- 画布聊天记录按项目和会话通过 StorageAdapter 保存，Web 使用浏览器 localforage，本地模式使用工作区目录；工具调用固定绑定发起网页与项目，切换项目或手动停止时中断当前对话，不能改投其他画布。外部 MCP 断开不影响内置聊天。
+- 开发插件每次构建与重新加载都要使用最新构建产物，客户端代码、名称说明、介绍和图标同步更新，禁止混用新代码与旧文件。
 - 本地启动或浏览器验收时不要关闭用户已经打开的浏览器窗口或标签页；需要自动化验证时使用独立测试页面，避免打断用户当前页面和对话状态。

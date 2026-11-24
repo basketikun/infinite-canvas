@@ -1,0 +1,53 @@
+.agent-settings-card, .agent-settings-options {
+    background: var(--workbench-elevated-panel);
+    border: 0;
+    border-radius: 8px;
+}
+.agent-settings-card {
+    z-index: 1050;
+    width: min(280px, calc(100vw - 24px));
+    padding: 12px;
+}
+.agent-settings-card [data-variant="ghost"] { border: 1px solid transparent; }
+.agent-settings-card [data-variant="ghost"]:disabled { border-color: transparent; }
+.agent-settings-card [data-variant="ghost"]:enabled:hover { background: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 8%)); }
+.agent-settings-field {
+    height: 32px;
+    padding: 0 11px;
+    border: 1px solid var(--generation-border);
+    border-radius: 6px;
+    color: var(--workbench-elevated-text);
+    background: var(--generation-control);
+}
+.agent-settings-field:hover { border-color: var(--generation-input-hover); }
+.agent-settings-field:focus-within, .agent-settings-field:focus-visible { border-color: var(--generation-input-focus); box-shadow: none; }
+.agent-settings-field:disabled, .agent-settings-field:has(input:disabled) { opacity: .5; }
+.agent-settings-field input {
+    height: 100%;
+    padding: 0;
+    border: 0;
+    appearance: textfield;
+    background: transparent;
+    font: inherit;
+}
+.agent-settings-field input, .agent-settings-field input:focus-visible { box-shadow: none; }
+.agent-settings-field input::-webkit-inner-spin-button, .agent-settings-field input::-webkit-outer-spin-button { appearance: none; }
+.agent-settings-options {
+    z-index: 1080;
+    width: var(--radix-select-trigger-width);
+    min-width: 0;
+    padding: 4px;
+    color: var(--workbench-elevated-text);
+    --settings-selected: light-dark(rgb(23 23 23 / 10%), rgb(250 250 249 / 12%));
+    --settings-selected-focus: light-dark(rgb(23 23 23 / 14%), rgb(250 250 249 / 16%));
+}
+:root[data-workbench-palette] .agent-settings-options { --settings-selected: var(--accent); --settings-selected-focus: var(--accent); }
+.agent-settings-options [data-radix-select-viewport] { min-width: 0; }
+.agent-settings-options [data-slot="select-item"] { min-height: 32px; padding: 5px 12px; border-radius: 4px; }
+.agent-settings-options [data-state="checked"] { font-weight: 600; background: var(--settings-selected); }
+.agent-settings-options [data-state="checked"][data-highlighted] { background: var(--settings-selected-focus); }
+.agent-settings-card [data-slot="switch"] { width: 28px; height: 16px; padding: 2px; border: 0; cursor: pointer; }
+.agent-settings-card [data-slot="switch"][data-state="checked"] { background: var(--generation-primary); }
+.agent-settings-card [data-slot="switch"]:disabled { cursor: not-allowed; }
+.agent-settings-card [data-slot="switch-thumb"] { background: white; }
+.agent-settings-card [data-slot="switch-thumb"][data-state="checked"] { translate: 12px; }

@@ -1,0 +1,41 @@
+.storage-notice {
+    --notice-secondary: light-dark(rgb(0 0 0 / 65%), rgb(255 255 255 / 65%));
+    --notice-control: light-dark(#fff, #141414);
+    --notice-border: light-dark(#d9d9d9, #424242);
+    --notice-danger-text: light-dark(#fff, #171717);
+}
+
+.storage-notice[data-custom-colors] {
+    --notice-secondary: var(--muted-foreground);
+    --notice-control: var(--card);
+    --notice-border: var(--border);
+    --notice-danger-text: var(--primary-foreground);
+}
+
+.storage-notice-detail { color: var(--notice-secondary); }
+
+.storage-notice footer [data-slot="button"] {
+    gap: 8px;
+    padding: 0 15px;
+    border: 1px solid var(--notice-border);
+    border-radius: 6px;
+    background: var(--notice-control);
+    color: inherit;
+    font-weight: 400;
+    cursor: pointer;
+}
+
+.storage-notice footer button:enabled:hover { border-color: var(--primary); color: var(--primary); }
+
+.storage-notice footer [data-variant="destructive"] {
+    border-color: transparent;
+    background: var(--workbench-message-error);
+    color: var(--notice-danger-text);
+}
+
+.storage-notice footer [data-variant="destructive"]:enabled:hover {
+    background: light-dark(#ff7875, #e84749);
+    border-color: transparent;
+    color: var(--notice-danger-text);
+}
+

@@ -1,0 +1,27 @@
+.agent-panel-action {
+    cursor: pointer;
+    border-radius: 50%;
+    color: var(--workbench-elevated-text);
+}
+.agent-panel-action:enabled:hover {
+    background: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 8%));
+    color: var(--workbench-elevated-text);
+}
+.agent-panel-action:disabled {
+    pointer-events: auto;
+    cursor: not-allowed;
+    opacity: 1;
+    background: transparent;
+    color: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%));
+}
+.agent-panel-tip {
+    --agent-tip-bg: light-dark(rgb(0 0 0 / 85%), #424242);
+    z-index: 1070;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--agent-tip-bg);
+    color: light-dark(white, var(--workbench-elevated-text));
+    font: 14px/22px -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+:root[data-workbench-palette] .agent-panel-tip { color: var(--primary-foreground); }
+.agent-panel-tip svg { background: var(--agent-tip-bg); fill: var(--agent-tip-bg); }

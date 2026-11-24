@@ -1,0 +1,81 @@
+.settings {
+    --settings-hover: light-dark(rgb(23 23 23 / 6%), rgb(250 250 249 / 8%));
+}
+:global(:root[data-workbench-palette]) .settings { --settings-hover: var(--muted); }
+.settingsTab {
+    display: flex;
+    min-width: 0;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 12px;
+    border-radius: 8px;
+    text-align: left;
+    cursor: pointer;
+}
+.settingsTab:hover, .settingsTab[data-state="active"] { background: var(--settings-hover); }
+.settingsTab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.settingsWarning {
+    background: light-dark(#fffbe6, #2b2111);
+    border-color: light-dark(#ffe58f, #594214);
+}
+
+.channelOption {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    min-width: 0;
+    width: 100%;
+    padding: 2px 8px;
+    border-radius: 8px;
+    text-align: left;
+    transition: background-color 150ms;
+}
+
+.channelOption > .channelName {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.channels {
+    --channel-line: light-dark(#f0f0f0, #303030);
+    --channel-secondary: light-dark(rgb(0 0 0 / 65%), rgb(255 255 255 / 65%));
+    --channel-tertiary: light-dark(rgb(0 0 0 / 45%), rgb(255 255 255 / 45%));
+    --channel-segment: light-dark(#f5f5f5, #000);
+    --channel-warning: light-dark(#faad14, #d89614);
+}
+:global(:root[data-workbench-palette]) .channels {
+    --channel-line: var(--border);
+    --channel-secondary: var(--muted-foreground);
+    --channel-segment: var(--background);
+}
+.channelSelect { min-width: 0; flex: 1; cursor: pointer; }
+.channelDelete:global([data-variant="ghost"]) {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    color: var(--workbench-message-error);
+}
+.channels .channelDelete:global([data-variant="ghost"]):hover {
+    color: var(--workbench-message-error);
+    background: color-mix(in srgb, var(--workbench-message-error) 8%, transparent);
+}
+.channelConfirmation :global([data-variant="destructive"]) {
+    border: 1px solid transparent;
+    color: var(--generation-primary-text);
+    background: var(--workbench-message-error);
+}
+.channelConfirmation :global([data-variant="destructive"]):hover { background: light-dark(#ff7875, #e86e6b); }
+.channels :global(.channel-models) .channelDelete:enabled:hover {
+    color: light-dark(#ff7875, #e86e6b);
+    background: light-dark(#fff2f0, #2c1618);
+}
+
+.channelOption:hover,
+.channelOption[data-active="true"] {
+    background: var(--settings-hover);
+}

@@ -1,0 +1,24 @@
+{
+  "name": "canvas-plugin-template",
+  "version": "1.0.0",
+  "type": "module",
+  "files": [
+    "dist",
+    "plugin.json",
+    "icon.svg",
+    "GUIDE.md"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm run build"
+  },
+  "devDependencies": {
+    "@infinite-canvas/plugin-sdk": "workspace:*",
+    "@types/react": "^19.1.12",
+    "lucide-react": "^1.59.0",
+    "react": "^19.2.0",
+    "typescript": "^5"
+  }
+}

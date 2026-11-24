@@ -1,0 +1,25 @@
+{
+  "name": "infinite-canvas-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "scripts": {
+    "dev": "pnpm --filter @basketikun/infinite-canvas dev",
+    "dev:docs": "pnpm --dir apps/docs dev",
+    "build:node-plugins": "pnpm --filter './plugins/{multi-format-renderer,panorama}' run build",
+    "build:cli": "pnpm --filter @basketikun/infinite-canvas build",
+    "test": "pnpm -r --if-present test",
+    "lint:plugins": "eslint \"plugins/*/src/**/*.{ts,tsx}\"",
+    "lint:boundaries": "eslint packages/shared/src",
+    "dev:web": "pnpm --filter @infinite-canvas/web dev",
+    "build:web": "pnpm --filter @infinite-canvas/web build",
+    "dev:desktop": "pnpm --filter @infinite-canvas/desktop dev",
+    "build:desktop": "pnpm --filter @infinite-canvas/desktop build"
+  },
+  "devDependencies": {
+    "eslint": "^10.13.0",
+    "typescript-eslint": "^8.72.1",
+    "typescript": "^6.0.3",
+    "tsx": "^4.19.0"
+  }
+}

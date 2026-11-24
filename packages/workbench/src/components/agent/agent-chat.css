@@ -1,0 +1,12 @@
+.agent-chat-input {
+    min-height: calc(3lh + 10px);
+    max-height: calc(8lh + 10px);
+    resize: none;
+    padding: 5px 11px;
+    border: 0;
+    background: transparent;
+    color: var(--workbench-elevated-text);
+    font: 14px/22px -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.agent-chat-input, .agent-chat-input:focus-visible { box-shadow: none; }
+.agent-chat-input::placeholder { color: color-mix(in srgb, var(--muted-foreground) 90%, var(--workbench-elevated-text)); }

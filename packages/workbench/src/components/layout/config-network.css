@@ -1,0 +1,75 @@
+.settings-network {
+    color: var(--workbench-elevated-text);
+    font-size: 14px;
+    line-height: 22px;
+}
+.settings-network :is([data-variant="ghost"], [data-variant="default"]) { border: 1px solid transparent; }
+.settings-network [data-variant="ghost"]:hover { color: inherit; background: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 8%)); }
+.settings-network [data-variant="default"] { color: var(--generation-primary-text); background: var(--generation-primary); }
+.settings-network [data-variant="default"]:hover { background: var(--workbench-button-hover); }
+.settings-network .settings-command-copy { width: 24px; padding: 0; }
+.agent-connection pre, .agent-connection code {
+    border: 1px solid rgb(100 100 100 / 20%);
+    border-radius: 3px;
+    background: rgb(150 150 150 / 10%);
+    font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace;
+}
+.agent-connection pre { padding: .4em .6em; }
+.agent-connection code { margin: 0 .2em; padding: .2em .4em .1em; font-size: 85%; }
+.agent-connection hr { border: 0; border-top: 1px solid light-dark(rgb(5 5 5 / 6%), rgb(253 253 253 / 12%)); }
+:root[data-workbench-palette] .agent-connection hr { border-color: var(--border); }
+.settings-network .settings-network-field {
+    height: 32px;
+    padding: 4px 11px;
+    border: 1px solid var(--generation-border);
+    border-radius: 6px;
+    background: var(--generation-control);
+    font: inherit;
+    line-height: 22px;
+    box-shadow: none;
+}
+.settings-network-field:hover { border-color: var(--generation-input-hover); }
+.settings-network .settings-network-field:focus-within { border-color: var(--generation-input-focus); }
+.settings-network-field input { height: 22px; padding: 0; border: 0; border-radius: 0; background: transparent; font: inherit; box-shadow: none; }
+.settings-network input::placeholder { color: var(--muted-foreground); }
+.settings-network-field button { flex: none; color: var(--muted-foreground); cursor: pointer; }
+.settings-network-field button:hover { color: var(--workbench-elevated-text); }
+.settings-network-field button:focus-visible { outline: 2px solid var(--workbench-button-focus); outline-offset: 2px; }
+.channel-connection.settings-network input::placeholder { color: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%)); }
+.channel-connection .settings-network-field button:not(:hover) { color: light-dark(rgb(0 0 0 / 45%), rgb(255 255 255 / 45%)); }
+.channel-models .workbench-checkbox:indeterminate::before { content: ""; display: block; width: 8px; height: 8px; margin: 3px; background: var(--generation-primary); }
+.channel-models.settings-network input::placeholder, .model-call-picker .settings-network-field input::placeholder { color: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%)); }
+.channel-models [data-variant="ghost"]:disabled { border-color: transparent; }
+.model-selection { --selection-disabled-ink: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%)); --selection-disabled-fill: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 8%)); }
+.model-selection input::placeholder, .model-selection label:has(:disabled) { color: var(--selection-disabled-ink); }
+.model-selection .workbench-checkbox:disabled { opacity: 1; background: var(--selection-disabled-fill); border-color: var(--generation-border); }
+.model-selection .workbench-checkbox:disabled::before { border-color: var(--selection-disabled-ink); }
+.model-selection [data-variant="default"]:disabled { background: var(--selection-disabled-fill); }
+.model-selection [data-variant="ghost"]:disabled { border-color: transparent; }
+.model-call-picker { --call-option-hover: light-dark(rgb(23 23 23 / 6%), rgb(250 250 249 / 8%)); }
+:root[data-workbench-palette] .model-call-picker { --call-option-hover: var(--muted); }
+.model-call-picker .settings-network-field:has(input) { height: 24px; padding: 0 7px; border-radius: 4px; }
+.model-call-picker [role="alertdialog"] { max-width: 100vw; }
+.model-script-editor [role="radiogroup"] { font-size: 14px; }
+.model-script-editor [role="radiogroup"] span { padding-inline: 11px; line-height: 28px; }
+.model-script-editor [data-variant="default"]:disabled { background: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 8%)); }
+.settings-network .settings-network-switch { width: 44px; height: 22px; padding: 2px; border: 0; border-radius: 100px; box-shadow: none; cursor: pointer; }
+.settings-network-switch[data-state="unchecked"] { background: light-dark(rgb(0 0 0 / 25%), rgb(255 255 255 / 25%)); }
+.settings-network-switch[data-state="unchecked"]:hover { background: light-dark(rgb(0 0 0 / 45%), rgb(255 255 255 / 45%)); }
+.settings-network-switch[data-state="checked"] { background: var(--generation-primary); }
+.settings-network-switch[data-state="checked"]:hover { background: var(--workbench-button-hover); }
+.settings-network-switch [data-slot="switch-thumb"] { width: 18px; height: 18px; background: white; box-shadow: 0 2px 4px rgb(0 35 11 / 20%); transition: width .2s ease-in-out, translate .2s ease-in-out; }
+.settings-network-switch [data-state="checked"] { translate: 22px; }
+.settings-network-switch:active [data-slot="switch-thumb"] { width: 23.4px; }
+.settings-network-switch:active [data-state="checked"] { translate: 16.6px; }
+.settings-network-switch:focus-visible { outline: 3px solid var(--workbench-button-focus); outline-offset: 1px; }
+.settings-network .settings-network-switch[data-size="sm"] { width: 28px; height: 16px; }
+.settings-network-switch[data-size="sm"] [data-slot="switch-thumb"] { width: 12px; height: 12px; }
+.settings-network-switch[data-size="sm"] [data-state="checked"] { translate: 12px; }
+.settings-network-switch[data-size="sm"]:active [data-slot="switch-thumb"] { width: 15.6px; }
+.settings-network-switch[data-size="sm"]:active [data-state="checked"] { translate: 8.4px; }
+.prompt-source-list .generation-wait-tag { white-space: nowrap; font-size: 12px; }
+.prompt-source-list [data-status="error"] { background: light-dark(#fff1f0, #2a1215); color: light-dark(#cf1322, #e84749); }
+.prompt-source-list [data-status="success"] { background: light-dark(#f6ffed, #162312); color: light-dark(#389e0d, #6abe39); }
+.prompt-source-list .prompt-source-delete:enabled { color: var(--workbench-message-error); border-color: var(--workbench-message-error); }
+.prompt-source-confirm [data-variant="destructive"] { color: var(--generation-primary-text); background: var(--workbench-message-error); }

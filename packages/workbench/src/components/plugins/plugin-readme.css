@@ -1,0 +1,9 @@
+.plugin-readme { line-height: 1.8; overflow-wrap: anywhere; }
+.plugin-readme > :first-child { margin-top: 0; }
+.plugin-readme h1 { font-size: 1.5rem; font-weight: 600; }
+.plugin-readme h2 { margin-top: 2rem; font-size: 1.125rem; font-weight: 600; }
+.plugin-readme h3 { margin-top: 1.5rem; font-weight: 600; }
+.plugin-readme p, .plugin-readme ul, .plugin-readme ol { margin-block: .875rem; }
+.plugin-readme pre { max-width: 100%; overflow: auto; }
+.plugin-readme img { max-width: 100%; height: auto; }
+.plugin-readme a { text-decoration: underline; text-underline-offset: 3px; }

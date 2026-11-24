@@ -1,0 +1,34 @@
+:is(.list-pagination) {
+    --list-control: light-dark(#fff, #141414);
+    --list-border: light-dark(#d9d9d9, #424242);
+    --list-accent: light-dark(#171717, #d8d8d8);
+}
+:root[data-workbench-palette] :is(.list-pagination) {
+    --list-control: var(--card);
+    --list-border: var(--border);
+    --list-accent: var(--primary);
+}
+.list-pagination {
+    color: var(--workbench-elevated-text);
+    font: 14px/22px -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.list-pagination { display: flex; flex-wrap: wrap; align-items: center; }
+.list-pagination > :where(li:not(.list-pagination-options)) { display: grid; place-items: center; min-width: 32px; height: 32px; padding: 0; margin-inline-end: 8px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+.list-pagination > .list-pagination-next { margin-inline-end: 0; }
+.list-pagination > .list-pagination-item-active { font-weight: 600; border-color: var(--list-accent); background: var(--list-control); }
+.list-pagination > li:not(.list-pagination-options):not(.list-pagination-disabled):hover { background: var(--muted); }
+.list-pagination-item a { padding: 0 6px; }
+.list-pagination button:not([role="combobox"]) { display: grid; place-items: center; width: 100%; height: 100%; cursor: inherit; }
+.list-pagination svg { width: 14px; height: 14px; }
+.list-pagination .list-pagination-disabled { cursor: not-allowed; opacity: .3; }
+.list-pagination-options { margin-inline-start: 16px; }
+.list-pagination-size { min-width: 84px; height: 32px; font-size: 14px; }
+.list-pagination :is(.list-pagination-jump-prev, .list-pagination-jump-next) svg:last-child,
+.list-pagination :is(.list-pagination-jump-prev, .list-pagination-jump-next):hover svg:first-child { display: none; }
+.list-pagination :is(.list-pagination-jump-prev, .list-pagination-jump-next):hover svg:last-child { display: block; }
+@media (max-width: 992px) {
+    .list-pagination > li:is(.list-pagination-item-after-jump-prev, .list-pagination-item-before-jump-next) { display: none; }
+}
+@media (max-width: 576px) {
+    .list-pagination-options { display: none; }
+}

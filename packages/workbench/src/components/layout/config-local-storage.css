@@ -1,0 +1,17 @@
+:is(.storage-overview, .storage-contents) {
+    --storage-line: light-dark(#f0f0f0, #303030);
+    --storage-secondary: light-dark(rgb(0 0 0 / 65%), rgb(255 255 255 / 65%));
+    --storage-tertiary: light-dark(rgb(0 0 0 / 45%), rgb(255 255 255 / 45%));
+    --storage-track: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 12%));
+    --storage-hover: light-dark(rgb(23 23 23 / 4%), rgb(250 250 249 / 8%));
+}
+:root[data-workbench-palette] :is(.storage-overview, .storage-contents) {
+    --storage-line: var(--border);
+    --storage-secondary: var(--muted-foreground);
+    --storage-hover: var(--muted);
+}
+.storage-usage-error { background: light-dark(#fff2f0, #2c1618); border-color: light-dark(#ffccc7, #5b2526); }
+.storage-usage-error svg { color: var(--workbench-message-error); }
+/* 即使在大图第一帧关闭，也要让预览收到退场结束事件。 */
+.storage-sheet .workbench-image-preview.fade-leave-active { animation: storage-preview-exit .3s ease; }
+@keyframes storage-preview-exit { from { opacity: 1; } to { opacity: 0; } }
