@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "name": "canvas-plugin-api-stats",
+      "title": "调用统计",
+      "versions": {
+        "1.0.0": {
+          "tarball": "packages/canvas-plugin-api-stats/1.0.0/canvas-plugin-api-stats-1.0.0.tgz",
+          "integrity": "sha512-wyWAOw2SNXMUpOz3GA8NvWKdVXyKsoeQaWHf7uDJUbIizsMMpgNeKDFQDP8PyHwnknPL6zyn3adGN2Df6h/w8A==",
+          "host": ">=1.0.0 <2.0.0",
+          "pluginApi": 3
+        }
+      },
+      "description": "查看模型调用次数、成功率、耗时和聊天用量，并展开单次调用的请求参数、实际发给模型服务的请求与返回",
+      "author": "Infinite Canvas",
+      "icon": "packages/canvas-plugin-api-stats/1.0.0/icon.svg"
+    },
+    {
+      "name": "canvas-plugin-director-desk",
+      "title": "3D 导演台",
+      "versions": {
+        "1.0.0": {
+          "tarball": "packages/canvas-plugin-director-desk/1.0.0/canvas-plugin-director-desk-1.0.0.tgz",
+          "integrity": "sha512-5Misfcxo40WNQBKqiQ2iuCZ01XpXAng8VN5eH8JAc24kk4vYRAyvLaH84PYlowicNV8qs8fjDJrz/GDMRZlEdQ==",
+          "host": ">=1.0.0 <2.0.0",
+          "pluginApi": 3
+        }
+      },
+      "description": "在画布中摆放角色、规划机位，将分镜截图添加到当前画布。",
+      "author": "Infinite Canvas",
+      "icon": "packages/canvas-plugin-director-desk/1.0.0/icon.svg"
+    },
+    {
+      "name": "canvas-plugin-multi-format-renderer",
+      "title": "多格式渲染器",
+      "versions": {
+        "1.0.0": {
+          "tarball": "packages/canvas-plugin-multi-format-renderer/1.0.0/canvas-plugin-multi-format-renderer-1.0.0.tgz",
+          "integrity": "sha512-agTTYdjyIA6L6NtfFH+Cyw2bIH5JVdECnJU2wsyFQ9138Lam1GlxidLXur4DWvcq3FUzTzNtWTRTDUSfU+Orag==",
+          "host": ">=1.0.0 <2.0.0",
+          "pluginApi": 3
+        }
+      },
+      "description": "在画布中编辑和预览 HTML、Markdown 与 SVG 内容",
+      "author": "Infinite Canvas",
+      "icon": "packages/canvas-plugin-multi-format-renderer/1.0.0/icon.svg"
+    },
+    {
+      "name": "canvas-plugin-panorama",
+      "title": "3D 全景节点",
+      "versions": {
+        "1.0.0": {
+          "tarball": "packages/canvas-plugin-panorama/1.0.0/canvas-plugin-panorama-1.0.0.tgz",
+          "integrity": "sha512-1TTzPUhon+JKCqodQwUJAb+I+qq98WPzPJ9WrOfJbxzD18hRNTKrwEyFFIYGpDQujJ4m3YaQFTwvXIknve6FCQ==",
+          "host": ">=1.0.0 <2.0.0",
+          "pluginApi": 3
+        }
+      },
+      "description": "在画布中导入、生成和旋转查看 360° 全景图",
+      "author": "Infinite Canvas",
+      "icon": "packages/canvas-plugin-panorama/1.0.0/icon.svg"
+    },
+    {
+      "name": "canvas-plugin-themes",
+      "title": "主题",
+      "versions": {
+        "1.0.0": {
+          "tarball": "packages/canvas-plugin-themes/1.0.0/canvas-plugin-themes-1.0.0.tgz",
+          "integrity": "sha512-52oRuG8jB/5Tcw6KoMnAwIe4b6YEBXktyr5mQWY4GStD9iJQoBwbfk8nxwvb3J0X060t3hnhkQDWK+pBWOKXTA==",
+          "host": ">=1.0.0 <2.0.0",
+          "pluginApi": 3
+        }
+      },
+      "description": "选择预设主题，调整工作台与画布配色、导航和布局",
+      "author": "Infinite Canvas",
+      "icon": "packages/canvas-plugin-themes/1.0.0/icon.svg"
+    },
+    {
+      "name": "canvas-plugin-webdav-sync",
+      "title": "WebDAV 同步",
+      "versions": {
+        "1.0.0": {
+          "tarball": "packages/canvas-plugin-webdav-sync/1.0.0/canvas-plugin-webdav-sync-1.0.0.tgz",
+          "integrity": "sha512-Io/nJRkcatMAgfssKeTz68wt3znzR7crd1lZj+7EJ+i/UacGXE5rdN8kSftu/87R1RitrgNPYdqeBYsnSdJnwA==",
+          "host": ">=1.0.0 <2.0.0",
+          "pluginApi": 3
+        }
+      },
+      "description": "通过 WebDAV 同步画布、资产及生成记录。",
+      "author": "Infinite Canvas",
+      "icon": "packages/canvas-plugin-webdav-sync/1.0.0/icon.svg"
+    }
+  ]
+}
