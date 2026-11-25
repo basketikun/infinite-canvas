@@ -87,6 +87,14 @@
   </tr>
   <tr>
     <td width="190" align="center">
+      <a href="https://www.compshare.cn/video-studio?ytag=GPU_YY_YX_git_infinite-canvas" target="_blank" rel="noopener noreferrer"><img src="assets/compshare.svg" width="163" alt="优云智算"></a>
+    </td>
+    <td>
+      <strong>H3 视频生成 API｜优云智算</strong> 优云智算提供高性价比的 H3 视频生成服务，涵盖<strong>文生视频、首尾帧及全能参考</strong>。支持最长 <strong>30s</strong> 视频、<strong>4K</strong> 画质，<strong>768P 仅 0.08 元/秒</strong>。支持 API 调用、企业高并发、自助开票。 🎁 通过 <a href="https://www.compshare.cn/video-studio?ytag=GPU_YY_YX_git_infinite-canvas" target="_blank" rel="noopener noreferrer">无限画布专属链接注册</a>，即可领取免费赠送额度。
+    </td>
+  </tr>
+  <tr>
+    <td width="190" align="center">
       <a href="https://www.packyapi.com/register?aff=34VV" target="_blank" rel="noopener noreferrer"><img src="assets/packycode.png" width="163" alt="PackyCode"></a>
     </td>
     <td>
