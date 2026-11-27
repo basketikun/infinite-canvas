@@ -16,5 +16,6 @@ export const channelSponsors: ChannelSponsor[] = [
     { id: "infistar", name: "Infistar.ai 无限星河", description: "全能多模态 API", baseUrl: "https://www.infistar.cc", website: "https://www.infistar.cc/register?aff=4X3V9NA9&ref_source=link", logo: "/sponsors/infistar.png" },
     { id: "compshare", name: "优云智算", description: "H3 视频生成 API", baseUrl: "https://api.modelverse.cn", website: "https://www.compshare.cn/video-studio?ytag=GPU_YY_YX_git_infinite-canvas", logo: "/sponsors/compshare.svg" },
     { id: "packycode", name: "PackyCode", description: "稳定高效的 API 中转服务", baseUrl: "https://www.packyapi.com", website: "https://www.packyapi.com/register?aff=34VV", logo: "/sponsors/packycode.png" },
+    { id: "klong", name: "Klong", description: "AI API 中转服务", baseUrl: "https://api.klong.lat", website: "https://api.klong.lat", logo: "/sponsors/klong.png" },
     { id: "heyroute", name: "HeyRoute", description: "全能多模态 API 服务商", baseUrl: "https://heyroute.ai", website: "https://heyroute.ai/basketikun", logo: "/sponsors/heyroute.svg" },
 ];
