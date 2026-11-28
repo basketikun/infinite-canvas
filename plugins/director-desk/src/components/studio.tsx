@@ -29,7 +29,7 @@ export function Studio({ ctx, node, onClose }: StudioProps) {
         const waitForWrites = ctx.onDispose(async () => { await lastWrite.catch(() => {}); });
         const channel = new MessageChannel();
         const port = channel.port1;
-        const pending = new Map<string, (data: { ok: boolean; value: unknown }) => void>();
+        const pending = new Map<string, (data: { ok: boolean; value: unknown; error?: string }) => void>();
         const requestLayout: LayoutRequest = (action, callerSignal) => new Promise((resolve, reject) => {
             const active = AbortSignal.any([signal, callerSignal]);
             active.throwIfAborted();
@@ -40,7 +40,7 @@ export function Studio({ ctx, node, onClose }: StudioProps) {
                 active.removeEventListener("abort", abort);
                 pending.delete(requestId);
                 if (data.ok) resolve(data.value);
-                else reject(new Error("LAYOUT_REQUEST_FAILED"));
+                else reject(new Error(data.error || "LAYOUT_REQUEST_FAILED"));
             });
             port.postMessage({ ...action, requestId, sceneId });
         });

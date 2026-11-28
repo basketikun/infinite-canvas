@@ -38,6 +38,7 @@ export interface ImportedAssetInput {
   addToScene?: boolean;
   assetSource?: DirectorAssetSource;
   projectionMode?: PanoramaProjectionMode;
+  companions?: Record<string, string>;
 }
 
 export interface CameraShotSnapshot {
@@ -103,6 +104,7 @@ export interface DirectorActions {
   updateObjectName: (id: string, name: string) => void;
   updateCrowdLabel: (crowdId: string, label: string) => void;
   updateObjectColor: (id: string, color: string) => void;
+  updateObjectVoxel: (id: string, edit: (object: DirectorObject) => DirectorObject) => void;
   updateCrowdColor: (crowdId: string, color: string) => void;
   updateCharacterBodyType: (id: string, bodyType: CharacterBodyType) => void;
   updateUniformScale: (id: string, scale: number) => void;
@@ -1180,6 +1182,14 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
           ),
         },
       })),
+    updateObjectVoxel: (id, edit) =>
+      commitMutation((state) => {
+        const existing = state.project.objects.find((object) => object.id === id);
+        if (!existing || existing.locked) return state;
+        const object = edit(existing);
+        if (object === existing) return state;
+        return { ...state, project: { ...state.project, objects: updateObjectById(state.project.objects, id, () => object) } };
+      }),
     updateObjectColor: (id, color) =>
       commitMutation((state) => ({
         ...state,
@@ -1298,6 +1308,7 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
           url: input.url,
           assetSource: input.kind === "panorama" ? undefined : (input.assetSource ?? "local"),
           projectionMode: input.projectionMode,
+          ...(input.companions ? { companions: input.companions } : {}),
         } satisfies DirectorAssetRef;
 
         if (input.kind === "panorama") {

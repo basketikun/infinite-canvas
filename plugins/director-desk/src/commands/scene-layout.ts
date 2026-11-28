@@ -2,6 +2,8 @@ import type { z } from "zod";
 import type { PluginCommand, PluginContext } from "@infinite-canvas/plugin-sdk";
 import { applySceneLayout, cameraLayouts, layoutResultSchema, sceneSummarySchema, sceneTargets } from "../api/camera-layouts";
 import type { LayoutRequest } from "../lib/desk-messages";
+import { editVoxel } from "../api/voxel-edit";
+import { voxelEditOutput, type VoxelEditInput, type VoxelEditOutput } from "../lib/voxel-edit";
 
 type Desk = { ctx: PluginContext; sceneId: string; request: LayoutRequest; session: AbortSignal };
 let desk: Desk | null = null;
@@ -50,5 +52,19 @@ export const applyLayout: PluginCommand<z.infer<typeof applySceneLayout.input>, 
             await request({ action: "apply-layout", result }, signal);
             return { sceneId, addedShots: result.shots.length };
         });
+    },
+};
+
+export const editSceneVoxel: PluginCommand<VoxelEditInput, VoxelEditOutput> = {
+    command: editVoxel, title: "编辑体素",
+    run: async (input, context) => {
+        const { ctx, sceneId, request, session } = opened();
+        if (input.sceneId !== sceneId || context.scope.projectId !== ctx.scope.projectId) throw new Error("CANVAS_CHANGED");
+        const signal = AbortSignal.any([session, context.signal]);
+        signal.throwIfAborted();
+        const result = voxelEditOutput.parse(await request({ action: "edit-voxel", input }, signal));
+        signal.throwIfAborted();
+        if (result.sceneId !== sceneId || result.objectId !== input.objectId) throw new Error("CANVAS_CHANGED");
+        return result;
     },
 };

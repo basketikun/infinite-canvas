@@ -12,9 +12,11 @@ import {
 import {
   Box,
   Boxes,
+  Brush,
   Camera,
   ChevronRight,
   Ellipsis,
+  Eraser,
   Grid2X2,
   Grid3X3,
   Image,
@@ -33,7 +35,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { requestViewportCapture } from "../io/captureBridge";
-import { readLocalModelFile } from "../loaders/localModelImport";
+import { LOCAL_MODEL_EXTENSION_RE, readLocalModelFile } from "../loaders/localModelImport";
+import { useVoxelTools } from "../runtime/voxelTools";
 import { readPanoramaFile } from "../loaders/panoramaImport";
 import { discardRecording, finishRecording, startRecording, useRecordingState } from "../io/recording";
 import { addCapturedShots, notify, sendRecording } from "../io/session";
@@ -134,6 +137,12 @@ export function ViewportToolbar({
   const activeCameraId = useDirectorStore((state) => state.project.activeCameraId);
   const viewMode = useDirectorStore((state) => state.viewMode);
   const transformMode = useDirectorStore((state) => state.transformMode);
+  const voxelBrush = useVoxelTools((state) => state.brush);
+  const selectedVoxel = useDirectorStore((state) => state.project.objects.some((object) =>
+    object.id === state.selectedObjectId && object.visible && !object.locked && object.voxel && !object.showVoxelSource));
+  useEffect(() => {
+    if (!selectedVoxel || previewing) useVoxelTools.setState({ brush: null, pick: null });
+  }, [previewing, selectedVoxel]);
   const viewportAspectRatio = useDirectorStore((state) => state.viewportAspectRatio);
   const setViewMode = useDirectorStore((state) => state.setViewMode);
   const setTransformMode = useDirectorStore((state) => state.setTransformMode);
@@ -302,8 +311,14 @@ export function ViewportToolbar({
     if (!files.length) return;
 
     try {
-      for (const file of files) {
-        const result = await readLocalModelFile(file);
+      const primaries = files.filter((file) => LOCAL_MODEL_EXTENSION_RE.test(file.name));
+      const companions = files.filter((file) => !LOCAL_MODEL_EXTENSION_RE.test(file.name));
+      if (!primaries.length || (companions.length && (primaries.length !== 1 || !/\.obj$/i.test(primaries[0].name)))) {
+        notify("请选择模型文件，或一起选择一个 OBJ 与其 MTL、贴图。");
+        return;
+      }
+      for (const file of primaries) {
+        const result = await readLocalModelFile(file, companions);
         addImportedAsset({
           kind: "prop",
           ...result,
@@ -370,6 +385,7 @@ export function ViewportToolbar({
   }
 
   function selectTransformMode(mode: TransformMode) {
+    useVoxelTools.setState({ brush: null });
     setTransformMode(mode);
   }
 
@@ -481,7 +497,7 @@ export function ViewportToolbar({
 
   function renderActionButton(action: ToolbarAction) {
     const Icon = action.icon;
-    const active = action.mode ? transformMode === action.mode : false;
+    const active = action.mode ? transformMode === action.mode && !voxelBrush : false;
 
     return (
       <button
@@ -517,6 +533,16 @@ export function ViewportToolbar({
     <>
       <div className="viewport-toolbar" role="group" aria-label="3D视口快捷工具" ref={setToolbarElement}>
         {actions.slice(0, 3).map(renderActionButton)}
+        {selectedVoxel && !previewing ? ([
+          ["paint", "刷色", Brush], ["add", "添加体素", Plus], ["erase", "删除体素", Eraser],
+        ] as const).map(([mode, label, Icon]) => (
+          <button key={mode} aria-label={label} aria-pressed={voxelBrush === mode}
+            className={`ui-icon-button viewport-toolbar-button${voxelBrush === mode ? " is-active" : ""}`} type="button"
+            onClick={() => useVoxelTools.setState({ brush: voxelBrush === mode ? null : mode })}>
+            <Icon aria-hidden="true" size={17} strokeWidth={1.9} />
+            <span className="viewport-toolbar-label">{label}</span>
+          </button>
+        )) : null}
         <span className="tool-divider" aria-hidden />
         <div className="viewport-toolbar-menu-wrap">
           <button
@@ -854,7 +880,8 @@ export function ViewportToolbar({
         className="hidden-file-input"
         data-testid="scene-local-model-input"
         tabIndex={-1}
-        accept=".fbx,.obj"
+        accept=".fbx,.obj,.glb,.mtl,.png,.jpg,.jpeg,.webp,.avif"
+        multiple
         type="file"
         onChange={(event) => void handleLocalModelChange(event, true)}
       />
@@ -864,7 +891,7 @@ export function ViewportToolbar({
         className="hidden-file-input"
         data-testid="library-local-model-input"
         tabIndex={-1}
-        accept=".fbx,.obj"
+        accept=".fbx,.obj,.glb,.mtl,.png,.jpg,.jpeg,.webp,.avif"
         multiple
         type="file"
         onChange={(event) => void handleLocalModelChange(event, false)}

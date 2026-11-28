@@ -1,3 +1,5 @@
+import type { SparseVoxelGrid } from "../../../lib/voxelize-mesh";
+
 export type ViewMode = "director" | "camera";
 export type RightPanelKind = "scene" | "character" | "prop" | "camera";
 export type DirectorObjectKind = "character" | "scene" | "prop" | "camera" | "panorama";
@@ -59,6 +61,7 @@ export interface DirectorAssetRef {
   url: string;
   assetSource?: DirectorAssetSource;
   projectionMode?: PanoramaProjectionMode;
+  companions?: Record<string, string>;
 }
 
 export interface MotionPath {
@@ -82,6 +85,8 @@ export interface DirectorObject {
   linkedCameraId?: string | null;
   motionPath?: MotionPath;
   characterRig?: CharacterRigState;
+  voxel?: SparseVoxelGrid;
+  showVoxelSource?: boolean;
 }
 
 export interface DirectorCameraCapture {

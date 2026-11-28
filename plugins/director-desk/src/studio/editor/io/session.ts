@@ -5,6 +5,8 @@ import { useDirectorStore, type DirectorStore } from "../store/directorStore";
 import { finishRecording } from "./recording";
 import { getSceneSummary } from "../schema/cameraLayouts";
 import { readPanoramaFile } from "../loaders/panoramaImport";
+import { voxelEditInput, type VoxelEditOutput } from "../../../lib/voxel-edit";
+import { writeVoxel } from "../runtime/voxelTools";
 
 let port: MessagePort;
 let ready = false;
@@ -15,6 +17,7 @@ const sent = new Set<string>();
 const released = new Set<(url: string) => void>();
 let held = false;
 let dirty = false;
+let lastAutosave: Promise<boolean> | undefined;
 let status = "";
 const listeners = new Set<() => void>();
 
@@ -47,7 +50,7 @@ function attach(item: Attachment) {
 }
 function projectUrls(project: DirectorProject) {
     return [
-        ...project.assets.map(asset => asset.url),
+        ...project.assets.flatMap(asset => [asset.url, ...Object.values(asset.companions ?? {})]),
         ...project.cameras.flatMap(camera => [camera.lastCaptureUrl, ...(camera.captures ?? []).map(shot => shot.dataUrl)]),
     ].filter((url): url is string => Boolean(url));
 }
@@ -59,7 +62,10 @@ export async function keepFile(input: Blob | string) {
     return attach({ key: crypto.randomUUID(), file });
 }
 function mapUrls(project: DirectorProject, map: (value: string) => string): DirectorProject {
-    return { ...project, assets: project.assets.map(asset => ({ ...asset, url: map(asset.url) })),
+    return { ...project, assets: project.assets.map(asset => ({
+        ...asset, url: map(asset.url),
+        ...(asset.companions ? { companions: Object.fromEntries(Object.entries(asset.companions).map(([name, url]) => [name, map(url)])) } : {}),
+    })),
         cameras: project.cameras.map(camera => ({ ...camera,
             lastCaptureUrl: camera.lastCaptureUrl && map(camera.lastCaptureUrl),
             captures: camera.captures?.map(shot => ({ ...shot, dataUrl: map(shot.dataUrl) })),
@@ -71,7 +77,11 @@ function restoreProject(project: DirectorProject, urls: Map<string, string>) {
     const assets: DirectorProject["assets"] = [];
     for (const asset of project.assets) {
         const url = urls.get(asset.url);
-        if (url) assets.push({ ...asset, url });
+        if (url) assets.push({
+            ...asset, url,
+            ...(asset.companions ? { companions: Object.fromEntries(Object.entries(asset.companions)
+                .flatMap(([name, key]) => urls.has(key) ? [[name, urls.get(key)!]] : [])) } : {}),
+        });
         else lost.push(asset.name ?? asset.fileName);
     }
     const kept = new Set(assets.map(asset => asset.id));
@@ -110,11 +120,38 @@ export function holdAutosave(value: boolean) {
 }
 function autosave() {
     dirty = held;
-    if (!held) void retrySave();
+    if (!held) lastAutosave = retrySave();
 }
 export async function retrySave() {
     try { await save(); return true; }
     catch { notify("场景尚未保存，请点击保存重试。"); return false; }
+}
+
+async function editSavedVoxel(value: unknown, sceneId: string): Promise<VoxelEditOutput> {
+    const input = voxelEditInput.parse(value);
+    if (input.sceneId !== sceneId) throw new Error("CANVAS_CHANGED");
+    const state = useDirectorStore.getState();
+    const object = state.project.objects.find(({ id }) => id === input.objectId);
+    if (!object?.voxel) throw new Error("找不到指定的体素对象");
+    if (object.locked) throw new Error("对象已锁定");
+    const { voxel } = object;
+    const { cell, operation } = input;
+    const occupied = Object.hasOwn(voxel.cells, cell.join(","));
+    if (operation === "add") {
+        if (occupied) throw new Error("目标网格已有体素");
+        if (cell.some((coordinate, axis) => coordinate < -1 || coordinate > voxel.dimensions[axis])) throw new Error("目标超出可扩展的网格范围");
+    } else if (!occupied) throw new Error("目标网格没有体素");
+    const next = writeVoxel(voxel, cell, operation === "delete" ? null : input.color!.toLowerCase());
+    const changed = next !== voxel;
+    if (changed) {
+        state.updateObjectVoxel(object.id, current => ({ ...current, voxel: next }));
+        if (!await (held ? retrySave() : lastAutosave)) throw new Error("体素修改尚未保存，请在导演台重试保存");
+    } else if (lastAutosave && !await lastAutosave) {
+        lastAutosave = retrySave();
+        if (!await lastAutosave) throw new Error("体素修改尚未保存，请在导演台重试保存");
+    }
+    const savedCell: VoxelEditOutput["cell"] = [Math.max(cell[0], 0), Math.max(cell[1], 0), Math.max(cell[2], 0)];
+    return { sceneId, objectId: object.id, cell: savedCell, changed };
 }
 export async function saveAndClose() {
     try { await finishRecording(); }
@@ -154,7 +191,7 @@ export async function openSession(channel: MessagePort) {
     port = channel;
     let sceneId: string;
     ready = false;
-    channel.onmessage = ({ data }) => {
+    channel.onmessage = async ({ data }) => {
         if (data.theme) {
             const root = document.documentElement;
             root.dataset.theme = data.theme;
@@ -176,11 +213,12 @@ export async function openSession(channel: MessagePort) {
                 let value;
                 if (data.action === "summary") value = getSceneSummary(state.project, state.selectedObjectIds, sceneId);
                 else if (data.action === "apply-layout" && data.result.sceneId === sceneId) state.applyCameraLayout(data.result);
+                else if (data.action === "edit-voxel") value = await editSavedVoxel(data.input, sceneId);
                 else throw new Error("LAYOUT_REQUEST_INVALID");
                 port.postMessage({ requestId: data.requestId, sceneId, ok: true, value });
             } catch (error) {
                 console.error("[plugins] director-desk layout message", data.action, error);
-                port.postMessage({ requestId: data.requestId, sceneId, ok: false });
+                port.postMessage({ requestId: data.requestId, sceneId, ok: false, error: error instanceof Error ? error.message : undefined });
             }
             return;
         }

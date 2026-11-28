@@ -2,11 +2,15 @@ import { useMotionClock } from "../store/motionPlayback";
 import { sceneAtTime, type PlaybackObject } from "../schema/motion";
 import { Html, Line, PerspectiveCamera, TransformControls, type TransformControlsProps } from "@react-three/drei";
 import { useLoader, type ThreeEvent } from "@react-three/fiber";
-import { Component, Suspense, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import { Box3, Matrix4, Quaternion, Vector3, type PerspectiveCamera as ThreeCamera, type Group, type Object3D } from "three";
+import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Box3, LoadingManager, Matrix4, Quaternion, Vector3, type PerspectiveCamera as ThreeCamera, type Group, type Object3D } from "three";
 import type { TransformControls as TransformControlsImpl } from "three-stdlib";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
+import { NativeVoxelModel } from "../runtime/NativeVoxelModel";
+import { useVoxelTools, voxelSources } from "../runtime/voxelTools";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { notify, onFileReleased } from "../io/session";
 import type {
@@ -361,9 +365,52 @@ function ObjModel({ url }: { url: string }) {
   return <NormalizedImportedObject object={object} />;
 }
 
+function GlbModel({ url }: { url: string }) {
+  const model = useLoader(GLTFLoader, url);
+  return <NormalizedImportedObject object={model.scene} />;
+}
+
+function ObjWithMaterials({ url, companions }: { url: string; companions: Record<string, string> }) {
+  const [object, setObject] = useState<Object3D>();
+  useEffect(() => {
+    const controller = new AbortController();
+    const files = Object.entries(companions);
+    const basename = (path: string) => path.replace(/\\/g, "/").split("/").pop()?.toLowerCase();
+    const match = (path: string) => files.find(([name]) => name === path.toLowerCase())?.[1]
+      ?? files.find(([name]) => basename(name) === basename(path))?.[1];
+    const read = async (url: string) => (await fetch(url, { signal: controller.signal })).text();
+
+    async function load() {
+      const source = await read(url);
+      const materialPath = /^mtllib[ \t]+(.+)$/im.exec(source)?.[1].trim();
+      const materialUrl = materialPath ? match(materialPath) : files.find(([name]) => /\.mtl$/i.test(name))?.[1];
+      const manager = new LoadingManager();
+      manager.setURLModifier((path) => match(path) ?? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=");
+      const loader = new OBJLoader(manager);
+      let started = false;
+      const imagesReady = new Promise<void>((resolve) => { manager.onLoad = resolve; });
+      manager.onStart = () => { started = true; };
+      if (materialUrl) {
+        const materials = new MTLLoader(manager).parse(await read(materialUrl), "");
+        materials.preload();
+        loader.setMaterials(materials);
+      }
+      const object = loader.parse(source);
+      if (started) await imagesReady;
+      return object;
+    }
+    void load().then((model) => { if (!controller.signal.aborted) setObject(model); }, () => {
+      if (!controller.signal.aborted) notify("无法加载 OBJ 材质和贴图。");
+    });
+    return () => controller.abort();
+  }, [url, companions]);
+  return object ? <NormalizedImportedObject object={object} /> : null;
+}
+
 onFileReleased((url) => {
   useLoader.clear(FBXLoader, url);
   useLoader.clear(OBJLoader, url);
+  useLoader.clear(GLTFLoader, url);
 });
 
 class ImportedModelBoundary extends Component<{ fileName: string; children: ReactNode }, { failed: boolean }> {
@@ -383,12 +430,15 @@ class ImportedModelBoundary extends Component<{ fileName: string; children: Reac
 function ImportedModel({
   fileName,
   url,
+  companions,
 }: {
   fileName: string;
   url: string;
+  companions?: Record<string, string>;
 }) {
   if (/\.fbx$/i.test(fileName)) return <FbxModel url={url} />;
-  if (/\.obj$/i.test(fileName)) return <ObjModel url={url} />;
+  if (/\.glb$/i.test(fileName)) return <GlbModel url={url} />;
+  if (/\.obj$/i.test(fileName)) return companions ? <ObjWithMaterials url={url} companions={companions} /> : <ObjModel url={url} />;
   return null;
 }
 
@@ -476,7 +526,16 @@ function ObjectSceneNode({
   const groupRef = useRef<Group>(null!);
   const updateObjectTransform = useDirectorStore((state) => state.updateObjectTransform);
   const isImportedModel = asset?.sourceType === "model";
+  const showVoxel = Boolean(item.voxel && !item.showVoxelSource);
+  const voxelBrush = useVoxelTools((state) => state.brush);
   const characterLabelY = getGroundedLabelY(item.bodyType);
+
+  useLayoutEffect(() => {
+    const source = groupRef.current;
+    if (!source || showVoxel) return;
+    voxelSources.set(item.id, source);
+    return () => { if (voxelSources.get(item.id) === source) voxelSources.delete(item.id); };
+  }, [item.id, showVoxel]);
 
   function commitTransformFromViewport() {
     const group = groupRef.current;
@@ -500,10 +559,12 @@ function ObjectSceneNode({
         onSelect?.(item);
       }}
     >
-      {isImportedModel && asset ? (
+      {showVoxel && item.voxel ? (
+        <NativeVoxelModel item={item} editable={selected && transformable} />
+      ) : isImportedModel && asset ? (
         <ImportedModelBoundary fileName={asset.fileName}>
           <Suspense fallback={null}>
-            <ImportedModel fileName={asset.fileName} url={asset.url} />
+            <ImportedModel fileName={asset.fileName} url={asset.url} companions={asset.companions} />
           </Suspense>
         </ImportedModelBoundary>
       ) : item.kind === "character" ? (
@@ -526,7 +587,7 @@ function ObjectSceneNode({
     </group>
   );
 
-  if (!selected || !transformable) return node;
+  if (!selected || !transformable || (showVoxel && voxelBrush)) return node;
 
   return (
     <>

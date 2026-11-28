@@ -6,6 +6,7 @@ import {
   InspectorTextField,
 } from "./InspectorControls";
 import { useDirectorStore } from "../store/directorStore";
+import { VoxelModelControls } from "./VoxelModelControls";
 
 function replaceAxis(tuple: [number, number, number], axis: 0 | 1 | 2, value: number): [number, number, number] {
   return tuple.map((item, index) => (index === axis ? value : item)) as [number, number, number];
@@ -126,6 +127,7 @@ export function PropPanel() {
         onColorChange={(value) => updateObjectColor(prop.id, value)}
         onHexChange={(value) => updateObjectColor(prop.id, value)}
       />
+      <VoxelModelControls key={prop.id} object={prop} />
     </InspectorPanel>
   );
 }
